@@ -211,7 +211,7 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
                 .hint_text("C:\\path\\to\\table.csv")
                 .desired_width(avail),
         );
-        if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !st.card2_path.is_empty() {
+        if resp.lost_focus() && !st.card2_path.is_empty() {
             load_card2_csv(st, &st.card2_path.clone());
         }
     });
@@ -278,6 +278,9 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
     // Action button
     let can_insert = !st.card2_matrix.is_empty();
     if ui.add_enabled(can_insert, egui::Button::new("Insert Table")).clicked() {
+        if std::path::Path::new(&st.card2_path).exists() {
+            load_card2_csv(st, &st.card2_path.clone());
+        }
         let res = execute_insert_table(app, st);
         st.card2_status = Some(match res {
             Ok(msg) => (msg, true),
@@ -938,7 +941,7 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
         return Err("No active text insertion point. Select a text frame or choose 'New frame' / 'At page'.".into());
     }
 
-    let (story_id, target_page_info, fn_target) = match st.card2_placement {
+    let (story_id, target_page_info, created_frame_info, fn_target) = match st.card2_placement {
         0 => {
             // At cursor
             let story = active.selection.text.map(|t| t.story.0).ok_or("No active story")?;
@@ -957,7 +960,7 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
                     }
                 }
             }
-            (story, None, fn_target)
+            (story, None, None, fn_target)
         }
         2 => {
             // At page: place below Generated Page Title on active / selected page
@@ -991,7 +994,7 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
             };
             let available_h = (margin.y1 - table_y0).max(60.0);
             let max_table_h = if has_footnote { (available_h - 32.0).max(40.0) } else { available_h };
-            let frame_h = (total_rows as f64 * 24.0 + 36.0).clamp(60.0, max_table_h);
+            let frame_h = max_table_h;
 
             let res = app.run(
                 "frame.create",
@@ -1003,10 +1006,9 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
                 }),
             )?;
             let sid = res["story"].as_u64().ok_or("Failed to get story ID")?;
-            let fn_y0 = table_y0 + frame_h + 6.0;
-            let fn_y1 = (fn_y0 + 24.0).min(margin.y1);
-            let fn_target = Some((spread_idx, [margin.x0, fn_y0, margin.x1, fn_y1]));
-            (sid, Some(cur_page), fn_target)
+            let fid = res["id"].as_u64().map(designcraft_doc::ItemId);
+            let created_info = fid.map(|id| (id, spread_idx, margin.x0, margin.x1, table_y0, max_table_h, margin.y1));
+            (sid, Some(cur_page), created_info, None)
         }
         _ => {
             // 1 or default: New frame on active / selected page
@@ -1017,7 +1019,7 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
             let margin = page.margin_rect();
             let has_footnote = footnote_text.is_some();
             let max_table_h = if has_footnote { (margin.height() - 32.0).max(40.0) } else { margin.height() };
-            let frame_h = (total_rows as f64 * 24.0 + 36.0).clamp(60.0, max_table_h);
+            let frame_h = max_table_h;
 
             let res = app.run(
                 "frame.create",
@@ -1029,10 +1031,9 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
                 }),
             )?;
             let sid = res["story"].as_u64().ok_or("Failed to get story ID")?;
-            let fn_y0 = margin.y0 + frame_h + 6.0;
-            let fn_y1 = (fn_y0 + 24.0).min(margin.y1);
-            let fn_target = Some((spread_idx, [margin.x0, fn_y0, margin.x1, fn_y1]));
-            (sid, Some(cur_page), fn_target)
+            let fid = res["id"].as_u64().map(designcraft_doc::ItemId);
+            let created_info = fid.map(|id| (id, spread_idx, margin.x0, margin.x1, margin.y0, max_table_h, margin.y1));
+            (sid, Some(cur_page), created_info, None)
         }
     };
 
@@ -1298,7 +1299,37 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
         })
         .map_err(|e| e.to_string())?;
 
-    if let (Some(fn_str), Some((target_spread, fn_rect))) = (footnote_text.as_ref(), fn_target) {
+    let mut actual_fn_target = fn_target;
+    if let Some((fid, spread_idx, x0, x1, y0, max_h, margin_y1)) = created_frame_info {
+        let fit_h = {
+            let active = app.session.active().ok_or("No active document")?;
+            let cs = designcraft_compose::compose_story(&active.doc, designcraft_doc::StoryId(story_id), &Default::default());
+            let measured_h = cs.frames.first().and_then(|f| {
+                f.tables.first().map(|t| t.rect.height()).or(Some(f.content_height))
+            });
+
+            if let Some(th) = measured_h {
+                (th + 4.0).min(max_h).max(40.0)
+            } else {
+                (total_rows as f64 * 32.0 + 40.0).min(max_h).max(60.0)
+            }
+        };
+
+        let _ = app.session.edit(|doc, _| {
+            if let Some(it) = doc.item_mut(fid) {
+                it.path = designcraft_geom::shapes::rectangle(designcraft_geom::Rect::new(x0, y0, x1, y0 + fit_h));
+            }
+            Ok(serde_json::Value::Null)
+        });
+
+        if footnote_text.is_some() {
+            let fn_y0 = y0 + fit_h + 8.0;
+            let fn_y1 = (fn_y0 + 24.0).min(margin_y1);
+            actual_fn_target = Some((spread_idx, [x0, fn_y0, x1, fn_y1]));
+        }
+    }
+
+    if let (Some(fn_str), Some((target_spread, fn_rect))) = (footnote_text.as_ref(), actual_fn_target) {
         let _ = app.run(
             "frame.create",
             json!({
@@ -2177,5 +2208,78 @@ mod tests {
         }).expect("Footnote text frame should exist on spread");
 
         assert!(fn_item.bounds().y0 >= table_item.bounds().y1);
+    }
+
+    #[test]
+    fn test_user_reproduction_at_page() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // 1. Generate pages with Card 1
+        let st_card1 = PubgenState {
+            card1_records: vec![
+                vec!["Table".into(), "01.01".into(), "The Rise of Computational Layouts".into()],
+                vec!["Table".into(), "01.02".into(), "Typography in the Digital Renaissance and Print Production in the 21st Century".into()],
+            ],
+            card1_headers: vec!["type".into(), "number".into(), "title".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            card1_preset: 0,
+            card1_append: true,
+            ..Default::default()
+        };
+        execute_generate_pages(&mut app, &st_card1).unwrap();
+
+        // 2. Insert table with Card 2 at page
+        let mut st_card2 = PubgenState {
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_table_footer: true,
+            card2_placement: 2, // At page
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plan/pubgen/samples/sample_3stack_table.csv");
+        load_card2_csv(&mut st_card2, path);
+
+        let res = execute_insert_table(&mut app, &st_card2);
+        assert!(res.is_ok(), "insert_table should succeed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.last().unwrap();
+        let table_item = spread.items.iter().find(|it| {
+            it.text_frame()
+                .and_then(|tf| active.doc.story(tf.story))
+                .is_some_and(|s| !s.tables.is_empty())
+        }).expect("Table item should exist on spread");
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().expect("Table should exist in story");
+
+        for (i, row) in table.rows.iter().enumerate() {
+            let col0 = table.cell(i, 0).map(|c| c.text.text.trim().to_string()).unwrap_or_default();
+            println!("Row {i} (kind={:?}): col0 = '{col0}'", row.kind);
+        }
+        assert_eq!(table.rows.len(), 10);
+
+        let cs = designcraft_compose::compose_story(&active.doc, tf.story, &Default::default());
+        println!("Composed story overset: {:?}", cs.is_overset());
+        assert!(!cs.is_overset(), "Story must not be overset! All rows must fit in table frame");
+        if let Some(frame) = cs.frames.first() {
+            println!("Frame content_height: {}", frame.content_height);
+            if let Some(tfrag) = frame.tables.first() {
+                println!("TableFrag rect: {:?}", tfrag.rect);
+                println!("TableFrag placed cells count: {}", tfrag.cells.len());
+                let placed_rows: std::collections::BTreeSet<_> = tfrag.cells.iter().map(|c| c.row).collect();
+                println!("Placed rows in frame: {:?}", placed_rows);
+                assert_eq!(placed_rows.len(), 10, "All 10 rows must be placed in the frame");
+                for r in 0..10 {
+                    assert!(placed_rows.contains(&r), "Row {r} should be placed in the frame");
+                }
+            }
+        }
     }
 }
