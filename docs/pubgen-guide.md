@@ -61,6 +61,11 @@ The Table from CSV workflow accepts any valid CSV or TSV tabular file.
   - Common ancestor prefixes (e.g. `Item`, `Location`) merge horizontally across their child columns.
   - Columns with fewer levels (e.g. single-level `Item`, `Category`, `Rating`, or 2-level `Price`, `Stock`) automatically merge vertically downward across the remaining header rows with vertical and horizontal centering.
 - **[ ] Add column numbers (1), (2)…**: Inserts an extra row immediately after the table header rows, numbering columns as `(1)`, `(2)`, `(3)`... across all columns (ideal for formal reports, catalogs, and statistical tables).
+- **[ ] Table footer (last row)**: Designates the last row as a table footer (`RowKind::Footer`). When paired with the **Horizontal Rules** style, the footer row automatically receives a 0.5pt thin top border and 1.0pt thick bottom border, creating a publication-quality total / summary row.
+- **Auto-detected Footnotes / Source Notes**: If the last row of the CSV contains text only in the first column with all subsequent columns empty (e.g. `Sources: Karawang Region Government Office,,,,,,` as in `sample_3stack_table.csv`), Pubgen automatically:
+  - Excludes the line from the table matrix so grid columns remain clean.
+  - Automatically synthesizes a standalone text box positioned directly below the generated table with the footnote/source text.
+  - Treats the row immediately preceding the footnote as the last table row (which becomes the styled table footer if selected).
 
 ### Table Placement
 - **At cursor**: If a text frame has an active caret selection, tab-delimited table text is inserted directly at the cursor and converted into a native table via `table.convertFromText`.
@@ -71,7 +76,7 @@ The Table from CSV workflow accepts any valid CSV or TSV tabular file.
 - **Basic Grid**: Clean 0.5pt grid borders with bold header cells.
 - **Corporate Navy**: High-contrast header styling with alternating zebra-striping.
 - **Minimalist**: Clean minimal 0.5pt borders.
-- **Horizontal Rules**: Publication-quality booktabs style featuring 1pt top and bottom rules, 0.5pt header separator, 0.5pt column numbers separator (if checked), and no vertical or intermediate body borders.
+- **Horizontal Rules**: Publication-quality booktabs style featuring 1pt top and bottom rules, 0.5pt header separator, 0.5pt column numbers separator (if checked), 0.5pt footer separator (if Table footer checked), and no vertical or intermediate body borders.
 
 ---
 

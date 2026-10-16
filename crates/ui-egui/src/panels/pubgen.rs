@@ -36,6 +36,7 @@ pub struct PubgenState {
     pub card2_matrix: Vec<Vec<String>>,
     pub card2_first_row_header: bool,
     pub card2_col_numbers: bool,
+    pub card2_table_footer: bool,
     pub card2_style: usize,
     pub card2_placement: usize,
     pub card2_status: Option<(String, bool)>,
@@ -63,6 +64,7 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
         card1_append: true,
         card2_first_row_header: true,
         card2_col_numbers: false,
+        card2_table_footer: false,
         card2_placement: 2, // At page
         ..Default::default()
     });
@@ -216,6 +218,7 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
 
     ui.checkbox(&mut st.card2_first_row_header, "First row is header");
     ui.checkbox(&mut st.card2_col_numbers, "Add column numbers (1), (2)…");
+    ui.checkbox(&mut st.card2_table_footer, "Table footer (last row)");
 
     if st.card2_first_row_header {
         let merge_count = st.card2_matrix.first().map(|r| r.iter().filter(|c| c.contains("--")).count()).unwrap_or(0);
@@ -232,6 +235,15 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
             };
             ui.add(egui::Label::new(RichText::new(label).size(10.5).color(t.accent)).wrap());
         }
+    }
+
+    if let Some(fn_text) = detect_footnote_row(&st.card2_matrix) {
+        let display_fn = if fn_text.len() > 38 {
+            format!("{}…", &fn_text[..38])
+        } else {
+            fn_text
+        };
+        ui.add(egui::Label::new(RichText::new(format!("✓ Auto-detected table note: \"{display_fn}\"")).size(10.5).color(t.accent)).wrap());
     }
 
     // Table Style Selector
@@ -397,9 +409,25 @@ fn load_card2_csv(st: &mut PubgenState, path: &str) {
     st.card2_status = Some((format!("Loaded {r} rows × {c} columns"), true));
 }
 
-// ---------------------------------------------------------------------------
-// Execution Pipelines
-// ---------------------------------------------------------------------------
+/// Detect if the last row of the tabular CSV only contains data in the first column
+/// (the remaining columns are empty), functioning as a footnote or source note.
+pub fn detect_footnote_row(matrix: &[Vec<String>]) -> Option<String> {
+    if matrix.len() < 2 {
+        return None;
+    }
+    let cols_count = matrix.iter().map(Vec::len).max().unwrap_or(0);
+    if cols_count <= 1 {
+        return None;
+    }
+    let last = matrix.last()?;
+    let first = last.first().map(|s| s.trim()).unwrap_or("");
+    let rest_empty = last.iter().skip(1).all(|c| c.trim().is_empty());
+    if !first.is_empty() && rest_empty {
+        Some(first.to_string())
+    } else {
+        None
+    }
+}
 
 /// Estimate single-line text advance width in points (based on standard 12pt proportional font).
 fn estimate_text_width(text: &str, is_uppercase_kicker: bool) -> f64 {
@@ -744,12 +772,34 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
         return Err("No tabular data to insert".into());
     }
 
-    let rows_count = st.card2_matrix.len();
-    let cols_count = st.card2_matrix.iter().map(Vec::len).max().unwrap_or(0);
+    // Detect and extract trailing footnote/source row(s) (where only first col has data and rest of cols are empty)
+    let mut footnotes = Vec::new();
+    let mut matrix = st.card2_matrix.clone();
+    let cols_count = matrix.iter().map(Vec::len).max().unwrap_or(0);
+    if cols_count > 1 {
+        while matrix.len() > 1 {
+            let last = matrix.last().unwrap();
+            let first = last.first().map(|s| s.trim()).unwrap_or("");
+            let rest_empty = last.iter().skip(1).all(|c| c.trim().is_empty());
+            if !first.is_empty() && rest_empty {
+                footnotes.insert(0, first.to_string());
+                matrix.pop();
+            } else {
+                break;
+            }
+        }
+    }
+    let footnote_text = if footnotes.is_empty() {
+        None
+    } else {
+        Some(footnotes.join("\n"))
+    };
+
+    let rows_count = matrix.len();
 
     // Auto-detect merged header columns (split by "--", capped at max 3 stacks)
     let col_levels: Vec<Vec<String>> = if st.card2_first_row_header {
-        st.card2_matrix
+        matrix
             .first()
             .map(|row| {
                 (0..cols_count)
@@ -837,7 +887,7 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
         }
 
         // Data rows (skip row 0)
-        for row in st.card2_matrix.iter().skip(1) {
+        for row in matrix.iter().skip(1) {
             table_text.push('\n');
             for (c_idx, cell) in row.iter().enumerate() {
                 if c_idx > 0 {
@@ -857,7 +907,7 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
             }
         }
 
-        for (r_idx, row) in st.card2_matrix.iter().enumerate() {
+        for (r_idx, row) in matrix.iter().enumerate() {
             if !table_text.is_empty() {
                 table_text.push('\n');
             }
@@ -888,11 +938,26 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
         return Err("No active text insertion point. Select a text frame or choose 'New frame' / 'At page'.".into());
     }
 
-    let (story_id, target_page_info) = match st.card2_placement {
+    let (story_id, target_page_info, fn_target) = match st.card2_placement {
         0 => {
             // At cursor
             let story = active.selection.text.map(|t| t.story.0).ok_or("No active story")?;
-            (story, None)
+            let mut fn_target = None;
+            if let Some(fid) = active.selection.text.and_then(|t| t.frame) {
+                if let Some(loc) = active.doc.find(fid) {
+                    if let designcraft_doc::SpreadRef::Doc(si) = loc.spread {
+                        if let Some(spread) = active.doc.spreads.get(si) {
+                            if let Some(item) = spread.items.iter().find(|it| it.id == fid) {
+                                let b = item.bounds();
+                                let fn_y0 = b.y1 + 6.0;
+                                let fn_y1 = fn_y0 + 24.0;
+                                fn_target = Some((si, [b.x0, fn_y0, b.x1, fn_y1]));
+                            }
+                        }
+                    }
+                }
+            }
+            (story, None, fn_target)
         }
         2 => {
             // At page: place below Generated Page Title on active / selected page
@@ -917,6 +982,7 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
                 }
             }
 
+            let has_footnote = footnote_text.is_some();
             let gap_below_title = 20.0;
             let table_y0 = if title_bottom > margin.y0 {
                 title_bottom + gap_below_title
@@ -924,7 +990,8 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
                 margin.y0 + 20.0
             };
             let available_h = (margin.y1 - table_y0).max(60.0);
-            let frame_h = (total_rows as f64 * 24.0 + 36.0).clamp(60.0, available_h);
+            let max_table_h = if has_footnote { (available_h - 32.0).max(40.0) } else { available_h };
+            let frame_h = (total_rows as f64 * 24.0 + 36.0).clamp(60.0, max_table_h);
 
             let res = app.run(
                 "frame.create",
@@ -936,7 +1003,10 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
                 }),
             )?;
             let sid = res["story"].as_u64().ok_or("Failed to get story ID")?;
-            (sid, Some(cur_page))
+            let fn_y0 = table_y0 + frame_h + 6.0;
+            let fn_y1 = (fn_y0 + 24.0).min(margin.y1);
+            let fn_target = Some((spread_idx, [margin.x0, fn_y0, margin.x1, fn_y1]));
+            (sid, Some(cur_page), fn_target)
         }
         _ => {
             // 1 or default: New frame on active / selected page
@@ -945,7 +1015,9 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
             let spread = active.doc.spreads.get(spread_idx).ok_or("Spread missing")?;
             let page = spread.pages.get(page_in_spread).ok_or("Page missing")?;
             let margin = page.margin_rect();
-            let frame_h = (total_rows as f64 * 24.0 + 36.0).clamp(60.0, margin.height());
+            let has_footnote = footnote_text.is_some();
+            let max_table_h = if has_footnote { (margin.height() - 32.0).max(40.0) } else { margin.height() };
+            let frame_h = (total_rows as f64 * 24.0 + 36.0).clamp(60.0, max_table_h);
 
             let res = app.run(
                 "frame.create",
@@ -957,7 +1029,10 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
                 }),
             )?;
             let sid = res["story"].as_u64().ok_or("Failed to get story ID")?;
-            (sid, Some(cur_page))
+            let fn_y0 = margin.y0 + frame_h + 6.0;
+            let fn_y1 = (fn_y0 + 24.0).min(margin.y1);
+            let fn_target = Some((spread_idx, [margin.x0, fn_y0, margin.x1, fn_y1]));
+            (sid, Some(cur_page), fn_target)
         }
     };
 
@@ -976,8 +1051,16 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
     let res = app.run("table.convertFromText", json!({"columnSeparator": "tab"}))?;
 
     let header_rows_count = if has_merged_headers { num_header_rows } else if st.card2_first_row_header && rows_count > 1 { 1 } else { 0 };
-    if header_rows_count > 0 {
-        let _ = app.run("table.options", json!({"headerRows": header_rows_count}));
+    let footer_rows_count = if st.card2_table_footer && rows_count > header_rows_count + 1 { 1 } else { 0 };
+    if header_rows_count > 0 || footer_rows_count > 0 {
+        let mut opts = json!({});
+        if header_rows_count > 0 {
+            opts["headerRows"] = json!(header_rows_count);
+        }
+        if footer_rows_count > 0 {
+            opts["footerRows"] = json!(footer_rows_count);
+        }
+        let _ = app.run("table.options", opts);
     }
 
     // Step 5: Table Style (if not Horizontal Rules, apply via command first)
@@ -1182,6 +1265,21 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
                         }
                     }
 
+                    // Table footer row rules (if checked)
+                    if st.card2_table_footer && nr > header_rows + 1 {
+                        let footer_row = nr.saturating_sub(1);
+                        for c in 0..nc {
+                            if let Some(cell) = table.cell_mut(footer_row, c) {
+                                cell.strokes[0] = rule_thin.clone();
+                            }
+                            if footer_row > 0 {
+                                if let Some(cell) = table.cell_mut(footer_row - 1, c) {
+                                    cell.strokes[2] = rule_thin.clone();
+                                }
+                            }
+                        }
+                    }
+
                     // Bottom of table rule
                     let last_row = nr.saturating_sub(1);
                     for c in 0..nc {
@@ -1192,9 +1290,26 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
                 }
             }
 
+            if st.card2_table_footer && table.nrows() > header_rows_count + 1 {
+                table.rows.last_mut().map(|r| r.kind = designcraft_doc::RowKind::Footer);
+            }
+
             Ok(())
         })
         .map_err(|e| e.to_string())?;
+
+    if let (Some(fn_str), Some((target_spread, fn_rect))) = (footnote_text.as_ref(), fn_target) {
+        let _ = app.run(
+            "frame.create",
+            json!({
+                "spread": target_spread,
+                "rect": fn_rect,
+                "content": "text",
+                "text": fn_str,
+                "caret": false
+            }),
+        );
+    }
 
     let target_msg = match target_page_info {
         Some(pi) => {
@@ -1204,7 +1319,8 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
         None => String::new(),
     };
 
-    Ok(format!("Inserted table{target_msg} ({total_rows} rows × {cols_count} cols)"))
+    let fn_msg = if footnote_text.is_some() { " + footnote" } else { "" };
+    Ok(format!("Inserted table{target_msg} ({total_rows} rows × {cols_count} cols){fn_msg}"))
 }
 
 #[cfg(test)]
@@ -1909,5 +2025,157 @@ mod tests {
         assert_eq!(table.cell(3, 0).unwrap().strokes[2].weight, 0.5);
         // Bottom of table (row 4, col 0)
         assert_eq!(table.cell(4, 0).unwrap().strokes[2].weight, 1.0);
+    }
+
+    #[test]
+    fn test_detect_footnote_row() {
+        let rows = vec![
+            vec!["Header 1".into(), "Header 2".into()],
+            vec!["Data 1".into(), "Data 2".into()],
+            vec!["Sources: Karawang Region Government Office".into(), "".into()],
+        ];
+        assert_eq!(detect_footnote_row(&rows), Some("Sources: Karawang Region Government Office".to_string()));
+
+        let rows_normal = vec![
+            vec!["Header 1".into(), "Header 2".into()],
+            vec!["Data 1".into(), "Data 2".into()],
+        ];
+        assert_eq!(detect_footnote_row(&rows_normal), None);
+
+        let rows_single_col = vec![
+            vec!["Single 1".into()],
+            vec!["Single 2".into()],
+        ];
+        assert_eq!(detect_footnote_row(&rows_single_col), None);
+    }
+
+    #[test]
+    fn test_execute_insert_table_footer_and_footnote() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Item".into(), "Category".into(), "Price".into()],
+                vec!["Paper".into(), "Stock".into(), "$20".into()],
+                vec!["Pen".into(), "Tools".into(), "$10".into()],
+                vec!["Total".into(), "".into(), "$30".into()],
+                vec!["Sources: Karawang Region Government Office".into(), "".into(), "".into()],
+            ],
+            card2_first_row_header: true,
+            card2_table_footer: true,
+            card2_placement: 1, // New frame
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "insert_table with footer and footnote should succeed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+
+        // 1. Verify table exists and has 4 rows (1 header + 2 data + 1 total) - NOT 5 rows!
+        let table_item = spread.items.iter().find(|it| {
+            it.text_frame()
+                .and_then(|tf| active.doc.story(tf.story))
+                .is_some_and(|s| !s.tables.is_empty())
+        }).expect("Table item should exist on spread");
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().expect("Table should exist in story");
+
+        assert_eq!(table.rows.len(), 4);
+        assert_eq!(table.columns.len(), 3);
+
+        // Row 3 is footer row ("Total")
+        assert_eq!(table.cell(3, 0).unwrap().text.text.trim(), "Total");
+        assert_eq!(table.cell(3, 2).unwrap().text.text.trim(), "$30");
+        assert_eq!(table.rows[3].kind, designcraft_doc::RowKind::Footer);
+
+        // Verify Horizontal Rules styling on footer row:
+        // Top border of footer row (strokes[0]) is rule_thin (0.5)
+        assert_eq!(table.cell(3, 0).unwrap().strokes[0].weight, 0.5);
+        // Bottom border of preceding row (strokes[2]) is rule_thin (0.5)
+        assert_eq!(table.cell(2, 0).unwrap().strokes[2].weight, 0.5);
+        // Bottom border of footer row (strokes[2]) is rule_thick (1.0)
+        assert_eq!(table.cell(3, 0).unwrap().strokes[2].weight, 1.0);
+
+        // 2. Verify normal text box below table was created with footnote text
+        let fn_item = spread.items.iter().find(|it| {
+            if it.id == table_item.id {
+                return false;
+            }
+            it.text_frame()
+                .and_then(|tf| active.doc.story(tf.story))
+                .is_some_and(|s| s.text.contains("Sources: Karawang Region Government Office"))
+        }).expect("Footnote text frame should exist on spread");
+
+        // Footnote frame is positioned below table frame
+        assert!(fn_item.bounds().y0 >= table_item.bounds().y1);
+    }
+
+    #[test]
+    fn test_execute_insert_table_3stack_sample_file_with_footer_and_footnote() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_table_footer: true,
+            card2_placement: 1, // New frame
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+
+        // Load actual sample CSV file
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plan/pubgen/samples/sample_3stack_table.csv");
+        load_card2_csv(&mut st, path);
+        assert_eq!(st.card2_matrix.len(), 8);
+        assert_eq!(detect_footnote_row(&st.card2_matrix), Some("Sources: Karawang Region Government Office".to_string()));
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "insert_table with sample_3stack_table.csv should succeed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+
+        let table_item = spread.items.iter().find(|it| {
+            it.text_frame()
+                .and_then(|tf| active.doc.story(tf.story))
+                .is_some_and(|s| !s.tables.is_empty())
+        }).expect("Table item should exist on spread");
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().expect("Table should exist in story");
+
+        // 3 header rows + 1 col numbers row + 5 data rows + 1 total row = 10 rows
+        assert_eq!(table.rows.len(), 10);
+        assert_eq!(table.columns.len(), 7);
+
+        // Row 9 is the Total row (footer)
+        assert_eq!(table.cell(9, 0).unwrap().text.text.trim(), "Total");
+        assert_eq!(table.cell(9, 2).unwrap().text.text.trim(), "$298.50");
+        assert_eq!(table.cell(9, 3).unwrap().text.text.trim(), "359");
+        assert_eq!(table.rows[9].kind, designcraft_doc::RowKind::Footer);
+
+        // Footer borders: top is thin (0.5), bottom is thick (1.0)
+        assert_eq!(table.cell(9, 0).unwrap().strokes[0].weight, 0.5);
+        assert_eq!(table.cell(9, 0).unwrap().strokes[2].weight, 1.0);
+
+        // Footnote frame exists below table
+        let fn_item = spread.items.iter().find(|it| {
+            if it.id == table_item.id {
+                return false;
+            }
+            it.text_frame()
+                .and_then(|tf| active.doc.story(tf.story))
+                .is_some_and(|s| s.text.contains("Sources: Karawang Region Government Office"))
+        }).expect("Footnote text frame should exist on spread");
+
+        assert!(fn_item.bounds().y0 >= table_item.bounds().y1);
     }
 }
