@@ -1100,12 +1100,14 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
                         color: designcraft_color::swatch::BLACK.into(),
                         tint: 1.0,
                         kind: designcraft_doc::StrokeType::Solid,
+                        ..Default::default()
                     };
                     let rule_thin = designcraft_doc::CellStroke {
                         weight: 0.5,
                         color: designcraft_color::swatch::BLACK.into(),
                         tint: 1.0,
                         kind: designcraft_doc::StrokeType::Solid,
+                        ..Default::default()
                     };
 
                     let header_rows = if has_merged_headers { num_header_rows } else if st.card2_first_row_header { 1 } else { 0 };
