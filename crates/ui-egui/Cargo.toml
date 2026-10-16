@@ -39,3 +39,6 @@ designcraft-fonts = { workspace = true, features = ["testing"] }
 [build-dependencies]
 serde_json = { workspace = true }
 toml = "1"
+
+[features]
+pubgen = []

@@ -13,6 +13,10 @@ pub mod control;
 pub mod credits;
 pub mod cursors;
 pub mod dialogs;
+#[cfg(not(feature = "pubgen"))]
+pub mod dock;
+#[cfg(feature = "pubgen")]
+#[path = "dock_extended.rs"]
 pub mod dock;
 pub mod i18n;
 pub mod icons;

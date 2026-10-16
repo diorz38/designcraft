@@ -4,6 +4,7 @@
 //! invoked through `std::process::Command`.
 
 mod assets;
+mod diff_dock;
 mod ico;
 mod layers;
 mod parity;
@@ -29,6 +30,7 @@ commands:
   parity          recompute the InDesign feature-parity summary in docs/parity-checklist.md
   ico <out.ico> <in.png>...
                   pack square PNGs (<= 256 px) into a Windows .ico (see packaging/icons.sh)
+  diff-dock       detect drift between upstream dock.rs and dock_extended.rs
 ";
 
 fn main() -> ExitCode {
@@ -45,6 +47,7 @@ fn main() -> ExitCode {
         Some("parity") => parity::run(&root()),
         Some("ico") => ico::run(&rest),
         Some("version") => version::run(&root(), &rest),
+        Some("diff-dock") => diff_dock::run(&root()),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
             Ok(())
