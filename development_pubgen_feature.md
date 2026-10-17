@@ -132,7 +132,7 @@ cargo test -p designcraft-ui-egui --features pubgen -- pubgen
 ```
 All tests should pass:
 ```
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 545 filtered out
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 545 filtered out
 ```
 
 ### Step 9: Launch Application for Visual Verification
@@ -273,3 +273,37 @@ Get-Item (Join-Path `$DistDir 'designcraft.exe'), `$ZipPath | Format-Table Name,
 | **Run app with Pubgen (Debug)** | `cargo run -p designcraft --features pubgen` |
 | **Build Portable Release (x64)** | `$env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = "-C target-feature=+crt-static"; cargo build --release -p designcraft -p designcraft-cli --features designcraft/pubgen --target x86_64-pc-windows-msvc` |
 | **Verify branch sync** | `git log -n 5 --oneline --graph` |
+
+---
+
+## 6. Room for Improvement (What's Left) & Next Steps
+
+While Pubgen provides high-value automated layout and advanced tabular workflows out of the box, several architectural and functional opportunities remain for future development:
+
+### Main Weaknesses & Architectural Debt
+
+1. **Generation Logic in UI Layer (Violates "Everything is a Command"):**
+   - **Current State:** Batch page loops (`execute_generate_pages`) and table synthesis (`execute_insert_table`) reside directly within `crates/ui-egui/src/panels/pubgen.rs`.
+   - **Impact:** Headless environments (`designcraft-cli`), scripts (`.dcs`), and MCP automation agents cannot execute Pubgen workflows without launching the GUI.
+   - **Next Step:** Push core generator pipelines down into engine commands (`crates/engine/src/cmd/pubgen.rs` or `data.rs`), leaving `pubgen.rs` as a thin UI coordinator calling `app.run("pubgen.pages", ...)` and `app.run("pubgen.table", ...)`.
+
+2. **Non-Atomic Batch Undo:**
+   - **Current State:** Generating 50 catalog pages executes individual engine commands sequentially, resulting in 50+ entries in the undo stack.
+   - **Impact:** Undoing a generation batch requires repeated `Ctrl+Z` operations rather than a single revert.
+   - **Next Step:** Implement an engine-level command or atomic transaction grouping to guarantee a 1-step undo revert.
+
+3. **Duplication of `data.merge` Infrastructure:**
+   - **Current State:** Card 1 implements its own CSV parsing and record iteration routines.
+   - **Impact:** Duplicates existing engine-level CSV ingestion and record-range mapping already maintained in `crates/engine/src/cmd/datamerge/`.
+   - **Next Step:** Refactor Card 1 to act as an ergonomic preset-driven front-end over `data.source` and `data.merge`.
+
+4. **Hardcoded Geometric Layout Presets:**
+   - **Current State:** The 6 layout recipes (1 Row · 3 Columns, Editorial Chapter, TOC Line, etc.) are compiled Rust code with static arithmetic offsets.
+   - **Impact:** Users cannot customize column widths, margins, or typography without editing Rust source code and recompiling.
+   - **Next Step:** Externalize layout recipes into data-driven configuration templates (JSON/TOML) located in `assets/templates/` or user preferences.
+
+5. **CI Feature Flag Testing:**
+   - **Current State:** `cargo xtask ci` validates the default workspace features only.
+   - **Impact:** Code rot or upstream signature changes can silently break the `pubgen` compilation target unless developers remember to run `--features pubgen` manually.
+   - **Next Step:** Add `cargo check -p designcraft-ui-egui --features pubgen` and `cargo xtask diff-dock` directly to the `xtask ci` pipeline.
+
