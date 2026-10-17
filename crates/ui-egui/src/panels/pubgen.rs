@@ -11,11 +11,15 @@ use serde_json::{Value, json};
 
 use crate::DesignApp;
 use crate::theme::Tokens;
-use crate::widgets::{divider, outline_button, rule, section, selection_band};
+use crate::widgets::{divider, full_width, outline_button, rule, section, selection_band};
 
 const PANEL_ID: &str = "pubgen_panel_state";
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PubgenState {
     // Card 1: Page from CSV
     pub card1_path: String,
@@ -30,6 +34,8 @@ pub struct PubgenState {
     pub card1_range_to: usize,
     pub card1_append: bool,
     pub card1_status: Option<(String, bool)>,
+    #[serde(default)]
+    pub card1_delim: Option<char>,
 
     // Card 2: Table from CSV
     pub card2_path: String,
@@ -37,9 +43,48 @@ pub struct PubgenState {
     pub card2_first_row_header: bool,
     pub card2_col_numbers: bool,
     pub card2_table_footer: bool,
+    #[serde(default = "default_true")]
+    pub card2_row_conditions: bool,
     pub card2_style: usize,
     pub card2_placement: usize,
     pub card2_status: Option<(String, bool)>,
+    #[serde(default)]
+    pub card2_delim: Option<char>,
+
+    // Card 3: Quick Actions
+    #[serde(default)]
+    pub card3_status: Option<(String, bool)>,
+}
+
+impl Default for PubgenState {
+    fn default() -> Self {
+        Self {
+            card1_path: String::new(),
+            card1_records: Vec::new(),
+            card1_headers: Vec::new(),
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 0,
+            card1_range_all: true,
+            card1_range_from: 1,
+            card1_range_to: 10,
+            card1_append: true,
+            card1_status: None,
+            card1_delim: None,
+            card2_path: String::new(),
+            card2_matrix: Vec::new(),
+            card2_first_row_header: true,
+            card2_col_numbers: false,
+            card2_table_footer: false,
+            card2_row_conditions: true,
+            card2_style: 0,
+            card2_placement: 2, // At page
+            card2_status: None,
+            card2_delim: None,
+            card3_status: None,
+        }
+    }
 }
 
 pub fn show(app: &mut DesignApp, ui: &mut Ui) {
@@ -57,17 +102,7 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
     selection_band(ui, "Pubgen");
 
     let state_id = egui::Id::new(PANEL_ID);
-    let mut st: PubgenState = ui.data(|d| d.get_temp(state_id)).unwrap_or_else(|| PubgenState {
-        card1_range_all: true,
-        card1_range_from: 1,
-        card1_range_to: 10,
-        card1_append: true,
-        card2_first_row_header: true,
-        card2_col_numbers: false,
-        card2_table_footer: false,
-        card2_placement: 2, // At page
-        ..Default::default()
-    });
+    let mut st: PubgenState = ui.data(|d| d.get_temp(state_id)).unwrap_or_default();
 
     // Card 1: Page from CSV
     card1_ui(app, ui, &mut st, &t);
@@ -77,6 +112,12 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
 
     // Card 2: Table from CSV
     card2_ui(app, ui, &mut st, &t);
+
+    divider(ui);
+    rule(ui);
+
+    // Card 3: Quick Actions
+    card3_quick_actions_ui(app, ui, &mut st, &t);
 
     ui.data_mut(|d| d.insert_temp(state_id, st));
 }
@@ -121,6 +162,9 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
     if !st.card1_headers.is_empty() {
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new("Columns:").size(10.5).color(t.text_dim));
+            if let Some(d) = st.card1_delim {
+                badge(ui, t, "delim", delimiter_name(d));
+            }
             badge(ui, t, "type", st.card1_headers.get(st.card1_type_col).map(String::as_str).unwrap_or("col 0"));
             badge(ui, t, "number", st.card1_headers.get(st.card1_num_col).map(String::as_str).unwrap_or("col 1"));
             badge(ui, t, "title", st.card1_headers.get(st.card1_title_col).map(String::as_str).unwrap_or("col 2"));
@@ -219,6 +263,16 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
     ui.checkbox(&mut st.card2_first_row_header, "First row is header");
     ui.checkbox(&mut st.card2_col_numbers, "Add column numbers (1), (2)…");
     ui.checkbox(&mut st.card2_table_footer, "Table footer (last row)");
+    ui.checkbox(&mut st.card2_row_conditions, "Condition rules (Jumlah, Tahun, Kab, Kec…)");
+
+    if !st.card2_matrix.is_empty() {
+        if let Some(d) = st.card2_delim {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Delimiter:").size(10.5).color(t.text_dim));
+                badge(ui, t, "delim", delimiter_name(d));
+            });
+        }
+    }
 
     if st.card2_first_row_header {
         let merge_count = st.card2_matrix.first().map(|r| r.iter().filter(|c| c.contains("--")).count()).unwrap_or(0);
@@ -244,6 +298,18 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
             fn_text
         };
         ui.add(egui::Label::new(RichText::new(format!("✓ Auto-detected table note: \"{display_fn}\"")).size(10.5).color(t.accent)).wrap());
+    }
+
+    if st.card2_row_conditions {
+        let cond_rows = detect_condition_rows(&st.card2_matrix, st.card2_first_row_header);
+        if !cond_rows.is_empty() {
+            let label = if cond_rows.len() == 1 {
+                "✓ Auto-detected 1 summary/break row with rule formatting (\"Jumlah\", etc.)".to_string()
+            } else {
+                format!("✓ Auto-detected {} summary/break rows with rule formatting (\"Jumlah\", etc.)", cond_rows.len())
+            };
+            ui.add(egui::Label::new(RichText::new(label).size(10.5).color(t.accent)).wrap());
+        }
     }
 
     // Table Style Selector
@@ -294,6 +360,79 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
     }
 }
 
+fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    section(ui, crate::i18n::tr(&app.ui.language, "Quick Actions"), true);
+
+    let facing = app.session.active().map(|s| s.doc.settings.facing_pages).unwrap_or(true);
+    let cur_page = app
+        .session
+        .active()
+        .and_then(|s| s.selection.page)
+        .or_else(|| crate::canvas::current_page(app))
+        .unwrap_or_else(|| target_page_index(app));
+    let cur_label = app.session.page_label(cur_page);
+
+    // Button 1: switch Facing Pages
+    // When currently Facing (Double-sided), button offers switching to Single-sided.
+    // When currently Single-sided, button offers switching to Double-sided.
+    let facing_text = if facing {
+        crate::i18n::tr(&app.ui.language, "Single-sided")
+    } else {
+        crate::i18n::tr(&app.ui.language, "Double-sided")
+    };
+    let add_page_text = crate::i18n::tr(&app.ui.language, "Add Blank Page");
+
+    let fw = full_width(ui);
+    let hw = (fw - 10.0) / 2.0;
+
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+
+        let tip_facing = if facing {
+            "Current: Double-sided (facing pages). Click to switch to Single-sided layout"
+        } else {
+            "Current: Single-sided layout. Click to switch to Double-sided (facing pages)"
+        };
+        let resp_facing = outline_button(ui, &facing_text, hw).on_hover_text(tip_facing);
+        if resp_facing.clicked() {
+            let next_facing = !facing;
+            let _ = app.run("layout.documentSetup", json!({"facingPages": next_facing}));
+            st.card3_status = Some((
+                if next_facing {
+                    "Switched to Double-sided (Facing Pages)".into()
+                } else {
+                    "Switched to Single-sided layout".into()
+                },
+                true,
+            ));
+        }
+
+        let tip_page = format!("Insert a blank page after Page {cur_label}");
+        let resp_page = outline_button(ui, &add_page_text, hw).on_hover_text(tip_page);
+        if resp_page.clicked() {
+            let _ = app.run("layout.pages.insert", json!({"after": cur_page, "count": 1}));
+            crate::canvas::go_to_page(app, cur_page + 1);
+            let next_label = app.session.page_label(cur_page + 1);
+            st.card3_status = Some((format!("Added blank page after Page {cur_label} (new Page {next_label})"), true));
+        }
+    });
+
+    let mode_str = if facing { "Double-sided" } else { "Single-sided" };
+    ui.add(
+        egui::Label::new(
+            RichText::new(format!("Mode: {mode_str} · Selected: Page {cur_label}"))
+                .size(10.5)
+                .color(t.text_dim),
+        )
+        .truncate(),
+    );
+
+    if let Some((msg, ok)) = &st.card3_status {
+        let color = if *ok { Color32::from_rgb(80, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
+        ui.add(egui::Label::new(RichText::new(msg).size(11.0).color(color)).wrap());
+    }
+}
+
 fn badge(ui: &mut Ui, t: &Tokens, role: &str, col_name: &str) {
     let text = format!("{role}: {col_name}");
     let galley = ui.painter().layout_no_wrap(text, egui::FontId::proportional(10.0), t.text_strong);
@@ -307,13 +446,142 @@ fn badge(ui: &mut Ui, t: &Tokens, role: &str, col_name: &str) {
 // CSV File Ingestion (RFC 4180 parsing with quotes and delimiter sniffing)
 // ---------------------------------------------------------------------------
 
-pub fn parse_csv_content(text: &str) -> Vec<Vec<String>> {
-    let delim = if text.contains('\t') && !text.contains(',') { '\t' } else if text.contains(';') && !text.contains(',') { ';' } else { ',' };
+pub fn delimiter_name(delim: char) -> &'static str {
+    match delim {
+        ';' => "semicolon ';'",
+        '\t' => "tab '\\t'",
+        '|' => "pipe '|'",
+        _ => "comma ','",
+    }
+}
+
+/// Sniff candidate delimiter (',', ';', '\t', '|') using quotation-aware row sampling,
+/// frequency analysis, and header consistency heuristics.
+pub fn detect_delimiter(text: &str) -> char {
+    let clean = text.strip_prefix('\u{FEFF}').unwrap_or(text);
+    if clean.trim().is_empty() {
+        return ',';
+    }
+
+    const CANDIDATES: [char; 4] = [',', ';', '\t', '|'];
+    const MAX_SAMPLED_ROWS: usize = 50;
+
+    let mut rows_counts: Vec<[usize; 4]> = Vec::new();
+    let mut current_counts = [0usize; 4];
+    let mut in_quotes = false;
+    let mut row_has_content = false;
+
+    let mut chars = clean.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' => {
+                if in_quotes && chars.peek() == Some(&'"') {
+                    chars.next(); // escaped quote
+                } else {
+                    in_quotes = !in_quotes;
+                }
+                row_has_content = true;
+            }
+            '\n' if !in_quotes => {
+                if row_has_content {
+                    rows_counts.push(current_counts);
+                    current_counts = [0usize; 4];
+                    row_has_content = false;
+                    if rows_counts.len() >= MAX_SAMPLED_ROWS {
+                        break;
+                    }
+                }
+            }
+            '\r' if !in_quotes => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                if row_has_content {
+                    rows_counts.push(current_counts);
+                    current_counts = [0usize; 4];
+                    row_has_content = false;
+                    if rows_counts.len() >= MAX_SAMPLED_ROWS {
+                        break;
+                    }
+                }
+            }
+            c if !in_quotes => {
+                if let Some(idx) = CANDIDATES.iter().position(|&cand| cand == c) {
+                    if let Some(slot) = current_counts.get_mut(idx) {
+                        *slot += 1;
+                    }
+                    row_has_content = true;
+                } else if !c.is_whitespace() {
+                    row_has_content = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if row_has_content && rows_counts.len() < MAX_SAMPLED_ROWS {
+        rows_counts.push(current_counts);
+    }
+
+    if rows_counts.is_empty() {
+        return ',';
+    }
+
+    let num_rows = rows_counts.len();
+    let mut best_cand = ',';
+    let mut best_score = 0.0f64;
+
+    for (idx, &cand) in CANDIDATES.iter().enumerate() {
+        let counts: Vec<usize> = rows_counts.iter().map(|r| r.get(idx).copied().unwrap_or(0)).collect();
+        if counts.iter().all(|&c| c == 0) {
+            continue;
+        }
+
+        // Count frequencies of each non-zero count
+        let mut freq_map: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+        for &c in &counts {
+            if c > 0 {
+                *freq_map.entry(c).or_insert(0usize) += 1;
+            }
+        }
+
+        let Some((&mode_val, &mode_freq)) = freq_map.iter().max_by_key(|(_val, freq)| *freq) else {
+            continue;
+        };
+
+        let consistency = if num_rows > 0 { mode_freq as f64 / num_rows as f64 } else { 0.0 };
+        let header_count = counts.first().copied().unwrap_or(0);
+        let header_bonus = if header_count == mode_val {
+            2.0
+        } else if header_count > 0 {
+            1.0
+        } else {
+            0.05
+        };
+
+        let non_zero_rows = counts.iter().filter(|&&c| c > 0).count();
+        let non_zero_ratio = if num_rows > 0 { non_zero_rows as f64 / num_rows as f64 } else { 0.0 };
+        let field_factor = (mode_val as f64).min(10.0);
+
+        let score = consistency * consistency * header_bonus * non_zero_ratio * (field_factor + 1.0);
+
+        if score > best_score + 1e-6 {
+            best_score = score;
+            best_cand = cand;
+        }
+    }
+
+    best_cand
+}
+
+/// Parse delimited tabular data conforming to RFC 4180 with the specified delimiter.
+pub fn parse_csv_content_with_delim(text: &str, delim: char) -> Vec<Vec<String>> {
+    let clean = text.strip_prefix('\u{FEFF}').unwrap_or(text);
     let mut rows: Vec<Vec<String>> = Vec::new();
     let mut row: Vec<String> = Vec::new();
     let mut field = String::new();
     let mut in_quotes = false;
-    let mut chars = text.chars().peekable();
+    let mut chars = clean.chars().peekable();
 
     while let Some(ch) = chars.next() {
         match ch {
@@ -361,13 +629,20 @@ pub fn parse_csv_content(text: &str) -> Vec<Vec<String>> {
     rows
 }
 
+pub fn parse_csv_content(text: &str) -> Vec<Vec<String>> {
+    let delim = detect_delimiter(text);
+    parse_csv_content_with_delim(text, delim)
+}
+
 fn load_card1_csv(st: &mut PubgenState, path: &str) {
     st.card1_path = path.to_string();
     let Ok(content) = std::fs::read_to_string(path) else {
         st.card1_status = Some((format!("Cannot read file: {path}"), false));
         return;
     };
-    let mut rows = parse_csv_content(&content);
+    let delim = detect_delimiter(&content);
+    st.card1_delim = Some(delim);
+    let mut rows = parse_csv_content_with_delim(&content, delim);
     if rows.is_empty() {
         st.card1_status = Some(("File is empty".into(), false));
         return;
@@ -379,7 +654,7 @@ fn load_card1_csv(st: &mut PubgenState, path: &str) {
     // Detect column indexes case-insensitively
     let find_col = |patterns: &[&str], fallback: usize| -> usize {
         for (i, h) in headers.iter().enumerate() {
-            let lower = h.to_lowercase();
+            let lower = h.trim().to_lowercase();
             if patterns.iter().any(|p| lower.contains(p)) {
                 return i;
             }
@@ -392,7 +667,8 @@ fn load_card1_csv(st: &mut PubgenState, path: &str) {
     st.card1_title_col = find_col(&["title", "name", "headline", "chapter"], 2);
 
     st.card1_range_to = st.card1_records.len();
-    st.card1_status = Some((format!("Loaded {} records", st.card1_records.len()), true));
+    let delim_name = delimiter_name(delim);
+    st.card1_status = Some((format!("Loaded {} records (delimiter: {delim_name})", st.card1_records.len()), true));
 }
 
 fn load_card2_csv(st: &mut PubgenState, path: &str) {
@@ -401,7 +677,9 @@ fn load_card2_csv(st: &mut PubgenState, path: &str) {
         st.card2_status = Some((format!("Cannot read file: {path}"), false));
         return;
     };
-    let rows = parse_csv_content(&content);
+    let delim = detect_delimiter(&content);
+    st.card2_delim = Some(delim);
+    let rows = parse_csv_content_with_delim(&content, delim);
     if rows.is_empty() {
         st.card2_status = Some(("File is empty".into(), false));
         return;
@@ -409,7 +687,8 @@ fn load_card2_csv(st: &mut PubgenState, path: &str) {
     st.card2_matrix = rows;
     let r = st.card2_matrix.len();
     let c = st.card2_matrix.first().map(Vec::len).unwrap_or(0);
-    st.card2_status = Some((format!("Loaded {r} rows × {c} columns"), true));
+    let delim_name = delimiter_name(delim);
+    st.card2_status = Some((format!("Loaded {r} rows × {c} columns (delimiter: {delim_name})"), true));
 }
 
 /// Detect if the last row of the tabular CSV only contains data in the first column
@@ -430,6 +709,62 @@ pub fn detect_footnote_row(matrix: &[Vec<String>]) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Check if a cell starts with one of the summary/break keywords:
+/// Jumlah, Tahun, Kab, Kabupaten, Kec, Kecamatan (or Total).
+pub fn matches_pubgen_row_condition(text: &str) -> bool {
+    let trimmed = text
+        .trim()
+        .trim_start_matches(|c: char| c == '*' || c == '-' || c == '•' || c == '–' || c == '—')
+        .trim();
+    let lower = trimmed.to_lowercase();
+    if lower.is_empty() {
+        return false;
+    }
+
+    let match_word = |prefix: &str| -> bool {
+        if lower == prefix {
+            return true;
+        }
+        if let Some(rest) = lower.strip_prefix(prefix) {
+            if let Some(first_ch) = rest.chars().next() {
+                first_ch.is_whitespace() || matches!(first_ch, '.' | '/' | '-' | ':' | '(' | '[' | '–' | '—')
+            } else {
+                true
+            }
+        } else {
+            false
+        }
+    };
+
+    match_word("jumlah")
+        || match_word("tahun")
+        || match_word("kabupaten")
+        || match_word("kab")
+        || match_word("kecamatan")
+        || match_word("kec")
+        || match_word("total")
+}
+
+pub fn is_index_or_empty(text: &str) -> bool {
+    let t = text.trim();
+    t.is_empty()
+        || t.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | ')' | '(' | '-' | '#'))
+}
+
+/// Detect row indices (0-based relative to matrix) matching the summary/break keyword condition.
+pub fn detect_condition_rows(matrix: &[Vec<String>], first_row_header: bool) -> Vec<usize> {
+    let start_idx = if first_row_header { 1 } else { 0 };
+    let mut matching = Vec::new();
+    for (i, row) in matrix.iter().enumerate().skip(start_idx) {
+        let col0 = row.first().map(String::as_str).unwrap_or("");
+        let col1 = row.get(1).map(String::as_str).unwrap_or("");
+        if matches_pubgen_row_condition(col0) || (is_index_or_empty(col0) && matches_pubgen_row_condition(col1)) {
+            matching.push(i);
+        }
+    }
+    matching
 }
 
 /// Estimate single-line text advance width in points (based on standard 12pt proportional font).
@@ -1281,6 +1616,51 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
                         }
                     }
 
+                    // Row formatting conditions: if col 1 starts with Jumlah, Tahun, Kab, Kabupaten, Kec, Kecamatan
+                    if st.card2_row_conditions {
+                        let data_start = if header_rows > 0 {
+                            if st.card2_col_numbers { header_rows + 1 } else { header_rows }
+                        } else if st.card2_col_numbers {
+                            1
+                        } else {
+                            0
+                        };
+
+                        for r in data_start..nr {
+                            let matches = {
+                                let col0 = table.cell(r, 0).map(|c| c.text.text.as_str()).unwrap_or("");
+                                let col1 = table.cell(r, 1).map(|c| c.text.text.as_str()).unwrap_or("");
+                                matches_pubgen_row_condition(col0)
+                                    || (is_index_or_empty(col0) && matches_pubgen_row_condition(col1))
+                            };
+
+                            if matches {
+                                for c in 0..nc {
+                                    // Top border
+                                    if let Some(cell) = table.cell_mut(r, c) {
+                                        cell.strokes[0] = rule_thin.clone();
+                                    }
+                                    if r > 0 {
+                                        if let Some(cell) = table.cell_mut(r - 1, c) {
+                                            cell.strokes[2] = rule_thin.clone();
+                                        }
+                                    }
+                                    // Bottom border
+                                    if r + 1 < nr {
+                                        if let Some(cell) = table.cell_mut(r, c) {
+                                            cell.strokes[2] = rule_thin.clone();
+                                        }
+                                        if let Some(cell) = table.cell_mut(r + 1, c) {
+                                            cell.strokes[0] = rule_thin.clone();
+                                        }
+                                    } else if let Some(cell) = table.cell_mut(r, c) {
+                                        cell.strokes[2] = rule_thick.clone();
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Bottom of table rule
                     let last_row = nr.saturating_sub(1);
                     for c in 0..nc {
@@ -1381,6 +1761,72 @@ mod tests {
         assert_eq!(rows2.len(), 2);
         assert_eq!(rows2[0], vec!["ColA", "ColB"]);
         assert_eq!(rows2[1], vec!["ValA", "ValB"]);
+    }
+
+    #[test]
+    fn test_detect_delimiter_semicolon_with_commas_in_data() {
+        let content = "type;number;title\n\
+                       Tabel;01.01.;Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006\n\
+                       Tabel;01.02.;Keadaan Curah Hujan Tiap Bulan menurut Kecamatan (mm), 2006\n";
+        assert_eq!(detect_delimiter(content), ';');
+        let rows = parse_csv_content(content);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0], vec!["type", "number", "title"]);
+        assert_eq!(rows[1], vec!["Tabel", "01.01.", "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006"]);
+        assert_eq!(rows[2], vec!["Tabel", "01.02.", "Keadaan Curah Hujan Tiap Bulan menurut Kecamatan (mm), 2006"]);
+    }
+
+    #[test]
+    fn test_detect_delimiter_various_formats() {
+        // Comma with quotes containing semicolon
+        let csv_with_semi = "id,name,tags\n1,Alice,\"tag1;tag2\"\n2,Bob,\"tag3\"\n";
+        assert_eq!(detect_delimiter(csv_with_semi), ',');
+        let r1 = parse_csv_content(csv_with_semi);
+        assert_eq!(r1[1], vec!["1", "Alice", "tag1;tag2"]);
+
+        // Tab with commas in values
+        let tsv_with_commas = "item\tdesc\tprice\npen\tblue, 0.5mm\t$1.50\n";
+        assert_eq!(detect_delimiter(tsv_with_commas), '\t');
+
+        // Pipe delimited
+        let pipe = "ColA | ColB | ColC\nVal1 | Val2 | Val3\n";
+        assert_eq!(detect_delimiter(pipe), '|');
+
+        // Single line
+        assert_eq!(detect_delimiter("type;number;title"), ';');
+        assert_eq!(detect_delimiter("type,number,title"), ',');
+        assert_eq!(detect_delimiter("type\tnumber\ttitle"), '\t');
+        assert_eq!(detect_delimiter("type|number|title"), '|');
+
+        // UTF-8 BOM
+        let with_bom = "\u{FEFF}type;number;title\nTabel;01;Judul\n";
+        assert_eq!(detect_delimiter(with_bom), ';');
+        let rows_bom = parse_csv_content(with_bom);
+        assert_eq!(rows_bom[0], vec!["type", "number", "title"]);
+    }
+
+    #[test]
+    fn test_load_kbda_sample_file_with_semicolon() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plan/pubgen/samples/KBDA2026_chapters.csv");
+        let mut st1 = PubgenState::default();
+        load_card1_csv(&mut st1, path);
+
+        assert_eq!(st1.card1_delim, Some(';'));
+        assert_eq!(st1.card1_headers, vec!["type", "number", "title"]);
+        assert_eq!(st1.card1_type_col, 0);
+        assert_eq!(st1.card1_num_col, 1);
+        assert_eq!(st1.card1_title_col, 2);
+        assert_eq!(st1.card1_records.len(), 194);
+        assert_eq!(
+            st1.card1_records[0],
+            vec!["Tabel", "01.01.", "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006"]
+        );
+
+        let mut st2 = PubgenState::default();
+        load_card2_csv(&mut st2, path);
+        assert_eq!(st2.card2_delim, Some(';'));
+        assert_eq!(st2.card2_matrix.len(), 195); // 1 header + 194 data
+        assert_eq!(st2.card2_matrix[0], vec!["type", "number", "title"]);
     }
 
     #[test]
@@ -2281,5 +2727,193 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_matches_pubgen_row_condition_keywords() {
+        assert!(matches_pubgen_row_condition("Jumlah"));
+        assert!(matches_pubgen_row_condition("JUMLAH / TOTAL"));
+        assert!(matches_pubgen_row_condition("Jumlah:"));
+        assert!(matches_pubgen_row_condition("Tahun 2005"));
+        assert!(matches_pubgen_row_condition("TAHUN"));
+        assert!(matches_pubgen_row_condition("Kab. Karawang"));
+        assert!(matches_pubgen_row_condition("Kabupaten Karawang"));
+        assert!(matches_pubgen_row_condition("Kec. Klari"));
+        assert!(matches_pubgen_row_condition("Kecamatan Klari"));
+        assert!(matches_pubgen_row_condition("- Jumlah Subtotal"));
+        assert!(matches_pubgen_row_condition("Total"));
+
+        // Negative tests
+        assert!(!matches_pubgen_row_condition("Kabel Listrik"));
+        assert!(!matches_pubgen_row_condition("Kecap"));
+        assert!(!matches_pubgen_row_condition("Tahunan"));
+        assert!(!matches_pubgen_row_condition("Meninggal Dunia"));
+        assert!(!matches_pubgen_row_condition(""));
+    }
+
+    #[test]
+    fn test_execute_insert_table_row_conditions_kbda_2005() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card2_first_row_header: true,
+            card2_col_numbers: false,
+            card2_table_footer: false, // Notice table_footer is FALSE, row condition formats it!
+            card2_row_conditions: true,
+            card2_placement: 1, // New frame
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+
+        let content = "\
+Keadaan Korban (Condition of Victims);Persentase 2005 (%);Korban 2005 (Orang);Persentase 2006 (%);Korban 2006 (Orang)
+Meninggal Dunia (Died);8,96;10;42,54;77
+Luka Berat (Badly Injured);28,89;33;34,81;63
+Luka Ringan (Slightly Injured);62,15;70;22,65;41
+JUMLAH / TOTAL;100,00;113;100,00;181";
+        st.card2_delim = Some(detect_delimiter(content));
+        st.card2_matrix = parse_csv_content(content);
+        assert_eq!(st.card2_matrix.len(), 5);
+        assert_eq!(st.card2_delim, Some(';'));
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "insert_table with kbda_2005.csv should succeed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+
+        let table_item = spread.items.iter().find(|it| {
+            it.text_frame()
+                .and_then(|tf| active.doc.story(tf.story))
+                .is_some_and(|s| !s.tables.is_empty())
+        }).expect("Table item should exist on spread");
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().expect("Table should exist in story");
+
+        assert_eq!(table.rows.len(), 5);
+        assert_eq!(table.columns.len(), 5);
+
+        // Row 0: Header
+        assert_eq!(table.cell(0, 0).unwrap().strokes[0].weight, 1.0, "Top of table rule 1.0pt");
+        assert_eq!(table.cell(0, 0).unwrap().strokes[2].weight, 0.5, "Header bottom rule 0.5pt");
+
+        // Row 1: Data row 1 ("Meninggal Dunia")
+        assert_eq!(table.cell(1, 0).unwrap().strokes[0].weight, 0.5);
+        assert_eq!(table.cell(1, 0).unwrap().strokes[2].weight, 0.0, "Interior data row unbordered");
+
+        // Row 2: Data row 2 ("Luka Berat")
+        assert_eq!(table.cell(2, 0).unwrap().strokes[0].weight, 0.0);
+        assert_eq!(table.cell(2, 0).unwrap().strokes[2].weight, 0.0);
+
+        // Row 3: Data row 3 ("Luka Ringan")
+        assert_eq!(table.cell(3, 0).unwrap().strokes[0].weight, 0.0);
+        // Bottom of Row 3 is top of Row 4 (0.5pt)!
+        assert_eq!(table.cell(3, 0).unwrap().strokes[2].weight, 0.5);
+
+        // Row 4: JUMLAH / TOTAL
+        assert_eq!(table.cell(4, 0).unwrap().text.text.trim(), "JUMLAH / TOTAL");
+        assert_eq!(table.cell(4, 0).unwrap().strokes[0].weight, 0.5, "Row 4 top border 0.5pt");
+        assert_eq!(table.cell(4, 0).unwrap().strokes[2].weight, 1.0, "Row 4 bottom border 1.0pt (bottom of table)");
+    }
+
+    #[test]
+    fn test_execute_insert_table_intermediate_condition_rows() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Kategori".into(), "Jumlah Kasus".into()],
+                vec!["Tahun 2005".into(), "100".into()], // Condition row 1 (intermediate)
+                vec!["Penyakit A".into(), "40".into()],
+                vec!["Penyakit B".into(), "60".into()],
+                vec!["Jumlah Subtotal".into(), "100".into()], // Condition row 2 (intermediate)
+                vec!["Tahun 2006".into(), "150".into()], // Condition row 3 (intermediate)
+                vec!["Penyakit A".into(), "70".into()],
+                vec!["Jumlah Total".into(), "250".into()], // Condition row 4 (last row)
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: false,
+            card2_table_footer: false,
+            card2_row_conditions: true,
+            card2_placement: 1,
+            card2_style: 3, // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok());
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item = spread.items.iter().find(|it| {
+            it.text_frame()
+                .and_then(|tf| active.doc.story(tf.story))
+                .is_some_and(|s| !s.tables.is_empty())
+        }).unwrap();
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        assert_eq!(table.rows.len(), 8);
+
+        // Row 1: "Tahun 2005" (intermediate condition row)
+        assert_eq!(table.cell(1, 0).unwrap().strokes[0].weight, 0.5);
+        assert_eq!(table.cell(1, 0).unwrap().strokes[2].weight, 0.5);
+
+        // Row 2: "Penyakit A" (normal data row)
+        assert_eq!(table.cell(2, 0).unwrap().strokes[0].weight, 0.5); // from row 1 bottom
+        assert_eq!(table.cell(2, 0).unwrap().strokes[2].weight, 0.0); // unbordered
+
+        // Row 4: "Jumlah Subtotal" (intermediate condition row)
+        assert_eq!(table.cell(4, 0).unwrap().strokes[0].weight, 0.5);
+        assert_eq!(table.cell(4, 0).unwrap().strokes[2].weight, 0.5);
+
+        // Row 7: "Jumlah Total" (last row)
+        assert_eq!(table.cell(7, 0).unwrap().strokes[0].weight, 0.5);
+        assert_eq!(table.cell(7, 0).unwrap().strokes[2].weight, 1.0);
+    }
+
+    #[test]
+    fn test_quick_actions_switch_facing_pages() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // New document defaults to facing pages (Double-sided)
+        let initial_facing = app.session.active().unwrap().doc.settings.facing_pages;
+        assert!(initial_facing, "New document should default to facing pages (Double-sided)");
+
+        // Switch to Single-sided
+        app.run("layout.documentSetup", json!({"facingPages": false})).unwrap();
+        let single_facing = app.session.active().unwrap().doc.settings.facing_pages;
+        assert!(!single_facing, "Document should now be Single-sided");
+
+        // Switch back to Double-sided
+        app.run("layout.documentSetup", json!({"facingPages": true})).unwrap();
+        let double_facing = app.session.active().unwrap().doc.settings.facing_pages;
+        assert!(double_facing, "Document should be back to Double-sided");
+    }
+
+    #[test]
+    fn test_quick_actions_insert_blank_page() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let initial_count = app.session.active().unwrap().doc.page_count();
+        assert_eq!(initial_count, 1);
+
+        // Insert blank page after page 0 (Page 1)
+        app.run("layout.pages.insert", json!({"after": 0, "count": 1})).unwrap();
+
+        let updated_count = app.session.active().unwrap().doc.page_count();
+        assert_eq!(updated_count, 2);
+
+        // Insert another page after page 0
+        app.run("layout.pages.insert", json!({"after": 0, "count": 1})).unwrap();
+        assert_eq!(app.session.active().unwrap().doc.page_count(), 3);
     }
 }

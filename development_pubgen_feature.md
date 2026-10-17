@@ -153,11 +153,123 @@ git push origin feature/pubgen
 
 ---
 
-## 4. Quick Reference Checklist
+## 4. Generating Portable Windows x64 Demo (`.exe` & `.zip`)
+
+This workflow packages a self-contained, portable Windows x64 demonstration build that can be run from any folder, USB drive, or virtual machine without installation or administrator privileges.
+
+### Why This Build is Portable
+- **Static C Runtime (`+crt-static`)**: Binaries link the Microsoft C Runtime statically. Users do not need the Visual C++ Redistributable installed.
+- **Local Isolation Marker (`portable.txt`)**: When `portable.txt` sits next to `designcraft.exe`, DesignCraft automatically creates and keeps all configuration, logs, and crash recovery in `.\DesignCraftData\` rather than writing to `%APPDATA%\DesignCraft`.
+- **Pure GUI Subsystem**: `designcraft.exe` is linked with PE subsystem 2 (Windows GUI), so no console window flashes or stays open when launched.
+- **Embedded Icon & Version Metadata**: Icons and version information are compiled directly into the binary.
+
+---
+
+### Step-by-Step Packaging Procedure
+
+Open PowerShell in the repository root (`f:\GitHub\designcraft`):
+
+#### Step 1: Compile Release Binaries with Static CRT
+Set the target rustflags to statically link the CRT, then compile in optimized `--release` mode with the `pubgen` feature:
+```powershell
+$env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = "-C target-feature=+crt-static"
+cargo build --release -p designcraft -p designcraft-cli --features designcraft/pubgen --target x86_64-pc-windows-msvc
+```
+
+#### Step 2: Prepare the Portable Directory Structure
+```powershell
+$DistDir = "dist\designcraft-portable-x64"
+if (Test-Path $DistDir) { Remove-Item -Recurse -Force $DistDir }
+New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "samples") | Out-Null
+```
+
+#### Step 3: Copy Binaries and Assets
+```powershell
+# Copy GUI and CLI executables
+Copy-Item "target\x86_64-pc-windows-msvc\release\designcraft.exe" $DistDir
+Copy-Item "target\x86_64-pc-windows-msvc\release\designcraft-cli.exe" $DistDir
+
+# Copy sample CSV datasets for demonstration
+Copy-Item "plan\pubgen\samples\*.csv" (Join-Path $DistDir "samples")
+```
+
+#### Step 4: Create the `portable.txt` Marker
+```powershell
+Set-Content -Encoding ascii -Path (Join-Path $DistDir "portable.txt") -Value @"
+DesignCraft portable: preferences, logs and crash recovery are kept in the DesignCraftData folder
+next to designcraft.exe. Delete this file to use %APPDATA%\DesignCraft instead.
+"@
+```
+
+#### Step 5: Add a User Guide (`README-PORTABLE.txt`)
+```powershell
+Set-Content -Encoding utf8 -Path (Join-Path $DistDir "README-PORTABLE.txt") -Value @"
+========================================================================
+DesignCraft - Standalone Portable Demo (Windows x64)
+========================================================================
+
+HOW TO RUN:
+Double-click designcraft.exe to start the app.
+
+TESTING PUBGEN:
+1. File > New Document (Ctrl+N) > Create.
+2. Open the 'Pubgen' tab in the right dock panel.
+3. Test 'Page from CSV' with samples\KBDA2026_chapters.csv.
+4. Test 'Table from CSV' with samples\kbda_2005.csv (Style: Horizontal Rules).
+5. Test 'Quick Actions' to switch Double-sided / Single-sided or add blank pages.
+========================================================================
+"@
+```
+
+#### Step 6: Create the Portable ZIP Archive
+```powershell
+$ZipPath = "dist\designcraft-portable-x64.zip"
+if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
+Compress-Archive -Path "$DistDir\*" -DestinationPath $ZipPath
+```
+
+---
+
+### Automated One-Shot Script
+
+To run all packaging steps in a single automated command:
+```powershell
+powershell -Command "
+`$ErrorActionPreference = 'Stop'
+`$DistDir = 'dist\designcraft-portable-x64'
+`$ZipPath = 'dist\designcraft-portable-x64.zip'
+
+Write-Host '==> 1. Building release binaries (static CRT)...'
+`$env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = '-C target-feature=+crt-static'
+cargo build --release -p designcraft -p designcraft-cli --features designcraft/pubgen --target x86_64-pc-windows-msvc
+
+Write-Host '==> 2. Assembling portable folder...'
+Remove-Item -Recurse -Force `$DistDir -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path (Join-Path `$DistDir 'samples') | Out-Null
+Copy-Item 'target\x86_64-pc-windows-msvc\release\designcraft.exe' `$DistDir
+Copy-Item 'target\x86_64-pc-windows-msvc\release\designcraft-cli.exe' `$DistDir
+Copy-Item 'plan\pubgen\samples\*.csv' (Join-Path `$DistDir 'samples')
+
+Set-Content -Encoding ascii -Path (Join-Path `$DistDir 'portable.txt') -Value 'DesignCraft portable: preferences, logs and crash recovery are kept in the DesignCraftData folder next to designcraft.exe.'
+
+Write-Host '==> 3. Creating portable zip...'
+Remove-Item -Force `$ZipPath -ErrorAction SilentlyContinue
+Compress-Archive -Path `"`$DistDir\*`" -DestinationPath `$ZipPath
+
+Write-Host '==> Finished packaging:'
+Get-Item (Join-Path `$DistDir 'designcraft.exe'), `$ZipPath | Format-Table Name, Length, LastWriteTime
+"
+```
+
+---
+
+## 5. Quick Reference Checklist
 
 | Action | Command |
 | :--- | :--- |
 | **Check dock drift** | `cargo xtask diff-dock` |
 | **Run Pubgen tests** | `cargo test -p designcraft-ui-egui --features pubgen -- pubgen` |
-| **Run app with Pubgen** | `cargo run -p designcraft --features pubgen` |
+| **Run app with Pubgen (Debug)** | `cargo run -p designcraft --features pubgen` |
+| **Build Portable Release (x64)** | `$env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = "-C target-feature=+crt-static"; cargo build --release -p designcraft -p designcraft-cli --features designcraft/pubgen --target x86_64-pc-windows-msvc` |
 | **Verify branch sync** | `git log -n 5 --oneline --graph` |

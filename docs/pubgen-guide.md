@@ -62,6 +62,7 @@ The Table from CSV workflow accepts any valid CSV or TSV tabular file.
   - Columns with fewer levels (e.g. single-level `Item`, `Category`, `Rating`, or 2-level `Price`, `Stock`) automatically merge vertically downward across the remaining header rows with vertical and horizontal centering.
 - **[ ] Add column numbers (1), (2)…**: Inserts an extra row immediately after the table header rows, numbering columns as `(1)`, `(2)`, `(3)`... across all columns (ideal for formal reports, catalogs, and statistical tables).
 - **[ ] Table footer (last row)**: Designates the last row as a table footer (`RowKind::Footer`). When paired with the **Horizontal Rules** style, the footer row automatically receives a 0.5pt thin top border and 1.0pt thick bottom border, creating a publication-quality total / summary row.
+- **[x] Condition rules (Jumlah, Tahun, Kab, Kec…)**: When paired with the **Horizontal Rules** style, rows where column 1 begins with statistical category or subtotal keywords (`Jumlah`, `Tahun`, `Kab`, `Kabupaten`, `Kec`, `Kecamatan`, `Total`) automatically receive top and bottom thin borders (0.5pt), cleanly framing intermediate and terminal summary rows.
 - **Auto-detected Footnotes / Source Notes**: If the last row of the CSV contains text only in the first column with all subsequent columns empty (e.g. `Sources: Karawang Region Government Office,,,,,,` as in `sample_3stack_table.csv`), Pubgen automatically:
   - Excludes the line from the table matrix so grid columns remain clean.
   - Automatically synthesizes a standalone text box positioned directly below the generated table with the footnote/source text.
@@ -80,7 +81,24 @@ The Table from CSV workflow accepts any valid CSV or TSV tabular file.
 
 ---
 
-## 3. Upstream Synchronization & Maintenance
+## 3. Quick Actions
+
+The **Quick Actions** card at the bottom of the Pubgen panel provides handy shortcuts matching the InDesign-style Properties panel workflow:
+
+- **Single-sided / Double-sided Toggle**:
+  - Dynamically detects the current document layout mode.
+  - One-click toggle between **Facing Pages** (Double-sided spreads) and **Single-sided** layouts.
+  - Non-destructively repaginates the document (`layout.documentSetup`) while translating existing text frames and graphics safely.
+- **Add Blank Page**:
+  - Automatically identifies the currently selected page (via canvas view, selection, or Pages tab).
+  - Inserts 1 blank page directly after the selected page via `layout.pages.insert`.
+  - Automatically scrolls the canvas view to the newly inserted page.
+- **Live Metadata Indicator**:
+  - Shows current layout status and selected target page at a glance (e.g. `Mode: Double-sided · Selected: Page 1`).
+
+---
+
+## 4. Upstream Synchronization & Maintenance
 
 Pubgen is isolated from upstream changes via a conditional compilation seam:
 - Upstream `crates/ui-egui/src/dock.rs` remains **100% untouched**.
