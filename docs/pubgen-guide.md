@@ -18,7 +18,7 @@ The Page from CSV workflow reads standard RFC 4180 CSV, semicolon-delimited, or 
 | `number` / `num` / `issue` | Chapter number, page callout, or issue index | `01`, `Chapter 4`, `№ 12` |
 | `title` / `headline` / `name` | Primary headline or article title | `Autonomous Systems in Typography` |
 
-*Note: If specific header names are not found, the parser gracefully falls back to columns 0 (`type`), 1 (`number`), and 2 (`title`).*
+*Note: If specific header names are not found, the parser gracefully falls back to columns 0 (`type`), 1 (`number`), and 2 (`title`). The workflow is strictly restricted to the first 3 columns; any additional columns in the CSV (such as `file`, notes, or metadata) are ignored.*
 
 ### Layout Presets
 Three geometric layout templates calculate frame coordinates dynamically from the active document page margins:
@@ -93,6 +93,18 @@ The **Quick Actions** card at the bottom of the Pubgen panel provides handy shor
   - Automatically identifies the currently selected page (via canvas view, selection, or Pages tab).
   - Inserts 1 blank page directly after the selected page via `layout.pages.insert`.
   - Automatically scrolls the canvas view to the newly inserted page.
+- **Add TOC (selected page)**:
+  - Generates or updates a Table of Contents on the selected page with automatic title early wrapping and deep hanging indent.
+  - Automatically creates continuation pages with threaded text frames when entries exceed 1 page.
+- **Excel to CSV Data**:
+  - Automatically converts a multi-sheet Excel file (`.xlsx`) into:
+    1. **Catalog CSV** (`<workbook>_catalog.csv`): Extracts row 1 of each sheet into `type,number,title,file` (where `file` is the sheet name). Automatically loaded into **Page from CSV** (Card 1).
+    2. **Table CSVs** (`<sheet_name>.csv`): Automatically parses each sheet, detecting merged columns/rows and converting them into stacked publication headers (`Parent--Child`). Automatically loaded into **Table from CSV** (Card 2) with a **Sheet table** dropdown selector to easily switch between sheets (`02_01.csv`, `02_02.csv`, etc.).
+    3. **Combined ZIP Archive** (`<workbook>_csvs.zip`): Automatically packages the catalog CSV and all sheet table CSVs into a ready-to-use ZIP archive saved directly in the destination folder.
+  - **Download CSVs as ZIP…**:
+    - One-click export allowing the user to download / save all generated catalog and table CSV files packaged together in a single `.zip` file at any time.
+    - Uses native OS Save File dialog on desktop and browser download delivery on web.
+  - **Auto-insert table from 'file' column**: In Card 1 (**Page from CSV**), when the catalog contains a `file` column, an option `[x] Auto-insert table from 'file' col (e.g. 02_01.csv)` allows one-click generation of both pages and their corresponding styled tables positioned cleanly below each page title.
 - **Live Metadata Indicator**:
   - Shows current layout status and selected target page at a glance (e.g. `Mode: Double-sided · Selected: Page 1`).
 

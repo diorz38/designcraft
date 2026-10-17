@@ -13,6 +13,9 @@ use crate::DesignApp;
 use crate::theme::Tokens;
 use crate::widgets::{divider, full_width, outline_button, rule, section, selection_band};
 
+#[path = "pubgen_excel.rs"]
+pub mod excel;
+
 const PANEL_ID: &str = "pubgen_panel_state";
 
 fn default_true() -> bool {
@@ -41,6 +44,9 @@ pub struct PubgenState {
     /// "Tabel 01.01. Jarak …" and so does its table-of-contents entry.
     #[serde(default = "default_true")]
     pub card1_toc_prefix: bool,
+    /// Auto-insert table for each generated page from the 4th column (`file`) if available.
+    #[serde(default = "default_true")]
+    pub card1_auto_insert_tables: bool,
     /// Indent wrapped lines of TOC entries (hanging indent) so multi-line entries wrap nicely.
     #[serde(default = "default_true")]
     pub toc_hanging_indent: bool,
@@ -51,6 +57,11 @@ pub struct PubgenState {
     // Card 2: Table from CSV
     pub card2_path: String,
     pub card2_matrix: Vec<Vec<String>>,
+    /// List of available table CSV paths (e.g. from multi-sheet Excel conversion)
+    #[serde(default)]
+    pub card2_sheet_tables: Vec<String>,
+    #[serde(default)]
+    pub card2_sheet_idx: usize,
     pub card2_first_row_header: bool,
     pub card2_col_numbers: bool,
     pub card2_table_footer: bool,
@@ -69,6 +80,16 @@ pub struct PubgenState {
     // Card 1 "TOC Line" preset and Card 3 "Add TOC": the paragraph style that marks TOC entries.
     #[serde(default = "default_toc_style")]
     pub toc_style: String,
+
+    /// Last generated CSV files (filename, content) for ZIP export
+    #[serde(skip)]
+    pub generated_csv_files: Vec<(String, String)>,
+    /// Suggested ZIP filename (e.g. "BAB_02_2025_csvs.zip")
+    #[serde(default)]
+    pub generated_zip_name: String,
+    /// Cached ZIP archive bytes
+    #[serde(skip)]
+    pub generated_zip_bytes: Vec<u8>,
 }
 
 impl Default for PubgenState {
@@ -86,11 +107,14 @@ impl Default for PubgenState {
             card1_range_to: 10,
             card1_append: true,
             card1_toc_prefix: true,
+            card1_auto_insert_tables: true,
             toc_hanging_indent: true,
             card1_status: None,
             card1_delim: None,
             card2_path: String::new(),
             card2_matrix: Vec::new(),
+            card2_sheet_tables: Vec::new(),
+            card2_sheet_idx: 0,
             card2_first_row_header: true,
             card2_col_numbers: false,
             card2_table_footer: false,
@@ -101,6 +125,9 @@ impl Default for PubgenState {
             card2_delim: None,
             card3_status: None,
             toc_style: default_toc_style(),
+            generated_csv_files: Vec::new(),
+            generated_zip_name: String::new(),
+            generated_zip_bytes: Vec::new(),
         }
     }
 }
@@ -183,10 +210,17 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
             if let Some(d) = st.card1_delim {
                 badge(ui, t, "delim", delimiter_name(d));
             }
-            badge(ui, t, "type", st.card1_headers.get(st.card1_type_col).map(String::as_str).unwrap_or("col 0"));
-            badge(ui, t, "number", st.card1_headers.get(st.card1_num_col).map(String::as_str).unwrap_or("col 1"));
-            badge(ui, t, "title", st.card1_headers.get(st.card1_title_col).map(String::as_str).unwrap_or("col 2"));
+            badge(ui, t, "type", st.card1_headers.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("col 0"));
+            badge(ui, t, "number", st.card1_headers.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("col 1"));
+            badge(ui, t, "title", st.card1_headers.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("col 2"));
+            if let Some(f_hdr) = st.card1_headers.get(3) {
+                badge(ui, t, "file", f_hdr);
+            }
         });
+    }
+
+    if st.card1_headers.len() >= 4 || st.card1_records.iter().any(|r| r.len() >= 4) {
+        ui.checkbox(&mut st.card1_auto_insert_tables, "Auto-insert table from 'file' col (e.g. 02_01.csv)");
     }
 
     // Layout Preset Selector
@@ -254,6 +288,42 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
 
 fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     section(ui, crate::i18n::tr(&app.ui.language, "Table from CSV"), true);
+
+    // Sheet table selector (if populated by Excel conversion)
+    if !st.card2_sheet_tables.is_empty() {
+        let mut new_selection = None;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Sheet table:").size(11.0).color(t.text));
+            let cur_name = st
+                .card2_sheet_tables
+                .get(st.card2_sheet_idx)
+                .and_then(|p| std::path::Path::new(p).file_name().map(|n| n.to_string_lossy().to_string()))
+                .unwrap_or_else(|| "Select sheet".into());
+            let combo_w = (ui.available_width() - 4.0).clamp(100.0, 240.0);
+            egui::ComboBox::from_id_salt("pubgen_card2_sheet_selector")
+                .selected_text(cur_name)
+                .width(combo_w)
+                .show_ui(ui, |ui| {
+                    for (idx, p) in st.card2_sheet_tables.iter().enumerate() {
+                        let name = std::path::Path::new(p)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| p.clone());
+                        let is_sel = idx == st.card2_sheet_idx;
+                        if ui.selectable_label(is_sel, name).clicked() {
+                            new_selection = Some(idx);
+                        }
+                    }
+                });
+        });
+        if let Some(idx) = new_selection {
+            if let Some(p) = st.card2_sheet_tables.get(idx).cloned() {
+                st.card2_sheet_idx = idx;
+                st.card2_path = p.clone();
+                load_card2_csv(st, &p);
+            }
+        }
+    }
 
     // File picker row
     ui.horizontal(|ui| {
@@ -458,6 +528,34 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
     let tip_toc = format!("Insert a table of contents on Page {cur_label}");
     if outline_button(ui, add_toc_text, full_width(ui)).on_hover_text(tip_toc).clicked() {
         let res = execute_add_toc(app, st);
+        st.card3_status = Some(match res {
+            Ok(msg) => (msg, true),
+            Err(e) => (e, false),
+        });
+    }
+
+    // Helper: Excel (.xlsx) to CSV Data
+    divider(ui);
+    let tip_excel = "Convert a multi-sheet Excel file (.xlsx) into 1 catalog CSV for Page from CSV + individual table CSVs (with auto-merged headers)";
+    let resp_excel = outline_button(ui, "Excel to CSV Data…", full_width(ui)).on_hover_text(tip_excel);
+    if resp_excel.clicked() {
+        if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge")) {
+            let res = execute_excel_to_csvs(st, &path);
+            st.card3_status = Some(match res {
+                Ok(msg) => (msg, true),
+                Err(e) => (e, false),
+            });
+        }
+    }
+
+    let tip_zip = "Download all generated catalog and table CSVs packaged in a single .zip archive";
+    let zip_label = if !st.generated_zip_name.is_empty() {
+        format!("Download {}…", st.generated_zip_name)
+    } else {
+        "Download CSVs as ZIP…".to_string()
+    };
+    if outline_button(ui, &zip_label, full_width(ui)).on_hover_text(tip_zip).clicked() {
+        let res = execute_download_csv_zip(app, st);
         st.card3_status = Some(match res {
             Ok(msg) => (msg, true),
             Err(e) => (e, false),
@@ -698,15 +796,15 @@ fn load_card1_csv(st: &mut PubgenState, path: &str) {
     st.card1_headers = headers.clone();
     st.card1_records = rows;
 
-    // Detect column indexes case-insensitively
+    // Detect column indexes case-insensitively within the first 3 columns
     let find_col = |patterns: &[&str], fallback: usize| -> usize {
-        for (i, h) in headers.iter().enumerate() {
+        for (i, h) in headers.iter().enumerate().take(3) {
             let lower = h.trim().to_lowercase();
             if patterns.iter().any(|p| lower.contains(p)) {
                 return i;
             }
         }
-        fallback.min(headers.len().saturating_sub(1))
+        fallback.min(headers.len().saturating_sub(1)).min(2)
     };
 
     st.card1_type_col = find_col(&["type", "category", "kicker", "kind"], 0);
@@ -715,7 +813,8 @@ fn load_card1_csv(st: &mut PubgenState, path: &str) {
 
     st.card1_range_to = st.card1_records.len();
     let delim_name = delimiter_name(delim);
-    st.card1_status = Some((format!("Loaded {} records (delimiter: {delim_name})", st.card1_records.len()), true));
+    let file_info = if headers.len() >= 4 { " · 'file' col detected" } else { "" };
+    st.card1_status = Some((format!("Loaded {} records (delimiter: {delim_name}){file_info}", st.card1_records.len()), true));
 }
 
 fn load_card2_csv(st: &mut PubgenState, path: &str) {
@@ -867,6 +966,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 
     let slice = st.card1_records.get(start_idx..end_idx).ok_or("Invalid range")?;
     let mut generated_count = 0usize;
+    let mut inserted_tables_count = 0usize;
 
     // Every preset tags its title (or the combined TOC line) with the TOC paragraph style, so the
     // Quick Actions "Add TOC" lists one entry per generated page.
@@ -886,13 +986,9 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             (page.margin_rect(), sp_idx)
         };
 
-        let type_val = row.get(st.card1_type_col).map(String::as_str).unwrap_or("").trim();
-        let num_val = row.get(st.card1_num_col).map(String::as_str).unwrap_or("").trim();
-        let title_val = row.get(st.card1_title_col).map(String::as_str).unwrap_or("").trim();
-
-        // The tagged paragraph's text: "type number title" when prefixed, else the title.
-        let combined = [type_val, num_val, title_val].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
-        let title_text = if st.card1_toc_prefix && !combined.is_empty() { combined.as_str() } else { title_val };
+        let type_val = row.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("").trim();
+        let num_val = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
+        let title_val = row.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("").trim();
 
         // 3. Compute Frame Geometry per Preset
         match st.card1_preset {
@@ -940,7 +1036,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     );
                 }
                 if !title_val.is_empty() {
-                    frame_with_style(app, spread_idx, [c3_x0, row_y0, c3_x1, row_y1], title_text, &st.toc_style);
+                    frame_with_style(app, spread_idx, [c3_x0, row_y0, c3_x1, row_y1], title_val, &st.toc_style);
                 }
             }
             2 => {
@@ -970,7 +1066,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     );
                 }
                 if !title_val.is_empty() {
-                    frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 112.0, margin.x1, margin.y0 + 220.0], title_text, &st.toc_style);
+                    frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 112.0, margin.x1, margin.y0 + 220.0], title_val, &st.toc_style);
                 }
             }
             3 => {
@@ -1012,7 +1108,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 }
                 // Title
                 if !title_val.is_empty() {
-                    frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 40.0, margin.x1 - 90.0, margin.y0 + 110.0], title_text, &st.toc_style);
+                    frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 40.0, margin.x1 - 90.0, margin.y0 + 110.0], title_val, &st.toc_style);
                 }
             }
             4 => {
@@ -1030,7 +1126,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     );
                 }
                 if !title_val.is_empty() {
-                    frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 120.0, margin.x1, margin.y0 + 200.0], title_text, &st.toc_style);
+                    frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 120.0, margin.x1, margin.y0 + 200.0], title_val, &st.toc_style);
                 }
             }
             5 => {
@@ -1100,14 +1196,51 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     let max_x1 = (margin.x1 - end_space).max(c3_x0 + 40.0);
                     let c3_x1 = max_x1.min(margin.x1);
 
-                    frame_with_style(app, spread_idx, [c3_x0, row_y0, c3_x1, row_y1], title_text, &st.toc_style);
+                    frame_with_style(app, spread_idx, [c3_x0, row_y0, c3_x1, row_y1], title_val, &st.toc_style);
+                }
+            }
+        }
+        // Auto-insert table from 'file' column if enabled
+        if st.card1_auto_insert_tables {
+            if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                let catalog_p = std::path::Path::new(&st.card1_path);
+                let dir = catalog_p.parent().unwrap_or(std::path::Path::new("."));
+                let candidate1 = dir.join(file_str);
+                let candidate2 = dir.join(format!("{file_str}.csv"));
+                let candidate3 = dir.join(format!("{}.csv", excel::sanitize_filename(file_str)));
+                let resolved = if candidate1.exists() && candidate1.is_file() {
+                    Some(candidate1)
+                } else if candidate2.exists() && candidate2.is_file() {
+                    Some(candidate2)
+                } else if candidate3.exists() && candidate3.is_file() {
+                    Some(candidate3)
+                } else {
+                    None
+                };
+
+                if let Some(tbl_file) = resolved {
+                    if let Ok(content) = std::fs::read_to_string(&tbl_file) {
+                        let delim = detect_delimiter(&content);
+                        let tbl_matrix = parse_csv_content_with_delim(&content, delim);
+                        if !tbl_matrix.is_empty() {
+                            let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
+                            if execute_insert_table_matrix(app, st, Some(&tbl_matrix), Some(cur_page_idx)).is_ok() {
+                                inserted_tables_count = inserted_tables_count.saturating_add(1);
+                            }
+                        }
+                    }
                 }
             }
         }
         generated_count = generated_count.saturating_add(1);
     }
 
-    Ok(format!("Successfully generated {generated_count} pages!"))
+    let tbl_msg = if inserted_tables_count > 0 {
+        format!(" (with {inserted_tables_count} tables auto-inserted)")
+    } else {
+        String::new()
+    };
+    Ok(format!("Successfully generated {generated_count} pages{tbl_msg}!"))
 }
 
 /// Target page index (0-based absolute index):
@@ -1168,14 +1301,24 @@ fn toc_entry_count(app: &mut DesignApp, style: &str) -> usize {
         .unwrap_or(0)
 }
 
-fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
-    if st.card2_matrix.is_empty() {
+pub fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
+    execute_insert_table_matrix(app, st, None, None)
+}
+
+pub fn execute_insert_table_matrix(
+    app: &mut DesignApp,
+    st: &PubgenState,
+    matrix_override: Option<&[Vec<String>]>,
+    target_page_override: Option<usize>,
+) -> Result<String, String> {
+    let source_matrix = matrix_override.unwrap_or(&st.card2_matrix);
+    if source_matrix.is_empty() {
         return Err("No tabular data to insert".into());
     }
 
     // Detect and extract trailing footnote/source row(s) (where only first col has data and rest of cols are empty)
     let mut footnotes = Vec::new();
-    let mut matrix = st.card2_matrix.clone();
+    let mut matrix = source_matrix.to_vec();
     let cols_count = matrix.iter().map(Vec::len).max().unwrap_or(0);
     if cols_count > 1 {
         while matrix.len() > 1 {
@@ -1335,11 +1478,14 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
     let active = app.session.active().ok_or("No active document")?;
     let has_caret = active.selection.text.is_some();
 
-    if st.card2_placement == 0 && !has_caret {
+    let cur_page = target_page_override.unwrap_or_else(|| target_page_index(app));
+    let effective_placement = if target_page_override.is_some() { 2 } else { st.card2_placement };
+
+    if effective_placement == 0 && !has_caret {
         return Err("No active text insertion point. Select a text frame or choose 'New frame' / 'At page'.".into());
     }
 
-    let (story_id, target_page_info, created_frame_info, fn_target) = match st.card2_placement {
+    let (story_id, target_page_info, created_frame_info, fn_target) = match effective_placement {
         0 => {
             // At cursor
             let story = active.selection.text.map(|t| t.story.0).ok_or("No active story")?;
@@ -1362,7 +1508,6 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
         }
         2 => {
             // At page: place below Generated Page Title on active / selected page
-            let cur_page = target_page_index(app);
             let (spread_idx, page_in_spread) = active.doc.page_loc(cur_page).unwrap_or((0, 0));
             let spread = active.doc.spreads.get(spread_idx).ok_or("Spread missing")?;
             let page = spread.pages.get(page_in_spread).ok_or("Page missing")?;
@@ -1973,9 +2118,9 @@ fn enrich_toc_story(app: &mut DesignApp, sid: designcraft_doc::StoryId, st: &Pub
                 if used_records.get(r_idx).copied().unwrap_or(false) {
                     continue;
                 }
-                let r_type = row.get(st.card1_type_col).map(String::as_str).unwrap_or("").trim();
-                let r_num = row.get(st.card1_num_col).map(String::as_str).unwrap_or("").trim();
-                let r_title = row.get(st.card1_title_col).map(String::as_str).unwrap_or("").trim();
+                let r_type = row.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("").trim();
+                let r_num = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
+                let r_title = row.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("").trim();
 
                 if !r_title.is_empty() && (raw_title == r_title || raw_title.ends_with(r_title)) {
                     matched_record = true;
@@ -2122,8 +2267,8 @@ fn execute_add_toc(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, 
         .card1_records
         .iter()
         .filter_map(|row| {
-            let r_type = row.get(st.card1_type_col).map(String::as_str).unwrap_or("").trim();
-            let r_num = row.get(st.card1_num_col).map(String::as_str).unwrap_or("").trim();
+            let r_type = row.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("").trim();
+            let r_num = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
             let prefix = [r_type, r_num].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
             if prefix.is_empty() {
                 None
@@ -2189,6 +2334,151 @@ fn execute_add_toc(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, 
     };
 
     Ok(format!("Added TOC on Page {cur_label} ({count} entries{cont_msg})"))
+}
+
+pub fn execute_excel_to_csvs(st: &mut PubgenState, path: &str) -> Result<String, String> {
+    let pkg = excel::execute_convert_excel(path)?;
+    // 1. Auto-load generated catalog into Card 1 (Page from CSV)
+    st.card1_path = pkg.catalog_path.clone();
+    load_card1_csv(st, &pkg.catalog_path);
+
+    // 2. Auto-load table CSVs into Card 2 (Table from CSV)
+    st.card2_sheet_tables = pkg.table_paths.clone();
+    st.card2_sheet_idx = 0;
+    if let Some(first_table) = pkg.table_paths.first() {
+        st.card2_path = first_table.clone();
+        load_card2_csv(st, first_table);
+    }
+
+    // 3. Cache ZIP archive metadata and bytes for user download
+    st.generated_csv_files = pkg.csv_files;
+    st.generated_zip_name = pkg.zip_name.clone();
+    st.generated_zip_bytes = pkg.zip_bytes;
+
+    let folder_name = std::path::Path::new(&pkg.parent_dir)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or(pkg.parent_dir);
+    let count = pkg.table_count;
+    let zip_name = pkg.zip_name;
+    Ok(format!("Converted {count} sheets → catalog CSV + {count} table CSVs + {zip_name} in {folder_name} (loaded in Page & Table from CSV)"))
+}
+
+pub fn execute_download_csv_zip(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, String> {
+    // Ensure we have zip bytes in memory
+    if st.generated_zip_bytes.is_empty() {
+        let mut files: Vec<(String, String)> = Vec::new();
+
+        if !st.generated_csv_files.is_empty() {
+            files = st.generated_csv_files.clone();
+        } else {
+            // Check if card1_path exists and can be read
+            if !st.card1_path.is_empty() {
+                let p = std::path::Path::new(&st.card1_path);
+                if p.is_file() {
+                    let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "catalog.csv".into());
+                    if let Ok(content) = std::fs::read_to_string(p) {
+                        files.push((name, content));
+                    }
+                }
+            }
+
+            // Check card2_sheet_tables
+            for tbl_p_str in &st.card2_sheet_tables {
+                let p = std::path::Path::new(tbl_p_str);
+                if p.is_file() {
+                    let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "table.csv".into());
+                    if let Ok(content) = std::fs::read_to_string(p) {
+                        if !files.iter().any(|(n, _)| n == &name) {
+                            files.push((name, content));
+                        }
+                    }
+                }
+            }
+
+            // If card2_path exists and not already included
+            if !st.card2_path.is_empty() {
+                let p = std::path::Path::new(&st.card2_path);
+                if p.is_file() {
+                    let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "table.csv".into());
+                    if !files.iter().any(|(n, _)| n == &name) {
+                        if let Ok(content) = std::fs::read_to_string(p) {
+                            files.push((name, content));
+                        }
+                    }
+                }
+            }
+        }
+
+        if files.is_empty() {
+            // Prompt user to pick an Excel file to convert and zip
+            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge")) {
+                execute_excel_to_csvs(st, &path)?;
+            } else {
+                return Err("No CSV files available to download. Please convert an Excel file or load CSVs first.".into());
+            }
+        } else {
+            let files_ref: Vec<(&str, &str)> = files.iter().map(|(n, c)| (n.as_str(), c.as_str())).collect();
+            let bytes = excel::create_csv_zip(&files_ref)?;
+            st.generated_zip_bytes = bytes;
+            if st.generated_zip_name.is_empty() {
+                let stem = if !st.card1_path.is_empty() {
+                    std::path::Path::new(&st.card1_path)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "pubgen".into())
+                } else {
+                    "pubgen_data".into()
+                };
+                st.generated_zip_name = format!("{stem}_csvs.zip");
+            }
+        }
+    }
+
+    if st.generated_zip_bytes.is_empty() {
+        return Err("No CSV zip data generated".into());
+    }
+
+    let zip_name = if st.generated_zip_name.is_empty() {
+        "pubgen_csvs.zip".to_string()
+    } else {
+        st.generated_zip_name.clone()
+    };
+
+    // Deliver bytes via Web download or Desktop save dialog
+    if let Some(download) = app.services.download.as_mut() {
+        download(&zip_name, &st.generated_zip_bytes)
+            .map_err(|e| format!("Could not download {zip_name}: {e}"))?;
+        Ok(format!("Downloaded {zip_name}"))
+    } else if let Some(pick_save) = app.services.pick_save.as_mut() {
+        if let Some(save_path) = pick_save(&zip_name) {
+            if let Some(w) = app.services.write.as_mut() {
+                w(&save_path, &st.generated_zip_bytes)
+                    .map_err(|e| format!("Could not save {save_path}: {e}"))?;
+            } else {
+                std::fs::write(&save_path, &st.generated_zip_bytes)
+                    .map_err(|e| format!("Could not save {save_path}: {e}"))?;
+            }
+            let file_name = std::path::Path::new(&save_path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or(save_path);
+            Ok(format!("Saved {file_name}"))
+        } else {
+            Ok("ZIP download cancelled".into())
+        }
+    } else {
+        // Fallback: save to parent dir of card1_path or current dir
+        let target_dir = if !st.card1_path.is_empty() {
+            std::path::Path::new(&st.card1_path).parent().unwrap_or(std::path::Path::new(".")).to_path_buf()
+        } else {
+            std::path::PathBuf::from(".")
+        };
+        let save_path = target_dir.join(&zip_name);
+        std::fs::write(&save_path, &st.generated_zip_bytes)
+            .map_err(|e| format!("Could not save {}: {e}", save_path.display()))?;
+        Ok(format!("Saved {}", save_path.display()))
+    }
 }
 
 #[cfg(test)]
@@ -3482,25 +3772,64 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     }
 
     #[test]
-    fn test_toc_prefix_includes_type_and_number_in_the_entry() {
+    fn test_execute_generate_pages_separate_textboxes_title_only() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
 
-        let st = PubgenState {
-            card1_records: vec![vec!["Tabel".into(), "01.01.".into(), "Jarak Antar Kecamatan".into()]],
+        let mut st = PubgenState {
+            card1_records: vec![vec![
+                "Tabel".into(),
+                "02.01".into(),
+                "Jumlah Rukun Warga (RW) dan Rukun Tetangga (RT) Menurut Desa/Kelurahan di Kecamatan Karawang Timur, 2025".into(),
+            ]],
             card1_type_col: 0,
             card1_num_col: 1,
             card1_title_col: 2,
             card1_preset: 0,
-            card1_toc_prefix: true,
             toc_style: "TOC Entry".into(),
             ..Default::default()
         };
         execute_generate_pages(&mut app, &st).unwrap();
 
-        let entries = app.session.execute("toc.entries", &json!({"entries": [{"style": "TOC Entry", "level": 1}]})).unwrap();
-        assert_eq!(entries.as_array().map(Vec::len), Some(1));
-        assert_eq!(entries[0]["text"], "Tabel 01.01. Jarak Antar Kecamatan");
+        // Check the 3 text frames created on the generated spread
+        {
+            let active = app.session.active().unwrap();
+            let spread = active.doc.spreads.last().unwrap();
+            let items = &spread.items;
+            let n = items.len();
+            assert!(n >= 3);
+            let f1 = items[n - 3].text_frame().unwrap();
+            let f2 = items[n - 2].text_frame().unwrap();
+            let f3 = items[n - 1].text_frame().unwrap();
+
+            let s1 = active.doc.story(f1.story).unwrap();
+            let s2 = active.doc.story(f2.story).unwrap();
+            let s3 = active.doc.story(f3.story).unwrap();
+
+            // 1st textbox contains: "TABEL" (correct value)
+            assert_eq!(s1.text.trim(), "TABEL");
+            // 2nd textbox contains: "02.01" (correct value)
+            assert_eq!(s2.text.trim(), "02.01");
+            // 3rd textbox contains ONLY title, NOT including type and number!
+            assert_eq!(
+                s3.text.trim(),
+                "Jumlah Rukun Warga (RW) dan Rukun Tetangga (RT) Menurut Desa/Kelurahan di Kecamatan Karawang Timur, 2025"
+            );
+        }
+
+        // When Add TOC is executed, verify the generated TOC entry merges type + number + title:
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_add_toc should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc_story = active.doc.story(active.doc.toc.as_ref().unwrap().story).unwrap();
+        let clean_text = toc_story.text.replace(designcraft_doc::story::FORCED_LINE_BREAK, " ");
+        assert!(
+            clean_text.contains("Tabel 02.01 Jumlah Rukun Warga (RW) dan Rukun Tetangga (RT) Menurut Desa/Kelurahan di Kecamatan Karawang Timur, 2025"),
+            "TOC should contain merged type + number + title: {}",
+            toc_story.text
+        );
     }
 
     #[test]
@@ -3830,6 +4159,188 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let first_ind = style.para.first_line_indent.unwrap();
         assert!(left_ind >= 68.0, "Second line indent should be deep (closer to first char of title): {left_ind}");
         assert_eq!(first_ind, -left_ind, "First line indent must balance left indent");
+    }
+
+    #[test]
+    fn test_load_card1_csv_restricts_to_first_three_columns() {
+        let temp_dir = std::env::temp_dir();
+        let csv_path = temp_dir.join("test_extra_cols.csv");
+        let csv_content = "type;number;title;file;notes\n\
+                           Tabel;01.01.;Jarak Antar Kecamatan;data1.csv;extra info\n\
+                           Grafik;02.01.;Distribusi Penduduk;data2.csv;sample note\n";
+        std::fs::write(&csv_path, csv_content).unwrap();
+
+        let mut st = PubgenState::default();
+        load_card1_csv(&mut st, csv_path.to_str().unwrap());
+
+        // Column indexes must be strictly restricted to first 3 columns
+        assert_eq!(st.card1_type_col, 0);
+        assert_eq!(st.card1_num_col, 1);
+        assert_eq!(st.card1_title_col, 2);
+
+        // Headers and records keep extra columns (e.g. column 3 for 'file')
+        assert_eq!(st.card1_headers.len(), 5);
+        assert_eq!(st.card1_records.len(), 2);
+        assert_eq!(
+            st.card1_records[0].get(0..3).unwrap(),
+            &["Tabel", "01.01.", "Jarak Antar Kecamatan"]
+        );
+        assert_eq!(st.card1_records[0].get(3).map(String::as_str), Some("data1.csv"));
+        assert_eq!(
+            st.card1_records[1].get(0..3).unwrap(),
+            &["Grafik", "02.01.", "Distribusi Penduduk"]
+        );
+        assert_eq!(st.card1_records[1].get(3).map(String::as_str), Some("data2.csv"));
+
+        let _ = std::fs::remove_file(csv_path);
+    }
+
+    #[test]
+    fn test_execute_excel_to_csvs_populates_card1_and_card2() {
+        let sample_xlsx = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("plan").join("pubgen").join("samples").join("BAB_02_2025.xlsx"))
+            .unwrap_or_default();
+        if !sample_xlsx.exists() {
+            return;
+        }
+
+        let mut st = PubgenState::default();
+        let res = execute_excel_to_csvs(&mut st, sample_xlsx.to_str().unwrap());
+        assert!(res.is_ok(), "Conversion should succeed: {res:?}");
+
+        // Card 1 must have catalog loaded
+        assert!(st.card1_path.ends_with("BAB_02_2025_catalog.csv"));
+        assert_eq!(st.card1_records.len(), 3);
+        assert!(st.card1_headers.contains(&"file".to_string()));
+
+        // Card 2 must have first table loaded and sheet table list populated
+        assert!(st.card2_path.ends_with("02_01.csv"));
+        assert_eq!(st.card2_sheet_tables.len(), 3);
+        assert_eq!(st.card2_sheet_idx, 0);
+        assert!(!st.card2_matrix.is_empty());
+
+        // ZIP metadata and bytes must be cached
+        assert!(!st.generated_zip_bytes.is_empty(), "ZIP archive bytes should be cached in state");
+        assert!(st.generated_zip_name.ends_with(".zip"), "ZIP archive name should end with .zip");
+        assert_eq!(st.generated_csv_files.len(), 4, "Catalog + 3 tables in generated_csv_files");
+    }
+
+    #[test]
+    fn test_execute_download_csv_zip_workflow() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = std::env::temp_dir().join("pubgen_zip_test_workflow");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let cat_path = temp_dir.join("test_catalog.csv");
+        let cat_content = "type,number,title,file\nTabel,01.01,Title 1,01_01\n";
+        std::fs::write(&cat_path, cat_content).unwrap();
+
+        let tbl_path = temp_dir.join("01_01.csv");
+        let tbl_content = "Col 1,Col 2\nVal 1,Val 2\n";
+        std::fs::write(&tbl_path, tbl_content).unwrap();
+
+        let mut st = PubgenState::default();
+        load_card1_csv(&mut st, cat_path.to_str().unwrap());
+        st.card2_sheet_tables = vec![tbl_path.to_str().unwrap().to_string()];
+
+        // Configure mock pick_save to save to a destination path
+        let save_dest = temp_dir.join("downloaded.zip");
+        let dest_clone = save_dest.to_str().unwrap().to_string();
+        app.services.pick_save = Some(Box::new(move |_| Some(dest_clone.clone())));
+
+        let res = execute_download_csv_zip(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_download_csv_zip should succeed: {res:?}");
+        assert!(save_dest.exists(), "Downloaded ZIP archive should exist at save_dest");
+
+        // Verify ZIP entries inside downloaded.zip
+        let f = std::fs::File::open(&save_dest).unwrap();
+        let mut archive = zip::ZipArchive::new(f).unwrap();
+        assert_eq!(archive.len(), 2);
+        assert!(archive.by_name("test_catalog.csv").is_ok());
+        assert!(archive.by_name("01_01.csv").is_ok());
+
+        // Cleanup
+        let _ = std::fs::remove_file(cat_path);
+        let _ = std::fs::remove_file(tbl_path);
+        let _ = std::fs::remove_file(save_dest);
+        let _ = std::fs::remove_dir(temp_dir);
+    }
+
+    #[test]
+    fn test_execute_download_csv_zip_via_download_service() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let downloaded_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let d_clone = downloaded_data.clone();
+        app.services.download = Some(Box::new(move |_name, bytes| {
+            let mut guard = d_clone.lock().unwrap();
+            *guard = bytes.to_vec();
+            Ok(())
+        }));
+
+        let mut st = PubgenState {
+            generated_csv_files: vec![
+                ("cat.csv".into(), "type,number,title\nT,1,Test\n".into()),
+                ("tbl.csv".into(), "A,B\n1,2\n".into()),
+            ],
+            generated_zip_name: "test_export.zip".into(),
+            ..Default::default()
+        };
+
+        let res = execute_download_csv_zip(&mut app, &mut st);
+        assert!(res.is_ok(), "Download via service should succeed: {res:?}");
+
+        let data = downloaded_data.lock().unwrap().clone();
+        assert!(!data.is_empty(), "Downloaded bytes should be captured");
+
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(data)).unwrap();
+        assert_eq!(archive.len(), 2);
+        assert!(archive.by_name("cat.csv").is_ok());
+        assert!(archive.by_name("tbl.csv").is_ok());
+    }
+
+    #[test]
+    fn test_execute_generate_pages_auto_inserts_tables_from_file_col() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = std::env::temp_dir().join("pubgen_auto_insert_test");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let cat_path = temp_dir.join("test_catalog.csv");
+        let cat_content = "type,number,title,file\n\
+                           Tabel,01.01,First Table,tbl_1\n\
+                           Tabel,01.02,Second Table,tbl_2\n";
+        std::fs::write(&cat_path, cat_content).unwrap();
+
+        let tbl1_path = temp_dir.join("tbl_1.csv");
+        let tbl1_content = "Col A,Col B\n10,20\n30,40\n";
+        std::fs::write(&tbl1_path, tbl1_content).unwrap();
+
+        let tbl2_path = temp_dir.join("tbl_2.csv");
+        let tbl2_content = "Header X,Header Y\nfoo,bar\nbaz,qux\n";
+        std::fs::write(&tbl2_path, tbl2_content).unwrap();
+
+        let mut st = PubgenState::default();
+        load_card1_csv(&mut st, cat_path.to_str().unwrap());
+        st.card1_auto_insert_tables = true;
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages should succeed: {res:?}");
+        let msg = res.unwrap();
+        assert!(msg.contains("2 pages"), "Message should mention 2 pages: {msg}");
+        assert!(msg.contains("2 tables auto-inserted"), "Message should mention 2 tables auto-inserted: {msg}");
+
+        // Cleanup
+        let _ = std::fs::remove_file(cat_path);
+        let _ = std::fs::remove_file(tbl1_path);
+        let _ = std::fs::remove_file(tbl2_path);
+        let _ = std::fs::remove_dir(temp_dir);
     }
 }
 

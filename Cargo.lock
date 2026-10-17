@@ -1227,6 +1227,7 @@ dependencies = [
  "egui",
  "egui_kittest",
  "log",
+ "quick-xml",
  "serde",
  "serde_json",
  "tempfile",
