@@ -206,10 +206,12 @@ fn ensure_styles(d: &mut Document, levels: u8, width: f64) {
     let mut want = vec![("TOC Title".to_string(), ParaAttrs { space_after: Some(12.0), ..Default::default() }, Some(16.0))];
     for l in 1..=levels.max(1) {
         let indent = (l as f64 - 1.0) * 12.0;
+        let hanging = 68.0;
         want.push((
             format!("TOC Level {l}"),
             ParaAttrs {
-                left_indent: Some(indent),
+                left_indent: Some(indent + hanging),
+                first_line_indent: Some(-hanging),
                 space_before: Some(if l == 1 { 4.0 } else { 0.0 }),
                 align: Some(Align::Left),
                 tabs: Some(vec![TabStop { position: width.max(36.0), align: TabAlign::Right, leader: ". ".into(), align_on: String::new() }]),
@@ -347,8 +349,19 @@ fn generate(s: &mut Session, p: &Value) -> Result<Value> {
         };
         let toc = Toc { story, title: title.clone(), entries: entries.clone(), page_numbers, title_style: title_style.clone() };
         let n = fill(d, &toc, width)?;
-        d.toc = Some(toc);
-        Ok(json!({"story": story.0, "entries": n}))
+        d.toc = Some(toc.clone());
+        let autoflow = p.get("autoflow").and_then(Value::as_bool).unwrap_or(true);
+        let mut pages_added = 0;
+        if autoflow {
+            let added = super::place_text_autoflow(d, story, 50, "toc.generate", false)?;
+            pages_added += added;
+            if added > 0 {
+                let _ = fill(d, &toc, width);
+                let added2 = super::place_text_autoflow(d, story, 50, "toc.generate", false)?;
+                pages_added += added2;
+            }
+        }
+        Ok(json!({"story": story.0, "entries": n, "pagesAdded": pages_added}))
     })
 }
 

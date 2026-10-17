@@ -19,6 +19,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_toc_style() -> String {
+    "TOC Entry".into()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PubgenState {
     // Card 1: Page from CSV
@@ -33,6 +37,13 @@ pub struct PubgenState {
     pub card1_range_from: usize,
     pub card1_range_to: usize,
     pub card1_append: bool,
+    /// Prefix the tagged (TOC) paragraph with `type number` — the page title line then reads
+    /// "Tabel 01.01. Jarak …" and so does its table-of-contents entry.
+    #[serde(default = "default_true")]
+    pub card1_toc_prefix: bool,
+    /// Indent wrapped lines of TOC entries (hanging indent) so multi-line entries wrap nicely.
+    #[serde(default = "default_true")]
+    pub toc_hanging_indent: bool,
     pub card1_status: Option<(String, bool)>,
     #[serde(default)]
     pub card1_delim: Option<char>,
@@ -54,6 +65,10 @@ pub struct PubgenState {
     // Card 3: Quick Actions
     #[serde(default)]
     pub card3_status: Option<(String, bool)>,
+
+    // Card 1 "TOC Line" preset and Card 3 "Add TOC": the paragraph style that marks TOC entries.
+    #[serde(default = "default_toc_style")]
+    pub toc_style: String,
 }
 
 impl Default for PubgenState {
@@ -70,6 +85,8 @@ impl Default for PubgenState {
             card1_range_from: 1,
             card1_range_to: 10,
             card1_append: true,
+            card1_toc_prefix: true,
+            toc_hanging_indent: true,
             card1_status: None,
             card1_delim: None,
             card2_path: String::new(),
@@ -83,6 +100,7 @@ impl Default for PubgenState {
             card2_status: None,
             card2_delim: None,
             card3_status: None,
+            toc_style: default_toc_style(),
         }
     }
 }
@@ -180,6 +198,7 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
             "Editorial Chapter (Stacked)",
             "Technical Spec Card",
             "Minimal Zine",
+            "TOC Line (1 paragraph/record)",
         ];
         let cur = presets.get(st.card1_preset).copied().unwrap_or("1 Row · 3 Columns");
         let combo_w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
@@ -192,6 +211,17 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
                 }
             });
     });
+
+    // Every preset tags its title paragraph with the TOC style; a TOC entry's text is the
+    // paragraph's text, so "prefix" makes the entry read "Tabel 01.01. Jarak …".
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("TOC style:").size(11.0).color(t.text));
+        let w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
+        ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.toc_style));
+    });
+    if st.card1_preset != 5 {
+        ui.checkbox(&mut st.card1_toc_prefix, "TOC entry: prefix with type + number");
+    }
 
     // Record Scope
     ui.horizontal(|ui| {
@@ -416,6 +446,23 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
             st.card3_status = Some((format!("Added blank page after Page {cur_label} (new Page {next_label})"), true));
         }
     });
+
+    // TOC: build a table of contents on the selected page from the TOC paragraph style.
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("TOC style:").size(11.0).color(t.text));
+        let w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
+        ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.toc_style));
+    });
+    ui.checkbox(&mut st.toc_hanging_indent, "Indent wrapped TOC entries (hanging indent)");
+    let add_toc_text = crate::i18n::tr(&app.ui.language, "Add TOC (selected page)");
+    let tip_toc = format!("Insert a table of contents on Page {cur_label}");
+    if outline_button(ui, add_toc_text, full_width(ui)).on_hover_text(tip_toc).clicked() {
+        let res = execute_add_toc(app, st);
+        st.card3_status = Some(match res {
+            Ok(msg) => (msg, true),
+            Err(e) => (e, false),
+        });
+    }
 
     let mode_str = if facing { "Double-sided" } else { "Single-sided" };
     ui.add(
@@ -767,8 +814,8 @@ pub fn detect_condition_rows(matrix: &[Vec<String>], first_row_header: bool) -> 
     matching
 }
 
-/// Estimate single-line text advance width in points (based on standard 12pt proportional font).
-fn estimate_text_width(text: &str, is_uppercase_kicker: bool) -> f64 {
+/// Estimate raw advance width of a string in points (based on standard 12pt proportional font).
+fn estimate_text_advance(text: &str) -> f64 {
     let mut w: f64 = 0.0;
     for c in text.chars() {
         w += match c {
@@ -792,10 +839,17 @@ fn estimate_text_width(text: &str, is_uppercase_kicker: bool) -> f64 {
             _ => 7.5,
         };
     }
+    w
+}
+
+/// Estimate single-line text advance width in points (based on standard 12pt proportional font).
+fn estimate_text_width(text: &str, is_uppercase_kicker: bool) -> f64 {
+    let w = estimate_text_advance(text);
     // Headroom buffer so Knuth-Plass / greedy line breaker never breaks single-line text
     let buffer = if is_uppercase_kicker { 12.0 } else { 8.0 };
     (w + buffer).max(20.0)
 }
+
 
 fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
     if st.card1_records.is_empty() {
@@ -814,6 +868,10 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     let slice = st.card1_records.get(start_idx..end_idx).ok_or("Invalid range")?;
     let mut generated_count = 0usize;
 
+    // Every preset tags its title (or the combined TOC line) with the TOC paragraph style, so the
+    // Quick Actions "Add TOC" lists one entry per generated page.
+    ensure_para_style(app, &st.toc_style);
+
     for row in slice {
         // 1. Insert Page
         app.run("layout.pages.insert", json!({"count": 1}))?;
@@ -831,6 +889,10 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         let type_val = row.get(st.card1_type_col).map(String::as_str).unwrap_or("").trim();
         let num_val = row.get(st.card1_num_col).map(String::as_str).unwrap_or("").trim();
         let title_val = row.get(st.card1_title_col).map(String::as_str).unwrap_or("").trim();
+
+        // The tagged paragraph's text: "type number title" when prefixed, else the title.
+        let combined = [type_val, num_val, title_val].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
+        let title_text = if st.card1_toc_prefix && !combined.is_empty() { combined.as_str() } else { title_val };
 
         // 3. Compute Frame Geometry per Preset
         match st.card1_preset {
@@ -878,16 +940,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     );
                 }
                 if !title_val.is_empty() {
-                    let _ = app.run(
-                        "frame.create",
-                        json!({
-                            "spread": spread_idx,
-                            "rect": [c3_x0, row_y0, c3_x1, row_y1],
-                            "content": "text",
-                            "text": title_val,
-                            "caret": false
-                        }),
-                    );
+                    frame_with_style(app, spread_idx, [c3_x0, row_y0, c3_x1, row_y1], title_text, &st.toc_style);
                 }
             }
             2 => {
@@ -917,16 +970,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     );
                 }
                 if !title_val.is_empty() {
-                    let _ = app.run(
-                        "frame.create",
-                        json!({
-                            "spread": spread_idx,
-                            "rect": [margin.x0, margin.y0 + 112.0, margin.x1, margin.y0 + 220.0],
-                            "content": "text",
-                            "text": title_val,
-                            "caret": false
-                        }),
-                    );
+                    frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 112.0, margin.x1, margin.y0 + 220.0], title_text, &st.toc_style);
                 }
             }
             3 => {
@@ -968,16 +1012,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 }
                 // Title
                 if !title_val.is_empty() {
-                    let _ = app.run(
-                        "frame.create",
-                        json!({
-                            "spread": spread_idx,
-                            "rect": [margin.x0, margin.y0 + 40.0, margin.x1 - 90.0, margin.y0 + 110.0],
-                            "content": "text",
-                            "text": title_val,
-                            "caret": false
-                        }),
-                    );
+                    frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 40.0, margin.x1 - 90.0, margin.y0 + 110.0], title_text, &st.toc_style);
                 }
             }
             4 => {
@@ -995,16 +1030,16 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     );
                 }
                 if !title_val.is_empty() {
-                    let _ = app.run(
-                        "frame.create",
-                        json!({
-                            "spread": spread_idx,
-                            "rect": [margin.x0, margin.y0 + 120.0, margin.x1, margin.y0 + 200.0],
-                            "content": "text",
-                            "text": title_val,
-                            "caret": false
-                        }),
-                    );
+                    frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 120.0, margin.x1, margin.y0 + 200.0], title_text, &st.toc_style);
+                }
+            }
+            5 => {
+                // TOC Line: one combined paragraph per record (type + number + title), so each record
+                // becomes a single table-of-contents entry.
+                let parts: Vec<&str> = [type_val, num_val, title_val].into_iter().filter(|s| !s.is_empty()).collect();
+                let line = parts.join(" ");
+                if !line.is_empty() {
+                    frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 20.0, margin.x1, margin.y0 + 60.0], &line, &st.toc_style);
                 }
             }
             _ => {
@@ -1065,16 +1100,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     let max_x1 = (margin.x1 - end_space).max(c3_x0 + 40.0);
                     let c3_x1 = max_x1.min(margin.x1);
 
-                    let _ = app.run(
-                        "frame.create",
-                        json!({
-                            "spread": spread_idx,
-                            "rect": [c3_x0, row_y0, c3_x1, row_y1],
-                            "content": "text",
-                            "text": title_val,
-                            "caret": false
-                        }),
-                    );
+                    frame_with_style(app, spread_idx, [c3_x0, row_y0, c3_x1, row_y1], title_text, &st.toc_style);
                 }
             }
         }
@@ -1103,6 +1129,43 @@ pub fn target_page_index(app: &DesignApp) -> usize {
     } else {
         0
     }
+}
+
+/// Create the paragraph style `name` if the document does not already have it, so `toc.generate`
+/// (which requires an existing style) can collect the "TOC Line" paragraphs.
+fn ensure_para_style(app: &mut DesignApp, name: &str) {
+    let exists = app
+        .session
+        .execute("style.list", &json!({}))
+        .ok()
+        .and_then(|v| v.get("paragraph").and_then(Value::as_array).map(|a| a.iter().any(|s| s.as_str() == Some(name))))
+        .unwrap_or(false);
+    if !exists {
+        let _ = app.run("style.paragraph.create", json!({"name": name}));
+    }
+}
+
+/// Create a text frame and tag its paragraph with the TOC paragraph style, so `toc.generate`
+/// lists the frame's text as an entry (one entry per generated page).
+fn frame_with_style(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], text: &str, style: &str) -> Option<u64> {
+    let res = app
+        .run("frame.create", json!({"spread": spread_idx, "rect": rect, "content": "text", "text": text, "caret": false}))
+        .ok()?;
+    let story = res.get("story").and_then(Value::as_u64)?;
+    let end = text.chars().count().max(1) as u64;
+    let _ = app.run("text.select", json!({"story": story, "anchor": 0, "focus": end}));
+    let _ = app.run("style.paragraph.apply", json!({"name": style}));
+    Some(story)
+}
+
+/// The number of paragraphs the TOC would collect for `style` right now.
+#[cfg(test)]
+fn toc_entry_count(app: &mut DesignApp, style: &str) -> usize {
+    app.session
+        .execute("toc.entries", &json!({"entries": [{"style": style, "level": 1}]}))
+        .ok()
+        .and_then(|v| v.as_array().map(Vec::len))
+        .unwrap_or(0)
 }
 
 fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
@@ -1732,6 +1795,400 @@ fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String,
 
     let fn_msg = if footnote_text.is_some() { " + footnote" } else { "" };
     Ok(format!("Inserted table{target_msg} ({total_rows} rows × {cols_count} cols){fn_msg}"))
+}
+
+fn to_proper_case(s: &str) -> String {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let mut chars = trimmed.chars();
+    let first = match chars.next() {
+        Some(c) => c.to_uppercase().to_string(),
+        None => return String::new(),
+    };
+    let rest: String = chars.map(|c| c.to_lowercase().next().unwrap_or(c)).collect();
+    format!("{first}{rest}")
+}
+
+fn is_plausible_type(txt: &str) -> bool {
+    let trimmed = txt.trim();
+    let lower = trimmed.to_lowercase();
+    // Exclude footnotes, sources, notes, captions
+    if lower.starts_with("source")
+        || lower.starts_with("sumber")
+        || lower.starts_with("note")
+        || lower.starts_with("catatan")
+        || lower.starts_with("ket")
+        || lower.contains(':')
+    {
+        return false;
+    }
+    // Publication kickers/types are short (e.g. "Tabel", "Grafik", "Bab", "Section")
+    // Never more than 2 words or 20 characters
+    if trimmed.len() > 20 || trimmed.split_whitespace().count() > 2 {
+        return false;
+    }
+    true
+}
+
+fn is_plausible_number(txt: &str) -> bool {
+    let trimmed = txt.trim();
+    if !trimmed.chars().any(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    if trimmed.len() > 12 || trimmed.split_whitespace().count() > 1 {
+        return false;
+    }
+    trimmed.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-' || c == '(' || c == ')')
+}
+
+fn find_type_and_number_on_page(doc: &designcraft_doc::Document, page_str: &str, title: &str) -> Option<(String, String)> {
+    let mut target_abs = None;
+    for abs in 0..doc.page_count() {
+        if doc.page_name(abs) == page_str {
+            target_abs = Some(abs);
+            break;
+        }
+    }
+    let abs = target_abs?;
+    let (si, pi) = doc.page_loc(abs)?;
+    let spread = doc.spreads.get(si)?;
+
+    let mut type_candidate = None;
+    let mut num_candidate = None;
+
+    for item in &spread.items {
+        if spread.page_at_x(item.bounds().center().x) != Some(pi) {
+            continue;
+        }
+        let Some(tf) = item.text_frame() else { continue };
+        let Some(st) = doc.story(tf.story) else { continue };
+        let txt = st.text.trim();
+        if txt.is_empty() || txt == title {
+            continue;
+        }
+
+        if is_plausible_number(txt) {
+            num_candidate = Some(txt.to_string());
+        } else if is_plausible_type(txt) {
+            type_candidate = Some(to_proper_case(txt));
+        }
+    }
+
+    match (type_candidate, num_candidate) {
+        (Some(t), Some(n)) => Some((t, n)),
+        (Some(t), None) => Some((t, String::new())),
+        (None, Some(n)) => Some((String::new(), n)),
+        (None, None) => None,
+    }
+}
+
+/// Wrap a TOC entry title using forced line breaks (`\u{2028}`) so:
+/// 1. The first line wraps early (leaving ample breathing room for leader dots and page number).
+/// 2. Continuation lines fit comfortably within the remaining column width after hanging indent.
+pub fn wrap_toc_title(title: &str, width: f64, hanging_indent: f64, page_str: Option<&str>) -> String {
+    let clean_title = title.replace(designcraft_doc::story::FORCED_LINE_BREAK, " ");
+    let clean_title = clean_title.trim();
+    if clean_title.is_empty() {
+        return String::new();
+    }
+
+    let page_w = page_str.map(estimate_text_advance).unwrap_or(20.0);
+    // Reserve breathing room for tab leader dots before the page number: at least 48pt
+    let min_leader_gap = 48.0;
+    let right_reserve = page_w + min_leader_gap;
+
+    let max_line0 = (width - right_reserve).max(80.0);
+    let max_line_cont = (width - hanging_indent - right_reserve).max(60.0);
+
+    // If the full title already fits on the first line with plenty of leader dots, keep it on one line.
+    if estimate_text_advance(clean_title) <= max_line0 {
+        return clean_title.to_string();
+    }
+
+    let words: Vec<&str> = clean_title.split_whitespace().collect();
+    if words.len() <= 1 {
+        return clean_title.to_string();
+    }
+
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur_line = String::new();
+    let mut is_first = true;
+
+    for word in words {
+        let max_w = if is_first { max_line0 } else { max_line_cont };
+        let candidate = if cur_line.is_empty() {
+            word.to_string()
+        } else {
+            format!("{cur_line} {word}")
+        };
+
+        if estimate_text_advance(&candidate) <= max_w || cur_line.is_empty() {
+            cur_line = candidate;
+        } else {
+            lines.push(cur_line);
+            cur_line = word.to_string();
+            is_first = false;
+        }
+    }
+
+    if !cur_line.is_empty() {
+        lines.push(cur_line);
+    }
+
+    lines.join(&designcraft_doc::story::FORCED_LINE_BREAK.to_string())
+}
+
+fn enrich_toc_story(app: &mut DesignApp, sid: designcraft_doc::StoryId, st: &PubgenState, width: f64, hanging_indent: f64) {
+    let _ = app.session.edit(|doc, _| {
+        let full_text = doc.story(sid).map(|s| s.text.clone()).ok_or(designcraft_doc::DocError::NoStory(sid))?;
+
+        let mut new_lines = Vec::new();
+        let mut changed = false;
+        let mut used_records: Vec<bool> = vec![false; st.card1_records.len()];
+
+        for (idx, line) in full_text.split('\n').enumerate() {
+            if idx == 0 || line.trim().is_empty() {
+                new_lines.push(line.to_string());
+                continue;
+            }
+
+            let line_clean = line.replace(designcraft_doc::story::FORCED_LINE_BREAK, " ");
+            let (raw_title, page_part) = match line_clean.split_once('\t') {
+                Some((t, p)) => (t.trim(), Some(p.trim())),
+                None => (line_clean.trim(), None),
+            };
+
+            if raw_title.is_empty() {
+                new_lines.push(line.to_string());
+                continue;
+            }
+
+            let mut prefix_opt = None;
+            let mut matched_record = false;
+
+            // 1. Try matching against records in st.card1_records
+            for (r_idx, row) in st.card1_records.iter().enumerate() {
+                if used_records.get(r_idx).copied().unwrap_or(false) {
+                    continue;
+                }
+                let r_type = row.get(st.card1_type_col).map(String::as_str).unwrap_or("").trim();
+                let r_num = row.get(st.card1_num_col).map(String::as_str).unwrap_or("").trim();
+                let r_title = row.get(st.card1_title_col).map(String::as_str).unwrap_or("").trim();
+
+                if !r_title.is_empty() && (raw_title == r_title || raw_title.ends_with(r_title)) {
+                    matched_record = true;
+                    let expected_prefix = [r_type, r_num]
+                        .into_iter()
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+
+                    if !expected_prefix.is_empty() && !raw_title.starts_with(&expected_prefix) {
+                        prefix_opt = Some(expected_prefix);
+                    }
+                    if let Some(used) = used_records.get_mut(r_idx) {
+                        *used = true;
+                    }
+                    break;
+                }
+            }
+
+            // 2. Fallback: inspect page frames ONLY if no record in st.card1_records matched!
+            if !matched_record && prefix_opt.is_none() {
+                if let Some(p_str) = page_part {
+                    if let Some((t_val, n_val)) = find_type_and_number_on_page(doc, p_str, raw_title) {
+                        let expected_prefix = [t_val.as_str(), n_val.as_str()]
+                            .into_iter()
+                            .filter(|s| !s.is_empty())
+                            .collect::<Vec<_>>()
+                            .join(" ");
+
+                        let starts_with_type = !t_val.is_empty() && raw_title.to_lowercase().starts_with(&t_val.to_lowercase());
+                        if !expected_prefix.is_empty() && !raw_title.starts_with(&expected_prefix) && !starts_with_type {
+                            prefix_opt = Some(expected_prefix);
+                        }
+                    }
+                }
+            }
+
+            let title_to_use = if let Some(prefix) = prefix_opt {
+                format!("{prefix} {raw_title}")
+            } else {
+                raw_title.to_string()
+            };
+
+            let wrapped_title = if st.toc_hanging_indent {
+                wrap_toc_title(&title_to_use, width, hanging_indent, page_part)
+            } else {
+                title_to_use
+            };
+
+            let original_entry_title = line.split_once('\t').map(|(t, _)| t).unwrap_or(line);
+            if wrapped_title != original_entry_title {
+                changed = true;
+            }
+
+            if let Some(p_str) = page_part {
+                new_lines.push(format!("{wrapped_title}\t{p_str}"));
+            } else {
+                new_lines.push(wrapped_title);
+            }
+        }
+
+        if changed {
+            let new_text = new_lines.join("\n");
+            let story = doc.story_mut(sid).ok_or(designcraft_doc::DocError::NoStory(sid))?;
+            let len = story.len();
+            story.replace(0..len, &new_text);
+        }
+
+        Ok(serde_json::Value::Null)
+    });
+}
+
+fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hanging_indent: f64) {
+    let _ = app.session.edit(|d, _| {
+        let tab_stop = designcraft_doc::TabStop {
+            position: width.max(36.0),
+            align: designcraft_doc::TabAlign::Right,
+            leader: ". ".into(),
+            align_on: String::new(),
+        };
+
+        let style_name = "TOC Level 1";
+        let mut found = false;
+        for style in &mut d.styles_mut().paragraph {
+            if style.name.starts_with("TOC Level") {
+                found = true;
+                let level_idx: usize = style.name.strip_prefix("TOC Level ").and_then(|s| s.parse().ok()).unwrap_or(1);
+                let base_indent = (level_idx.saturating_sub(1) as f64) * 12.0;
+                let (li, fi) = if hanging {
+                    (Some(base_indent + hanging_indent), Some(-hanging_indent))
+                } else {
+                    (Some(base_indent), Some(0.0))
+                };
+                style.para.left_indent = li;
+                style.para.first_line_indent = fi;
+                style.para.tabs = Some(vec![tab_stop.clone()]);
+            }
+        }
+
+        if !found {
+            let (left_ind, first_ind) = if hanging {
+                (Some(hanging_indent), Some(-hanging_indent))
+            } else {
+                (Some(0.0), Some(0.0))
+            };
+            let st = d.styles_mut();
+            st.paragraph.push(designcraft_doc::ParagraphStyle {
+                name: style_name.to_string(),
+                based_on: Some(designcraft_doc::story::BASIC_PARAGRAPH.into()),
+                next_style: None,
+                para: designcraft_doc::ParaAttrs {
+                    left_indent: left_ind,
+                    first_line_indent: first_ind,
+                    space_before: Some(4.0),
+                    align: Some(designcraft_doc::Align::Left),
+                    tabs: Some(vec![tab_stop]),
+                    ..Default::default()
+                },
+                chars: designcraft_doc::CharAttrs::default(),
+                shortcut: String::new(),
+            });
+        }
+        Ok(serde_json::Value::Null)
+    });
+}
+
+fn execute_add_toc(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, String> {
+    let cur_page = target_page_index(app);
+    let cur_label = app.session.page_label(cur_page);
+
+    ensure_para_style(app, &st.toc_style);
+
+    let (margin, _spread_idx) = {
+        let active = app.session.active().ok_or("No active document")?;
+        let (si, pi) = active.doc.page_loc(cur_page).ok_or("Current page location not found")?;
+        let spread = active.doc.spreads.get(si).ok_or("Spread missing")?;
+        let page = spread.pages.get(pi).ok_or("Page missing")?;
+        (page.margin_rect(), si)
+    };
+
+    let width = (margin.x1 - margin.x0).max(100.0);
+
+    let detected_prefix_w = st
+        .card1_records
+        .iter()
+        .filter_map(|row| {
+            let r_type = row.get(st.card1_type_col).map(String::as_str).unwrap_or("").trim();
+            let r_num = row.get(st.card1_num_col).map(String::as_str).unwrap_or("").trim();
+            let prefix = [r_type, r_num].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
+            if prefix.is_empty() {
+                None
+            } else {
+                Some(estimate_text_advance(&format!("{prefix} ")))
+            }
+        })
+        .max_by(|a, b| a.total_cmp(b))
+        .unwrap_or(68.0);
+
+    let hanging_indent = (detected_prefix_w.round()).clamp(48.0, 140.0);
+
+    ensure_toc_entry_style(app, width, st.toc_hanging_indent, hanging_indent);
+
+    let res = app.run(
+        "toc.generate",
+        json!({
+            "page": cur_page + 1,
+            "title": "Contents",
+            "entries": [{
+                "style": st.toc_style.as_str(),
+                "level": 1,
+                "pageNumber": "after",
+                "separator": "\t"
+            }],
+            "replace": true,
+            "autoflow": true
+        }),
+    )?;
+
+    let count = res.get("entries").and_then(Value::as_u64).unwrap_or(0);
+    let mut pages_added = res.get("pagesAdded").and_then(Value::as_u64).unwrap_or(0);
+    let sid_u64 = res.get("story").and_then(Value::as_u64).ok_or("TOC story missing")?;
+    let sid = designcraft_doc::StoryId(sid_u64);
+
+    enrich_toc_story(app, sid, st, width, hanging_indent);
+
+    let _ = app.session.edit(|doc, _| {
+        if let Some(story) = doc.story_mut(sid) {
+            for (pi, r) in story.para_ranges().into_iter().enumerate() {
+                let style_name = if pi == 0 { "TOC Title" } else { "TOC Level 1" };
+                story.format_paras(r.start..r.start, |f| *f = designcraft_doc::ParaFormat {
+                    style: style_name.to_string(),
+                    ..Default::default()
+                });
+            }
+        }
+        Ok(serde_json::Value::Null)
+    });
+
+    ensure_toc_entry_style(app, width, st.toc_hanging_indent, hanging_indent);
+
+    if let Ok(af_res) = app.run("text.autoflow", json!({"story": sid.0, "maxPages": 50})) {
+        if let Some(extra) = af_res.get("pagesAdded").and_then(Value::as_u64) {
+            pages_added += extra;
+        }
+    }
+
+    let cont_msg = if pages_added > 0 {
+        format!(" across {} pages", pages_added + 1)
+    } else {
+        String::new()
+    };
+
+    Ok(format!("Added TOC on Page {cur_label} ({count} entries{cont_msg})"))
 }
 
 #[cfg(test)]
@@ -2916,4 +3373,463 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         app.run("layout.pages.insert", json!({"after": 0, "count": 1})).unwrap();
         assert_eq!(app.session.active().unwrap().doc.page_count(), 3);
     }
+
+    #[test]
+    fn test_toc_line_preset_writes_one_styled_paragraph_per_record() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card1_records: vec![
+                vec!["Tabel".into(), "01.01.".into(), "Jarak Antar Kecamatan".into()],
+                vec!["Grafik".into(), "3.1.".into(), "Piramida Penduduk".into()],
+            ],
+            card1_headers: vec!["type".into(), "number".into(), "title".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 5,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "the TOC Line preset should succeed: {res:?}");
+
+        // One combined paragraph per record, not three separate frames.
+        let active = app.session.active().unwrap();
+        let mut lines: Vec<&str> = active
+            .doc
+            .stories
+            .values()
+            .filter(|s| s.paras.first().is_some_and(|p| p.style == "TOC Entry"))
+            .map(|s| s.text.trim())
+            .collect();
+        lines.sort_unstable();
+        assert_eq!(lines, ["Grafik 3.1. Piramida Penduduk", "Tabel 01.01. Jarak Antar Kecamatan"], "one styled paragraph per record");
+    }
+
+    #[test]
+    fn test_add_toc_on_selected_page_collects_toc_line_entries() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card1_records: vec![
+                vec!["Tabel".into(), "01.01.".into(), "Jarak Antar Kecamatan".into()],
+                vec!["Tabel".into(), "01.02.".into(), "Curah Hujan".into()],
+            ],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 5,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        // The same calls the Quick Actions "Add TOC (selected page)" button makes.
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        ensure_para_style(&mut app, &st.toc_style);
+        let page = app.session.active().unwrap().doc.page_count();
+        let res = app.run(
+            "toc.generate",
+            json!({"page": page, "title": "Contents",
+                   "entries": [{"style": "TOC Entry", "level": 1, "pageNumber": "after"}],
+                   "replace": true}),
+        );
+        assert!(res.is_ok(), "toc.generate should succeed: {res:?}");
+
+        let sid = designcraft_doc::StoryId(res.unwrap()["story"].as_u64().unwrap());
+        let text = app.session.active().unwrap().doc.story(sid).unwrap().text.clone();
+        assert!(text.contains("Contents"), "{text}");
+        assert!(text.contains("Jarak Antar Kecamatan"), "one line per record: {text}");
+        assert!(text.contains("Curah Hujan"), "{text}");
+    }
+
+    #[test]
+    fn test_default_preset_title_is_tagged_and_listed_in_toc() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card1_records: vec![vec!["Tabel".into(), "01.01.".into(), "Jarak Antar Kecamatan".into()]],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 0,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        // The default preset still writes three frames, but only the title carries the TOC style.
+        assert_eq!(toc_entry_count(&mut app, "TOC Entry"), 1, "the title paragraph is a TOC entry");
+
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        let page = app.session.active().unwrap().doc.page_count();
+        let res = app.run(
+            "toc.generate",
+            json!({"page": page, "title": "Contents",
+                   "entries": [{"style": "TOC Entry", "level": 1, "pageNumber": "after"}],
+                   "replace": true}),
+        );
+        assert!(res.is_ok(), "toc.generate should succeed: {res:?}");
+
+        let sid = designcraft_doc::StoryId(res.unwrap()["story"].as_u64().unwrap());
+        let text = app.session.active().unwrap().doc.story(sid).unwrap().text.clone();
+        assert!(text.contains("Jarak Antar Kecamatan"), "the generated page title is listed: {text}");
+    }
+
+    #[test]
+    fn test_toc_prefix_includes_type_and_number_in_the_entry() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card1_records: vec![vec!["Tabel".into(), "01.01.".into(), "Jarak Antar Kecamatan".into()]],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 0,
+            card1_toc_prefix: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        let entries = app.session.execute("toc.entries", &json!({"entries": [{"style": "TOC Entry", "level": 1}]})).unwrap();
+        assert_eq!(entries.as_array().map(Vec::len), Some(1));
+        assert_eq!(entries[0]["text"], "Tabel 01.01. Jarak Antar Kecamatan");
+    }
+
+    #[test]
+    fn test_execute_add_toc_kbda_row_merges_type_number_title() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // Row #2 from KBDA2026_chapters.csv:
+        // Tabel;01.01.;Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006
+        let mut st = PubgenState {
+            card1_records: vec![
+                vec![
+                    "Tabel".into(),
+                    "01.01.".into(),
+                    "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006".into(),
+                ],
+                vec![
+                    "Tabel".into(),
+                    "01.02.".into(),
+                    "Keadaan Curah Hujan Tiap Bulan menurut Kecamatan (mm), 2006".into(),
+                ],
+            ],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 0,
+            card1_toc_prefix: false, // Even when false in page generation, execute_add_toc merges them!
+            toc_style: "TOC Entry".into(),
+            toc_hanging_indent: true,
+            ..Default::default()
+        };
+
+        // Generate pages
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        // Now insert TOC page and run execute_add_toc
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_add_toc should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.toc.as_ref().expect("Document TOC should be populated");
+        let story = active.doc.story(toc.story).expect("TOC story should exist");
+        let text = &story.text;
+
+        assert!(
+            text.contains("Tabel 01.01. Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006"),
+            "TOC should contain merged type + number + title: {text}"
+        );
+        assert!(
+            text.contains("Tabel 01.02. Keadaan Curah Hujan Tiap Bulan menurut Kecamatan (mm), 2006"),
+            "TOC should contain second merged record: {text}"
+        );
+    }
+
+    #[test]
+    fn test_execute_add_toc_hanging_indent_applied() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card1_records: vec![vec![
+                "Tabel".into(),
+                "01.01.".into(),
+                "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006".into(),
+            ]],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 0,
+            card1_toc_prefix: false,
+            toc_style: "TOC Entry".into(),
+            toc_hanging_indent: true,
+            ..Default::default()
+        };
+
+        execute_generate_pages(&mut app, &st).unwrap();
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        execute_add_toc(&mut app, &mut st).unwrap();
+
+        let active = app.session.active().unwrap();
+        let style = active.doc.styles.para("TOC Level 1").expect("TOC Level 1 style should exist");
+        assert_eq!(style.para.left_indent, Some(78.0), "Hanging indent left_indent");
+        assert_eq!(style.para.first_line_indent, Some(-78.0), "Hanging indent first_line_indent");
+
+        let tab = style.para.tabs.as_ref().and_then(|t| t.first()).expect("Tab stop should exist");
+        assert_eq!(tab.align, designcraft_doc::TabAlign::Right);
+        assert_eq!(tab.leader, ". ");
+    }
+
+    #[test]
+    fn test_execute_add_toc_fallback_from_page_frames() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card1_records: vec![vec![
+                "Tabel".into(),
+                "01.01.".into(),
+                "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006".into(),
+            ]],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 0,
+            card1_toc_prefix: false,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        // Now simulate empty card1_records (e.g. session without CSV in memory)
+        let mut st_empty = PubgenState {
+            card1_records: Vec::new(),
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        let res = execute_add_toc(&mut app, &mut st_empty);
+        assert!(res.is_ok(), "execute_add_toc with fallback should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.toc.as_ref().unwrap();
+        let text = &active.doc.story(toc.story).unwrap().text;
+
+        assert!(
+            text.contains("Tabel 01.01. Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006"),
+            "Fallback should extract type and number from page frames: {text}"
+        );
+    }
+
+    #[test]
+    fn test_execute_add_toc_ignores_footnote_and_source_text_frames() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card1_records: vec![vec![
+                "Tabel".into(),
+                "01.01.".into(),
+                "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006".into(),
+            ]],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 0,
+            card1_toc_prefix: true, // Page generated with prefix
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        // Simulate Table from CSV creating a footnote text frame on that page
+        let spread_idx = 0;
+        let _ = app.run(
+            "frame.create",
+            json!({
+                "spread": spread_idx,
+                "rect": [72.0, 500.0, 400.0, 530.0],
+                "content": "text",
+                "text": "Sources: Karawang Region Government Office",
+                "caret": false
+            }),
+        );
+
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_add_toc should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.toc.as_ref().unwrap();
+        let text = &active.doc.story(toc.story).unwrap().text;
+
+        // Must NOT contain footnote text
+        assert!(
+            !text.to_lowercase().contains("sources"),
+            "TOC must not incorporate footnote/source text: {text}"
+        );
+        assert!(
+            text.contains("Tabel 01.01. Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006"),
+            "TOC must contain clean entry: {text}"
+        );
+    }
+
+    #[test]
+    fn test_execute_add_toc_generates_continuation_pages_when_overflows() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // 80 entries - definitely cannot fit in 1 page (typical page holds ~35 entries)
+        let records: Vec<Vec<String>> = (1..=80)
+            .map(|i| {
+                vec![
+                    "Tabel".into(),
+                    format!("01.{i:02}."),
+                    format!("Dataset Observation Record Number {i} in Region"),
+                ]
+            })
+            .collect();
+
+        let mut st = PubgenState {
+            card1_records: records,
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 5, // TOC Line preset
+            toc_style: "TOC Entry".into(),
+            toc_hanging_indent: true,
+            ..Default::default()
+        };
+
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        let initial_pages = app.session.active().unwrap().doc.page_count();
+        // Insert TOC starting page
+        app.run("layout.pages.insert", json!({"after": 0, "count": 1})).unwrap();
+        crate::canvas::go_to_page(&mut app, 1);
+
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_add_toc should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.toc.as_ref().unwrap();
+        let story_id = toc.story;
+
+        // Verify that the TOC story has threaded across multiple frames/pages
+        let frames_count = active.doc.story(story_id).map(|s| s.frames.len()).unwrap_or(0);
+        assert!(frames_count > 1, "TOC should span more than 1 frame: {frames_count}");
+
+        let current_pages = active.doc.page_count();
+        assert!(
+            current_pages > initial_pages + 1,
+            "Continuation pages should be added to hold overflowed TOC (initial: {initial_pages}, current: {current_pages})"
+        );
+
+        // Verify the story is NOT overset
+        let cs = designcraft_compose::compose_story(&active.doc, story_id, &Default::default());
+        assert!(cs.overset_at.is_none(), "TOC should not be overset after autoflow");
+    }
+
+    #[test]
+    fn test_wrap_toc_title_wraps_early_before_page_number() {
+        let width = 440.0;
+        let hanging = 68.0;
+
+        // 1. Short title fits comfortably on line 0
+        let short = "Tabel 01.01. Short Title, 2006";
+        let wrapped_short = wrap_toc_title(short, width, hanging, Some("12"));
+        assert_eq!(wrapped_short, short);
+
+        // 2. Long title (Grafik 4.6. from user request) wraps early with \u{2028}
+        let long = "Grafik 4.6. Banyaknya Tenaga Medis/Dokter Menurut Keahlian di Kabupaten Karawang, 2006";
+        let wrapped_long = wrap_toc_title(long, width, hanging, Some("44"));
+        assert!(
+            wrapped_long.contains(designcraft_doc::story::FORCED_LINE_BREAK),
+            "Title should be wrapped with FORCED_LINE_BREAK"
+        );
+        let parts: Vec<&str> = wrapped_long.split(designcraft_doc::story::FORCED_LINE_BREAK).collect();
+        assert_eq!(parts.len(), 2);
+        assert!(parts[0].starts_with("Grafik 4.6. Banyaknya"));
+        // First line should wrap early (less than width - 48 - page_w)
+        assert!(estimate_text_advance(parts[0]) <= width - 48.0 - 15.0);
+        // Second line contains the remaining words
+        assert!(parts[1].ends_with("2006"));
+    }
+
+    #[test]
+    fn test_execute_add_toc_warps_early_and_indents_second_line() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let records = vec![
+            vec![
+                "Grafik".into(),
+                "4.6.".into(),
+                "Banyaknya Tenaga Medis/Dokter Menurut Keahlian di Kabupaten Karawang, 2006".into(),
+            ],
+            vec![
+                "Tabel".into(),
+                "04.01.".into(),
+                "Banyaknya Sekolah, Murid dan Guru Taman Kanak-Kanak Menurut Status Sekolah Tiap Kecamatan, 2006".into(),
+            ],
+        ];
+
+        let mut st = PubgenState {
+            card1_records: records,
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 0,
+            toc_style: "TOC Entry".into(),
+            toc_hanging_indent: true,
+            ..Default::default()
+        };
+
+        execute_generate_pages(&mut app, &st).unwrap();
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        crate::canvas::go_to_page(&mut app, 1);
+
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_add_toc should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.toc.as_ref().unwrap();
+        let story_id = toc.story;
+        let story = active.doc.story(story_id).unwrap();
+
+        // Both long titles should have wrapped lines via \u{2028}
+        assert!(
+            story.text.contains(designcraft_doc::story::FORCED_LINE_BREAK),
+            "Story text should contain soft line breaks for early wrapping: {}",
+            story.text
+        );
+
+        // Compose the TOC story to verify layout geometry
+        let cs = designcraft_compose::compose_story(&active.doc, story_id, &Default::default());
+        assert!(!cs.frames.is_empty(), "Frames should exist");
+        let lines = &cs.frames[0].lines;
+        assert!(lines.len() >= 4, "Should compose into multiple lines: {}", lines.len());
+
+        // Check style indentation
+        let style = active.doc.styles.para("TOC Level 1").unwrap();
+        let left_ind = style.para.left_indent.unwrap();
+        let first_ind = style.para.first_line_indent.unwrap();
+        assert!(left_ind >= 68.0, "Second line indent should be deep (closer to first char of title): {left_ind}");
+        assert_eq!(first_ind, -left_ind, "First line indent must balance left indent");
+    }
 }
+

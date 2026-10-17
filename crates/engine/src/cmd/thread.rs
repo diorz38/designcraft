@@ -40,7 +40,48 @@ pub fn specs() -> Vec<CommandSpec> {
             has_doc,
             remove_from_thread
         ),
+        cmd!(
+            "text.autoflow",
+            "Autoflow Story",
+            [],
+            None,
+            "{story?: StoryId, frame?: ItemId, maxPages?: usize} — adds pages with threaded frames until the story fits. → {story, pagesAdded}",
+            has_doc,
+            autoflow_cmd
+        ),
     ]
+}
+
+fn autoflow_cmd(s: &mut Session, p: &Value) -> Result<Value> {
+    const CMD: &str = "text.autoflow";
+    let sid = if let Some(id) = p.get("story").and_then(Value::as_u64) {
+        StoryId(id)
+    } else if let Some(fid) = p.get("frame").and_then(Value::as_u64) {
+        let act = s.active().ok_or_else(|| bad(CMD, "no active document"))?;
+        act.doc
+            .item(ItemId(fid))
+            .and_then(|i| i.text_frame())
+            .map(|t| t.story)
+            .ok_or_else(|| bad(CMD, "frame is not a text frame"))?
+    } else {
+        let act = s.active().ok_or_else(|| bad(CMD, "no active document"))?;
+        if let Some(sel) = &act.selection.text {
+            sel.story
+        } else if let Some(&item_id) = act.selection.items.first() {
+            act.doc
+                .item(item_id)
+                .and_then(|i| i.text_frame())
+                .map(|t| t.story)
+                .ok_or_else(|| bad(CMD, "selected item is not a text frame"))?
+        } else {
+            return Err(bad(CMD, "no story or frame specified"));
+        }
+    };
+    let max_pages = p.get("maxPages").and_then(Value::as_u64).unwrap_or(AUTOFLOW_MAX_PAGES as u64) as usize;
+    s.edit(|d, _| {
+        let pages = super::place_text_autoflow(d, sid, max_pages, CMD, false)?;
+        Ok(json!({"story": sid.0, "pagesAdded": pages}))
+    })
 }
 
 /// `frame` param, or the first selected text frame.
