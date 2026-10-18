@@ -345,6 +345,21 @@ Dalam aturan tata letak buku formal, setiap bab baru sebaiknya selalu dimulai di
 ### Daftar Isi Otomatis (Add TOC / Rebuild TOC)
 Pubgen dapat memindai seluruh judul halaman di dokumen Anda dan menyusun Daftar Isi lengkap dengan titik-titik penuntun (*leader dots*) secara otomatis.
 
+#### Jenis Daftar Isi (TOC style)
+| Jenis | Isinya | Judul otomatis |
+|---|---|---|
+| **TOC Entry** | semua halaman yang judulnya memakai gaya penanda TOC (perilaku awal) | *sesuai yang Anda ketik* |
+| **TOC Table** | hanya halaman yang **kotak teks pertamanya** diawali `Tabel` atau `Table` (tidak peka huruf besar/kecil) | `Daftar Table` |
+| **TOC Chart** | hanya halaman yang **kotak teks pertamanya** diawali `Grafik` atau `Chart` (tidak peka huruf besar/kecil) | `Daftar Grafik` |
+
+Memilih **TOC Table** atau **TOC Chart** akan mengisi kolom Judul secara otomatis dan menengahkan baris judulnya;
+Anda tetap bisa mengubahnya. Penyaring ini tersimpan di dalam dokumen, sehingga **Rebuild TOC** dan menu
+*Layout ▸ Update Table of Contents* tetap mempertahankannya.
+
+Satu dokumen boleh memuat beberapa daftar sekaligus — misalnya *Daftar Table* dan *Daftar Grafik* berdampingan.
+**Add TOC** membuat daftar di halaman yang sedang dibuka dan menggantikan daftar yang sudah ada di halaman itu
+(satu halaman satu daftar).
+
 #### Pilihan Tata Letak Daftar Isi:
 1. **Standard Layout**:
    - Format umum buku teks:
@@ -359,7 +374,10 @@ Pubgen dapat memindai seluruh judul halaman di dokumen Anda dan menyusun Daftar 
      - **Header Berulang Otomatis**: Jika Daftar Isi memanjang lebih dari satu halaman, tulisan `Tabel` dan `Halaman` akan otomatis diulang di bagian paling atas halaman berikutnya!
 
 #### Memperbarui Daftar Isi (Rebuild TOC)
-Jika di kemudian hari Anda menambah, menghapus, atau menukar posisi halaman, cukup klik **Rebuild TOC**. Pubgen akan memindai ulang seluruh dokumen dan memperbarui nomor halaman di Daftar Isi secara otomatis.
+Jika di kemudian hari Anda menambah, menghapus, atau menukar posisi halaman, klik **Rebuild TOC**. Pubgen
+memperbarui daftar **di halaman yang sedang dibuka** memakai jenis, judul, dan tata letak daftar itu sendiri,
+sehingga daftar lain di dokumen tidak tersentuh. Saat penomoran halaman diubah (Renumber), seluruh daftar di
+dokumen ikut diperbarui agar nomor halamannya tetap benar.
 
 ---
 
@@ -421,8 +439,10 @@ Berikut alur kerja praktis menyusun publikasi statistik dari nol hingga selesai:
    - Klik **Insert Table**. Tabel statistik langsung terpasang rapi di bawah judul!
 5. **Membuat Daftar Isi**:
    - Di menu **Quick Actions**, klik **Add Blank Page**.
-   - Pada bagian Table of Contents, ketikkan Judul: `DAFTAR TABEL`, pilih Layout: `TablePage`.
-   - Klik **Add TOC**. Daftar isi langsung tercipta lengkap dengan nomor halamannya!
+   - Pada bagian Table of Contents, pilih TOC style: `TOC Table` (kolom Judul otomatis terisi `Daftar Table`), pilih
+     Layout: `TablePage`.
+   - Klik **Add TOC**. Daftar isi langsung tercipta lengkap dengan nomor halamannya! Untuk daftar grafik, pindah ke
+     halaman berikutnya lalu pilih TOC style: `TOC Chart` dan klik **Add TOC** lagi.
 6. **Mengekspor ke PDF**:
    - Buka menu utama `File` ▸ `Export` ▸ `PDF (Print)`. Publikasi Anda siap untuk dicetak atau disebarluaskan secara digital!
 

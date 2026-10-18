@@ -154,7 +154,7 @@ impl Document {
             bookmarks: vec![],
             user_words: vec![],
             hyphenation_exceptions: vec![],
-            toc: None,
+            tocs: Vec::new(),
             text_variables: crate::vars::defaults(),
             footnote_options: Default::default(),
             xref_formats: crate::xref::default_formats(),

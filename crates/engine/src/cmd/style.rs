@@ -1013,8 +1013,8 @@ fn redirect_style_refs(d: &mut designcraft_doc::Document, para: bool, from: &str
         rename(&mut st.default_paragraph);
         let (fo, eo) = (&mut d.footnote_options, &mut d.endnote_options);
         [&mut fo.para_style, &mut eo.para_style, &mut eo.heading_style].into_iter().for_each(rename);
-        d.toc.iter_mut().flat_map(|t| t.entries.iter_mut().map(|e| &mut e.style)).for_each(rename);
-        for t in d.toc.iter_mut() {
+        d.tocs.iter_mut().flat_map(|t| t.entries.iter_mut().map(|e| &mut e.style)).for_each(rename);
+        for t in d.tocs.iter_mut() {
             let formats = t.entries.iter_mut().map(|e| &mut e.entry_style).chain([&mut t.title_style]);
             for r in formats.filter(|r| r.as_deref() == Some(from)) {
                 *r = Some(to.to_string());
@@ -1034,8 +1034,8 @@ fn redirect_style_refs(d: &mut designcraft_doc::Document, para: bool, from: &str
         rename(&mut d.footnote_options.ref_char_style);
     }
     // The table of contents' character styles ([None] is stored as no style).
-    if !para && let Some(toc) = d.toc.as_mut() {
-        for e in &mut toc.entries {
+    if !para {
+        for e in d.tocs.iter_mut().flat_map(|t| t.entries.iter_mut()) {
             for n in [&mut e.page_number_style, &mut e.separator_style] {
                 if n.as_deref() == Some(from) {
                     *n = Some(to.to_string()).filter(|t| t != designcraft_doc::NO_CHAR_STYLE);
@@ -2981,7 +2981,7 @@ mod delete_tests {
             d.footnote_options.para_style = "Table Body".into();
             d.endnote_options.para_style = "Table Body".into();
             d.endnote_options.heading_style = "Table Body".into();
-            d.toc = Some(Toc {
+            d.tocs.push(Toc {
                 story,
                 title: "Contents".into(),
                 entries: vec![TocEntry { entry_style: Some("Table Body".into()), ..TocEntry::new("Table Body", 1) }],

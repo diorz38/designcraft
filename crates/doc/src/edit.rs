@@ -482,7 +482,7 @@ impl Document {
         // silently discard that text on the next update (endnotes update after every edit).
         let generated = |sid| {
             self.endnote_story == Some(sid)
-                || self.toc.as_ref().is_some_and(|t| t.story == sid)
+                || self.tocs.iter().any(|t| t.story == sid)
                 || self.index.as_ref().is_some_and(|i| i.story == sid)
         };
         let (fs, ts) = (story(from), story(to));

@@ -406,8 +406,11 @@ The **Quick Actions** section contains essential shortcuts for publication assem
 | [ Add Blank Page ]                                                |
 |                                                                   |
 | Table of Contents:                                                |
-| Layout: [ TablePage (BPS Catalog) ▼ ]  Title: [ DAFTAR TABEL    ] |
-| [x] Hanging indent wrapped lines                                  |
+| Title:      [ DAFTAR TABLE                     ]                  |
+| TOC style:  [ TOC Table ▼ ]                                       |
+| TOC layout: [ TablePage (BPS Catalog) ▼ ]                         |
+| [x] Indent wrapped TOC entries (hanging indent)                   |
+| [ ] Include TOC page in TOC entries                               |
 | [  Add TOC  ]   [  Rebuild TOC  ]                                 |
 |                                                                   |
 | Page from RTF:                                                    |
@@ -444,6 +447,19 @@ In formal publishing, major chapters or section dividers should always start on 
 
 Pubgen scans your document's text frames and builds a Table of Contents with page leader dots automatically.
 
+#### TOC Style (what the list contains)
+| TOC style | Lists | Title filled in when picked |
+|---|---|---|
+| **TOC Entry** | every page whose title carries the tag style (the original behaviour) | *left as typed* |
+| **TOC Table** | only pages whose **first text box** starts with `Tabel` or `Table` (case-insensitive) | `Daftar Table` |
+| **TOC Chart** | only pages whose **first text box** starts with `Grafik` or `Chart` (case-insensitive) | `Daftar Grafik` |
+
+Picking **TOC Table** or **TOC Chart** fills the Title field for you and centres the title line; you can still edit
+the title. The filter is stored in the document, so **Rebuild TOC** and *Layout ▸ Update Table of Contents* keep it.
+
+A document can hold several lists at once — a *Daftar Table* and a *Daftar Grafik* side by side, for example.
+**Add TOC** makes a list on the page in view, replacing the one already there (one page holds one list).
+
 #### Layout Modes:
 1. **Standard Layout**:
    - Classic publishing format:
@@ -458,7 +474,9 @@ Pubgen scans your document's text frames and builds a Table of Contents with pag
      - **Automatic continuation headers**: If the list spans multiple pages, `Tabel` and `Halaman` are automatically repeated at the top of continuation pages!
 
 #### Rebuild TOC
-If you add, delete, or rearrange pages later, simply click **Rebuild TOC**. Pubgen updates every page number and entry across the entire document.
+If you add, delete, or rearrange pages later, click **Rebuild TOC**. Pubgen refreshes the list **on the page in
+view** with its own TOC style, title and layout, so the other lists in the document are left alone. Renumbering a
+page restarts every list in the document, so all page numbers stay right.
 
 ---
 

@@ -148,7 +148,7 @@ fn text_stories(it: &Item) -> Vec<StoryId> {
 
 /// Does the story show text generated from other stories or pages?
 fn shows_other_text(d: &Document, s: &Story) -> bool {
-    !s.xrefs.is_empty() || s.text.chars().any(|c| designcraft_doc::vars::var_index(c).is_some()) || d.toc.as_ref().is_some_and(|t| t.story == s.id)
+    !s.xrefs.is_empty() || s.text.chars().any(|c| designcraft_doc::vars::var_index(c).is_some()) || d.tocs.iter().any(|t| t.story == s.id)
 }
 
 /// Area an item paints (spread coordinates), or None when it can't be bounded cheaply.

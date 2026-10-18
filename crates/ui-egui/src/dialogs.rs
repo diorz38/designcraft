@@ -6209,6 +6209,9 @@ struct TocRow {
     page_number_style: String,
     separator_style: String,
     sort: bool,
+    /// List only paragraphs whose page's first text box starts with one of these
+    /// (comma-separated in the dialog): the Tables ("Tabel", "Table") and Charts lists.
+    page_title: Vec<String>,
 }
 
 fn toc_separator_shown(s: &str) -> String {
@@ -6229,7 +6232,8 @@ pub fn open_toc(app: &mut DesignApp) {
     let d = &st.doc;
     let styles: Vec<&str> = d.styles.paragraph.iter().map(|p| p.name.as_str()).filter(|n| *n != designcraft_doc::NO_PARA_STYLE).collect();
     let char_styles: Vec<&str> = d.styles.character.iter().map(|c| c.name.as_str()).filter(|n| *n != designcraft_doc::NO_CHAR_STYLE).collect();
-    let toc = d.toc.as_ref().filter(|t| d.story(t.story).is_some());
+    // Prefill from the table of contents on the page in view, else the last one generated.
+    let toc = crate::canvas::current_page(app).and_then(|p| d.toc_on_page(p)).or_else(|| d.tocs.last()).filter(|t| d.story(t.story).is_some());
     let rows: Vec<TocRow> = toc
         .map(|t| {
             t.entries
@@ -6248,6 +6252,7 @@ pub fn open_toc(app: &mut DesignApp) {
                     page_number_style: e.page_number_style.clone().unwrap_or_default(),
                     separator_style: e.separator_style.clone().unwrap_or_default(),
                     sort: e.sort,
+                    page_title: e.page_title.clone(),
                 })
                 .collect()
         })
@@ -6286,6 +6291,9 @@ fn toc_params(app: &DesignApp, d: &Dialog) -> Value {
             if r.sort {
                 e["sort"] = json!(true);
             }
+            if !r.page_title.is_empty() {
+                e["pageTitle"] = json!(r.page_title);
+            }
             e
         })
         .collect();
@@ -6294,7 +6302,18 @@ fn toc_params(app: &DesignApp, d: &Dialog) -> Value {
     if !title_style.is_empty() {
         p["titleStyle"] = json!(title_style);
     }
-    if let Some(page) = crate::canvas::current_page(app) {
+    // `replace` rewrites the table of contents whose first frame is on the target page, so target
+    // the one the dialog is showing: the page in view, or (with none there) the last one's page.
+    // A new table of contents goes on the page in view.
+    let cur = crate::canvas::current_page(app);
+    let shown = cur
+        .and_then(|p| app.session.active().and_then(|a| a.doc.toc_on_page(p)).map(|_| p))
+        .or_else(|| {
+            let a = app.session.active()?;
+            a.doc.toc_page(a.doc.tocs.last()?)
+        });
+    let page = if d.b("replace") { shown.or(cur) } else { cur };
+    if let Some(page) = page {
         p["page"] = json!(page + 1);
     }
     p
@@ -6414,6 +6433,14 @@ fn toc_dialog(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
             crate::rtl::label(ui, "");
             ui.checkbox(&mut r.sort, tr("Sort Entries in Alphabetical Order"));
             ui.end_row();
+            // The Pages filter ("" lists every paragraph of the style) and the nesting level.
+            crate::rtl::label(ui, tr("Page Title:"));
+            let mut listed = r.page_title.join(", ");
+            let resp = ui.add(egui::TextEdit::singleline(&mut listed).desired_width(140.0).horizontal_align(egui::Align::Min));
+            resp.clone().on_hover_text(tr("List a page only when the first text box on it starts with one of these words: \"Tabel, Table\" lists the tables, \"Grafik, Chart\" the charts"));
+            if resp.changed() {
+                r.page_title = listed.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect();
+            }
             crate::rtl::label(ui, tr("Level:"));
             egui::ComboBox::from_id_salt("toc_level").selected_text(r.level.to_string()).width(60.0).show_ui(ui, |ui| {
                 for l in 1..=9u8 {
@@ -7983,7 +8010,7 @@ mod tests {
         click_dialog(&mut app, &ctx, screen, visible_label(&labels, screen, "OK").center());
         assert!(app.ui.dialog.is_none());
         let d = &app.session.doc().unwrap().doc;
-        let toc = d.toc.clone().unwrap();
+        let toc = d.tocs.last().cloned().unwrap();
         assert_eq!(toc.entries, vec![designcraft_doc::TocEntry::new("Headline", 1)]);
         let text = &d.story(toc.story).unwrap().text;
         assert!(text.starts_with("Contents\n") && text.contains("\nNotes on the Grid\t"), "{text}");
@@ -9226,7 +9253,7 @@ mod tests {
         app.session.execute("layout.pages.insert", &json!({"count": 1})).unwrap();
         let entries = json!([{"style": "Head", "pageNumberStyle": "Number", "separatorStyle": "Dots", "sort": true}]);
         app.session.execute("toc.generate", &json!({"page": 2, "entries": entries})).unwrap();
-        let before = app.session.active().unwrap().doc.toc.clone().unwrap();
+        let before = app.session.active().unwrap().doc.tocs.last().cloned().unwrap();
         // The dialog shows the options, and OK (Replace Existing) writes them back unchanged.
         open_toc(&mut app);
         let d = app.ui.dialog.as_ref().unwrap();
@@ -9241,12 +9268,39 @@ mod tests {
         );
         confirm(&mut app).expect("OK regenerates the table of contents");
         let st = app.session.active().unwrap();
-        assert_eq!(st.doc.toc.as_ref().unwrap().entries, before.entries);
+        assert_eq!(st.doc.tocs.last().unwrap().entries, before.entries);
         // [None] and unsorted are left out of the params.
         let mut d = Dialog::new(TOC, json!({"included": [{"style": "Head", "level": 1, "separator": "^t"}]}));
         d.fields.insert("replace".into(), json!(true));
         let p = toc_params(&app, &d);
         assert!(p["entries"][0].get("pageNumberStyle").is_none() && p["entries"][0].get("sort").is_none(), "{p}");
+    }
+
+    #[test]
+    fn toc_dialog_replace_targets_the_table_of_contents_it_shows() {
+        let mut app = test_app();
+        app.session.execute("style.paragraph.create", &json!({"name": "Head"})).unwrap();
+        let sid = app.session.execute("frame.create", &json!({"rect": [36, 36, 300, 200], "content": "text", "text": "Pears"})).unwrap()["story"].clone();
+        app.session.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 0})).unwrap();
+        app.session.execute("style.paragraph.apply", &json!({"name": "Head"})).unwrap();
+        app.session.execute("layout.pages.insert", &json!({"count": 2})).unwrap();
+        app.session.execute("toc.generate", &json!({"page": 2, "entries": [{"style": "Head"}]})).unwrap();
+        let toc = app.session.active().unwrap().doc.tocs.last().cloned().unwrap();
+
+        // With another page in view the dialog still shows that table of contents, and Replace
+        // rewrites it where it is instead of making a second one in view.
+        app.canvas_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0)));
+        crate::canvas::go_to_page(&mut app, 2);
+        assert_eq!(crate::canvas::current_page(&app), Some(2));
+        open_toc(&mut app);
+        let d = app.ui.dialog.as_ref().unwrap();
+        assert!(d.b("replace"), "the dialog shows the existing table of contents");
+        let p = toc_params(&app, d);
+        assert_eq!(p["page"], json!(2), "Replace targets the table it shows");
+        confirm(&mut app).expect("OK regenerates it in place");
+        let doc = &app.session.active().unwrap().doc;
+        assert_eq!(doc.tocs.len(), 1, "{:?}", doc.tocs);
+        assert_eq!(doc.tocs[0].story, toc.story);
     }
 
     #[test]

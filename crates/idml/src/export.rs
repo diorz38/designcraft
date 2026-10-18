@@ -16,8 +16,17 @@ use crate::{DOM_VERSION, MIMETYPE, base64_encode};
 
 const PKG_NS: &str = "http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging";
 const NO_PARA_ID: &str = "ParagraphStyle/$ID/[No paragraph style]";
+/// Id of the first table of contents' TOC style (the name InDesign writes for it); further ones
+/// number off it.
 const TOC_STYLE_ID: &str = "TOCStyle/Table of Contents";
-const TOC_STYLE_NAME: &str = "Table of Contents";
+/// The TOC style Id (`TOCStyle/Table of Contents`, `… 2`, `… 3`) of the `index`th table of contents.
+fn toc_style_id(index: usize) -> String {
+    if index == 0 { TOC_STYLE_ID.to_string() } else { format!("{TOC_STYLE_ID} {}", index + 1) }
+}
+/// Its display name; InDesign never repeats one.
+fn toc_style_name(index: usize) -> String {
+    if index == 0 { "Table of Contents".to_string() } else { format!("Table of Contents {}", index + 1) }
+}
 const NO_CHAR_ID: &str = "CharacterStyle/$ID/[No character style]";
 
 /// Export options.
@@ -1093,19 +1102,19 @@ impl<'a> Ex<'a> {
         let mut ro = El::new("RootObjectStyleGroup").attr("Self", self.fresh());
         og.emit(&mut ro, "ObjectStyleGroup", "");
         root.push(ro);
-        if let Some(toc) = d.toc.as_ref().filter(|t| d.story(t.story).is_some()) {
-            root.push(self.toc_style_el(toc));
+        for (i, toc) in d.tocs.iter().filter(|t| d.story(t.story).is_some()).take(designcraft_doc::MAX_TOCS).enumerate() {
+            root.push(self.toc_style_el(toc, i));
         }
         document(&root)
     }
 
     /// The document's table of contents as a TOC style; its story names it in `AppliedTOCStyle`.
-    fn toc_style_el(&mut self, toc: &designcraft_doc::Toc) -> El {
+    fn toc_style_el(&mut self, toc: &designcraft_doc::Toc, index: usize) -> El {
         let para = |n: &str| names::style_self("ParagraphStyle", PARA_BUILTINS, n);
         let chars = |n: Option<&str>| names::style_self("CharacterStyle", CHAR_BUILTINS, n.unwrap_or(designcraft_doc::NO_CHAR_STYLE));
         let mut el = El::new("TOCStyle")
-            .attr("Self", TOC_STYLE_ID)
-            .attr("Name", TOC_STYLE_NAME)
+            .attr("Self", toc_style_id(index))
+            .attr("Name", toc_style_name(index))
             .attr("Title", &toc.title)
             .attr("TitleStyle", para(toc.title_style.as_deref().unwrap_or("TOC Title")))
             .attr("RunIn", "false")
@@ -2271,10 +2280,18 @@ impl<'a> Ex<'a> {
     // ---------- stories ----------
 
     fn story_el(&mut self, s: &Story) -> El {
-        let toc = self.d.toc.as_ref().is_some_and(|t| t.story == s.id);
+        // A table of contents' story names the TOC style it is generated from (Styles part).
+        let toc = self
+            .d
+            .tocs
+            .iter()
+            .filter(|t| self.d.story(t.story).is_some())
+            .position(|t| t.story == s.id)
+            .map(toc_style_id)
+            .unwrap_or_else(|| "n".into());
         let mut el = El::new("Story")
             .attr("Self", uid(s.id.0))
-            .attr("AppliedTOCStyle", if toc { TOC_STYLE_ID } else { "n" })
+            .attr("AppliedTOCStyle", toc)
             .attr("TrackChanges", "false")
             .attr("StoryTitle", "$ID/");
         el.push(

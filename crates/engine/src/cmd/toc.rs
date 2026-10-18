@@ -1,6 +1,11 @@
 //! Layout → Table of Contents: list the paragraphs of chosen styles with their page names, as a
 //! story with "TOC Title" / "TOC Level n" styles (right tab with dot leader) or the entry styles
 //! chosen per style. Update Table of Contents regenerates the same story after edits.
+//!
+//! A document holds several tables of contents (Contents, Tables, Charts): `toc.generate` adds one
+//! per page (replacing the one already there), `toc.update` regenerates them all. An entry with
+//! `pageTitle` lists only paragraphs whose page begins with the given words: the first text box on
+//! the page starts with "Tabel" or "Table" for a list of tables, "Grafik" or "Chart" for charts.
 
 use designcraft_compose::{ComposeOptions, caret, compose_story};
 use designcraft_doc::{
@@ -19,22 +24,28 @@ pub fn specs() -> Vec<CommandSpec> {
             "Table of Contents…",
             ["Layout"],
             None,
-            "{entries: [{style, level?: 1 (1-9), entryStyle?: paragraph style of its entries (default \"TOC Level n\"), pageNumber?: \"after\"|\"before\"|\"none\", separator?: text between entry and number (default a tab), pageNumberStyle?: character style of the page number, separatorStyle?: character style of the separator, sort?: bool (Sort Entries in Alphabetical Order: among their siblings, each with the entries under it)}] | styles: [names] (levels 1, 2, …), title?: \"Contents\", titleStyle?: paragraph style of the title (default \"TOC Title\"), pageNumbers?: true, replace?: true (regenerate the existing table of contents in place; false makes a new frame), page?: 1-based page for a new frame (its margins), rect?: [x0,y0,x1,y1] (spread coords)} → {story, entries}",
+            "{entries: [{style, level?: 1 (1-9), entryStyle?: paragraph style of its entries (default \"TOC Level n\"), pageNumber?: \"after\"|\"before\"|\"none\", separator?: text between entry and number (default a tab), pageNumberStyle?: character style of the page number, separatorStyle?: character style of the separator, sort?: bool (Sort Entries in Alphabetical Order: among their siblings, each with the entries under it), pageTitle?: [words] (list only paragraphs whose page's first text box starts with one of these, e.g. [\"Tabel\", \"Table\"])}] | styles: [names] (levels 1, 2, …), title?: \"Contents\", titleStyle?: paragraph style of the title (default \"TOC Title\"), pageNumbers?: true, replace?: true (regenerate the table of contents on the target page in place; false makes a new frame), page?: 1-based page for a new frame (its margins), rect?: [x0,y0,x1,y1] (spread coords)} → {story, entries, tocs}",
             has_doc,
             generate
         ),
-        cmd!("toc.update", "Update Table of Contents", ["Layout"], None, "{} — regenerate the existing table of contents", has_toc, |s, _| {
+        cmd!("toc.update", "Update Table of Contents", ["Layout"], None, "{} — regenerate every table of contents in the document", has_toc, |s, _| {
             s.edit(|d, _| {
-                let toc = d.toc.clone().ok_or_else(|| bad("toc.update", "no table of contents"))?;
-                let n = fill(d, &toc, None)?;
-                Ok(json!({"story": toc.story.0, "entries": n}))
+                let tocs = d.tocs.clone();
+                if tocs.is_empty() {
+                    return Err(bad("toc.update", "no table of contents"));
+                }
+                let mut entries = 0;
+                for toc in &tocs {
+                    entries += fill(d, toc, None)?;
+                }
+                Ok(json!({"entries": entries, "tocs": tocs.len()}))
             })
         }),
         cmd!(query "toc.entries", "Table of Contents Entries", [], None, "{entries | styles} → [{level, text, page}] without changing the document", has_doc, |s, p| {
             let entries = entries_param(p)?;
             let d = &s.doc()?.doc;
-            let skip = d.toc.as_ref().map(|t| t.story);
-            let found = sort_entries(collect(d, &entries, skip), &entries);
+            let skip = toc_stories(d);
+            let found = sort_entries(collect(d, &entries, &skip), &entries);
             Ok(json!(found.into_iter().map(|e| json!({"level": e.level, "text": e.text, "page": e.page})).collect::<Vec<_>>()))
         }),
     ]
@@ -42,15 +53,22 @@ pub fn specs() -> Vec<CommandSpec> {
 
 fn has_toc(s: &Session) -> std::result::Result<(), String> {
     match s.doc() {
-        Ok(st) if st.doc.toc.as_ref().is_some_and(|t| st.doc.story(t.story).is_some()) => Ok(()),
+        Ok(st) if st.doc.tocs.iter().any(|t| st.doc.story(t.story).is_some()) => Ok(()),
         _ => Err("the document has no table of contents".into()),
     }
+}
+
+/// The stories the tables of contents generate: never listed as entries themselves.
+fn toc_stories(d: &Document) -> Vec<StoryId> {
+    d.tocs.iter().map(|t| t.story).collect()
 }
 
 const MAX_ENTRIES: usize = 64;
 const MAX_NAME: usize = 256;
 const MAX_TITLE: usize = 1024;
 const MAX_SEPARATOR: usize = 64;
+/// Words a `pageTitle` filter may test (each up to `MAX_TITLE` characters).
+pub const MAX_PAGE_TITLE_WORDS: usize = 8;
 
 fn entries_param(p: &Value) -> Result<Vec<TocEntry>> {
     let mut entries: Vec<TocEntry> = if let Some(v) = p.get("entries") {
@@ -80,6 +98,17 @@ fn entries_param(p: &Value) -> Result<Vec<TocEntry>> {
             }
             *sep = one_line(sep);
         }
+        if e.page_title.len() > MAX_PAGE_TITLE_WORDS {
+            return Err(bad("toc.generate", format!("at most {MAX_PAGE_TITLE_WORDS} page titles per entry")));
+        }
+        for w in &mut e.page_title {
+            if w.chars().count() > MAX_NAME {
+                return Err(bad("toc.generate", format!("page titles are at most {MAX_NAME} characters")));
+            }
+            *w = one_line(w).trim().to_string();
+        }
+        e.page_title.retain(|w| !w.is_empty());
+        e.page_title.dedup();
         // The defaults are stored as `None`, so a definition reads the same however it was made.
         if e.entry_style.as_deref() == Some("") {
             e.entry_style = None;
@@ -158,11 +187,14 @@ pub struct Found {
     key: (usize, i64, i64),
 }
 
-/// Paragraphs in `entries` styles across the document, in page order.
-pub fn collect(d: &Document, entries: &[TocEntry], skip: Option<StoryId>) -> Vec<Found> {
+/// Paragraphs in `entries` styles across the document, in page order. `skip` holds the stories the
+/// tables of contents generate (never listed as entries).
+pub fn collect(d: &Document, entries: &[TocEntry], skip: &[StoryId]) -> Vec<Found> {
     let mut out = Vec::new();
+    // Page → its first text box's text, for `page_title` filters (one lookup per page).
+    let mut page_titles: std::collections::HashMap<usize, Option<String>> = std::collections::HashMap::new();
     for (sid, st) in &d.stories {
-        if Some(*sid) == skip || !st.paras.iter().any(|f| entries.iter().any(|e| e.style == f.style)) {
+        if skip.contains(sid) || !st.paras.iter().any(|f| entries.iter().any(|e| e.style == f.style)) {
             continue;
         }
         let cs = compose_story(d, *sid, &ComposeOptions::default());
@@ -189,6 +221,13 @@ pub fn collect(d: &Document, entries: &[TocEntry], skip: Option<StoryId>) -> Vec
             let b = item.bounds();
             let in_spread = d.spreads[si].page_at_x(b.center().x).unwrap_or(0);
             let abs = d.first_page_of_spread(si) + in_spread;
+            // "Tabel"/"Table" and "Grafik"/"Chart" lists test the first text box of the page.
+            if !e.page_title.is_empty() {
+                let title = page_titles.entry(abs).or_insert_with(|| page_first_text(d, abs));
+                if !title.as_deref().is_some_and(|t| title_matches(t, &e.page_title)) {
+                    continue;
+                }
+            }
             out.push(Found {
                 level: e.level,
                 text,
@@ -200,6 +239,40 @@ pub fn collect(d: &Document, entries: &[TocEntry], skip: Option<StoryId>) -> Vec
     }
     out.sort_by_key(|f| f.key);
     out
+}
+
+/// The text of the first text box on absolute page `abs`: the topmost, then leftmost, text frame
+/// whose center sits on that page. `None` when the page has no text box.
+fn page_first_text(d: &Document, abs: usize) -> Option<String> {
+    let (si, _) = d.page_loc(abs)?;
+    let spread = d.spreads.get(si)?;
+    let mut best: Option<(i64, i64, StoryId)> = None;
+    for it in &spread.items {
+        let Some(tf) = it.text_frame() else { continue };
+        if d.page_of_item(it.id) != Some(abs) {
+            continue;
+        }
+        let b = it.bounds();
+        if !b.x0.is_finite() || !b.y0.is_finite() {
+            continue;
+        }
+        let key = ((b.y0 * 10.0) as i64, (b.x0 * 10.0) as i64);
+        if best.is_none_or(|(y, x, _)| key < (y, x)) {
+            best = Some((key.0, key.1, tf.story));
+        }
+    }
+    let story = d.story(best?.2)?;
+    Some(story.text.lines().next().unwrap_or("").trim().to_string())
+}
+
+/// Whether `text` starts with one of `words` (case-insensitive, whole-word-ish: the text box reads
+/// "Tabel 01.01. Jarak …", which starts with "Tabel").
+fn title_matches(text: &str, words: &[String]) -> bool {
+    let text = text.trim_start();
+    words.iter().any(|w| {
+        let w = w.trim();
+        !w.is_empty() && text.get(..w.len()).is_some_and(|head| head.eq_ignore_ascii_case(w))
+    })
 }
 
 fn ensure_styles(d: &mut Document, levels: u8, width: f64) {
@@ -240,7 +313,8 @@ fn ensure_styles(d: &mut Document, levels: u8, width: f64) {
 
 /// Rewrite the TOC story; returns the number of entries.
 fn fill(d: &mut Document, toc: &Toc, width: Option<f64>) -> Result<usize> {
-    let found = collect(d, &toc.entries, Some(toc.story));
+    let skip = toc_stories(d);
+    let found = collect(d, &toc.entries, &skip);
     let levels = toc.entries.iter().map(|e| e.level).max().unwrap_or(1);
     let width = width.unwrap_or_else(|| {
         d.story(toc.story).and_then(|st| st.frames.first()).and_then(|f| d.item(*f)).map(|i| i.text_area().width()).unwrap_or(300.0)
@@ -333,8 +407,12 @@ fn generate(s: &mut Session, p: &Value) -> Result<Value> {
         for e in &entries {
             para_style_exists(d, &e.style)?;
         }
-        // Replace: regenerate the existing TOC story in place; otherwise make a frame.
-        let existing = d.toc.as_ref().map(|t| t.story).filter(|sid| replace && d.story(*sid).is_some());
+        // Replace: regenerate the table of contents already on the target page in place;
+        // otherwise make a frame. A document can hold several (Contents, Tables, Charts).
+        let existing = d.toc_on_page(page).map(|t| t.story).filter(|sid| replace && d.story(*sid).is_some());
+        if existing.is_none() && d.tocs.len() >= designcraft_doc::MAX_TOCS {
+            return Err(bad("toc.generate", format!("a document holds at most {} tables of contents", designcraft_doc::MAX_TOCS)));
+        }
         let (story, width) = match existing {
             Some(sid) => (sid, None),
             None => {
@@ -349,7 +427,11 @@ fn generate(s: &mut Session, p: &Value) -> Result<Value> {
         };
         let toc = Toc { story, title: title.clone(), entries: entries.clone(), page_numbers, title_style: title_style.clone() };
         let n = fill(d, &toc, width)?;
-        d.toc = Some(toc.clone());
+        // The list keeps one entry per story, most recently generated last; tables whose story is
+        // gone are dropped.
+        let dead: Vec<StoryId> = d.tocs.iter().map(|t| t.story).filter(|sid| d.story(*sid).is_none()).collect();
+        d.tocs.retain(|t| t.story != story && !dead.contains(&t.story));
+        d.tocs.push(toc.clone());
         let autoflow = p.get("autoflow").and_then(Value::as_bool).unwrap_or(true);
         let mut pages_added = 0;
         if autoflow {
@@ -361,7 +443,7 @@ fn generate(s: &mut Session, p: &Value) -> Result<Value> {
                 pages_added += added2;
             }
         }
-        Ok(json!({"story": story.0, "entries": n, "pagesAdded": pages_added}))
+        Ok(json!({"story": story.0, "entries": n, "pagesAdded": pages_added, "tocs": d.tocs.len()}))
     })
 }
 
@@ -408,7 +490,7 @@ mod tests {
 
     fn toc_lines(s: &Session) -> Vec<(String, String)> {
         let d = &s.doc().unwrap().doc;
-        let st = d.story(d.toc.as_ref().unwrap().story).unwrap();
+        let st = d.story(d.tocs.last().unwrap().story).unwrap();
         st.para_ranges().into_iter().zip(&st.paras).map(|(r, f)| (st.text[r].trim_end_matches('\n').to_string(), f.style.clone())).collect()
     }
 
@@ -457,7 +539,112 @@ mod tests {
         let r = s.execute("toc.generate", &json!({"styles": ["Headline"], "page": page, "replace": false})).unwrap();
         assert_ne!(r["story"], first);
         assert_eq!(stories(&s), n + 1);
-        assert_eq!(s.doc().unwrap().doc.toc.as_ref().unwrap().story.0, r["story"].as_u64().unwrap());
+        assert_eq!(s.doc().unwrap().doc.tocs.last().unwrap().story.0, r["story"].as_u64().unwrap());
+    }
+
+    /// A document of single-page spreads with one frame per page: `pages` is (text, style) per
+    /// page. Returns the session and the number of pages (a table of contents goes on a new one).
+    fn doc_of_pages(pages: &[(&str, &str)]) -> (Session, usize) {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"pages": pages.len() + 2, "facingPages": false})).unwrap();
+        let mut names: Vec<&str> = pages.iter().map(|(_, st)| *st).collect();
+        names.dedup();
+        for n in names {
+            if s.doc().unwrap().doc.styles.para(n).is_none() {
+                s.execute("style.paragraph.create", &json!({"name": n})).unwrap();
+            }
+        }
+        for (i, (text, style)) in pages.iter().enumerate() {
+            let r = s.execute("frame.create", &json!({"spread": i, "rect": [36, 36, 576, 200], "content": "text", "text": text})).unwrap();
+            s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 0})).unwrap();
+            s.execute("style.paragraph.apply", &json!({"name": style})).unwrap();
+        }
+        (s, pages.len() + 1)
+    }
+
+    #[test]
+    fn page_title_lists_only_the_pages_whose_first_text_box_starts_with_a_word() {
+        let (mut s, page) = doc_of_pages(&[
+            ("Tabel 1.1. Jarak Antar Kecamatan", "TOC Entry"),
+            ("Grafik 1.1. Curah Hujan Tiap Bulan", "TOC Entry"),
+            ("Bab 1. Pendahuluan", "TOC Entry"),
+        ]);
+        let entry = |words: &[&str]| {
+            let mut e = json!({"style": "TOC Entry"});
+            if !words.is_empty() {
+                e["pageTitle"] = json!(words);
+            }
+            json!({"entries": [e]})
+        };
+        // Every tagged page, then the tables and the charts.
+        let all = s.execute("toc.entries", &entry(&[])).unwrap();
+        assert_eq!(all.as_array().unwrap().len(), 3, "{all}");
+        assert_eq!(
+            s.execute("toc.entries", &entry(&["Tabel", "Table"])).unwrap(),
+            json!([{"level": 1, "text": "Tabel 1.1. Jarak Antar Kecamatan", "page": "1"}])
+        );
+        // "Chart" is not a prefix of the page text "Grafik …", and a page that starts with
+        // neither word is in no list.
+        assert_eq!(
+            s.execute("toc.entries", &entry(&["Grafik", "Chart"])).unwrap(),
+            json!([{"level": 1, "text": "Grafik 1.1. Curah Hujan Tiap Bulan", "page": "2"}])
+        );
+
+        // A table of contents on the page after the content, listing the tables only.
+        let r = s.execute("toc.generate", &json!({"page": page, "title": "Daftar Table", "entries": [{"style": "TOC Entry", "pageTitle": ["Tabel", "Table"]}]})).unwrap();
+        let tables = StoryId(r["story"].as_u64().unwrap());
+        let text = s.doc().unwrap().doc.story(tables).unwrap().text.clone();
+        assert!(text.contains("Tabel 1.1. Jarak Antar Kecamatan"), "{text}");
+        assert!(!text.contains("Grafik 1.1.") && !text.contains("Bab 1."), "{text}");
+        // The filter survives the save/load round trip of the definition.
+        let e = &s.doc().unwrap().doc.tocs.last().unwrap().entries[0];
+        assert_eq!(e.page_title, ["Tabel", "Table"]);
+    }
+
+    #[test]
+    fn a_document_holds_several_tables_of_contents_and_updates_them_all() {
+        let (mut s, page) = doc_of_pages(&[
+            ("Tabel 1.1. Jarak Antar Kecamatan", "TOC Entry"),
+            ("Grafik 1.1. Curah Hujan Tiap Bulan", "TOC Entry"),
+        ]);
+        let make_toc = |s: &mut Session, page: usize, title: &str, words: &[&str]| {
+            let r = s
+                .execute(
+                    "toc.generate",
+                    &json!({"page": page, "title": title, "entries": [{"style": "TOC Entry", "pageTitle": words}]}),
+                )
+                .unwrap();
+            StoryId(r["story"].as_u64().unwrap())
+        };
+        let tables = make_toc(&mut s, page, "Daftar Table", &["Tabel"]);
+        let charts = make_toc(&mut s, page + 1, "Daftar Grafik", &["Grafik"]);
+        assert_ne!(tables, charts);
+        let d = &s.doc().unwrap().doc;
+        assert_eq!(d.tocs.len(), 2, "{:?}", d.tocs);
+        assert_eq!(d.toc_of_story(tables).map(|t| t.title.as_str()), Some("Daftar Table"));
+        assert_eq!(d.toc_on_page(page - 1).map(|t| t.story), Some(tables));
+        assert_eq!(d.toc_on_page(page).map(|t| t.story), Some(charts));
+        assert!(!d.story(charts).unwrap().text.contains("Tabel 1.1."), "{:?}", d.story(charts).unwrap().text);
+
+        // Regenerating the first one replaces it in place and leaves the second alone.
+        let again = make_toc(&mut s, page, "Daftar Table", &["Tabel"]);
+        assert_eq!(again, tables);
+        let d = &s.doc().unwrap().doc;
+        assert_eq!(d.tocs.len(), 2);
+        assert!(d.story(charts).is_some());
+
+        // Update Table of Contents regenerates both, keeping each one's filter.
+        let r = s.execute("toc.update", &json!({})).unwrap();
+        assert_eq!(r["tocs"], 2, "{r}");
+        let d = &s.doc().unwrap().doc;
+        let t = d.story(tables).unwrap().text.clone();
+        assert!(t.contains("Tabel 1.1.") && !t.contains("Grafik 1.1."), "{t}");
+        let c = d.story(charts).unwrap().text.clone();
+        assert!(c.contains("Grafik 1.1.") && !c.contains("Tabel 1.1."), "{c}");
+        for toc in &d.tocs {
+            assert_eq!(toc.entries[0].page_title.len(), 1);
+        }
+        d.check().unwrap();
     }
 
     #[test]
@@ -465,6 +652,7 @@ mod tests {
         let (mut s, page) = sample_with_toc_page();
         let long = "x".repeat(5000);
         let many: Vec<Value> = (0..65).map(|_| json!({"style": "Headline"})).collect();
+        let words: Vec<Value> = (0..9).map(|i| json!(format!("w{i}"))).collect();
         for p in [
             json!({"entries": [{"style": "Headline", "level": 0}]}),
             json!({"entries": [{"style": "Headline", "level": 10}]}),
@@ -480,6 +668,9 @@ mod tests {
             json!({"entries": [{"style": "Headline", "separator": long}]}),
             json!({"entries": [{"style": long}]}),
             json!({"entries": many}),
+            json!({"entries": [{"style": "Headline", "pageTitle": words}]}),
+            json!({"entries": [{"style": "Headline", "pageTitle": [long]}]}),
+            json!({"entries": [{"style": "Headline", "pageTitle": "Tabel"}]}),
             json!({"entries": "Headline"}),
             json!({"entries": []}),
             json!({"styles": ["Headline"], "titleStyle": "No Such Style"}),
@@ -491,7 +682,7 @@ mod tests {
             let rev = s.doc().unwrap().revision;
             assert!(s.execute("toc.generate", &merge(&p, page)).is_err(), "{p}");
             assert_eq!(s.doc().unwrap().revision, rev, "{p}");
-            assert!(s.doc().unwrap().doc.toc.is_none());
+            assert!(s.doc().unwrap().doc.tocs.is_empty());
         }
     }
 
@@ -522,7 +713,7 @@ mod tests {
     /// The table of contents' character runs as (text, character style), merged by style.
     fn toc_runs(s: &Session) -> Vec<(String, String)> {
         let d = &s.doc().unwrap().doc;
-        let st = d.story(d.toc.as_ref().unwrap().story).unwrap();
+        let st = d.story(d.tocs.last().unwrap().story).unwrap();
         let mut out: Vec<(String, String)> = Vec::new();
         for (r, f) in st.runs() {
             match out.last_mut() {
@@ -557,7 +748,7 @@ mod tests {
             ]
         };
         assert_eq!(toc_runs(&s), want("Pears"));
-        let e = &s.doc().unwrap().doc.toc.as_ref().unwrap().entries[0];
+        let e = &s.doc().unwrap().doc.tocs.last().unwrap().entries[0];
         assert_eq!((e.page_number_style.as_deref(), e.separator_style.as_deref()), (Some("Number"), Some("Dots")));
         s.execute("toc.update", &json!({})).unwrap();
         assert_eq!(toc_runs(&s), want("Pears"));
@@ -602,7 +793,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(lines(&s), ["apricot", "Mix", "Bread", "Zucchini", "Zest", "Bake"]);
-        assert!(s.doc().unwrap().doc.toc.as_ref().unwrap().entries[0].sort);
+        assert!(s.doc().unwrap().doc.tocs.last().unwrap().entries[0].sort);
         // Sections sorted within each chapter only.
         s.execute(
             "toc.generate",
@@ -630,7 +821,7 @@ mod tests {
             .unwrap();
         s.execute("style.character.edit", &json!({"name": "Number", "rename": "Folio"})).unwrap();
         s.execute("style.character.delete", &json!({"name": "Dots"})).unwrap();
-        let e = s.doc().unwrap().doc.toc.as_ref().unwrap().entries[0].clone();
+        let e = s.doc().unwrap().doc.tocs.last().unwrap().entries[0].clone();
         assert_eq!((e.page_number_style.as_deref(), e.separator_style), (Some("Folio"), None));
         s.execute("toc.update", &json!({})).unwrap();
         assert!(toc_runs(&s).iter().any(|(t, st)| t == "1" && st == "Folio"), "{:?}", toc_runs(&s));

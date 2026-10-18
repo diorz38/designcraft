@@ -66,7 +66,7 @@ pub use xref::{ANCHOR_MARK, CrossRef, TextAnchor, XREF_MARK, XrefFormat};
 
 use designcraft_color::Swatch;
 use designcraft_geom::Unit;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum DocError {
@@ -670,9 +670,10 @@ pub struct Document {
     /// no `~` that never hyphenates.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hyphenation_exceptions: Vec<String>,
-    /// The generated table of contents (Layout → Table of Contents), kept for Update.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub toc: Option<Toc>,
+    /// The generated tables of contents (Layout → Table of Contents), kept for Update. A document
+    /// can hold several (Contents, Tables, Charts): each keeps a story and its own entry styles.
+    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "toc_list")]
+    pub tocs: Vec<Toc>,
     /// Text variable definitions (instances in stories are `vars::var_char(index)`).
     #[serde(default = "vars::defaults")]
     pub text_variables: Vec<vars::TextVariable>,
@@ -751,6 +752,11 @@ pub struct TocEntry {
     /// their siblings instead of in page order.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub sort: bool,
+    /// List a paragraph only when the first text box on its page starts with one of these
+    /// (case-insensitive): "Tabel"/"Table" lists the tables, "Grafik"/"Chart" the charts.
+    /// Empty lists every paragraph of the style.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub page_title: Vec<String>,
 }
 
 impl TocEntry {
@@ -764,6 +770,7 @@ impl TocEntry {
             page_number_style: None,
             separator_style: None,
             sort: false,
+            page_title: Vec::new(),
         }
     }
 }
@@ -782,6 +789,9 @@ fn one() -> u8 {
     1
 }
 
+/// How many tables of contents a document lists and a file may define.
+pub const MAX_TOCS: usize = 64;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Toc {
@@ -793,6 +803,25 @@ pub struct Toc {
     /// Paragraph style of the title; `None` is the generated "TOC Title" style.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title_style: Option<String>,
+}
+
+/// Reads the table-of-contents list: the array current files write, or the single object files
+/// wrote before a document could hold several. A missing field or `null` is none.
+fn toc_list<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Vec<Toc>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(Toc),
+        Many(Vec<Toc>),
+    }
+    Ok(match Option::<OneOrMany>::deserialize(d)? {
+        None => Vec::new(),
+        Some(OneOrMany::One(t)) => vec![t],
+        Some(OneOrMany::Many(mut v)) => {
+            v.truncate(MAX_TOCS);
+            v
+        }
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -901,6 +930,20 @@ impl Document {
     }
     pub fn story_mut(&mut self, id: StoryId) -> Option<&mut Story> {
         self.stories.get_mut(&id).map(Arc::make_mut)
+    }
+
+    /// The table of contents a story holds, if the story is a generated one.
+    pub fn toc_of_story(&self, sid: StoryId) -> Option<&Toc> {
+        self.tocs.iter().find(|t| t.story == sid)
+    }
+    /// The table of contents whose first frame is on page `abs`, if any: the one a rebuild on
+    /// that page regenerates.
+    pub fn toc_on_page(&self, abs: usize) -> Option<&Toc> {
+        self.tocs.iter().find(|t| self.story(t.story).and_then(|s| s.frames.first()).and_then(|f| self.page_of_item(*f)) == Some(abs))
+    }
+    /// Absolute page of a table of contents' first frame.
+    pub fn toc_page(&self, toc: &Toc) -> Option<usize> {
+        self.story(toc.story).and_then(|s| s.frames.first()).and_then(|f| self.page_of_item(*f))
     }
 
     pub fn swatch(&self, name: &str) -> Option<&Swatch> {

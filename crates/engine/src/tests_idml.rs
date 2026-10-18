@@ -517,13 +517,13 @@ fn table_of_contents_definition_round_trips_through_idml_and_updates() {
     .unwrap();
     let toc_text = |s: &Session| {
         let d = &s.doc().unwrap().doc;
-        d.story(d.toc.as_ref().unwrap().story).unwrap().text.clone()
+        d.story(d.tocs.last().unwrap().story).unwrap().text.clone()
     };
-    let before = s.doc().unwrap().doc.toc.clone().unwrap();
+    let before = s.doc().unwrap().doc.tocs.last().cloned().unwrap();
     let text = toc_text(&s);
     let b64 = s.execute("file.exportIdml", &json!({})).unwrap()["base64"].as_str().unwrap().to_string();
     s.execute("file.openIdml", &json!({"base64": b64, "name": "toc.idml"})).unwrap();
-    let after = s.doc().unwrap().doc.toc.clone().expect("the TOC definition is imported");
+    let after = s.doc().unwrap().doc.tocs.last().cloned().expect("the TOC definition is imported");
     assert_eq!((&after.title, &after.title_style, &after.entries), (&before.title, &before.title_style, &before.entries));
     assert_eq!(toc_text(&s), text);
     s.execute("toc.update", &json!({})).unwrap();
@@ -565,13 +565,44 @@ fn table_of_contents_character_styles_and_sort_round_trip_through_idml() {
         ]}),
     )
     .unwrap();
-    let before = s.doc().unwrap().doc.toc.clone().unwrap();
+    let before = s.doc().unwrap().doc.tocs.last().cloned().unwrap();
     let b64 = s.execute("file.exportIdml", &json!({})).unwrap()["base64"].as_str().unwrap().to_string();
     s.execute("file.openIdml", &json!({"base64": b64, "name": "toc.idml"})).unwrap();
-    let after = s.doc().unwrap().doc.toc.clone().expect("the TOC definition is imported");
+    let after = s.doc().unwrap().doc.tocs.last().cloned().expect("the TOC definition is imported");
     assert_eq!(after.entries, before.entries);
     let e = &after.entries[0];
     assert_eq!((e.page_number_style.as_deref(), e.separator_style.as_deref(), e.sort), (Some("TOC Number"), Some("TOC Dots"), true));
     let e = &after.entries[1];
     assert_eq!((e.page_number_style.as_deref(), e.separator_style.as_deref(), e.sort), (None, None, false));
+}
+
+#[test]
+fn several_tables_of_contents_round_trip_through_idml() {
+    let mut s = Session::new();
+    s.execute("file.newSample", &json!({})).unwrap();
+    let page = s.doc().unwrap().doc.page_count() + 1;
+    s.execute("layout.pages.insert", &json!({"count": 2})).unwrap();
+    s.execute("toc.generate", &json!({"page": page, "title": "Inside", "entries": [{"style": "Headline", "level": 1}]})).unwrap();
+    s.execute(
+        "toc.generate",
+        &json!({"page": page + 1, "title": "Daftar Table", "entries": [{"style": "Cover Title", "level": 1, "pageTitle": ["Tabel", "Table"]}]}),
+    )
+    .unwrap();
+    let before = s.doc().unwrap().doc.tocs.clone();
+    assert_eq!(before.len(), 2, "{before:?}");
+
+    let b64 = s.execute("file.exportIdml", &json!({})).unwrap()["base64"].as_str().unwrap().to_string();
+    s.execute("file.openIdml", &json!({"base64": b64, "name": "tocs.idml"})).unwrap();
+    let after = s.doc().unwrap().doc.tocs.clone();
+    assert_eq!(after.len(), 2, "both TOC styles come back: {after:?}");
+    assert_eq!(after[0].title, "Inside");
+    assert_eq!(after[1].title, "Daftar Table");
+    assert_eq!(after[0].entries[0].style, "Headline");
+    assert_eq!(after[1].entries[0].style, "Cover Title");
+    // Each generates its own story, and they are different stories.
+    assert_ne!(after[0].story, after[1].story);
+    assert_eq!(s.doc().unwrap().doc.story(after[0].story).map(|st| st.text.contains("Inside")), Some(true));
+    // The `pageTitle` filter is a DesignCraft extension IDML has no equivalent for: the imported
+    // entry lists every page of its style.
+    assert!(after[1].entries[0].page_title.is_empty());
 }

@@ -324,7 +324,8 @@ struct Importer<'r> {
     modified: Option<i64>,
     /// Tab lists [`TabStop::sanitized_list`] had to repair (an import warning).
     repaired_tab_lists: usize,
-    toc: Option<designcraft_doc::Toc>,
+    /// The file's TOC styles with their story, in document order.
+    tocs: Vec<designcraft_doc::Toc>,
 }
 
 /// IDML stores a sort key on each topic, rather than on its page references.
@@ -550,7 +551,7 @@ impl<'r> Importer<'r> {
             created: None,
             modified: None,
             repaired_tab_lists: 0,
-            toc: None,
+            tocs: Vec::new(),
         }
     }
 
@@ -735,7 +736,7 @@ impl<'r> Importer<'r> {
             let story = self.story(id, e);
             self.stories.insert(id, story);
         }
-        self.toc = self.toc_of(top);
+        self.tocs = self.tocs_of(top);
         // Topic cross-references (See / See also) become markers at the start of the first story
         // with text.
         if !self.index_xrefs.is_empty()
@@ -1477,15 +1478,22 @@ impl<'r> Importer<'r> {
         self.footnote_options = o;
     }
 
-    /// The table of contents: the TOC style a story is generated from (`AppliedTOCStyle`), with
-    /// its entries. Styles the document doesn't have fall back to the generated TOC styles.
-    fn toc_of(&self, top: &[El]) -> Option<designcraft_doc::Toc> {
+    /// The tables of contents: each TOC style with the story it generates
+    /// (`AppliedTOCStyle`). Styles the document doesn't have fall back to the generated TOC styles.
+    fn tocs_of(&self, top: &[El]) -> Vec<designcraft_doc::Toc> {
+        top.iter()
+            .filter(|e| e.local() == "TOCStyle")
+            .filter_map(|ts| self.toc_of(ts, top))
+            .take(designcraft_doc::MAX_TOCS)
+            .collect()
+    }
+
+    /// One TOC style and the story that names it in `AppliedTOCStyle`.
+    fn toc_of(&self, ts: &El, top: &[El]) -> Option<designcraft_doc::Toc> {
         use designcraft_doc::{TocEntry, TocPageNumber};
-        let (ts, story) = top.iter().filter(|e| e.local() == "TOCStyle").find_map(|ts| {
-            let id = ts.get("Self")?;
-            let story = top.iter().find(|e| e.local() == "Story" && e.get("AppliedTOCStyle") == Some(id))?;
-            Some((ts, *self.story_ids.get(story.get("Self")?)?))
-        })?;
+        let id = ts.get("Self")?;
+        let story = top.iter().find(|e| e.local() == "Story" && e.get("AppliedTOCStyle") == Some(id))?;
+        let story = *self.story_ids.get(story.get("Self")?)?;
         let known = |r: Option<&str>| r.map(|r| self.para_style_ref(r)).filter(|n| self.styles.para(n).is_some());
         // Character styles the document has; [None] is stored as no style.
         let known_chars = |r: Option<&str>| {
@@ -1510,7 +1518,17 @@ impl<'r> Importer<'r> {
                 let page_number_style = known_chars(e.get("PageNumberStyle"));
                 let separator_style = known_chars(e.get("SeparatorStyle"));
                 let sort = e.get("Sort").is_some_and(|v| v.trim() == "true");
-                Some(TocEntry { style, level, entry_style, page_number, separator, page_number_style, separator_style, sort })
+                Some(TocEntry {
+                    style,
+                    level,
+                    entry_style,
+                    page_number,
+                    separator,
+                    page_number_style,
+                    separator_style,
+                    sort,
+                    page_title: Vec::new(),
+                })
             })
             .take(64)
             .collect();
@@ -3216,7 +3234,7 @@ impl<'r> Importer<'r> {
             bookmarks: vec![],
             user_words: vec![],
             hyphenation_exceptions: vec![],
-            toc: self.toc.take(),
+            tocs: std::mem::take(&mut self.tocs),
             text_variables: self.text_vars.take().unwrap_or_else(designcraft_doc::vars::defaults),
             footnote_options: std::mem::take(&mut self.footnote_options),
             xref_formats: std::mem::take(&mut self.xref_formats),

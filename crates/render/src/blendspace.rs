@@ -104,7 +104,7 @@ fn same_document(old: &Document, new: &Document) -> bool {
         bookmarks,
         user_words,
         hyphenation_exceptions,
-        toc,
+        tocs,
         text_variables,
         footnote_options,
         xref_formats,
@@ -142,7 +142,7 @@ fn same_document(old: &Document, new: &Document) -> bool {
         && old.bookmarks == *bookmarks
         && old.user_words == *user_words
         && old.hyphenation_exceptions == *hyphenation_exceptions
-        && old.toc == *toc
+        && old.tocs == *tocs
         && old.text_variables == *text_variables
         && old.footnote_options == *footnote_options
         && old.xref_formats == *xref_formats
