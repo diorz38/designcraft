@@ -175,12 +175,12 @@ Pubgen provides 6 corporate design styles:
 - **Visual Personality**: Contemporary corporate, bold architectural, clean editorial.
 - **Design Elements**:
   - Crisp white canvas with an asymmetric top purple framing header (`#6c5ce7`).
-  - Top-left agency logo paired with multi-line institutional branding (**Arial Bold Italic**).
-  - Upper-right corporate accent block with soft drop shadow framing uppercase tracked "CORPORATE" and bold "DESIGN".
+  - **Position Lock**: Top-right publication metadata (Line #1: `Katalog BPS: <number>`, Line #2: `ISSN/ISBN <number>` in crisp **Arial Bold**).
+  - Upper-right corporate accent card with soft ambient drop shadow.
   - Tall vertical architectural / cityscape photograph (`[221, 168, 565, 780]`) framed by an accent L-bracket on the upper-left.
-  - Middle-left dual-tone year display (`20` in dark charcoal `#1e293b`, `26` in purple `#6c5ce7`) above "BUSINESS REPORT" with an accent underline rule.
+  - Middle-left dual-tone year display (`20` in dark charcoal `#1e293b`, `26` in purple `#6c5ce7`) with **Volume** (`Volume 23 2026`) directly underneath and an accent underline rule.
   - Asymmetric focal headline purple block (`[0, 458, 340, 680]`) featuring a 46pt bezier rounded top-right corner, framing bold white title typography (**Arial Black**).
-  - Trio of circular purple badges with vector icons (trend line, bullseye target, globe grid) paired with two-line publication metadata (Katalog BPS, ISSN/ISBN, Volume).
+  - **Position Lock**: Bottom-left official agency logo paired with multi-line institutional branding (**Arial Bold Italic**).
   - Bottom-right grounding purple corner block and mid-right edge accent tab.
 - **Best For**: Annual business reports, urban economic reviews, municipal profiles, modern regional digests.
 

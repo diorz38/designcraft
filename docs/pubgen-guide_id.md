@@ -142,12 +142,12 @@ Pubgen menyediakan 6 pilihan desain sampul siap pakai:
 - **Karakter Visual**: Modern korporat, arsitektural, bersih, dan berwibawa.
 - **Elemen Desain**:
   - Kanvas putih bersih dengan garis bilah horizontal atas warna ungu (*purple* `#6c5ce7`).
-  - Logo instansi di kiri atas bersanding dengan teks nama instansi resmi (**Arial Bold Italic**).
-  - Kotak aksen ungu di kanan atas dengan bayangan halus, memuat teks "CORPORATE" dan font tebal "DESIGN".
+  - **Position Lock**: Metadata publikasi di kanan atas (Baris 1: `Katalog BPS: <nomor>`, Baris 2: `ISSN/ISBN <nomor>` dengan font **Arial Bold** rapi rata kanan).
+  - Kotak aksen ungu di kanan atas dengan bayangan halus elegan.
   - Bingkai foto gedung/arsitektur vertikal di sisi tengah-kanan dengan siku aksen ungu (*L-bracket*) di sudut kiri atas foto.
-  - Tampilan angka tahun dwi-warna di tengah-kiri (`20` berwarna abu gelap `#1e293b`, `26` berwarna ungu `#6c5ce7`) di atas teks "BUSINESS REPORT" dan garis bawah tebal.
+  - Tampilan angka tahun dwi-warna di tengah-kiri (`20` berwarna abu gelap `#1e293b`, `26` berwarna ungu `#6c5ce7`) dengan **Volume** (`Volume 23 2026`) tepat di bawahnya dan garis bawah tebal.
   - Blok judul utama warna ungu di kiri bawah dengan sudut kanan-atas melengkung halus (*rounded corner*), membingkai teks judul putih tebal (**Arial Black**).
-  - Tiga lencana bundar ungu dengan ikon vektor (grafik tren, target, globe) beserta keterangan metadata 2-baris (Katalog BPS, ISSN/ISBN, Volume).
+  - **Position Lock**: Logo instansi resmi di kiri bawah bersanding dengan teks nama instansi resmi (**Arial Bold Italic**).
   - Blok aksen sudut kanan bawah dan tab sisi kanan.
 - **Paling Cocok Untuk**: Laporan bisnis tahunan, profil wilayah, publikasi statistik ekonomi kota/daerah modern.
 

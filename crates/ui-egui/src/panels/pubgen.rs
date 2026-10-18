@@ -744,11 +744,14 @@ fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: 
             p.circle_stroke(c, w * 0.22, egui::Stroke::new(1.5, Color32::from_rgb(245, 171, 25)));
         }
         _ => {
-            // Style 5 (Corporate Headline): White base + top bar + top-right corporate box + photo vertical frame + rounded headline block + bottom right block
+            // Style 5 (Corporate Headline): White base + top bar + top-right metadata + photo vertical frame + rounded headline block + bottom-right block + bottom-left logo (position lock)
             p.rect_filled(rect, 4.0, Color32::WHITE);
             // Top bar
             let top_bar = egui::Rect::from_min_max(rect.min, rect.min + vec2(w * 0.90, h * 0.025));
             p.rect_filled(top_bar, 0.0, Color32::from_rgb(108, 92, 231));
+            // Top-right metadata lines (position lock)
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.62, h * 0.035), rect.min + vec2(w * 0.94, h * 0.048)), 1.0, Color32::from_rgb(100, 116, 139));
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.70, h * 0.055), rect.min + vec2(w * 0.94, h * 0.068)), 1.0, Color32::from_rgb(100, 116, 139));
             // Bottom-right block
             let br_block = egui::Rect::from_min_max(rect.min + vec2(w * 0.72, h * 0.92), rect.max);
             p.rect_filled(br_block, egui::CornerRadius { nw: 0, ne: 0, sw: 0, se: 4 }, Color32::from_rgb(108, 92, 231));
@@ -760,12 +763,19 @@ fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: 
             let l_v = egui::Rect::from_min_max(rect.min + vec2(w * 0.36, h * 0.19), rect.min + vec2(w * 0.38, h * 0.32));
             p.rect_filled(l_h, 0.0, Color32::from_rgb(108, 92, 231));
             p.rect_filled(l_v, 0.0, Color32::from_rgb(108, 92, 231));
-            // Top-right corporate box
+            // Top-right corporate accent card
             let corp_box = egui::Rect::from_min_max(rect.min + vec2(w * 0.58, h * 0.13), rect.min + vec2(w, h * 0.28));
             p.rect_filled(corp_box, 0.0, Color32::from_rgb(108, 92, 231));
+            // Middle-left year & volume line
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.31), rect.min + vec2(w * 0.34, h * 0.39)), 2.0, Color32::from_rgb(30, 41, 59));
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.41), rect.min + vec2(w * 0.32, h * 0.43)), 1.0, Color32::from_rgb(108, 92, 231));
             // Headline block with rounded top-right
             let hl_block = egui::Rect::from_min_max(rect.min + vec2(0.0, h * 0.54), rect.min + vec2(w * 0.58, h * 0.81));
             p.rect_filled(hl_block, egui::CornerRadius { nw: 0, ne: 8, sw: 0, se: 0 }, Color32::from_rgb(108, 92, 231));
+            // Bottom-left logo & agency text (position lock)
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.87), rect.min + vec2(w * 0.14, h * 0.94)), 2.0, Color32::from_rgb(108, 92, 231));
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.16, h * 0.88), rect.min + vec2(w * 0.52, h * 0.90)), 1.0, Color32::from_rgb(30, 41, 59));
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.16, h * 0.91), rect.min + vec2(w * 0.46, h * 0.93)), 1.0, Color32::from_rgb(30, 41, 59));
         }
     }
 }
@@ -794,7 +804,7 @@ fn show_style_thumbnail_tooltip(ui: &mut Ui, style_idx: usize, name: &str, t: &T
             2 => "Geometric origami folded facet ribbons with hexagonal photo header.",
             3 => "Executive downward chevron crest with golden horseshoe medallion cradle.",
             4 => "Architectural tri-hexagon honeycomb cluster with corporate chevron banner and racing stripes.",
-            5 => "Modern corporate architecture layout with top framing, headline focal block, and feature badges.",
+            5 => "Modern corporate architecture layout with top framing, headline focal block, and position-locked institutional metadata.",
             _ => "",
         };
         ui.add_space(3.0);
@@ -2119,12 +2129,40 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            // 3. Bottom-right purple block
+            // 3. Top-Right Metadata (Position Lock: Line #1 Catalogue, Line #2 ISSN/ISBN)
+            add_cover_text_frame(
+                app,
+                0,
+                [pw - 260.0 * sx, 24.0 * sy, pw - 36.0 * sx, 42.0 * sy],
+                &cat_text,
+                dark,
+                "Arial",
+                "Bold",
+                8.5 * s_avg,
+                None,
+                None,
+                "right",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [pw - 260.0 * sx, 42.0 * sy, pw - 36.0 * sx, 60.0 * sy],
+                &code_text,
+                dark,
+                "Arial",
+                "Bold",
+                8.5 * s_avg,
+                None,
+                None,
+                "right",
+            )?;
+
+            // 4. Bottom-right purple block
             app.run("frame.create", json!({"spread": 0, "rect": [438.0 * sx, 780.0 * sy, pw, ph], "content": "unassigned", "shape": "rectangle"}))?;
             let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            // 4. Mid-right accent tab
+            // 5. Mid-right accent tab
             app.run(
                 "frame.create",
                 json!({"spread": 0, "rect": [565.0 * sx, 680.0 * sy, pw, 720.0 * sy], "content": "unassigned", "shape": "rectangle"}),
@@ -2132,7 +2170,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            // 5. Center-right vertical photo frame
+            // 6. Center-right vertical photo frame
             let photo_res = app.run(
                 "frame.create",
                 json!({
@@ -2149,7 +2187,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.stroke", json!({"swatch": "[None]", "ids": [photo_id]}));
             let _ = app.run("object.dropShadow", json!({"on": true, "distance": 8, "size": 18, "opacity": 0.22, "ids": [photo_id]}));
 
-            // 6. Top-left L-bracket framing the photo
+            // 7. Top-left L-bracket framing the photo
             app.run(
                 "frame.create",
                 json!({"spread": 0, "rect": [213.0 * sx, 161.0 * sy, 325.0 * sx, 170.0 * sy], "content": "unassigned", "shape": "rectangle"}),
@@ -2164,7 +2202,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            // 7. Top-right "CORPORATE DESIGN" purple box
+            // 8. Top-right purple accent card (without placeholder "Corporate Design" text)
             app.run(
                 "frame.create",
                 json!({"spread": 0, "rect": [342.0 * sx, 108.0 * sy, pw, 234.0 * sy], "content": "unassigned", "shape": "rectangle"}),
@@ -2173,63 +2211,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
             let _ = app.run("object.dropShadow", json!({"on": true, "distance": 6, "size": 14, "opacity": 0.22}));
 
-            add_cover_text_frame(
-                app,
-                0,
-                [356.0 * sx, 126.0 * sy, pw - 20.0 * sx, 154.0 * sy],
-                "CORPORATE",
-                "#ffffff",
-                "Arial",
-                "Bold",
-                16.0 * s_avg,
-                None,
-                Some(80.0),
-                "left",
-            )?;
-            add_cover_text_frame(
-                app,
-                0,
-                [354.0 * sx, 150.0 * sy, pw - 20.0 * sx, 218.0 * sy],
-                "DESIGN",
-                "#ffffff",
-                "Arial Black",
-                "Regular",
-                36.0 * s_avg,
-                None,
-                Some(20.0),
-                "left",
-            )?;
-
-            // 8. Top-left Logo & Agency Branding
-            app.run(
-                "frame.create",
-                json!({
-                    "spread": 0,
-                    "rect": [36.0 * sx, 38.0 * sy, 74.0 * sx, 76.0 * sy],
-                    "content": "graphic",
-                    "shape": "rectangle"
-                }),
-            )?;
-            let _ = app.run("file.place", json!({"path": logo}));
-            let _ = app.run("object.fit", json!({"mode": "fitProportionally"}));
-            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
-            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
-
-            add_cover_text_frame(
-                app,
-                0,
-                [84.0 * sx, 38.0 * sy, 320.0 * sx, 78.0 * sy],
-                agency_text,
-                dark,
-                "Arial",
-                "Bold Italic",
-                10.5 * s_avg,
-                Some(14.0 * s_avg),
-                None,
-                "left",
-            )?;
-
-            // 9. Middle-left Big Year & Subtitle
+            // 9. Middle-left Big Year & Volume (replacing Business Report)
             let (y1, y2) = if year_text.len() >= 4 { (&year_text[..2], &year_text[2..]) } else { (year_text, "") };
             add_cover_text_frame(
                 app,
@@ -2260,25 +2242,27 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 )?;
             }
 
+            // Volume text directly under Year numerals
             add_cover_text_frame(
                 app,
                 0,
-                [36.0 * sx, 340.0 * sy, 205.0 * sx, 358.0 * sy],
-                "BUSINESS REPORT",
+                [36.0 * sx, 340.0 * sy, 220.0 * sx, 360.0 * sy],
+                volume_text,
                 dark,
                 "Arial",
                 "Bold",
                 11.0 * s_avg,
                 None,
-                Some(40.0),
+                Some(25.0),
                 "left",
             )?;
 
+            // Accent underline rule
             app.run(
                 "path.create",
                 json!({"spread": 0, "closed": false, "anchors": [
-                    {"p": [36.0 * sx, 362.0 * sy]},
-                    {"p": [205.0 * sx, 362.0 * sy]}
+                    {"p": [36.0 * sx, 364.0 * sy]},
+                    {"p": [205.0 * sx, 364.0 * sy]}
                 ]}),
             )?;
             let _ = app.run("object.stroke", json!({"weight": 2.5 * s_avg}));
@@ -2347,107 +2331,33 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 "left",
             )?;
 
-            // 11. Bottom-left 3 Feature Badges with vector icons & metadata
-            // Badge 1 (Katalog BPS / Trend)
-            let b1_x = 52.0;
-            let b1_y = 702.0;
-            app.run("frame.create", json!({"spread": 0, "rect": [b1_x * sx, b1_y * sy, (b1_x + 24.0) * sx, (b1_y + 24.0) * sy], "content": "unassigned", "shape": "ellipse"}))?;
-            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
-            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
-
+            // 11. Bottom-Left Logo & Agency Text (Position Lock)
             app.run(
-                "path.create",
+                "frame.create",
                 json!({
                     "spread": 0,
-                    "closed": false,
-                    "anchors": [
-                        {"p": [(b1_x + 5.5) * sx, (b1_y + 16.0) * sy]},
-                        {"p": [(b1_x + 10.5) * sx, (b1_y + 11.5) * sy]},
-                        {"p": [(b1_x + 14.5) * sx, (b1_y + 14.5) * sy]},
-                        {"p": [(b1_x + 18.5) * sx, (b1_y + 7.5) * sy]}
-                    ]
+                    "rect": [36.0 * sx, 738.0 * sy, 78.0 * sx, 784.0 * sy],
+                    "content": "graphic",
+                    "shape": "rectangle"
                 }),
             )?;
-            let _ = app.run("object.stroke", json!({"weight": 2.0 * s_avg}));
-            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "stroke"}));
-
-            add_cover_text_frame(
-                app,
-                0,
-                [(b1_x - 18.0) * sx, (b1_y + 28.0) * sy, (b1_x + 42.0) * sx, (b1_y + 58.0) * sy],
-                &cat_text,
-                dark,
-                "Arial",
-                "Regular",
-                6.8 * s_avg,
-                Some(8.8 * s_avg),
-                None,
-                "center",
-            )?;
-
-            // Badge 2 (ISSN/ISBN / Target)
-            let b2_x = 116.0;
-            let b2_y = 702.0;
-            app.run("frame.create", json!({"spread": 0, "rect": [b2_x * sx, b2_y * sy, (b2_x + 24.0) * sx, (b2_y + 24.0) * sy], "content": "unassigned", "shape": "ellipse"}))?;
-            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
-            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
-
-            app.run("frame.create", json!({"spread": 0, "rect": [(b2_x + 5.0) * sx, (b2_y + 5.0) * sy, (b2_x + 19.0) * sx, (b2_y + 19.0) * sy], "content": "unassigned", "shape": "ellipse"}))?;
-            let _ = app.run("object.stroke", json!({"weight": 1.5 * s_avg}));
-            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "stroke"}));
-            let _ = app.run("object.fill", json!({"swatch": "[None]"}));
-
-            app.run("frame.create", json!({"spread": 0, "rect": [(b2_x + 10.0) * sx, (b2_y + 10.0) * sy, (b2_x + 14.0) * sx, (b2_y + 14.0) * sy], "content": "unassigned", "shape": "ellipse"}))?;
-            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
+            let _ = app.run("file.place", json!({"path": logo}));
+            let _ = app.run("object.fit", json!({"mode": "fitProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             add_cover_text_frame(
                 app,
                 0,
-                [(b2_x - 18.0) * sx, (b2_y + 28.0) * sy, (b2_x + 42.0) * sx, (b2_y + 58.0) * sy],
-                &code_text,
+                [86.0 * sx, 742.0 * sy, 360.0 * sx, 786.0 * sy],
+                agency_text,
                 dark,
                 "Arial",
-                "Regular",
-                6.8 * s_avg,
-                Some(8.8 * s_avg),
+                "Bold Italic",
+                10.0 * s_avg,
+                Some(13.5 * s_avg),
                 None,
-                "center",
-            )?;
-
-            // Badge 3 (Volume / Globe)
-            let b3_x = 180.0;
-            let b3_y = 702.0;
-            app.run("frame.create", json!({"spread": 0, "rect": [b3_x * sx, b3_y * sy, (b3_x + 24.0) * sx, (b3_y + 24.0) * sy], "content": "unassigned", "shape": "ellipse"}))?;
-            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
-            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
-
-            app.run("frame.create", json!({"spread": 0, "rect": [(b3_x + 4.5) * sx, (b3_y + 4.5) * sy, (b3_x + 19.5) * sx, (b3_y + 19.5) * sy], "content": "unassigned", "shape": "ellipse"}))?;
-            let _ = app.run("object.stroke", json!({"weight": 1.3 * s_avg}));
-            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "stroke"}));
-            let _ = app.run("object.fill", json!({"swatch": "[None]"}));
-
-            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [{"p": [(b3_x + 5.0) * sx, (b3_y + 12.0) * sy]}, {"p": [(b3_x + 19.0) * sx, (b3_y + 12.0) * sy]}]}))?;
-            let _ = app.run("object.stroke", json!({"weight": 1.2 * s_avg}));
-            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "stroke"}));
-
-            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [{"p": [(b3_x + 12.0) * sx, (b3_y + 5.0) * sy]}, {"p": [(b3_x + 12.0) * sx, (b3_y + 19.0) * sy]}]}))?;
-            let _ = app.run("object.stroke", json!({"weight": 1.2 * s_avg}));
-            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "stroke"}));
-
-            let b3_caption = format!("Publikasi\n{volume_text}");
-            add_cover_text_frame(
-                app,
-                0,
-                [(b3_x - 18.0) * sx, (b3_y + 28.0) * sy, (b3_x + 42.0) * sx, (b3_y + 58.0) * sy],
-                &b3_caption,
-                dark,
-                "Arial",
-                "Regular",
-                6.8 * s_avg,
-                Some(8.8 * s_avg),
-                None,
-                "center",
+                "left",
             )?;
 
             "Corporate Headline"
@@ -7767,7 +7677,6 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
                         || story.text == "2026"
                         || story.text == "20"
                         || story.text == "26"
-                        || story.text == "DESIGN"
                     {
                         assert_eq!(fam, "Arial Black", "Title and Year must use Arial Black in story '{}'", story.text);
                     }
@@ -7778,6 +7687,34 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_export_design_3_sample() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap();
+        let mut st = PubgenState::default();
+        st.cover_style = 5;
+        st.cover_color_primary = "#6c5ce7".into();
+        st.cover_color_accent = "#a29bfe".into();
+        st.cover_color_dark = "#1e293b".into();
+        st.cover_image_skyline = root.join("outputs").join("city_skyline.jpg").to_string_lossy().to_string();
+        st.cover_image_logo = root.join("outputs").join("bps_logo.png").to_string_lossy().to_string();
+        execute_generate_cover(&mut app, &st).unwrap();
+        let _ = app.run("layout.pages.delete", json!({"page": 1}));
+        let path = root
+            .join("plan")
+            .join("pubgen")
+            .join("samples")
+            .join("style")
+            .join("design-3.designcraft");
+        let res = app.run("file.saveAs", json!({"path": path.to_string_lossy()}));
+        assert!(res.is_ok(), "Failed to save: {res:?}");
     }
 
     #[test]

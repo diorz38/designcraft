@@ -62,12 +62,13 @@ Before writing code, analyze the reference image and define its geometry, propor
      Z
      ```
 
-4. **Typography Hierarchy**:
-   - **Agency / Institution**: **Arial Bold Italic**, 10–12pt.
-   - **Year Display**: Giant **Arial Black**, 60–68pt (optionally split into dual-tone colors).
-   - **Report Subtitle**: **Arial Bold**, 12pt, uppercase, with 2–3pt accent underline rule.
-   - **Main Title**: **Arial Black**, 30–36pt, high-contrast white.
-   - **Badges & Metadata**: 8.5–9.5pt crisp metadata labels.
+4. **Typography & Position Lock Hierarchy**:
+   - **Position Lock (Universal across all publication styles)**:
+     - **Bottom-Left**: Official agency logo graphic frame paired with agency text (`BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG` in **Arial Bold Italic**, 10–12pt).
+     - **Top-Right**: Publication catalogue & standard serial number metadata (Line #1: `Katalog BPS: <number>`, Line #2: `ISSN/ISBN <number>` in **Arial Bold**, 8.5pt, right-aligned).
+   - **Middle-Left Year & Volume Lockup**: Giant **Arial Black**, 60–68pt (split into dual-tone colors, e.g. `20` dark charcoal, `26` primary purple) with **Volume** (`Volume 23 2026`) directly underneath in **Arial Bold** (11pt) and an accent underline rule.
+   - **Main Headline Block**: **Arial Black**, 30–36pt, high-contrast white text (`KECAMATAN\nKARAWANG\nTIMUR\nDALAM ANGKA`).
+   - **Clean Architecture**: Remove arbitrary placeholder texts (e.g. "Corporate Design", "Business Report") and decorative icon badges for a clean, professional executive look.
 
 ---
 
@@ -174,7 +175,7 @@ fn style_thumbnail_texture(ctx: &egui::Context, style_idx: usize) -> Option<egui
 
 Provide the tooltip summary in `show_style_thumbnail_tooltip`:
 ```rust
-5 => "Modern corporate architecture layout with top framing, headline focal block, and feature badges.",
+5 => "Modern corporate architecture layout with top framing, headline focal block, and position-locked institutional metadata.",
 ```
 
 #### 4. Procedural Fallback Painter
@@ -186,9 +187,19 @@ _ => {
     // Top bar
     let top_bar = egui::Rect::from_min_max(rect.min, rect.min + vec2(w * 0.90, h * 0.025));
     p.rect_filled(top_bar, 0.0, Color32::from_rgb(108, 92, 231));
+    // Top-Right Metadata lines (Position Lock)
+    let meta_w = w * 0.35;
+    p.rect_filled(egui::Rect::from_min_max(rect.max - vec2(meta_w + 6.0, h * 0.965), rect.max - vec2(6.0, h * 0.945)), 1.0, Color32::from_gray(180));
+    p.rect_filled(egui::Rect::from_min_max(rect.max - vec2(meta_w + 6.0, h * 0.935), rect.max - vec2(6.0, h * 0.915)), 1.0, Color32::from_gray(180));
+    // Middle-left Year & Volume
+    p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.32), rect.min + vec2(w * 0.36, h * 0.40)), 2.0, Color32::from_rgb(30, 41, 59));
+    p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.41), rect.min + vec2(w * 0.30, h * 0.43)), 1.0, Color32::from_gray(140));
     // Headline block with rounded top-right
     let hl_block = egui::Rect::from_min_max(rect.min + vec2(0.0, h * 0.54), rect.min + vec2(w * 0.58, h * 0.81));
     p.rect_filled(hl_block, egui::CornerRadius { nw: 0, ne: 8, sw: 0, se: 0 }, Color32::from_rgb(108, 92, 231));
+    // Bottom-left Agency Logo & Text (Position Lock)
+    p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.88), rect.min + vec2(w * 0.14, h * 0.94)), 2.0, Color32::from_rgb(0, 114, 188));
+    p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.16, h * 0.89), rect.min + vec2(w * 0.50, h * 0.93)), 1.0, Color32::from_gray(80));
 }
 ```
 
@@ -212,55 +223,58 @@ _ => {
 
 ### Step 5: Procedural Engine Generator Implementation
 
-In `execute_generate_cover()`, implement the new style arm:
+In `execute_generate_cover()`, implement the new style arm following the position lock and typography rules:
 
 ```rust
 5 => {
     // Style 5: Corporate Headline
-    // 1. Top horizontal bar
+    // 1. Base white background & top horizontal bar
+    app.run("frame.create", json!({"spread": 0, "rect": [0, 0, pw, ph], "content": "unassigned", "shape": "rectangle"}))?;
+    app.run("frame.create", json!({"spread": 0, "rect": [0.0, 0.0, 548.0 * sx, 16.0 * sy], "content": "unassigned", "shape": "rectangle"}))?;
+
+    // 2. Top-Right Metadata (Position Lock: Line #1 Catalogue, Line #2 ISSN/ISBN)
+    add_cover_text_frame(app, 0, [pw - 260.0 * sx, 24.0 * sy, pw - 36.0 * sx, 42.0 * sy], &cat_text, dark, "Arial", "Bold", 8.5 * s_avg, None, None, "right")?;
+    add_cover_text_frame(app, 0, [pw - 260.0 * sx, 42.0 * sy, pw - 36.0 * sx, 60.0 * sy], &code_text, dark, "Arial", "Bold", 8.5 * s_avg, None, None, "right")?;
+
+    // 3. Center-right vertical photo frame + L-bracket framing
+    let photo_res = app.run("frame.create", json!({"spread": 0, "rect": [221.0 * sx, 168.0 * sy, 565.0 * sx, 780.0 * sy], "content": "graphic", "shape": "rectangle"}))?;
+    // Place image, fit proportionally, apply soft drop shadow...
+
+    // 4. Middle-left Dual-Tone Year & Volume (Volume replacing legacy Business Report)
+    let (y1, y2) = if year_text.len() >= 4 { (&year_text[..2], &year_text[2..]) } else { (year_text, "") };
+    add_cover_text_frame(app, 0, [36.0 * sx, 260.0 * sy, 118.0 * sx, 335.0 * sy], y1, dark, "Arial Black", "Regular", 62.0 * s_avg, None, Some(10.0), "left")?;
+    add_cover_text_frame(app, 0, [116.0 * sx, 260.0 * sy, 215.0 * sx, 335.0 * sy], y2, primary, "Arial Black", "Regular", 62.0 * s_avg, None, Some(10.0), "left")?;
+    add_cover_text_frame(app, 0, [36.0 * sx, 340.0 * sy, 220.0 * sx, 360.0 * sy], volume_text, dark, "Arial", "Bold", 11.0 * s_avg, None, Some(25.0), "left")?;
+
+    // Accent underline rule
+    app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [{"p": [36.0 * sx, 364.0 * sy]}, {"p": [205.0 * sx, 364.0 * sy]}]}))?;
+
+    // 5. Focal Headline Purple Block with Rounded Bezier Corner
+    let r_corner = 46.0 * s_avg;
     app.run("path.create", json!({
-        "d": format!("M 0 0 L {} 0 L {} {} L 0 {} Z", pw * 0.89, pw * 0.89, ph * 0.026, ph * 0.026),
-        "fill": st.cover_color_primary,
+        "spread": 0, "closed": true,
+        "anchors": [
+            {"p": [0.0, 458.0 * sy]},
+            {"p": [340.0 * sx - r_corner, 458.0 * sy], "out": [340.0 * sx - r_corner + r_corner * 0.552, 458.0 * sy]},
+            {"p": [340.0 * sx, 458.0 * sy + r_corner], "in": [340.0 * sx, 458.0 * sy + r_corner - r_corner * 0.552]},
+            {"p": [340.0 * sx, 680.0 * sy]},
+            {"p": [0.0, 680.0 * sy]}
+        ]
     }))?;
+    // Headline Typography (Level in Bold, Title in Arial Black, "DALAM ANGKA" in Bold)...
 
-    // 2. Photo frame + L-bracket
-    let frame_res = app.run("frame.create", json!({
-        "rect": [pw * 0.37, ph * 0.20, pw * 0.95, ph * 0.92],
-    }))?;
-    // Fit photo if available...
-
-    // 3. Focal Headline Block with Rounded Corner
-    let r = 46.0;
-    let d_headline = format!(
-        "M 0 {} L {} {} C {} {} {} {} {} {} L {} {} L 0 {} Z",
-        ph * 0.54,
-        pw * 0.57 - r, ph * 0.54,
-        pw * 0.57 - r/2.0, ph * 0.54, pw * 0.57, ph * 0.54 + r/2.0, pw * 0.57, ph * 0.54 + r,
-        pw * 0.57, ph * 0.81,
-        ph * 0.81
-    );
-    app.run("path.create", json!({
-        "d": d_headline,
-        "fill": st.cover_color_primary,
-    }))?;
-
-    // 4. Headline Typography (Formatted with Arial Black)
-    // IMPORTANT: Insert line breaks in long titles to prevent unwanted hyphenation:
-    let formatted_title = st.cover_title.trim().replace(' ', "\n");
-    // Insert text and format...
-
-    // 5. Dual-Tone Year Display
-    // Split "2026" into "20" (#1e293b) and "26" (#6c5ce7)
-    // ...
-
-    // 6. Vector Feature Badges
-    // Draw circle frame + vector icon paths (trend line, target, globe)
-    // ...
+    // 6. Bottom-Left Logo & Agency Text (Position Lock)
+    app.run("frame.create", json!({"spread": 0, "rect": [36.0 * sx, 738.0 * sy, 78.0 * sx, 784.0 * sy], "content": "graphic", "shape": "rectangle"}))?;
+    // Place logo, center content...
+    add_cover_text_frame(app, 0, [86.0 * sx, 742.0 * sy, 360.0 * sx, 786.0 * sy], agency_text, dark, "Arial", "Bold Italic", 10.0 * s_avg, Some(13.5 * s_avg), None, "left")?;
 }
 ```
 
 > [!IMPORTANT]
-> **Avoid Emojis for Badges**: Arial renders unicode symbols like 📈, 🎯, 🌐 as missing glyph tofu (`▯`). Always render badge icons using native vector paths (`path.create`) or circle primitives for 100% platform-independent rendering.
+> **Position Lock Across All Styles**:
+> 1. Official Agency Logo + Agency Text (`BADAN PUSAT STATISTIK\n...`) is strictly anchored to the **bottom-left** page in **Arial Bold Italic**.
+> 2. Publication metadata (Line #1 Catalogue, Line #2 ISSN/ISBN) is anchored to the **top-right** page.
+> 3. Volume text is placed directly under the Year display, eliminating arbitrary English placeholder phrases.
 
 > [!TIP]
 > **Preventing Title Hyphenation**: If titles wrap inside a narrow headline box, long words may trigger hyphenation (e.g. `KARAWANG TI- / MUR`). Splitting the title words with newlines (`\n`) guarantees clean lines matching the reference layout.
@@ -348,7 +362,8 @@ cargo test -p designcraft-ui-egui --features pubgen
 - [ ] Style registered in `styles` and `style_pills` in `pubgen.rs`.
 - [ ] Fallback vector thumbnail implemented in `paint_fallback_cover_thumb()`.
 - [ ] Procedural generation implemented in `execute_generate_cover()`.
-- [ ] Vector icons used for badges (no emoji characters).
+- [ ] Universal position lock enforced (Bottom-left logo/agency text in Arial Bold Italic, Top-right catalogue & ISSN/ISBN, Volume under Year).
+- [ ] Clean architecture verified (no arbitrary placeholder text or extraneous badges).
 - [ ] Unit tests updated in `pubgen.rs` and passing (`cargo test -p designcraft-ui-egui --features pubgen`).
 - [ ] Both `docs/pubgen-guide.md` and `docs/pubgen-guide_id.md` updated.
 - [ ] All new asset files attributed in `ASSETS.md` (`cargo xtask assets`).
