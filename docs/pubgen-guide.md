@@ -100,6 +100,18 @@ The **Quick Actions** card at the bottom of the Pubgen panel provides handy shor
   - **Add TOC**: Generates a Table of Contents on the currently selected page with custom title (e.g. "Contents", "Daftar Isi", or "Daftar Tabel"), automatic title early wrapping, deep hanging indent, and multi-page continuation headers.
   - **Rebuild TOC**: Re-scans the entire document and updates all Table of Contents entries, recalculating page numbers to match the current layout, refreshing prefixes from CSV/page frames, re-syncing continuation headers without duplicates, and reflowing continuation pages.
   - **Include TOC page in TOC entries**: Toggle to include the Table of Contents page itself as an entry in the TOC (standard publishing omits it by default).
+- **Page from RTF**:
+  - Quickly imports an RTF (`.rtf`) document into the currently selected page (or places into a selected text frame).
+  - Automatically autoflows the text story across page margins and column guides, inserting new pages with threaded text frames as needed until all text fits (just like TOC generation).
+  - Preserves bold, italic, underline, font sizes, Unicode characters, and paragraph formatting from the source RTF.
+  - Automatically parses and applies paragraph hanging indents (`\li`, `\fi`), paragraph spacing (`\sa`, `\sb`), tab stops (`\tx`), alignment (`\ql`, `\qc`, `\qr`, `\qj`), and list bullets (`\listtext`, converting Symbol `\'b7` to `•` and nested `o` bullets) to produce clean publication-grade numbered and bulleted lists.
+  - Features an inline path editor, native "Browse…" file picker, and automatic canvas navigation to the target page.
+- **Page from Image**:
+  - Places image files (`.png`, `.jpg`, `.jpeg`, `.webp`, `.svg`, etc.) directly onto the selected page or a newly inserted page.
+  - Features an inline path editor, native "Browse…" file picker, and automatic canvas navigation.
+  - **Fit modes**:
+    - **Page margins (Object)**: Scales the image proportionally inside the page margins, centers it, and snaps the frame boundaries to the content (`fitFrameToContent`).
+    - **Page background**: Scales the image proportionally within the full page bounds while strictly preserving the original aspect ratio (no cropping or bleed overflow), centers the graphic, snaps the frame boundaries to the image (`fitFrameToContent`), and moves the object to the back (`to: "back"`).
 - **Page Renumbering & Sections**:
   - **Restart page #**: Restarts page numbering at the specified start number on the selected page (e.g. starting body chapters at Page 1 after the TOC/preface) with configurable number style (`1, 2, 3…`, `i, ii, iii…`, `I, II, III…`). When a TOC exists, it automatically updates all TOC entries to match the new page numbers.
   - **Continue #**: Removes the section restart on the selected page to continue numbering from the previous section.

@@ -2,7 +2,7 @@
 //! Unicode (`\uN`) and hex (`\'hh`) characters. Destinations that aren't body text (font and
 //! colour tables, stylesheet, info, pictures, `\*` groups) are skipped.
 
-use designcraft_doc::{CharAttrs, CharFormat, Story, StoryId};
+use designcraft_doc::{Align, CharAttrs, CharFormat, ParaAttrs, Story, StoryId, TabAlign, TabStop};
 
 use crate::{ImportError, Imported};
 
@@ -15,6 +15,8 @@ struct State {
     size: Option<f64>,
     /// Inside a destination whose text is ignored.
     skip: bool,
+    /// Inside a `\listtext` group (list numbers/bullets).
+    in_listtext: bool,
     /// Characters to skip after `\uN` (`\ucN`).
     uc: usize,
 }
@@ -69,6 +71,8 @@ pub fn import(bytes: &[u8]) -> Result<Imported, ImportError> {
     }
     let mut st = Story::new(StoryId(0));
     let mut stack: Vec<State> = vec![State { uc: 1, ..Default::default() }];
+    let mut cur_para = ParaAttrs::default();
+    let mut next_tab_align = TabAlign::Left;
     let mut pending = 0usize; // characters still to skip after \uN
     let mut units = crate::Utf16Units::default();
     let mut buf = String::new();
@@ -128,7 +132,12 @@ pub fn import(bytes: &[u8]) -> Result<Imported, ImportError> {
                         && !stack.last().is_some_and(|s| s.skip)
                     {
                         units.reset();
-                        buf.push(cp1252(b));
+                        let ch = if b == 0xB7 && stack.last().is_some_and(|s| s.in_listtext) {
+                            '\u{2022}'
+                        } else {
+                            cp1252(b)
+                        };
+                        buf.push(ch);
                     }
                     continue;
                 }
@@ -143,8 +152,12 @@ pub fn import(bytes: &[u8]) -> Result<Imported, ImportError> {
                             '_' => buf.push('\u{2011}'),
                             '\n' | '\r' => {
                                 flush(&mut st, &mut buf, &fmt);
+                                let pi = st.para_at(st.len());
+                                if let Some(p) = st.paras.get_mut(pi) {
+                                    p.para = cur_para.clone();
+                                }
                                 let len = st.len();
-                                st.insert(len, "\n");
+                                st.insert_with(len, "\n", fmt.clone());
                             }
                             _ => {}
                         }
@@ -197,8 +210,65 @@ pub fn import(bytes: &[u8]) -> Result<Imported, ImportError> {
                 match word.as_str() {
                     "par" | "sect" => {
                         flush(&mut st, &mut buf, &fmt);
+                        let pi = st.para_at(st.len());
+                        if let Some(p) = st.paras.get_mut(pi) {
+                            p.para = cur_para.clone();
+                        }
                         let len = st.len();
                         st.insert_with(len, "\n", fmt.clone());
+                    }
+                    "pard" => {
+                        if !stack.last().is_some_and(|s| s.in_listtext) {
+                            cur_para = ParaAttrs::default();
+                            next_tab_align = TabAlign::Left;
+                        }
+                    }
+                    "listtext" => {
+                        if let Some(s) = stack.last_mut() {
+                            s.in_listtext = true;
+                        }
+                    }
+                    "li" | "lin" => {
+                        cur_para.left_indent = param.map(|v| (v as f64 / 20.0).clamp(-10_000.0, 10_000.0));
+                    }
+                    "ri" | "rin" => {
+                        cur_para.right_indent = param.map(|v| (v as f64 / 20.0).clamp(-10_000.0, 10_000.0));
+                    }
+                    "fi" => {
+                        cur_para.first_line_indent = param.map(|v| (v as f64 / 20.0).clamp(-10_000.0, 10_000.0));
+                    }
+                    "sa" => {
+                        cur_para.space_after = param.map(|v| (v as f64 / 20.0).clamp(0.0, 10_000.0));
+                    }
+                    "sb" => {
+                        cur_para.space_before = param.map(|v| (v as f64 / 20.0).clamp(0.0, 10_000.0));
+                    }
+                    "ql" => cur_para.align = Some(Align::Left),
+                    "qr" => cur_para.align = Some(Align::Right),
+                    "qc" => cur_para.align = Some(Align::Center),
+                    "qj" => cur_para.align = Some(Align::LeftJustified),
+                    "qd" => cur_para.align = Some(Align::FullyJustified),
+                    "tqr" => next_tab_align = TabAlign::Right,
+                    "tqc" => next_tab_align = TabAlign::Center,
+                    "tqdec" => next_tab_align = TabAlign::Char,
+                    "tx" => {
+                        if let Some(pos_twips) = param {
+                            let pos_pt = (pos_twips as f64 / 20.0).clamp(0.0, designcraft_doc::MAX_TAB_POSITION);
+                            let mut tabs = cur_para.tabs.take().unwrap_or_default();
+                            if let Some(existing) = tabs.iter_mut().find(|t| (t.position - pos_pt).abs() < 0.01) {
+                                existing.align = next_tab_align;
+                            } else if tabs.len() < designcraft_doc::MAX_TAB_STOPS {
+                                tabs.push(TabStop {
+                                    position: pos_pt,
+                                    align: next_tab_align,
+                                    leader: String::new(),
+                                    align_on: String::new(),
+                                });
+                                tabs.sort_by(|a, b| a.position.partial_cmp(&b.position).unwrap_or(std::cmp::Ordering::Equal));
+                            }
+                            cur_para.tabs = Some(tabs);
+                            next_tab_align = TabAlign::Left;
+                        }
                     }
                     "line" => buf.push(designcraft_doc::FORCED_LINE_BREAK),
                     "tab" => buf.push('\t'),
@@ -260,6 +330,10 @@ pub fn import(bytes: &[u8]) -> Result<Imported, ImportError> {
     if st.text.ends_with('\n') {
         let n = st.len();
         st.delete(n - 1..n);
+    }
+    let pi = st.para_at(st.len());
+    if let Some(p) = st.paras.get_mut(pi) {
+        p.para = cur_para.clone();
     }
     // A page or column break ends its paragraph.
     st.end_paragraphs_at_breaks();
@@ -327,4 +401,64 @@ Caf\'e9 \u8364? price\tab tab\line next\par
         assert_eq!(import(br"{\rtf1 {\b \u8364} AB}").unwrap().story.text, "\u{20AC} AB");
         assert_eq!(import(br"{\rtf1 {\uc2\b \u8364} ABC}").unwrap().story.text, "\u{20AC} ABC");
     }
+
+    #[test]
+    fn imports_rtf_paragraph_formatting_and_listtext() {
+        let rtf = br"{\rtf1\ansi
+\pard\ql\li360\ri180\fi-180\sb100\sa200\tx720 First paragraph\par
+\pard\qc Centered paragraph\par
+{\listtext\pard\plain 1.\tab}\pard\qj\fi-360\li720\sa160\tx720 Item one\par
+{\listtext\pard\plain 2.\tab}Item two\par
+\pard\ql Outside list\par
+}";
+        let imp = import(rtf).unwrap();
+        let st = &imp.story;
+        st.check().unwrap();
+        assert_eq!(st.paras.len(), 5);
+
+        // First paragraph
+        let p0 = &st.paras[0].para;
+        assert_eq!(p0.align, Some(Align::Left));
+        assert_eq!(p0.left_indent, Some(18.0));
+        assert_eq!(p0.right_indent, Some(9.0));
+        assert_eq!(p0.first_line_indent, Some(-9.0));
+        assert_eq!(p0.space_before, Some(5.0));
+        assert_eq!(p0.space_after, Some(10.0));
+        assert_eq!(p0.tabs.as_ref().map(|t| t.len()), Some(1));
+        assert_eq!(p0.tabs.as_ref().unwrap()[0].position, 36.0);
+
+        // Centered paragraph
+        let p1 = &st.paras[1].para;
+        assert_eq!(p1.align, Some(Align::Center));
+        assert_eq!(p1.left_indent, None);
+
+        // Item 1 (list item with hanging indent)
+        let p2 = &st.paras[2].para;
+        assert_eq!(p2.align, Some(Align::LeftJustified));
+        assert_eq!(p2.left_indent, Some(36.0));
+        assert_eq!(p2.first_line_indent, Some(-18.0));
+        assert_eq!(p2.space_after, Some(8.0));
+        assert_eq!(p2.tabs.as_ref().unwrap()[0].position, 36.0);
+
+        // Item 2 (inherits list formatting despite inner \pard inside listtext)
+        let p3 = &st.paras[3].para;
+        assert_eq!(p3.align, Some(Align::LeftJustified));
+        assert_eq!(p3.left_indent, Some(36.0));
+        assert_eq!(p3.first_line_indent, Some(-18.0));
+        assert_eq!(p3.space_after, Some(8.0));
+
+        // Outside list (reset with \pard)
+        let p4 = &st.paras[4].para;
+        assert_eq!(p4.align, Some(Align::Left));
+        assert_eq!(p4.left_indent, None);
+        assert_eq!(p4.first_line_indent, None);
+    }
+
+    #[test]
+    fn listtext_hex_bullet_becomes_unicode_bullet() {
+        let rtf = br"{\rtf1\ansi {\listtext\pard\plain \'b7\tab}Bullet item\par}";
+        let imp = import(rtf).unwrap();
+        assert_eq!(imp.story.text, "\u{2022}\tBullet item");
+    }
 }
+

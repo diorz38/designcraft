@@ -88,6 +88,16 @@ pub struct PubgenState {
     // Card 3: Quick Actions
     #[serde(default)]
     pub card3_status: Option<(String, bool)>,
+    /// Path to RTF file for Page from RTF in Quick Actions
+    #[serde(default)]
+    pub rtf_path: String,
+    /// Path to image file for Page from Image in Quick Actions
+    #[serde(default)]
+    pub image_path: String,
+    /// Page from Image mode: false = image object (fit inside page margins), true = page
+    /// background (full page bounds on the selected page, sent to back)
+    #[serde(default)]
+    pub image_as_background: bool,
 
     // Card 1 "TOC Line" preset and Card 3 "Add TOC": the paragraph style that marks TOC entries.
     #[serde(default = "default_toc_style")]
@@ -146,6 +156,9 @@ impl Default for PubgenState {
             card2_status: None,
             card2_delim: None,
             card3_status: None,
+            rtf_path: String::new(),
+            image_path: String::new(),
+            image_as_background: false,
             toc_style: default_toc_style(),
             toc_title: default_toc_title(),
             toc_include_self: false,
@@ -633,6 +646,77 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
             });
         }
     });
+
+    // Helper: Page from RTF
+    divider(ui);
+    ui.horizontal(|ui| {
+        let w = (ui.available_width() - 65.0).max(80.0);
+        ui.add_sized(
+            [w, crate::widgets::FIELD_H],
+            egui::TextEdit::singleline(&mut st.rtf_path).hint_text("Path to .rtf file…"),
+        );
+        if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
+                st.rtf_path = path;
+            }
+        }
+    });
+    let tip_rtf = format!("Import RTF document to Page {cur_label} (auto-flows to new pages if needed)");
+    if outline_button(ui, "Page from RTF", full_width(ui)).on_hover_text(tip_rtf).clicked() {
+        if st.rtf_path.trim().is_empty() {
+            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
+                st.rtf_path = path;
+            }
+        }
+        let path = st.rtf_path.trim().to_string();
+        let res = execute_page_from_rtf(app, st, &path);
+        st.card3_status = Some(match res {
+            Ok(msg) => (msg, true),
+            Err(e) => (e, false),
+        });
+    }
+
+    // Helper: Page from Image
+    divider(ui);
+    ui.horizontal(|ui| {
+        let w = (ui.available_width() - 65.0).max(80.0);
+        ui.add_sized(
+            [w, crate::widgets::FIELD_H],
+            egui::TextEdit::singleline(&mut st.image_path).hint_text("Path to image file…"),
+        );
+        if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
+                st.image_path = path;
+            }
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("As:").size(11.0).color(t.text));
+        ui.radio_value(&mut st.image_as_background, false, "Image object").on_hover_text(
+            "Create an image object fitted inside the page margins of the selected page",
+        );
+        ui.radio_value(&mut st.image_as_background, true, "Page background").on_hover_text(
+            "Fit image proportionally to full page, keeping aspect ratio (sent to the back, behind all items)",
+        );
+    });
+    let tip_img = if st.image_as_background {
+        format!("Apply image as page background to Page {cur_label} (proportional, sent to back)")
+    } else {
+        format!("Place image fitted inside the page margins of Page {cur_label}")
+    };
+    if outline_button(ui, "Page from Image", full_width(ui)).on_hover_text(tip_img).clicked() {
+        if st.image_path.trim().is_empty() {
+            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
+                st.image_path = path;
+            }
+        }
+        let path = st.image_path.trim().to_string();
+        let res = execute_page_from_image(app, st, &path);
+        st.card3_status = Some(match res {
+            Ok(msg) => (msg, true),
+            Err(e) => (e, false),
+        });
+    }
 
     // Helper: Excel (.xlsx) to CSV Data
     divider(ui);
@@ -3129,6 +3213,165 @@ pub fn execute_continue_numbering(app: &mut DesignApp, st: &mut PubgenState) -> 
     Ok(format!("Continued numbering on Page {page_num} (now '{new_label}'){toc_msg}"))
 }
 
+pub fn execute_page_from_rtf(
+    app: &mut DesignApp,
+    st: &mut PubgenState,
+    path: &str,
+) -> Result<String, String> {
+    let target_path = if path.trim().is_empty() {
+        st.rtf_path.trim().to_string()
+    } else {
+        path.trim().to_string()
+    };
+    if target_path.is_empty() {
+        return Err("No RTF file path specified".into());
+    }
+    let p = std::path::Path::new(&target_path);
+    if !p.exists() {
+        return Err(format!("File not found: {target_path}"));
+    }
+
+    let cur_page = app
+        .session
+        .active()
+        .and_then(|s| s.selection.page)
+        .or_else(|| crate::canvas::current_page(app))
+        .unwrap_or_else(|| target_page_index(app));
+    let cur_label = app.session.page_label(cur_page);
+
+    // If a text frame on the selected page is selected, place into that frame.
+    // Otherwise clear any other selection so place_text creates a new text frame on cur_page.
+    let target_frame = {
+        let active = app.session.active().ok_or("No active document")?;
+        active.selection.items.first().copied().filter(|&id| {
+            active.doc.page_of_item(id) == Some(cur_page)
+                && active.doc.item(id).is_some_and(|it| {
+                    matches!(
+                        it.content,
+                        designcraft_doc::Content::Unassigned | designcraft_doc::Content::Text(_)
+                    )
+                })
+        })
+    };
+
+    let res = if let Some(fid) = target_frame {
+        app.run(
+            "file.place",
+            json!({
+                "path": target_path,
+                "frame": fid.0,
+                "autoflow": true,
+            }),
+        )?
+    } else {
+        let _ = app.run("selection.set", json!({"ids": []}));
+        app.run(
+            "file.place",
+            json!({
+                "path": target_path,
+                "page": cur_page + 1,
+                "autoflow": true,
+            }),
+        )?
+    };
+
+    crate::canvas::go_to_page(app, cur_page);
+    st.rtf_path = target_path.clone();
+
+    let pages_added = res.get("pagesAdded").and_then(Value::as_u64).unwrap_or(0);
+    let overset = res.get("overset").and_then(Value::as_bool).unwrap_or(false);
+    let filename = std::path::Path::new(&target_path)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| target_path.clone());
+
+    let page_info = if pages_added > 0 {
+        format!(" across {} pages ({} added)", pages_added + 1, pages_added)
+    } else {
+        String::new()
+    };
+    let overset_info = if overset { " (text still overset)" } else { "" };
+
+    Ok(format!("Imported '{filename}' to Page {cur_label}{page_info}{overset_info}"))
+}
+
+/// Page from Image: place an image on the selected page either as an image object fitted inside
+/// the page margins, or as a full-page background (page bounds, sent to the back).
+pub fn execute_page_from_image(
+    app: &mut DesignApp,
+    st: &mut PubgenState,
+    path: &str,
+) -> Result<String, String> {
+    let target_path = if path.trim().is_empty() {
+        st.image_path.trim().trim_matches('"').trim().to_string()
+    } else {
+        path.trim().trim_matches('"').trim().to_string()
+    };
+    if target_path.is_empty() {
+        return Err("No image file path specified".into());
+    }
+    if !std::path::Path::new(&target_path).exists() {
+        return Err(format!("File not found: {target_path}"));
+    }
+
+    let cur_page = app
+        .session
+        .active()
+        .and_then(|s| s.selection.page)
+        .or_else(|| crate::canvas::current_page(app))
+        .unwrap_or_else(|| target_page_index(app));
+    let cur_label = app.session.page_label(cur_page);
+
+    // Image object fits inside the page margins; a page background covers the whole page.
+    let (spread_idx, target_rect) = {
+        let active = app.session.active().ok_or("No active document")?;
+        let (si, pi) = active.doc.page_loc(cur_page).ok_or("No such page")?;
+        let page = &active.doc.spreads[si].pages[pi];
+        let rect = if st.image_as_background { page.bounds() } else { page.margin_rect() };
+        (si, rect)
+    };
+
+    // 1. Graphic frame on the target spread at the target rect.
+    let res = app.run(
+        "frame.create",
+        json!({
+            "spread": spread_idx,
+            "rect": [target_rect.x0, target_rect.y0, target_rect.x1, target_rect.y1],
+            "content": "graphic",
+            "caret": false,
+        }),
+    )?;
+    let fid = res.get("id").and_then(Value::as_u64).ok_or("Failed to create graphic frame")?;
+
+    // 2. Place the image into the frame.
+    app.run("file.place", json!({ "path": target_path, "frame": fid }))?;
+
+    // 3. Fit the image proportionally, center it, fit frame to content, and for background send to back.
+    let _ = app.run("object.fit", json!({ "mode": "fitProportionally", "ids": [fid] }));
+    let _ = app.run("object.fit", json!({ "mode": "centerContent", "ids": [fid] }));
+    let _ = app.run("object.fit", json!({ "mode": "fitFrameToContent", "ids": [fid] }));
+    if st.image_as_background {
+        let _ = app.run("object.arrange", json!({ "to": "back", "ids": [fid] }));
+    }
+
+    let _ = app.run("selection.set", json!({ "ids": [fid] }));
+
+    crate::canvas::go_to_page(app, cur_page);
+    st.image_path = target_path.clone();
+
+    let filename = std::path::Path::new(&target_path)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| target_path.clone());
+    let mode_desc = if st.image_as_background {
+        "page background (fitted proportionally to page, sent to back)"
+    } else {
+        "image object (fitted inside margins)"
+    };
+
+    Ok(format!("Placed '{filename}' as {mode_desc} on Page {cur_label}"))
+}
+
 pub fn execute_excel_to_csvs(st: &mut PubgenState, path: &str) -> Result<String, String> {
     let pkg = excel::execute_convert_excel(path)?;
     // 1. Auto-load generated catalog into Card 1 (Page from CSV)
@@ -5478,6 +5721,233 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             cont_headers_after.len(),
             "Rebuild should not duplicate continuation headers"
         );
+    }
+
+    #[test]
+    fn test_execute_page_from_rtf_sample_file() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let initial_pages = app.session.active().unwrap().doc.page_count();
+        assert_eq!(initial_pages, 1);
+
+        let mut st = PubgenState::default();
+        let rtf_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plan/pubgen/samples/ulasan_bab_1.rtf");
+
+        let res = execute_page_from_rtf(&mut app, &mut st, rtf_path);
+        assert!(res.is_ok(), "execute_page_from_rtf should succeed: {res:?}");
+        let msg = res.unwrap();
+        assert!(msg.contains("ulasan_bab_1.rtf"), "Success message should contain filename: {msg}");
+
+        let active = app.session.active().unwrap();
+        let story = active
+            .doc
+            .stories
+            .values()
+            .find(|s| s.text.contains("Dalam bab ini membahas"))
+            .expect("Imported story must be present");
+
+        // Verify numbered list item (Pusat Pemukiman Padat)
+        let num_idx = story.text.find("Pusat Pemukiman Padat").expect("must contain Pusat Pemukiman Padat");
+        let num_pi = story.para_at(num_idx);
+        let num_p = &story.paras[num_pi].para;
+        assert_eq!(num_p.left_indent, Some(36.0), "Numbered list left_indent must be 36pt");
+        assert_eq!(num_p.first_line_indent, Some(-18.0), "Numbered list first_line_indent must be -18pt");
+        assert_eq!(num_p.space_after, Some(8.0), "Numbered list space_after must be 8pt");
+        assert!(num_p.tabs.as_ref().is_some_and(|t| t.iter().any(|s| (s.position - 36.0).abs() < 0.1)));
+
+        // Verify nested sub-bullet list item (S1/Sarjana)
+        let bullet_idx = story.text.find("S1/Sarjana").expect("must contain S1/Sarjana");
+        let bullet_pi = story.para_at(bullet_idx);
+        let bullet_p = &story.paras[bullet_pi].para;
+        assert_eq!(bullet_p.left_indent, Some(72.0), "Nested bullet left_indent must be 72pt");
+        assert_eq!(bullet_p.first_line_indent, Some(-18.0), "Nested bullet first_line_indent must be -18pt");
+        assert_eq!(bullet_p.space_after, Some(8.0), "Nested bullet space_after must be 8pt");
+        assert!(bullet_p.tabs.as_ref().is_some_and(|t| t.iter().any(|s| (s.position - 72.0).abs() < 0.1)));
+
+        // Verify level 1 bullet (Komposisi Gender) has unicode bullet •
+        let gender_idx = story.text.find("Komposisi Gender").expect("must contain Komposisi Gender");
+        let gender_pi = story.para_at(gender_idx);
+        let gender_ranges = story.para_ranges();
+        let gender_para_text = &story.text[gender_ranges[gender_pi].clone()];
+        assert!(gender_para_text.starts_with("\u{2022}\t"), "Level 1 bullet must start with •\\t: {gender_para_text:?}");
+    }
+
+    #[test]
+    fn test_execute_page_from_rtf_multi_page_autoflow() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let initial_pages = app.session.active().unwrap().doc.page_count();
+        assert_eq!(initial_pages, 1);
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("long_multi_page.rtf");
+        let para = "The quick brown fox jumps over the lazy dog to fill the entire page with lines of text and paragraphs. \\par\n".repeat(60);
+        let rtf_content = format!(r#"{{\rtf1\ansi\deff0 {{\fonttbl {{\f0 Times;}}}}\f0\fs24 {para}}}"#);
+        std::fs::write(&file_path, rtf_content.as_bytes()).unwrap();
+
+        let mut st = PubgenState::default();
+        let res = execute_page_from_rtf(&mut app, &mut st, &file_path.to_string_lossy());
+        assert!(res.is_ok(), "execute_page_from_rtf should succeed: {res:?}");
+
+        let final_pages = app.session.active().unwrap().doc.page_count();
+        assert!(final_pages > initial_pages, "Multi-page RTF should autoflow to add extra pages (initial: {initial_pages}, final: {final_pages})");
+
+        // Verify threaded text frames exist across the new pages
+        let active = app.session.active().unwrap();
+        let text_frames_count = active.doc.spreads.iter().flat_map(|sp| &sp.items).filter(|it| matches!(it.content, designcraft_doc::Content::Text(_))).count();
+        assert!(text_frames_count >= final_pages, "Each page should have a threaded text frame");
+    }
+
+    #[test]
+    fn test_execute_page_from_rtf_into_selected_frame() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // Create an empty text frame on page 0
+        let add_res = app.run(
+            "frame.create",
+            json!({
+                "page": 1,
+                "rect": [72, 72, 300, 400],
+                "content": "text"
+            }),
+        ).unwrap();
+        let fid = add_res.get("id").unwrap().as_u64().unwrap();
+
+        // Select the text frame
+        app.run("selection.set", json!({"ids": [fid]})).unwrap();
+
+        // Write a small synthetic RTF
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("small_sample.rtf");
+        std::fs::write(&file_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Courier;}}\f0\fs24 Hello DesignCraft RTF!}"#).unwrap();
+
+        let mut st = PubgenState::default();
+        let res = execute_page_from_rtf(&mut app, &mut st, &file_path.to_string_lossy());
+        assert!(res.is_ok(), "execute_page_from_rtf should place into selected frame: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let story_id = match active.doc.item(designcraft_doc::ItemId(fid)).unwrap().content {
+            designcraft_doc::Content::Text(ref tf) => tf.story,
+            _ => panic!("Expected text frame"),
+        };
+        let story_text = &active.doc.story(story_id).unwrap().text;
+        assert!(story_text.contains("Hello DesignCraft RTF!"), "Story text should match: '{story_text}'");
+    }
+
+    #[test]
+    fn test_execute_page_from_rtf_error_handling() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState::default();
+
+        // Test empty path
+        let res_empty = execute_page_from_rtf(&mut app, &mut st, "");
+        assert!(res_empty.is_err());
+        assert_eq!(res_empty.unwrap_err(), "No RTF file path specified");
+
+        // Test non-existent path
+        let res_missing = execute_page_from_rtf(&mut app, &mut st, "non_existent_file_path_12345.rtf");
+        assert!(res_missing.is_err());
+        assert!(res_missing.unwrap_err().contains("File not found"));
+    }
+
+    fn sample_image_path() -> String {
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/app-icon/designcraft-1024.png").to_string()
+    }
+
+    #[test]
+    fn test_execute_page_from_image_as_object_fits_page_margins() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState::default();
+        st.image_as_background = false;
+        let res = execute_page_from_image(&mut app, &mut st, &sample_image_path());
+        assert!(res.is_ok(), "execute_page_from_image (object) should succeed: {res:?}");
+
+        // The graphic frame sits proportionally inside the page margin rect.
+        let active = app.session.active().unwrap();
+        let (si, pi) = active.doc.page_loc(0).unwrap();
+        let expected = active.doc.spreads[si].pages[pi].margin_rect();
+        let frame = active
+            .doc
+            .spreads[si]
+            .items
+            .iter()
+            .find(|it| matches!(it.content, designcraft_doc::Content::Graphic(_)))
+            .unwrap_or_else(|| panic!("expected a graphic frame on the page"));
+        let b = frame.bounds();
+        assert!(b.x0 >= expected.x0 - 0.01 && b.y0 >= expected.y0 - 0.01, "{b:?} vs {expected:?}");
+        assert!(b.x1 <= expected.x1 + 0.01 && b.y1 <= expected.y1 + 0.01, "{b:?} vs {expected:?}");
+        assert!((b.width() - b.height()).abs() < 0.01, "Aspect ratio preserved: {b:?}");
+        assert!(((b.x0 + b.x1) / 2.0 - (expected.x0 + expected.x1) / 2.0).abs() < 0.01);
+        assert!(((b.y0 + b.y1) / 2.0 - (expected.y0 + expected.y1) / 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_execute_page_from_image_as_background_covers_page_and_goes_to_back() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // Existing content on the page: the background must end up behind it.
+        let text = app
+            .run("frame.create", json!({ "rect": [72, 72, 300, 400], "content": "text", "text": "Hello" }))
+            .unwrap();
+        let text_id = text.get("id").and_then(Value::as_u64).unwrap();
+
+        let mut st = PubgenState::default();
+        st.image_as_background = true;
+        let res = execute_page_from_image(&mut app, &mut st, &sample_image_path());
+        assert!(res.is_ok(), "execute_page_from_image (background) should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let (si, pi) = active.doc.page_loc(0).unwrap();
+        let page = &active.doc.spreads[si].pages[pi];
+        let expected = page.bounds();
+
+        let bg_index = active
+            .doc
+            .spreads[si]
+            .items
+            .iter()
+            .position(|it| matches!(it.content, designcraft_doc::Content::Graphic(_)))
+            .unwrap_or_else(|| panic!("expected a background graphic frame"));
+        assert_eq!(bg_index, 0, "the background frame must be at the back of the spread");
+        let text_index = active
+            .doc
+            .spreads[si]
+            .items
+            .iter()
+            .position(|it| it.id.0 == text_id)
+            .unwrap();
+        assert!(text_index > bg_index, "existing items stay above the background");
+
+        let b = active.doc.spreads[si].items[bg_index].bounds();
+        assert!(b.x0 >= expected.x0 - 0.01 && b.y0 >= expected.y0 - 0.01, "{b:?} vs {expected:?}");
+        assert!(b.x1 <= expected.x1 + 0.01 && b.y1 <= expected.y1 + 0.01, "{b:?} vs {expected:?}");
+        assert!((b.width() - b.height()).abs() < 0.01, "Aspect ratio preserved: {b:?}");
+        assert!((b.width() - expected.width()).abs() < 0.01 || (b.height() - expected.height()).abs() < 0.01);
+        assert!(((b.x0 + b.x1) / 2.0 - (expected.x0 + expected.x1) / 2.0).abs() < 0.01);
+        assert!(((b.y0 + b.y1) / 2.0 - (expected.y0 + expected.y1) / 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_execute_page_from_image_error_handling() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let mut st = PubgenState::default();
+
+        let res_empty = execute_page_from_image(&mut app, &mut st, "");
+        assert!(res_empty.is_err());
+        assert_eq!(res_empty.unwrap_err(), "No image file path specified");
+
+        let res_missing = execute_page_from_image(&mut app, &mut st, "non_existent_image_12345.png");
+        assert!(res_missing.is_err());
+        assert!(res_missing.unwrap_err().contains("File not found"));
     }
 }
 
