@@ -3634,6 +3634,24 @@ pub fn wrap_tablepage_title(title: &str, width: f64, hanging_indent: f64, page_s
     lines.join(&designcraft_doc::story::FORCED_LINE_BREAK.to_string())
 }
 
+/// The first column header a TablePage table of contents writes: the type word of its own kind
+/// ("Grafik"/"Chart" for a list of charts, "Tabel"/"Table" otherwise) in the language the source
+/// records use.
+fn toc_header_line(plan: &TocPlan, st: &PubgenState) -> String {
+    let english = st.card1_records.iter().any(|r| {
+        let t = r.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("");
+        t.eq_ignore_ascii_case("table") || t.eq_ignore_ascii_case("chart")
+    });
+    let (id_type, en_type) = if plan.kind() == 2 { ("Grafik", "Chart") } else { ("Tabel", "Table") };
+    if english { format!("{en_type}\tpage") } else { format!("{id_type}\thalaman") }
+}
+
+/// Whether a line is the column header of a TablePage table of contents ("Tabel\thalaman",
+/// "Grafik\t…": the word a list of tables or a list of charts writes).
+fn is_toc_header_line(line: &str) -> bool {
+    ["Tabel\t", "Table\t", "Grafik\t", "Chart\t"].iter().any(|p| line.starts_with(p))
+}
+
 /// Detect whether a record represents a Section header (e.g. "Bab 4", "4.3 Perumahan", or "Section 2")
 /// which in TablePage layout does not receive a page number or dot leaders.
 fn is_section_header(r_type: &str, num_str: &str, title: &str) -> bool {
@@ -3739,13 +3757,8 @@ fn enrich_toc_story(
 
         let is_table_page = plan.layout == 1;
 
-        let has_table = st.card1_records.iter().any(|r| {
-            let t = r.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("");
-            t.eq_ignore_ascii_case("table")
-        });
-        let header_type = if has_table { "Table" } else { "Tabel" };
-        let header_page = if header_type == "Table" { "page" } else { "halaman" };
-        let header_line = format!("{header_type}\t{header_page}");
+        // The header follows the table of contents' own kind: a list of charts reads "Grafik".
+        let header_line = toc_header_line(plan, st);
 
         let mut new_lines = Vec::new();
         let mut changed = false;
@@ -3771,7 +3784,7 @@ fn enrich_toc_story(
             }
 
             let line_clean = line.replace(designcraft_doc::story::FORCED_LINE_BREAK, " ");
-            if is_table_page && (line_clean == header_line || line_clean.starts_with("Tabel\t") || line_clean.starts_with("Table\t") || line_clean.starts_with("Grafik\t")) {
+            if is_table_page && (line_clean == header_line || is_toc_header_line(&line_clean)) {
                 continue;
             }
 
@@ -4190,7 +4203,7 @@ fn apply_toc_post_process(
                 let style_name = if plan.layout == 1 {
                     if pi == 0 && !plan.title.trim().is_empty() && (para_text == plan.title.trim() || para_text.eq_ignore_ascii_case("contents") || para_text.eq_ignore_ascii_case("daftar isi") || para_text.eq_ignore_ascii_case("daftar tabel")) {
                         "TOC Title"
-                    } else if para_text.starts_with("Tabel\t") || para_text.starts_with("Table\t") || para_text.starts_with("Grafik\t") {
+                    } else if is_toc_header_line(para_text) {
                         "TOC TablePage Header"
                     } else if para_text.split('\t').count() == 2 {
                         "TOC Section Header"
@@ -4222,7 +4235,7 @@ fn apply_toc_post_process(
         }
     }
 
-    pages_added = sync_toc_continuation_headers(app, st, sid, plan.layout, plan.title_or_contents(), pages_added);
+    pages_added = sync_toc_continuation_headers(app, st, sid, plan, pages_added);
 
     pages_added
 }
@@ -4282,35 +4295,24 @@ fn sync_toc_continuation_headers(
     app: &mut DesignApp,
     st: &PubgenState,
     sid: designcraft_doc::StoryId,
-    layout: usize,
-    title: &str,
+    plan: &TocPlan,
     mut pages_added: u64,
 ) -> u64 {
     remove_toc_continuation_headers_of(app, sid);
 
-    let (header_text, style_name) = if layout == 1 {
+    let (header_text, style_name) = if plan.layout == 1 {
         let detected = app.session.active().and_then(|a| {
             a.doc.story(sid).and_then(|s| {
-                s.text.lines().find(|l| {
-                    let clean = l.trim();
-                    clean.starts_with("Tabel\t") || clean.starts_with("Table\t") || clean.starts_with("Grafik\t")
-                }).map(|l| l.trim().to_string())
+                s.text.lines().find(|l| is_toc_header_line(l.trim())).map(|l| l.trim().to_string())
             })
         });
 
-        let text = detected.unwrap_or_else(|| {
-            let has_table = st.card1_records.iter().any(|r| {
-                let t = r.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("");
-                t.eq_ignore_ascii_case("table")
-            });
-            let header_type = if has_table { "Table" } else { "Tabel" };
-            let header_page = if header_type == "Table" { "page" } else { "halaman" };
-            format!("{header_type}\t{header_page}")
-        });
+        let text = detected.unwrap_or_else(|| toc_header_line(plan, st));
 
         (text, "TOC TablePage Header")
     } else {
-        let is_id = title.to_lowercase().contains("daftar") || title.to_lowercase().contains("tabel");
+        let title = plan.title_or_contents();
+        let is_id = title.to_lowercase().contains("daftar") || title.to_lowercase().contains("tabel") || title.to_lowercase().contains("grafik");
         let cont_suffix = if is_id { "(Lanjutan)" } else { "(Continued)" };
         (format!("{title} {cont_suffix}"), "TOC Title")
     };
@@ -7484,6 +7486,50 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         // The filter lives in the document, so the table stays a list of tables.
         assert_eq!(toc.entries[0].page_title, ["Tabel", "Table"]);
         assert_eq!(toc_kind_of_words(&toc.entries[0].page_title), 1);
+    }
+
+    #[test]
+    fn test_toc_chart_page_layout_names_charts_in_its_column_header() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card1_records: vec![
+                vec!["Tabel".into(), "01.01.".into(), "Jarak Antar Kecamatan".into()],
+                vec!["Grafik".into(), "1.1".into(), "Curah Hujan Tiap Bulan".into()],
+            ],
+            card1_headers: vec!["type".into(), "number".into(), "title".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            card1_preset: 5,
+            toc_style: "TOC Entry".into(),
+            toc_layout_style: 1, // TablePage (BPS catalog) writes a Tabel/Grafik column header
+            ..Default::default()
+        };
+        execute_generate_pages(&mut app, &st).unwrap();
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+
+        st.toc_kind = 2;
+        st.toc_title = toc_kind_title(2).unwrap().to_string();
+        assert_eq!(st.toc_title, "Daftar Grafik");
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "{res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().unwrap();
+        let text = active.doc.story(toc.story).unwrap().text.clone();
+        assert!(text.contains("Grafik\thalaman"), "a list of charts heads its column with Grafik: {text}");
+        assert!(!text.contains("Tabel\thalaman"), "{text}");
+        assert!(text.contains("Curah Hujan Tiap Bulan"), "{text}");
+        assert!(!text.contains("Jarak Antar Kecamatan"), "a list of charts lists no tables: {text}");
+
+        // The header follows the kind and the language of the source records: an English chart.
+        st.card1_records = vec![vec!["Chart".into(), "1.1".into(), "Population Pyramid".into()]];
+        assert_eq!(toc_header_line(&TocPlan::from_state(&st), &st), "Chart\tpage");
+        st.card1_records = vec![vec!["Tabel".into(), "1.1".into(), "Luas Wilayah".into()]];
+        assert_eq!(toc_header_line(&TocPlan::from_state(&st), &st), "Grafik\thalaman");
     }
 
     #[test]
