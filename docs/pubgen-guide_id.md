@@ -146,7 +146,7 @@ Pubgen menyediakan 6 pilihan desain sampul siap pakai:
   - Kotak aksen ungu di kanan atas dengan bayangan halus elegan.
   - Bingkai foto gedung/arsitektur vertikal di sisi tengah-kanan dengan siku aksen ungu (*L-bracket*) di sudut kiri atas foto.
   - Tampilan angka tahun dwi-warna di tengah-kiri (`20` berwarna abu gelap `#1e293b`, `26` berwarna ungu `#6c5ce7`) dengan **Volume** (`Volume 23 2026`) tepat di bawahnya dan garis bawah tebal.
-  - Blok judul utama warna ungu di kiri bawah dengan sudut kanan-atas melengkung halus (*rounded corner*), membingkai teks judul putih tebal (**Arial Black**).
+  - Blok judul utama warna ungu semi-transparan (opasitas 85%) di kiri bawah dengan sudut kanan-atas melengkung halus (*rounded corner*), memperlihatkan siluet foto gedung perkotaan di baliknya sambil membingkai teks judul putih tebal (**Arial Black**).
   - **Position Lock**: Logo instansi resmi di kiri bawah bersanding dengan teks nama instansi resmi (**Arial Bold Italic**).
   - Blok aksen sudut kanan bawah dan tab sisi kanan.
 - **Paling Cocok Untuk**: Laporan bisnis tahunan, profil wilayah, publikasi statistik ekonomi kota/daerah modern.

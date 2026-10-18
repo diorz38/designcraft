@@ -179,7 +179,7 @@ Pubgen provides 6 corporate design styles:
   - Upper-right corporate accent card with soft ambient drop shadow.
   - Tall vertical architectural / cityscape photograph (`[221, 168, 565, 780]`) framed by an accent L-bracket on the upper-left.
   - Middle-left dual-tone year display (`20` in dark charcoal `#1e293b`, `26` in purple `#6c5ce7`) with **Volume** (`Volume 23 2026`) directly underneath and an accent underline rule.
-  - Asymmetric focal headline purple block (`[0, 458, 340, 680]`) featuring a 46pt bezier rounded top-right corner, framing bold white title typography (**Arial Black**).
+  - Asymmetric semi-transparent focal headline purple block (`[0, 458, 340, 680]`, 85% opacity) featuring a 46pt bezier rounded top-right corner, letting the background cityscape photo subtly show through while framing bold white title typography (**Arial Black**).
   - **Position Lock**: Bottom-left official agency logo paired with multi-line institutional branding (**Arial Bold Italic**).
   - Bottom-right grounding purple corner block and mid-right edge accent tab.
 - **Best For**: Annual business reports, urban economic reviews, municipal profiles, modern regional digests.

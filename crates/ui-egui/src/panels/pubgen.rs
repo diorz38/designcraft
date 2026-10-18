@@ -769,9 +769,9 @@ fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: 
             // Middle-left year & volume line
             p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.31), rect.min + vec2(w * 0.34, h * 0.39)), 2.0, Color32::from_rgb(30, 41, 59));
             p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.41), rect.min + vec2(w * 0.32, h * 0.43)), 1.0, Color32::from_rgb(108, 92, 231));
-            // Headline block with rounded top-right
+            // Headline block with rounded top-right (semi-transparent)
             let hl_block = egui::Rect::from_min_max(rect.min + vec2(0.0, h * 0.54), rect.min + vec2(w * 0.58, h * 0.81));
-            p.rect_filled(hl_block, egui::CornerRadius { nw: 0, ne: 8, sw: 0, se: 0 }, Color32::from_rgb(108, 92, 231));
+            p.rect_filled(hl_block, egui::CornerRadius { nw: 0, ne: 8, sw: 0, se: 0 }, Color32::from_rgba_unmultiplied(108, 92, 231, 218));
             // Bottom-left logo & agency text (position lock)
             p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.87), rect.min + vec2(w * 0.14, h * 0.94)), 2.0, Color32::from_rgb(108, 92, 231));
             p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.16, h * 0.88), rect.min + vec2(w * 0.52, h * 0.90)), 1.0, Color32::from_rgb(30, 41, 59));
@@ -2286,6 +2286,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             )?;
             let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+            let _ = app.run("object.opacity", json!({"opacity": 0.85}));
             let _ = app.run("object.dropShadow", json!({"on": true, "distance": 8, "size": 16, "opacity": 0.28}));
 
             let level_upper = level_text.to_uppercase();

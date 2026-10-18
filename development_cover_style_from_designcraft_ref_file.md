@@ -278,6 +278,10 @@ In `execute_generate_cover()`, implement the new style arm following the positio
             {"p": [0.0, 680.0 * sy]}
         ]
     }))?;
+    let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+    let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+    let _ = app.run("object.opacity", json!({"opacity": 0.85})); // Semi-transparent overlay over the photo
+    let _ = app.run("object.dropShadow", json!({"on": true, "distance": 8, "size": 16, "opacity": 0.28}));
     // Headline Typography (Level in Bold, Title in Arial Black, "DALAM ANGKA" in Bold)...
 
     // 6. Bottom-Left Logo & Agency Text (Position Lock)
