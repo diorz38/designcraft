@@ -22,6 +22,18 @@ fn default_true() -> bool {
     true
 }
 
+fn default_false() -> bool {
+    false
+}
+
+fn default_one_u32() -> u32 {
+    1
+}
+
+fn default_toc_title() -> String {
+    "Contents".into()
+}
+
 fn default_toc_style() -> String {
     "TOC Entry".into()
 }
@@ -80,6 +92,16 @@ pub struct PubgenState {
     // Card 1 "TOC Line" preset and Card 3 "Add TOC": the paragraph style that marks TOC entries.
     #[serde(default = "default_toc_style")]
     pub toc_style: String,
+    #[serde(default = "default_toc_title")]
+    pub toc_title: String,
+    #[serde(default = "default_false")]
+    pub toc_include_self: bool,
+    #[serde(default)]
+    pub toc_layout_style: usize,
+    #[serde(default = "default_one_u32")]
+    pub card3_renumber_start: u32,
+    #[serde(default)]
+    pub card3_renumber_style: usize,
 
     /// Last generated CSV files (filename, content) for ZIP export
     #[serde(skip)]
@@ -125,6 +147,11 @@ impl Default for PubgenState {
             card2_delim: None,
             card3_status: None,
             toc_style: default_toc_style(),
+            toc_title: default_toc_title(),
+            toc_include_self: false,
+            toc_layout_style: 0,
+            card3_renumber_start: 1,
+            card3_renumber_style: 0,
             generated_csv_files: Vec::new(),
             generated_zip_name: String::new(),
             generated_zip_bytes: Vec::new(),
@@ -519,20 +546,93 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
 
     // TOC: build a table of contents on the selected page from the TOC paragraph style.
     ui.horizontal(|ui| {
+        ui.label(RichText::new("TOC title:").size(11.0).color(t.text));
+        let w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
+        ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.toc_title));
+    });
+    ui.horizontal(|ui| {
         ui.label(RichText::new("TOC style:").size(11.0).color(t.text));
         let w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
         ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.toc_style));
     });
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("TOC layout:").size(11.0).color(t.text));
+        let layouts = ["Standard", "TablePage"];
+        let cur_layout = layouts.get(st.toc_layout_style).copied().unwrap_or("Standard");
+        let tip_layout = "Standard: 'Tabel 4.2.1 Title ......... 36'\nTablePage: BPS statistical catalog layout with 'Tabel / halaman' header, standalone number column, and hanging indent";
+        egui::ComboBox::from_id_salt("pubgen_toc_layout_style")
+            .selected_text(cur_layout)
+            .width(110.0)
+            .show_ui(ui, |ui| {
+                for (idx, l) in layouts.iter().enumerate() {
+                    ui.selectable_value(&mut st.toc_layout_style, idx, *l);
+                }
+            })
+            .response
+            .on_hover_text(tip_layout);
+    });
     ui.checkbox(&mut st.toc_hanging_indent, "Indent wrapped TOC entries (hanging indent)");
-    let add_toc_text = crate::i18n::tr(&app.ui.language, "Add TOC (selected page)");
-    let tip_toc = format!("Insert a table of contents on Page {cur_label}");
-    if outline_button(ui, add_toc_text, full_width(ui)).on_hover_text(tip_toc).clicked() {
-        let res = execute_add_toc(app, st);
-        st.card3_status = Some(match res {
-            Ok(msg) => (msg, true),
-            Err(e) => (e, false),
-        });
-    }
+    ui.checkbox(&mut st.toc_include_self, "Include TOC page in TOC entries");
+
+    let hw_toc = (ui.available_width() - 4.0) * 0.5;
+    ui.horizontal(|ui| {
+        let add_toc_text = crate::i18n::tr(&app.ui.language, "Add TOC");
+        let tip_toc = format!("Insert a table of contents on Page {cur_label}");
+        if outline_button(ui, add_toc_text, hw_toc).on_hover_text(tip_toc).clicked() {
+            let res = execute_add_toc(app, st);
+            st.card3_status = Some(match res {
+                Ok(msg) => (msg, true),
+                Err(e) => (e, false),
+            });
+        }
+
+        let rebuild_toc_text = crate::i18n::tr(&app.ui.language, "Rebuild TOC");
+        let tip_rebuild = "Rebuild and re-number existing Table of Contents across the document";
+        if outline_button(ui, rebuild_toc_text, hw_toc).on_hover_text(tip_rebuild).clicked() {
+            let res = execute_rebuild_toc(app, st);
+            st.card3_status = Some(match res {
+                Ok(msg) => (msg, true),
+                Err(e) => (e, false),
+            });
+        }
+    });
+
+    divider(ui);
+
+    // Renumber Page / Section
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Renumber:").size(11.0).color(t.text));
+        ui.add(egui::DragValue::new(&mut st.card3_renumber_start).range(1..=9999).prefix("Start: "));
+        let styles = ["1, 2, 3…", "i, ii, iii…", "I, II, III…"];
+        let cur_style = styles.get(st.card3_renumber_style).copied().unwrap_or("1, 2, 3…");
+        egui::ComboBox::from_id_salt("pubgen_renumber_style")
+            .selected_text(cur_style)
+            .width(80.0)
+            .show_ui(ui, |ui| {
+                for (idx, s) in styles.iter().enumerate() {
+                    ui.selectable_value(&mut st.card3_renumber_style, idx, *s);
+                }
+            });
+    });
+    let hw_renum = (ui.available_width() - 4.0) * 0.5;
+    ui.horizontal(|ui| {
+        let tip_renum = format!("Restart page numbering at {} on Page {cur_label}", st.card3_renumber_start);
+        if outline_button(ui, "Restart page #", hw_renum).on_hover_text(tip_renum).clicked() {
+            let res = execute_renumber_page(app, st);
+            st.card3_status = Some(match res {
+                Ok(msg) => (msg, true),
+                Err(e) => (e, false),
+            });
+        }
+        let tip_cont = format!("Continue numbering on Page {cur_label} (remove section restart)");
+        if outline_button(ui, "Continue #", hw_renum).on_hover_text(tip_cont).clicked() {
+            let res = execute_continue_numbering(app, st);
+            st.card3_status = Some(match res {
+                Ok(msg) => (msg, true),
+                Err(e) => (e, false),
+            });
+        }
+    });
 
     // Helper: Excel (.xlsx) to CSV Data
     divider(ui);
@@ -2085,32 +2185,160 @@ pub fn wrap_toc_title(title: &str, width: f64, hanging_indent: f64, page_str: Op
     lines.join(&designcraft_doc::story::FORCED_LINE_BREAK.to_string())
 }
 
-fn enrich_toc_story(app: &mut DesignApp, sid: designcraft_doc::StoryId, st: &PubgenState, width: f64, hanging_indent: f64) {
+/// Wrap a title specifically for TablePage layout, where every line of the title starts
+/// after `hanging_indent`, and the page number reserve sits at the right margin.
+pub fn wrap_tablepage_title(title: &str, width: f64, hanging_indent: f64, page_str: Option<&str>) -> String {
+    let clean_title = title.replace(designcraft_doc::story::FORCED_LINE_BREAK, " ");
+    let clean_title = clean_title.trim();
+    if clean_title.is_empty() {
+        return String::new();
+    }
+
+    let page_w = page_str.map(estimate_text_advance).unwrap_or(20.0);
+    let min_leader_gap = 48.0;
+    let right_reserve = page_w + min_leader_gap;
+    let max_line_w = (width - hanging_indent - right_reserve).max(60.0);
+
+    if estimate_text_advance(clean_title) <= max_line_w {
+        return clean_title.to_string();
+    }
+
+    let words: Vec<&str> = clean_title.split_whitespace().collect();
+    if words.len() <= 1 {
+        return clean_title.to_string();
+    }
+
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur_line = String::new();
+
+    for word in words {
+        let candidate = if cur_line.is_empty() {
+            word.to_string()
+        } else {
+            format!("{cur_line} {word}")
+        };
+
+        if estimate_text_advance(&candidate) <= max_line_w || cur_line.is_empty() {
+            cur_line = candidate;
+        } else {
+            lines.push(cur_line);
+            cur_line = word.to_string();
+        }
+    }
+
+    if !cur_line.is_empty() {
+        lines.push(cur_line);
+    }
+
+    lines.join(&designcraft_doc::story::FORCED_LINE_BREAK.to_string())
+}
+
+/// Detect whether a record represents a Section header (e.g. "Bab 4", "4.3 Perumahan", or "Section 2")
+/// which in TablePage layout does not receive a page number or dot leaders.
+fn is_section_header(r_type: &str, num_str: &str, title: &str) -> bool {
+    let t_lower = r_type.trim().to_lowercase();
+    if t_lower == "bab" || t_lower == "section" || t_lower == "subbab" || t_lower == "kategori" || t_lower == "chapter" {
+        return true;
+    }
+    let num_clean = num_str.trim().trim_end_matches('.');
+    let segs: Vec<&str> = num_clean.split('.').filter(|s| !s.is_empty()).collect();
+    if (t_lower.is_empty() || t_lower == "section" || t_lower == "bab") && segs.len() == 2 && !segs.iter().any(|s| s.len() > 3) {
+        let title_lower = title.trim().to_lowercase();
+        if !title_lower.starts_with("tabel ") && !title_lower.starts_with("table ") && !title_lower.starts_with("grafik ") {
+            return true;
+        }
+    }
+    false
+}
+
+fn enrich_toc_story(
+    app: &mut DesignApp,
+    sid: designcraft_doc::StoryId,
+    st: &PubgenState,
+    width: f64,
+    hanging_indent: f64,
+    toc_page: usize,
+) {
     let _ = app.session.edit(|doc, _| {
         let full_text = doc.story(sid).map(|s| s.text.clone()).ok_or(designcraft_doc::DocError::NoStory(sid))?;
+        let toc_page_label = doc.page_name(toc_page);
+        let self_title = if st.toc_title.trim().is_empty() {
+            "Contents"
+        } else {
+            st.toc_title.trim()
+        };
+
+        let is_table_page = st.toc_layout_style == 1;
+
+        let has_table = st.card1_records.iter().any(|r| {
+            let t = r.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("");
+            t.eq_ignore_ascii_case("table")
+        });
+        let header_type = if has_table { "Table" } else { "Tabel" };
+        let header_page = if header_type == "Table" { "page" } else { "halaman" };
+        let header_line = format!("{header_type}\t{header_page}");
 
         let mut new_lines = Vec::new();
         let mut changed = false;
         let mut used_records: Vec<bool> = vec![false; st.card1_records.len()];
 
-        for (idx, line) in full_text.split('\n').enumerate() {
+        let lines: Vec<&str> = full_text.split('\n').collect();
+        let orig_title_line = lines.first().copied().unwrap_or("");
+
+        if is_table_page {
+            if !st.toc_title.trim().is_empty() {
+                new_lines.push(st.toc_title.trim().to_string());
+                new_lines.push(header_line.clone());
+            } else {
+                new_lines.push(header_line.clone());
+            }
+        } else {
+            new_lines.push(orig_title_line.to_string());
+        }
+
+        for (idx, line) in lines.into_iter().enumerate() {
             if idx == 0 || line.trim().is_empty() {
-                new_lines.push(line.to_string());
                 continue;
             }
 
             let line_clean = line.replace(designcraft_doc::story::FORCED_LINE_BREAK, " ");
+            if is_table_page && (line_clean == header_line || line_clean.starts_with("Tabel\t") || line_clean.starts_with("Table\t") || line_clean.starts_with("Grafik\t")) {
+                continue;
+            }
+
             let (raw_title, page_part) = match line_clean.split_once('\t') {
                 Some((t, p)) => (t.trim(), Some(p.trim())),
                 None => (line_clean.trim(), None),
             };
 
             if raw_title.is_empty() {
-                new_lines.push(line.to_string());
                 continue;
             }
 
-            let mut prefix_opt = None;
+            // Check if this line is an existing TOC self-entry
+            let is_self_entry = raw_title.eq_ignore_ascii_case("contents")
+                || raw_title.eq_ignore_ascii_case("table of contents")
+                || raw_title.eq_ignore_ascii_case("daftar isi")
+                || raw_title.eq_ignore_ascii_case("daftar tabel")
+                || raw_title.eq_ignore_ascii_case(self_title);
+
+            if is_self_entry {
+                if st.toc_include_self {
+                    let wrapped = if st.toc_hanging_indent {
+                        wrap_toc_title(self_title, width, hanging_indent, Some(&toc_page_label))
+                    } else {
+                        self_title.to_string()
+                    };
+                    new_lines.push(format!("{wrapped}\t{toc_page_label}"));
+                } else {
+                    changed = true;
+                }
+                continue;
+            }
+
+            let mut matched_type = String::new();
+            let mut matched_num = String::new();
+            let mut clean_title = raw_title.to_string();
             let mut matched_record = false;
 
             // 1. Try matching against records in st.card1_records
@@ -2124,15 +2352,9 @@ fn enrich_toc_story(app: &mut DesignApp, sid: designcraft_doc::StoryId, st: &Pub
 
                 if !r_title.is_empty() && (raw_title == r_title || raw_title.ends_with(r_title)) {
                     matched_record = true;
-                    let expected_prefix = [r_type, r_num]
-                        .into_iter()
-                        .filter(|s| !s.is_empty())
-                        .collect::<Vec<_>>()
-                        .join(" ");
-
-                    if !expected_prefix.is_empty() && !raw_title.starts_with(&expected_prefix) {
-                        prefix_opt = Some(expected_prefix);
-                    }
+                    matched_type = r_type.to_string();
+                    matched_num = r_num.to_string();
+                    clean_title = r_title.to_string();
                     if let Some(used) = used_records.get_mut(r_idx) {
                         *used = true;
                     }
@@ -2140,49 +2362,130 @@ fn enrich_toc_story(app: &mut DesignApp, sid: designcraft_doc::StoryId, st: &Pub
                 }
             }
 
-            // 2. Fallback: inspect page frames ONLY if no record in st.card1_records matched!
-            if !matched_record && prefix_opt.is_none() {
-                if let Some(p_str) = page_part {
-                    if let Some((t_val, n_val)) = find_type_and_number_on_page(doc, p_str, raw_title) {
-                        let expected_prefix = [t_val.as_str(), n_val.as_str()]
-                            .into_iter()
-                            .filter(|s| !s.is_empty())
-                            .collect::<Vec<_>>()
-                            .join(" ");
+            // 2. Strip prefix if in raw_title (e.g. "Tabel 4.2.1 Banyaknya...")
+            if !matched_record {
+                let trimmed_title = raw_title.trim();
+                let (det_type, after_type) = if let Some(rest) = trimmed_title.strip_prefix("Tabel ") {
+                    ("Tabel", rest.trim())
+                } else if let Some(rest) = trimmed_title.strip_prefix("Table ") {
+                    ("Table", rest.trim())
+                } else if let Some(rest) = trimmed_title.strip_prefix("Grafik ") {
+                    ("Grafik", rest.trim())
+                } else {
+                    ("", trimmed_title)
+                };
 
-                        let starts_with_type = !t_val.is_empty() && raw_title.to_lowercase().starts_with(&t_val.to_lowercase());
-                        if !expected_prefix.is_empty() && !raw_title.starts_with(&expected_prefix) && !starts_with_type {
-                            prefix_opt = Some(expected_prefix);
-                        }
+                if let Some((first_word, rest_of_title)) = after_type.split_once(' ') {
+                    if first_word.chars().any(|c| c.is_ascii_digit()) && first_word.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-') {
+                        matched_type = det_type.to_string();
+                        matched_num = first_word.to_string();
+                        clean_title = rest_of_title.trim().to_string();
                     }
                 }
             }
 
-            let title_to_use = if let Some(prefix) = prefix_opt {
-                format!("{prefix} {raw_title}")
-            } else {
-                raw_title.to_string()
-            };
-
-            let wrapped_title = if st.toc_hanging_indent {
-                wrap_toc_title(&title_to_use, width, hanging_indent, page_part)
-            } else {
-                title_to_use
-            };
-
-            let original_entry_title = line.split_once('\t').map(|(t, _)| t).unwrap_or(line);
-            if wrapped_title != original_entry_title {
-                changed = true;
+            // 3. Fallback: inspect page frames ONLY if no record in st.card1_records matched!
+            if matched_num.is_empty() && !matched_record {
+                if let Some(p_str) = page_part {
+                    if let Some((t_val, n_val)) = find_type_and_number_on_page(doc, p_str, raw_title) {
+                        matched_type = t_val;
+                        matched_num = n_val;
+                    }
+                }
             }
 
-            if let Some(p_str) = page_part {
-                new_lines.push(format!("{wrapped_title}\t{p_str}"));
+            if is_table_page {
+                let clean_num = matched_num.trim_end_matches('.');
+                let is_sec = is_section_header(&matched_type, clean_num, &clean_title);
+                if is_sec {
+                    let entry = if !clean_num.is_empty() {
+                        format!("{clean_num}\t{clean_title}")
+                    } else {
+                        clean_title
+                    };
+                    new_lines.push(entry);
+                } else {
+                    let wrapped = if st.toc_hanging_indent {
+                        wrap_tablepage_title(&clean_title, width, hanging_indent, page_part)
+                    } else {
+                        clean_title
+                    };
+                    let entry = if let Some(p_str) = page_part {
+                        if !clean_num.is_empty() {
+                            format!("{clean_num}\t{wrapped}\t{p_str}")
+                        } else {
+                            format!("{wrapped}\t{p_str}")
+                        }
+                    } else {
+                        wrapped
+                    };
+                    new_lines.push(entry);
+                }
+                changed = true;
             } else {
-                new_lines.push(wrapped_title);
+                // Standard mode
+                let mut prefix_opt = None;
+                let expected_prefix = [&matched_type, &matched_num]
+                    .into_iter()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                let starts_with_type = !matched_type.is_empty() && raw_title.to_lowercase().starts_with(&matched_type.to_lowercase());
+                if !expected_prefix.is_empty() && !raw_title.starts_with(&expected_prefix) && !starts_with_type {
+                    prefix_opt = Some(expected_prefix);
+                }
+
+                let title_to_use = if let Some(prefix) = prefix_opt {
+                    format!("{prefix} {raw_title}")
+                } else {
+                    raw_title.to_string()
+                };
+
+                let wrapped_title = if st.toc_hanging_indent {
+                    wrap_toc_title(&title_to_use, width, hanging_indent, page_part)
+                } else {
+                    title_to_use
+                };
+
+                let original_entry_title = line.split_once('\t').map(|(t, _)| t).unwrap_or(line);
+                if wrapped_title != original_entry_title {
+                    changed = true;
+                }
+
+                if let Some(p_str) = page_part {
+                    new_lines.push(format!("{wrapped_title}\t{p_str}"));
+                } else {
+                    new_lines.push(wrapped_title);
+                }
             }
         }
 
-        if changed {
+        // If toc_include_self is requested and not yet added, insert right after title/header
+        if st.toc_include_self && !new_lines.is_empty() {
+            let already_has = new_lines.iter().skip(1).any(|l| {
+                let t = l.split_once('\t').map(|(t, _)| t.trim()).unwrap_or(l.trim());
+                t.eq_ignore_ascii_case(self_title)
+                    || t.eq_ignore_ascii_case("contents")
+                    || t.eq_ignore_ascii_case("table of contents")
+                    || t.eq_ignore_ascii_case("daftar isi")
+                    || t.eq_ignore_ascii_case("daftar tabel")
+            });
+            if !already_has {
+                let wrapped = if st.toc_hanging_indent {
+                    wrap_toc_title(self_title, width, hanging_indent, Some(&toc_page_label))
+                } else {
+                    self_title.to_string()
+                };
+                let insert_pos = if is_table_page && new_lines.len() > 1 { 2 } else { 1 };
+                let insert_pos = insert_pos.min(new_lines.len());
+                new_lines.insert(insert_pos, format!("{wrapped}\t{toc_page_label}"));
+                changed = true;
+            }
+        }
+
+        if changed || is_table_page {
             let new_text = new_lines.join("\n");
             let story = doc.story_mut(sid).ok_or(designcraft_doc::DocError::NoStory(sid))?;
             let len = story.len();
@@ -2193,7 +2496,7 @@ fn enrich_toc_story(app: &mut DesignApp, sid: designcraft_doc::StoryId, st: &Pub
     });
 }
 
-fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hanging_indent: f64) {
+fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hanging_indent: f64, layout_style: usize) {
     let _ = app.session.edit(|d, _| {
         let tab_stop = designcraft_doc::TabStop {
             position: width.max(36.0),
@@ -2202,52 +2505,424 @@ fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hangin
             align_on: String::new(),
         };
 
-        let style_name = "TOC Level 1";
-        let mut found = false;
-        for style in &mut d.styles_mut().paragraph {
-            if style.name.starts_with("TOC Level") {
-                found = true;
-                let level_idx: usize = style.name.strip_prefix("TOC Level ").and_then(|s| s.parse().ok()).unwrap_or(1);
-                let base_indent = (level_idx.saturating_sub(1) as f64) * 12.0;
-                let (li, fi) = if hanging {
-                    (Some(base_indent + hanging_indent), Some(-hanging_indent))
-                } else {
-                    (Some(base_indent), Some(0.0))
-                };
-                style.para.left_indent = li;
-                style.para.first_line_indent = fi;
-                style.para.tabs = Some(vec![tab_stop.clone()]);
-            }
-        }
-
-        if !found {
-            let (left_ind, first_ind) = if hanging {
+        if layout_style == 1 {
+            // TablePage layout styles
+            let tab_stop_num = designcraft_doc::TabStop {
+                position: hanging_indent,
+                align: designcraft_doc::TabAlign::Left,
+                leader: String::new(),
+                align_on: String::new(),
+            };
+            let (li, fi) = if hanging {
                 (Some(hanging_indent), Some(-hanging_indent))
             } else {
                 (Some(0.0), Some(0.0))
             };
+
+            let mut found_level1 = false;
+            let mut found_sec = false;
+            let mut found_hdr = false;
+
+            for style in &mut d.styles_mut().paragraph {
+                if style.name == "TOC Level 1" {
+                    found_level1 = true;
+                    style.para.left_indent = li;
+                    style.para.first_line_indent = fi;
+                    style.para.tabs = Some(vec![tab_stop_num.clone(), tab_stop.clone()]);
+                    style.para.space_before = Some(3.0);
+                } else if style.name == "TOC Section Header" {
+                    found_sec = true;
+                    style.para.left_indent = li;
+                    style.para.first_line_indent = fi;
+                    style.para.tabs = Some(vec![tab_stop_num.clone()]);
+                    style.para.space_before = Some(8.0);
+                    style.para.space_after = Some(2.0);
+                } else if style.name == "TOC TablePage Header" {
+                    found_hdr = true;
+                    style.para.tabs = Some(vec![designcraft_doc::TabStop {
+                        position: width.max(36.0),
+                        align: designcraft_doc::TabAlign::Right,
+                        leader: String::new(),
+                        align_on: String::new(),
+                    }]);
+                    style.para.space_after = Some(8.0);
+                    if style.chars.size.is_none() {
+                        style.chars.size = Some(10.0);
+                    }
+                    if style.chars.fill_tint.is_none() {
+                        style.chars.fill_tint = Some(0.6);
+                    }
+                }
+            }
+
             let st = d.styles_mut();
-            st.paragraph.push(designcraft_doc::ParagraphStyle {
-                name: style_name.to_string(),
-                based_on: Some(designcraft_doc::story::BASIC_PARAGRAPH.into()),
-                next_style: None,
-                para: designcraft_doc::ParaAttrs {
-                    left_indent: left_ind,
-                    first_line_indent: first_ind,
-                    space_before: Some(4.0),
-                    align: Some(designcraft_doc::Align::Left),
-                    tabs: Some(vec![tab_stop]),
-                    ..Default::default()
-                },
-                chars: designcraft_doc::CharAttrs::default(),
-                shortcut: String::new(),
-            });
+            if !found_level1 {
+                st.paragraph.push(designcraft_doc::ParagraphStyle {
+                    name: "TOC Level 1".to_string(),
+                    based_on: Some(designcraft_doc::story::BASIC_PARAGRAPH.into()),
+                    next_style: None,
+                    para: designcraft_doc::ParaAttrs {
+                        left_indent: li,
+                        first_line_indent: fi,
+                        space_before: Some(3.0),
+                        align: Some(designcraft_doc::Align::Left),
+                        tabs: Some(vec![tab_stop_num.clone(), tab_stop]),
+                        ..Default::default()
+                    },
+                    chars: designcraft_doc::CharAttrs::default(),
+                    shortcut: String::new(),
+                });
+            }
+            if !found_sec {
+                st.paragraph.push(designcraft_doc::ParagraphStyle {
+                    name: "TOC Section Header".to_string(),
+                    based_on: Some(designcraft_doc::story::BASIC_PARAGRAPH.into()),
+                    next_style: None,
+                    para: designcraft_doc::ParaAttrs {
+                        left_indent: li,
+                        first_line_indent: fi,
+                        space_before: Some(8.0),
+                        space_after: Some(2.0),
+                        align: Some(designcraft_doc::Align::Left),
+                        tabs: Some(vec![tab_stop_num]),
+                        ..Default::default()
+                    },
+                    chars: designcraft_doc::CharAttrs {
+                        font_style: Some("Bold".into()),
+                        size: Some(10.5),
+                        ..Default::default()
+                    },
+                    shortcut: String::new(),
+                });
+            }
+            if !found_hdr {
+                st.paragraph.push(designcraft_doc::ParagraphStyle {
+                    name: "TOC TablePage Header".to_string(),
+                    based_on: Some(designcraft_doc::story::BASIC_PARAGRAPH.into()),
+                    next_style: None,
+                    para: designcraft_doc::ParaAttrs {
+                        space_after: Some(8.0),
+                        align: Some(designcraft_doc::Align::Left),
+                        tabs: Some(vec![designcraft_doc::TabStop {
+                            position: width.max(36.0),
+                            align: designcraft_doc::TabAlign::Right,
+                            leader: String::new(),
+                            align_on: String::new(),
+                        }]),
+                        ..Default::default()
+                    },
+                    chars: designcraft_doc::CharAttrs {
+                        size: Some(10.0),
+                        fill_tint: Some(0.6),
+                        ..Default::default()
+                    },
+                    shortcut: String::new(),
+                });
+            }
+        } else {
+            let style_name = "TOC Level 1";
+            let mut found = false;
+            for style in &mut d.styles_mut().paragraph {
+                if style.name.starts_with("TOC Level") {
+                    found = true;
+                    let level_idx: usize = style.name.strip_prefix("TOC Level ").and_then(|s| s.parse().ok()).unwrap_or(1);
+                    let base_indent = (level_idx.saturating_sub(1) as f64) * 12.0;
+                    let (li, fi) = if hanging {
+                        (Some(base_indent + hanging_indent), Some(-hanging_indent))
+                    } else {
+                        (Some(base_indent), Some(0.0))
+                    };
+                    style.para.left_indent = li;
+                    style.para.first_line_indent = fi;
+                    style.para.tabs = Some(vec![tab_stop.clone()]);
+                }
+            }
+
+            if !found {
+                let (left_ind, first_ind) = if hanging {
+                    (Some(hanging_indent), Some(-hanging_indent))
+                } else {
+                    (Some(0.0), Some(0.0))
+                };
+                let st = d.styles_mut();
+                st.paragraph.push(designcraft_doc::ParagraphStyle {
+                    name: style_name.to_string(),
+                    based_on: Some(designcraft_doc::story::BASIC_PARAGRAPH.into()),
+                    next_style: None,
+                    para: designcraft_doc::ParaAttrs {
+                        left_indent: left_ind,
+                        first_line_indent: first_ind,
+                        space_before: Some(4.0),
+                        align: Some(designcraft_doc::Align::Left),
+                        tabs: Some(vec![tab_stop]),
+                        ..Default::default()
+                    },
+                    chars: designcraft_doc::CharAttrs::default(),
+                    shortcut: String::new(),
+                });
+            }
         }
         Ok(serde_json::Value::Null)
     });
 }
 
-fn execute_add_toc(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, String> {
+fn compute_detected_prefix_width(st: &PubgenState) -> f64 {
+    if st.toc_layout_style == 1 {
+        // TablePage: measure width of number column only (e.g. "4.2.1", "04.01", "4.10.12")
+        let max_w = st.card1_records
+            .iter()
+            .filter_map(|row| {
+                let r_num = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
+                let clean_num = r_num.trim_end_matches('.');
+                if clean_num.is_empty() {
+                    None
+                } else {
+                    Some(estimate_text_advance(&format!("{clean_num}  ")))
+                }
+            })
+            .max_by(|a, b| a.total_cmp(b))
+            .unwrap_or(36.0);
+        max_w.clamp(28.0, 54.0)
+    } else {
+        st.card1_records
+            .iter()
+            .filter_map(|row| {
+                let r_type = row.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("").trim();
+                let r_num = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
+                let prefix = [r_type, r_num].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
+                if prefix.is_empty() {
+                    None
+                } else {
+                    Some(estimate_text_advance(&format!("{prefix} ")))
+                }
+            })
+            .max_by(|a, b| a.total_cmp(b))
+            .unwrap_or(68.0)
+    }
+}
+
+fn apply_toc_post_process(
+    app: &mut DesignApp,
+    st: &PubgenState,
+    sid: designcraft_doc::StoryId,
+    width: f64,
+    hanging_indent: f64,
+    target_page: usize,
+    mut pages_added: u64,
+) -> u64 {
+    enrich_toc_story(app, sid, st, width, hanging_indent, target_page);
+
+    let _ = app.session.edit(|doc, _| {
+        if let Some(story) = doc.story_mut(sid) {
+            let ranges = story.para_ranges();
+            for (pi, r) in ranges.into_iter().enumerate() {
+                let para_text = story.text[r.clone()].trim();
+                let style_name = if st.toc_layout_style == 1 {
+                    if pi == 0 && !st.toc_title.trim().is_empty() && (para_text == st.toc_title.trim() || para_text.eq_ignore_ascii_case("contents") || para_text.eq_ignore_ascii_case("daftar isi") || para_text.eq_ignore_ascii_case("daftar tabel")) {
+                        "TOC Title"
+                    } else if para_text.starts_with("Tabel\t") || para_text.starts_with("Table\t") || para_text.starts_with("Grafik\t") {
+                        "TOC TablePage Header"
+                    } else if para_text.split('\t').count() == 2 {
+                        "TOC Section Header"
+                    } else {
+                        "TOC Level 1"
+                    }
+                } else {
+                    if pi == 0 { "TOC Title" } else { "TOC Level 1" }
+                };
+
+                story.format_paras(r.start..r.start, |f| *f = designcraft_doc::ParaFormat {
+                    style: style_name.to_string(),
+                    ..Default::default()
+                });
+            }
+        }
+        Ok(serde_json::Value::Null)
+    });
+
+    ensure_toc_entry_style(app, width, st.toc_hanging_indent, hanging_indent, st.toc_layout_style);
+
+    if let Ok(af_res) = app.run("text.autoflow", json!({"story": sid.0, "maxPages": 50})) {
+        if let Some(extra) = af_res.get("pagesAdded").and_then(Value::as_u64) {
+            pages_added += extra;
+        }
+    }
+
+    pages_added = sync_toc_continuation_headers(app, st, sid, pages_added);
+
+    pages_added
+}
+
+pub const TOC_CONTINUATION_HEADER_LABEL: &str = "pubgen_toc_continuation_header";
+const TOC_CONT_HEADER_H: f64 = 18.0;
+const TOC_CONT_HEADER_GAP: f64 = 6.0;
+
+pub fn remove_toc_continuation_headers(app: &mut DesignApp) {
+    let _ = app.session.edit(|doc, _| {
+        let mut to_remove = Vec::new();
+        for spread in &doc.spreads {
+            for it in &spread.items {
+                if it.label == TOC_CONTINUATION_HEADER_LABEL {
+                    to_remove.push(it.id);
+                }
+            }
+        }
+        for id in to_remove {
+            let _ = doc.remove_item(id);
+        }
+        Ok(serde_json::Value::Null)
+    });
+}
+
+fn sync_toc_continuation_headers(
+    app: &mut DesignApp,
+    st: &PubgenState,
+    sid: designcraft_doc::StoryId,
+    mut pages_added: u64,
+) -> u64 {
+    remove_toc_continuation_headers(app);
+
+    let (header_text, style_name) = if st.toc_layout_style == 1 {
+        let detected = app.session.active().and_then(|a| {
+            a.doc.story(sid).and_then(|s| {
+                s.text.lines().find(|l| {
+                    let clean = l.trim();
+                    clean.starts_with("Tabel\t") || clean.starts_with("Table\t") || clean.starts_with("Grafik\t")
+                }).map(|l| l.trim().to_string())
+            })
+        });
+
+        let text = detected.unwrap_or_else(|| {
+            let has_table = st.card1_records.iter().any(|r| {
+                let t = r.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("");
+                t.eq_ignore_ascii_case("table")
+            });
+            let header_type = if has_table { "Table" } else { "Tabel" };
+            let header_page = if header_type == "Table" { "page" } else { "halaman" };
+            format!("{header_type}\t{header_page}")
+        });
+
+        (text, "TOC TablePage Header")
+    } else {
+        let title = if st.toc_title.trim().is_empty() { "Contents" } else { st.toc_title.trim() };
+        let is_id = title.to_lowercase().contains("daftar") || title.to_lowercase().contains("tabel");
+        let cont_suffix = if is_id { "(Lanjutan)" } else { "(Continued)" };
+        (format!("{title} {cont_suffix}"), "TOC Title")
+    };
+
+    for _iter in 0..5 {
+        let active = match app.session.active() {
+            Some(a) => a,
+            None => break,
+        };
+
+        let frames = match active.doc.story(sid) {
+            Some(s) if s.frames.len() > 1 => s.frames.clone(),
+            _ => break,
+        };
+
+        let first_pg = frames.first().and_then(|f| active.doc.page_of_item(*f));
+
+        let cs = designcraft_compose::compose_story(&active.doc, sid, &Default::default());
+
+        struct FramePlan {
+            fid: designcraft_doc::ItemId,
+            spread_ref: designcraft_doc::SpreadRef,
+            layer: designcraft_doc::LayerId,
+            header_rect: designcraft_geom::Rect,
+            flow_rect: designcraft_geom::Rect,
+            needs_header: bool,
+            needs_resize: bool,
+        }
+
+        let mut plans = Vec::new();
+
+        for &fid in &frames[1..] {
+            let has_text = cs.frame(fid).is_some_and(|ft| !ft.lines.is_empty());
+            if !has_text && cs.overset_at.is_none() {
+                continue;
+            }
+
+            let Some(pg) = active.doc.page_of_item(fid) else { continue };
+            if Some(pg) == first_pg {
+                continue;
+            }
+
+            let Some((si, pi)) = active.doc.page_loc(pg) else { continue };
+            let Some(spread) = active.doc.spreads.get(si) else { continue };
+            let Some(page) = spread.pages.get(pi) else { continue };
+            let m = page.margin_rect();
+
+            let header_rect = designcraft_geom::Rect::new(m.x0, m.y0, m.x1, m.y0 + TOC_CONT_HEADER_H);
+            let flow_top = (m.y0 + TOC_CONT_HEADER_H + TOC_CONT_HEADER_GAP).min(m.y1 - 10.0);
+            let flow_rect = designcraft_geom::Rect::new(m.x0, flow_top, m.x1, m.y1);
+
+            let layer = active.doc.item(fid).map(|it| it.layer).unwrap_or_else(|| active.doc.default_layer());
+
+            let has_hdr = spread.items.iter().any(|it| {
+                it.label == TOC_CONTINUATION_HEADER_LABEL && active.doc.page_of_item(it.id) == Some(pg)
+            });
+
+            let current_b = active.doc.item(fid).map(|it| it.bounds()).unwrap_or(designcraft_geom::Rect::ZERO);
+            let needs_resize = (current_b.y0 - flow_top).abs() > 1.0;
+
+            if !has_hdr || needs_resize {
+                plans.push(FramePlan {
+                    fid,
+                    spread_ref: designcraft_doc::SpreadRef::Doc(si),
+                    layer,
+                    header_rect,
+                    flow_rect,
+                    needs_header: !has_hdr,
+                    needs_resize,
+                });
+            }
+        }
+
+        if plans.is_empty() {
+            break;
+        }
+
+        let mut resized_any = false;
+        let _ = app.session.edit(|doc, _| {
+            for p in &plans {
+                if p.needs_header {
+                    let para = designcraft_doc::ParaFormat {
+                        style: style_name.to_string(),
+                        ..Default::default()
+                    };
+                    if let Ok((hdr_id, _)) = doc.add_text_frame(p.spread_ref, p.header_rect, p.layer, &header_text, para) {
+                        if let Some(it) = doc.item_mut(hdr_id) {
+                            it.label = TOC_CONTINUATION_HEADER_LABEL.to_string();
+                            it.name = "TOC Continuation Header".to_string();
+                        }
+                    }
+                }
+                if p.needs_resize {
+                    if let Some(it) = doc.item_mut(p.fid) {
+                        it.path = designcraft_geom::shapes::rectangle(p.flow_rect);
+                        resized_any = true;
+                    }
+                }
+            }
+            Ok(serde_json::Value::Null)
+        });
+
+        if resized_any {
+            if let Ok(af_res) = app.run("text.autoflow", json!({"story": sid.0, "maxPages": 50})) {
+                if let Some(extra) = af_res.get("pagesAdded").and_then(Value::as_u64) {
+                    pages_added += extra;
+                }
+            }
+        } else {
+            break;
+        }
+    }
+
+    pages_added
+}
+
+pub fn execute_add_toc(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, String> {
     let cur_page = target_page_index(app);
     let cur_label = app.session.page_label(cur_page);
 
@@ -2262,32 +2937,107 @@ fn execute_add_toc(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, 
     };
 
     let width = (margin.x1 - margin.x0).max(100.0);
+    let detected_prefix_w = compute_detected_prefix_width(st);
+    let hanging_indent = if st.toc_layout_style == 1 {
+        detected_prefix_w.round().clamp(28.0, 60.0)
+    } else {
+        detected_prefix_w.round().clamp(48.0, 140.0)
+    };
 
-    let detected_prefix_w = st
-        .card1_records
-        .iter()
-        .filter_map(|row| {
-            let r_type = row.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("").trim();
-            let r_num = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
-            let prefix = [r_type, r_num].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
-            if prefix.is_empty() {
-                None
-            } else {
-                Some(estimate_text_advance(&format!("{prefix} ")))
-            }
-        })
-        .max_by(|a, b| a.total_cmp(b))
-        .unwrap_or(68.0);
+    ensure_toc_entry_style(app, width, st.toc_hanging_indent, hanging_indent, st.toc_layout_style);
 
-    let hanging_indent = (detected_prefix_w.round()).clamp(48.0, 140.0);
+    let replace_existing = {
+        let active = app.session.active().ok_or("No active document")?;
+        if let Some(toc) = &active.doc.toc {
+            let first_frame = active.doc.story(toc.story).and_then(|s| s.frames.first().copied());
+            let pg = first_frame.and_then(|f| active.doc.page_of_item(f));
+            pg == Some(cur_page)
+        } else {
+            false
+        }
+    };
 
-    ensure_toc_entry_style(app, width, st.toc_hanging_indent, hanging_indent);
+    if replace_existing {
+        remove_toc_continuation_headers(app);
+    }
+
+    let title = if st.toc_title.trim().is_empty() { "Contents" } else { st.toc_title.trim() };
 
     let res = app.run(
         "toc.generate",
         json!({
             "page": cur_page + 1,
-            "title": "Contents",
+            "title": title,
+            "entries": [{
+                "style": st.toc_style.as_str(),
+                "level": 1,
+                "pageNumber": "after",
+                "separator": "\t"
+            }],
+            "replace": replace_existing,
+            "autoflow": true
+        }),
+    )?;
+
+    let count = res.get("entries").and_then(Value::as_u64).unwrap_or(0);
+    let pages_added = res.get("pagesAdded").and_then(Value::as_u64).unwrap_or(0);
+    let sid_u64 = res.get("story").and_then(Value::as_u64).ok_or("TOC story missing")?;
+    let sid = designcraft_doc::StoryId(sid_u64);
+
+    let final_pages_added = apply_toc_post_process(app, st, sid, width, hanging_indent, cur_page, pages_added);
+
+    let cont_msg = if final_pages_added > 0 {
+        format!(" across {} pages", final_pages_added + 1)
+    } else {
+        String::new()
+    };
+
+    Ok(format!("Added TOC on Page {cur_label} ({count} entries{cont_msg})"))
+}
+
+pub fn execute_rebuild_toc(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, String> {
+    let active_opt = app.session.active();
+    let has_toc = active_opt.as_ref().and_then(|a| a.doc.toc.as_ref()).is_some();
+    if !has_toc {
+        return execute_add_toc(app, st);
+    }
+
+    remove_toc_continuation_headers(app);
+
+    let (_existing_sid, toc_page, width) = {
+        let active = app.session.active().ok_or("No active document")?;
+        let toc = active.doc.toc.as_ref().ok_or("No table of contents exists")?;
+        let sid = toc.story;
+        let story = active.doc.story(sid).ok_or("TOC story missing")?;
+        let first_frame = story.frames.first().copied().ok_or("TOC frame missing")?;
+        let pg = active.doc.page_of_item(first_frame).unwrap_or(0);
+        let (si, pi) = active.doc.page_loc(pg).ok_or("TOC page missing")?;
+        let spread = active.doc.spreads.get(si).ok_or("Spread missing")?;
+        let page = spread.pages.get(pi).ok_or("Page missing")?;
+        let m = page.margin_rect();
+        let w = (m.x1 - m.x0).max(100.0);
+        (sid, pg, w)
+    };
+
+    let toc_label = app.session.page_label(toc_page);
+    ensure_para_style(app, &st.toc_style);
+
+    let detected_prefix_w = compute_detected_prefix_width(st);
+    let hanging_indent = if st.toc_layout_style == 1 {
+        detected_prefix_w.round().clamp(28.0, 60.0)
+    } else {
+        detected_prefix_w.round().clamp(48.0, 140.0)
+    };
+
+    ensure_toc_entry_style(app, width, st.toc_hanging_indent, hanging_indent, st.toc_layout_style);
+
+    let title = if st.toc_title.trim().is_empty() { "Contents" } else { st.toc_title.trim() };
+
+    let res = app.run(
+        "toc.generate",
+        json!({
+            "page": toc_page + 1,
+            "title": title,
             "entries": [{
                 "style": st.toc_style.as_str(),
                 "level": 1,
@@ -2300,40 +3050,83 @@ fn execute_add_toc(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, 
     )?;
 
     let count = res.get("entries").and_then(Value::as_u64).unwrap_or(0);
-    let mut pages_added = res.get("pagesAdded").and_then(Value::as_u64).unwrap_or(0);
+    let pages_added = res.get("pagesAdded").and_then(Value::as_u64).unwrap_or(0);
     let sid_u64 = res.get("story").and_then(Value::as_u64).ok_or("TOC story missing")?;
     let sid = designcraft_doc::StoryId(sid_u64);
 
-    enrich_toc_story(app, sid, st, width, hanging_indent);
+    let final_pages_added = apply_toc_post_process(app, st, sid, width, hanging_indent, toc_page, pages_added);
 
-    let _ = app.session.edit(|doc, _| {
-        if let Some(story) = doc.story_mut(sid) {
-            for (pi, r) in story.para_ranges().into_iter().enumerate() {
-                let style_name = if pi == 0 { "TOC Title" } else { "TOC Level 1" };
-                story.format_paras(r.start..r.start, |f| *f = designcraft_doc::ParaFormat {
-                    style: style_name.to_string(),
-                    ..Default::default()
-                });
-            }
-        }
-        Ok(serde_json::Value::Null)
-    });
-
-    ensure_toc_entry_style(app, width, st.toc_hanging_indent, hanging_indent);
-
-    if let Ok(af_res) = app.run("text.autoflow", json!({"story": sid.0, "maxPages": 50})) {
-        if let Some(extra) = af_res.get("pagesAdded").and_then(Value::as_u64) {
-            pages_added += extra;
-        }
-    }
-
-    let cont_msg = if pages_added > 0 {
-        format!(" across {} pages", pages_added + 1)
+    let cont_msg = if final_pages_added > 0 {
+        format!(" across {} pages", final_pages_added + 1)
     } else {
         String::new()
     };
 
-    Ok(format!("Added TOC on Page {cur_label} ({count} entries{cont_msg})"))
+    Ok(format!("Rebuilt TOC on Page {toc_label} ({count} entries{cont_msg})"))
+}
+
+pub fn execute_renumber_page(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, String> {
+    let cur_page = target_page_index(app);
+    let old_label = app.session.page_label(cur_page);
+    let start_num = st.card3_renumber_start.max(1);
+
+    let style_str = match st.card3_renumber_style {
+        1 => "lowerRoman",
+        2 => "upperRoman",
+        _ => "arabic",
+    };
+
+    app.run(
+        "layout.section",
+        json!({
+            "page": cur_page + 1,
+            "startNumber": start_num,
+            "style": style_str
+        }),
+    )?;
+
+    let new_label = app.session.page_label(cur_page);
+
+    // If TOC exists, automatically rebuild it so the TOC entries reflect the newly numbered page!
+    let toc_msg = if app.session.active().and_then(|a| a.doc.toc.as_ref()).is_some() {
+        if let Ok(msg) = execute_rebuild_toc(app, st) {
+            format!(" & {msg}")
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
+    Ok(format!("Renumbered Page {old_label} → '{new_label}' (start: {start_num}){toc_msg}"))
+}
+
+pub fn execute_continue_numbering(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, String> {
+    let cur_page = target_page_index(app);
+    if cur_page == 0 {
+        return Err("Page 1 is always the start of the document".into());
+    }
+    app.run(
+        "layout.section",
+        json!({
+            "page": cur_page + 1,
+            "remove": true
+        }),
+    )?;
+    let new_label = app.session.page_label(cur_page);
+
+    let toc_msg = if app.session.active().and_then(|a| a.doc.toc.as_ref()).is_some() {
+        if let Ok(msg) = execute_rebuild_toc(app, st) {
+            format!(" & {msg}")
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
+    let page_num = cur_page + 1;
+    Ok(format!("Continued numbering on Page {page_num} (now '{new_label}'){toc_msg}"))
 }
 
 pub fn execute_excel_to_csvs(st: &mut PubgenState, path: &str) -> Result<String, String> {
@@ -4341,6 +5134,350 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let _ = std::fs::remove_file(tbl1_path);
         let _ = std::fs::remove_file(tbl2_path);
         let _ = std::fs::remove_dir(temp_dir);
+    }
+
+    #[test]
+    fn test_execute_rebuild_toc_updates_entries_and_page_numbers() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card1_records: vec![
+                vec!["Tabel".into(), "01.01.".into(), "Jarak Antar Kecamatan".into()],
+                vec!["Tabel".into(), "01.02.".into(), "Keadaan Curah Hujan".into()],
+            ],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 0,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        // Page 1 is blank. Generate pages: Page 2 is 01.01, Page 3 is 01.02.
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        // Put TOC on Page 1
+        crate::canvas::go_to_page(&mut app, 0);
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_add_toc should succeed: {res:?}");
+
+        {
+            let active = app.session.active().unwrap();
+            let toc = active.doc.toc.as_ref().unwrap();
+            let text = active.doc.story(toc.story).unwrap().text.clone();
+            assert!(text.contains("Jarak Antar Kecamatan\t2") || text.contains("2"), "TOC text: {text}");
+        }
+
+        // Now insert a blank page after Page 1 (between TOC and Chapter 1), shifting Chapter 1 to Page 3 -> 4!
+        app.run("layout.pages.insert", json!({"after": 0, "count": 1})).unwrap();
+
+        // Rebuild TOC
+        let res_rebuild = execute_rebuild_toc(&mut app, &mut st);
+        assert!(res_rebuild.is_ok(), "execute_rebuild_toc should succeed: {res_rebuild:?}");
+
+        {
+            let active = app.session.active().unwrap();
+            let toc = active.doc.toc.as_ref().unwrap();
+            let text = active.doc.story(toc.story).unwrap().text.clone();
+            // Now Chapter 1 is on Page 3 and Chapter 2 is on Page 4!
+            assert!(text.contains("\t3"), "Chapter 1 should be updated to page 3: {text}");
+            assert!(text.contains("\t4"), "Chapter 2 should be updated to page 4: {text}");
+        }
+    }
+
+    #[test]
+    fn test_execute_renumber_page_restarts_numbering_and_rebuilds_toc() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card1_records: vec![
+                vec!["Tabel".into(), "01.01.".into(), "Data Demografi".into()],
+            ],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 0,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        // Generates Page 2 for Data Demografi
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        // Add TOC on Page 1
+        crate::canvas::go_to_page(&mut app, 0);
+        execute_add_toc(&mut app, &mut st).unwrap();
+
+        // Now select Page 2 (Chapter 1) and restart page numbering at 1 with Arabic numerals
+        crate::canvas::go_to_page(&mut app, 1);
+        st.card3_renumber_start = 1;
+        st.card3_renumber_style = 0; // "1, 2, 3…"
+        let res_renum = execute_renumber_page(&mut app, &mut st);
+        assert!(res_renum.is_ok(), "execute_renumber_page should succeed: {res_renum:?}");
+
+        // Verify page label is now '1'
+        assert_eq!(app.session.page_label(1), "1");
+
+        // Verify TOC was automatically rebuilt with page number 1!
+        let active = app.session.active().unwrap();
+        let toc = active.doc.toc.as_ref().unwrap();
+        let text = active.doc.story(toc.story).unwrap().text.clone();
+        assert!(text.contains("Data Demografi\t1"), "TOC entry should reflect renumbered page 1: {text}");
+    }
+
+    #[test]
+    fn test_toc_include_self_option() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card1_records: vec![
+                vec!["Bab".into(), "1".into(), "Pendahuluan".into()],
+            ],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 0,
+            toc_style: "TOC Entry".into(),
+            toc_title: "Daftar Isi".into(),
+            toc_include_self: true,
+            ..Default::default()
+        };
+
+        // Generate chapter page (Page 2)
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        // Generate TOC on Page 1 with toc_include_self = true
+        crate::canvas::go_to_page(&mut app, 0);
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_add_toc with toc_include_self should succeed: {res:?}");
+
+        let (toc_label, text) = {
+            let active = app.session.active().unwrap();
+            let toc = active.doc.toc.as_ref().unwrap();
+            let first_frame = active.doc.story(toc.story).unwrap().frames.first().copied().unwrap();
+            let toc_pg = active.doc.page_of_item(first_frame).unwrap();
+            let label = app.session.page_label(toc_pg);
+            let text = active.doc.story(toc.story).unwrap().text.clone();
+            (label, text)
+        };
+        // Should contain both the title and self entry:
+        assert!(text.contains("Daftar Isi"), "Title should be Daftar Isi: {text}");
+        assert!(text.contains(&format!("Daftar Isi\t{toc_label}")), "Self entry should be present: {text}");
+        assert!(text.contains("Bab 1 Pendahuluan"), "Chapter entry should be present: {text}");
+
+        // Now disable toc_include_self and rebuild TOC
+        st.toc_include_self = false;
+        let res_rebuild = execute_rebuild_toc(&mut app, &mut st);
+        assert!(res_rebuild.is_ok(), "execute_rebuild_toc should succeed: {res_rebuild:?}");
+
+        {
+            let active = app.session.active().unwrap();
+            let toc = active.doc.toc.as_ref().unwrap();
+            let text = active.doc.story(toc.story).unwrap().text.clone();
+            assert!(!text.contains(&format!("Daftar Isi\t{toc_label}")), "Self entry should be removed when unchecked: {text}");
+            assert!(text.contains("Bab 1 Pendahuluan"), "Chapter entry should remain: {text}");
+        }
+    }
+
+    #[test]
+    fn test_tablepage_toc_layout_style_generates_header_and_standalone_number_column() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card1_records: vec![
+                vec!["Tabel".into(), "02.01.".into(), "Jumlah Rukun Warga (RW)".into()],
+                vec!["Tabel".into(), "02.02.".into(), "Jumlah Pegawai Negeri Sipil".into()],
+            ],
+            toc_style: "TOC Entry".into(),
+            toc_title: "Daftar Tabel".into(),
+            toc_layout_style: 1, // TablePage mode
+            ..Default::default()
+        };
+
+        // Generate pages
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        // Insert blank page at beginning for TOC
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_add_toc in TablePage mode should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.toc.as_ref().unwrap();
+        let story = active.doc.story(toc.story).unwrap();
+        let text = &story.text;
+
+        // 1. Must contain "Daftar Tabel" title and "Tabel\thalaman" column header
+        assert!(text.contains("Daftar Tabel"), "Should contain title: {text}");
+        assert!(text.contains("Tabel\thalaman"), "Should contain TablePage header line: {text}");
+
+        // 2. Entries must use standalone number column: {num}\t{title}\t{page}
+        assert!(
+            text.contains("02.01\tJumlah Rukun Warga (RW)\t2"),
+            "Entry 1 must have standalone number column: {text}"
+        );
+        assert!(
+            text.contains("02.02\tJumlah Pegawai Negeri Sipil\t3"),
+            "Entry 2 must have standalone number column: {text}"
+        );
+
+        // 3. Verify paragraph styles applied
+        assert!(active.doc.styles.para("TOC TablePage Header").is_some());
+        assert!(active.doc.styles.para("TOC Level 1").is_some());
+    }
+
+    #[test]
+    fn test_tablepage_toc_layout_section_headers_without_page_numbers() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card1_records: vec![
+                vec!["Bab".into(), "4.3".into(), "Perumahan dan Lingkungan".into()],
+                vec!["Tabel".into(), "4.3.1".into(), "Banyaknya Desa Menurut Penerangan Jalan".into()],
+            ],
+            toc_style: "TOC Entry".into(),
+            toc_title: "".into(), // Blank title: starts directly with Tabel\thalaman
+            toc_layout_style: 1,  // TablePage mode
+            ..Default::default()
+        };
+
+        // Generate pages
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        // Insert blank page for TOC
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_add_toc in TablePage mode should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.toc.as_ref().unwrap();
+        let story = active.doc.story(toc.story).unwrap();
+        let text = &story.text;
+
+        // 1. Starts directly with Tabel\thalaman header
+        assert!(text.starts_with("Tabel\thalaman"), "Should start with header when title is empty: {text}");
+
+        // 2. Section header 4.3 must NOT have page number or leader dots
+        assert!(
+            text.contains("4.3\tPerumahan dan Lingkungan\n"),
+            "Section header must not have a page number: {text}"
+        );
+
+        // 3. Table entry 4.3.1 must have page number
+        assert!(
+            text.contains("4.3.1\tBanyaknya Desa Menurut Penerangan Jalan\t3"),
+            "Table entry must have page number: {text}"
+        );
+
+        // 4. Styles
+        assert!(active.doc.styles.para("TOC Section Header").is_some());
+    }
+
+    #[test]
+    fn test_tablepage_toc_continuation_headers_on_overflow_pages() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // 80 records so TOC spans across multiple pages (at least 2 pages)
+        let records: Vec<Vec<String>> = (1..=80)
+            .map(|i| {
+                vec![
+                    "Tabel".into(),
+                    format!("01.{i:02}."),
+                    format!("Dataset Observation Record Number {i} in Region"),
+                ]
+            })
+            .collect();
+
+        let mut st = PubgenState {
+            card1_records: records,
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 5, // TOC Line preset
+            toc_style: "TOC Entry".into(),
+            toc_title: "Daftar Tabel".into(),
+            toc_layout_style: 1, // TablePage mode
+            ..Default::default()
+        };
+
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        // Insert TOC starting page at beginning
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        crate::canvas::go_to_page(&mut app, 0);
+
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_add_toc should succeed: {res:?}");
+
+        let (cont_count, expected_flow_top, second_frame_y0) = {
+            let active = app.session.active().unwrap();
+            let toc = active.doc.toc.as_ref().unwrap();
+            let story_id = toc.story;
+            let story = active.doc.story(story_id).unwrap();
+
+            // Must have more than 1 frame because 80 entries overflow page 1
+            assert!(story.frames.len() > 1, "TOC should span across multiple frames: {}", story.frames.len());
+
+            // Find continuation header items across spreads
+            let mut cont_headers = Vec::new();
+            for spread in &active.doc.spreads {
+                for it in &spread.items {
+                    if it.label == TOC_CONTINUATION_HEADER_LABEL {
+                        cont_headers.push(it.clone());
+                    }
+                }
+            }
+
+            assert!(!cont_headers.is_empty(), "Continuation header items must be created for overflowed pages");
+
+            // Inspect the continuation header text
+            let first_hdr = &cont_headers[0];
+            let tf = first_hdr.text_frame().unwrap();
+            let hdr_story = active.doc.story(tf.story).unwrap();
+            assert_eq!(hdr_story.text.trim(), "Tabel\thalaman");
+
+            // Verify the continuation text frame on page 2 starts below the header
+            let second_frame_id = story.frames[1];
+            let second_frame_item = active.doc.item(second_frame_id).unwrap();
+            let second_pg = active.doc.page_of_item(second_frame_id).unwrap();
+            let (si, pi) = active.doc.page_loc(second_pg).unwrap();
+            let m = active.doc.spreads[si].pages[pi].margin_rect();
+
+            let expected_flow_top = m.y0 + TOC_CONT_HEADER_H + TOC_CONT_HEADER_GAP;
+            (cont_headers.len(), expected_flow_top, second_frame_item.bounds().y0)
+        };
+
+        assert!(
+            (second_frame_y0 - expected_flow_top).abs() < 1.0,
+            "Continuation text frame must start below header at {expected_flow_top}, got {second_frame_y0}"
+        );
+
+        // Test Rebuild TOC: ensure rebuild cleanly preserves single continuation header per page
+        let rebuild_res = execute_rebuild_toc(&mut app, &mut st);
+        assert!(rebuild_res.is_ok(), "execute_rebuild_toc should succeed: {rebuild_res:?}");
+
+        let active2 = app.session.active().unwrap();
+        let mut cont_headers_after = Vec::new();
+        for spread in &active2.doc.spreads {
+            for it in &spread.items {
+                if it.label == TOC_CONTINUATION_HEADER_LABEL {
+                    cont_headers_after.push(it.clone());
+                }
+            }
+        }
+        assert_eq!(
+            cont_count,
+            cont_headers_after.len(),
+            "Rebuild should not duplicate continuation headers"
+        );
     }
 }
 

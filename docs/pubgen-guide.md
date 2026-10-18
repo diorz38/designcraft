@@ -93,9 +93,16 @@ The **Quick Actions** card at the bottom of the Pubgen panel provides handy shor
   - Automatically identifies the currently selected page (via canvas view, selection, or Pages tab).
   - Inserts 1 blank page directly after the selected page via `layout.pages.insert`.
   - Automatically scrolls the canvas view to the newly inserted page.
-- **Add TOC (selected page)**:
-  - Generates or updates a Table of Contents on the selected page with automatic title early wrapping and deep hanging indent.
-  - Automatically creates continuation pages with threaded text frames when entries exceed 1 page.
+- **Add TOC / Rebuild TOC**:
+  - **TOC Layout**: Choose between:
+    - `Standard`: Classic publishing layout (`Tabel 4.2.1 Title ................ 36`), repeating `<Title> (Continued)` at the top margin on continuation pages.
+    - `TablePage`: BPS statistical catalog layout (List of Tables) with `Tabel` (left) and `halaman` (right) muted column headers, standalone number column (`4.2.1`), hanging-indented title column, bold section headers without page numbers (`4.3  Perumahan dan Lingkungan`), and **automatic continuation headers** (`Tabel` / `halaman`) repeated at the top margin of every overflowed/continuation page.
+  - **Add TOC**: Generates a Table of Contents on the currently selected page with custom title (e.g. "Contents", "Daftar Isi", or "Daftar Tabel"), automatic title early wrapping, deep hanging indent, and multi-page continuation headers.
+  - **Rebuild TOC**: Re-scans the entire document and updates all Table of Contents entries, recalculating page numbers to match the current layout, refreshing prefixes from CSV/page frames, re-syncing continuation headers without duplicates, and reflowing continuation pages.
+  - **Include TOC page in TOC entries**: Toggle to include the Table of Contents page itself as an entry in the TOC (standard publishing omits it by default).
+- **Page Renumbering & Sections**:
+  - **Restart page #**: Restarts page numbering at the specified start number on the selected page (e.g. starting body chapters at Page 1 after the TOC/preface) with configurable number style (`1, 2, 3…`, `i, ii, iii…`, `I, II, III…`). When a TOC exists, it automatically updates all TOC entries to match the new page numbers.
+  - **Continue #**: Removes the section restart on the selected page to continue numbering from the previous section.
 - **Excel to CSV Data**:
   - Automatically converts a multi-sheet Excel file (`.xlsx`) into:
     1. **Catalog CSV** (`<workbook>_catalog.csv`): Extracts row 1 of each sheet into `type,number,title,file` (where `file` is the sheet name). Automatically loaded into **Page from CSV** (Card 1).

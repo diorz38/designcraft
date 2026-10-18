@@ -156,6 +156,10 @@ Phase 8: Advanced Table Dev beyond the PRD                    [DONE]
 - [x] **Task 7.2: Add Blank Page** — `layout.pages.insert {after, count:1}` relative to the active/selected page, then scrolls the canvas to it (`crate::canvas::go_to_page`).
 - [x] **Task 7.3: Live Metadata Indicator** — status line (`Mode: Double-sided · Selected: Page N`) plus per-action status messages (`card3_status`).
 - [x] **Task 7.4: Tests** — `test_quick_actions_switch_facing_pages`, `test_quick_actions_insert_blank_page`.
+- [x] **Task 7.5: Table of Contents Rebuild & Self-Inclusion Toggle** — `execute_rebuild_toc` re-scans the document, updates all entry page numbers, re-enriches prefixes and hanging indents, and reflows continuation pages; `toc_include_self` toggle allows optional indexing of the TOC page itself; custom `toc_title` field.
+- [x] **Task 7.6: Page Renumbering & Section Controls** — `execute_renumber_page` (`layout.section`) restarts numbering on selected page with arabic/roman styles and auto-refreshes TOC; `execute_continue_numbering` restores continuous numbering.
+- [x] **Task 7.7: TablePage TOC Layout Style** — BPS statistical catalog layout ("Daftar Tabel"): `Tabel\thalaman` column header band in muted grey (`TOC TablePage Header`), standalone number column (`4.2.1`), hanging-indented title column (`TOC Level 1`), and bold section headers without page numbers or dot leaders (`TOC Section Header`).
+- [x] **Task 7.8: Multi-Page TOC Continuation Headers** — for multi-page TOCs in both `TablePage` and `Standard` modes, automatically creates top-margin continuation headers (`Tabel\thalaman` in TablePage, or `<Title> (Continued)` in Standard) on every continuation page, adjusts threaded flow frames to begin cleanly below the header (`m.y0 + 24.0`), loops autoflow reflows, and cleanly de-duplicates/resyncs headers upon `Rebuild TOC`.
 
 ---
 

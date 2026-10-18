@@ -6,14 +6,20 @@
 //! into an error (for release builds).
 
 fn main() {
+    let manifest_dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default());
+    let ico_path = manifest_dir.join("../../assets/app-icon/designcraft.ico");
+    let ico_canonical = ico_path.canonicalize().unwrap_or(ico_path);
+    let ico_str = ico_canonical.display().to_string().replace('\\', "/");
+
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=../../assets/app-icon/designcraft.ico");
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    println!("cargo:rerun-if-changed={ico_str}");
     println!("cargo:rerun-if-env-changed=DESIGNCRAFT_REQUIRE_WINRES");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
     let mut res = winresource::WindowsResource::new();
-    res.set_icon("../../assets/app-icon/designcraft.ico")
+    res.set_icon(&ico_str)
         .set("ProductName", "DesignCraft")
         .set("FileDescription", "DesignCraft page layout")
         .set("CompanyName", "Learning Machines LLC")
