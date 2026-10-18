@@ -70,6 +70,23 @@ Before writing code, analyze the reference image and define its geometry, propor
    - **Main Headline Block**: **Arial Black**, 30–36pt, high-contrast white text (`KECAMATAN\nKARAWANG\nTIMUR\nDALAM ANGKA`).
    - **Clean Architecture**: Remove arbitrary placeholder texts (e.g. "Corporate Design", "Business Report") and decorative icon badges for a clean, professional executive look.
 
+5. **Strict Condition: No Extra Text (Exclusively Options-Derived Text)**:
+   A cover style must **never** include hardcoded placeholder, dummy, or extraneous text (e.g., `"Corporate Design"`, `"Business Report"`, `"Annual Report"`, `"Executive Summary"`, `"Company Profile"`, or decorative badge captions).
+
+   Every single text frame created on the cover must originate **strictly and exclusively** from the user-configurable options defined in `PubgenState` / the Publication Cover options panel:
+   - **Administrative Level**: `st.cover_level` (`"Kecamatan"` or `"Kabupaten"`).
+   - **Publication Title**: `st.cover_title` (e.g. `"KARAWANG TIMUR"`), with the standard official publication suffix `"DALAM ANGKA"`.
+   - **Year**: `st.cover_year` (e.g. `"2026"`).
+   - **Volume**: `st.cover_volume` (e.g. `"Volume 23 2026"`).
+   - **Catalogue**: `st.cover_catalogue` (formatted as `Katalog BPS: <number>`).
+   - **Standard Code**: `st.cover_code_type` and `st.cover_code_num` (formatted as `ISSN <number>` or `ISBN <number>`).
+   - **Agency / Institution**: `st.cover_agency_text` (e.g. `"BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG"`).
+
+   If a reference design contains decorative text boxes, cards, or badge captions:
+   - Retain the geometric shape (e.g., accent card, drop shadow, framing bar) if it contributes to the visual structure.
+   - **Omit the text completely** unless it maps to one of the authorized fields above.
+   - Never add unconfigurable or synthetic text frames to fill empty canvas areas.
+
 ---
 
 ### Step 2: Build the Reference `.designcraft` Document
@@ -271,10 +288,11 @@ In `execute_generate_cover()`, implement the new style arm following the positio
 ```
 
 > [!IMPORTANT]
-> **Position Lock Across All Styles**:
-> 1. Official Agency Logo + Agency Text (`BADAN PUSAT STATISTIK\n...`) is strictly anchored to the **bottom-left** page in **Arial Bold Italic**.
-> 2. Publication metadata (Line #1 Catalogue, Line #2 ISSN/ISBN) is anchored to the **top-right** page.
-> 3. Volume text is placed directly under the Year display, eliminating arbitrary English placeholder phrases.
+> **Universal Position Lock & No Extra Text Rules**:
+> 1. **Bottom-Left**: Official Agency Logo + Agency Text (`BADAN PUSAT STATISTIK\n...`) in **Arial Bold Italic**.
+> 2. **Top-Right**: Publication metadata (Line #1 Catalogue, Line #2 ISSN/ISBN) in **Arial Bold**.
+> 3. **Middle-Left**: Volume text directly under the Year numerals with accent underline rule.
+> 4. **Strict Condition — No Extra Text**: Strictly **zero** hardcoded dummy, placeholder, or extraneous text boxes. Every single text element must map directly to one of the 7 user-configurable fields in the Publication Cover options panel.
 
 > [!TIP]
 > **Preventing Title Hyphenation**: If titles wrap inside a narrow headline box, long words may trigger hyphenation (e.g. `KARAWANG TI- / MUR`). Splitting the title words with newlines (`\n`) guarantees clean lines matching the reference layout.
@@ -363,7 +381,8 @@ cargo test -p designcraft-ui-egui --features pubgen
 - [ ] Fallback vector thumbnail implemented in `paint_fallback_cover_thumb()`.
 - [ ] Procedural generation implemented in `execute_generate_cover()`.
 - [ ] Universal position lock enforced (Bottom-left logo/agency text in Arial Bold Italic, Top-right catalogue & ISSN/ISBN, Volume under Year).
-- [ ] Clean architecture verified (no arbitrary placeholder text or extraneous badges).
+- [ ] No extra text verified: strictly zero unconfigurable or placeholder text frames (all text originates exclusively from Publication Cover options: level, title, year, volume, catalogue, code, agency).
+- [ ] Clean geometry verified (pure architectural shapes without arbitrary icons or badges).
 - [ ] Unit tests updated in `pubgen.rs` and passing (`cargo test -p designcraft-ui-egui --features pubgen`).
 - [ ] Both `docs/pubgen-guide.md` and `docs/pubgen-guide_id.md` updated.
 - [ ] All new asset files attributed in `ASSETS.md` (`cargo xtask assets`).
