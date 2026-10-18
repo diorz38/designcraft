@@ -38,6 +38,54 @@ fn default_toc_style() -> String {
     "TOC Entry".into()
 }
 
+fn default_cover_title() -> String {
+    "KARAWANG TIMUR".into()
+}
+
+fn default_cover_year() -> String {
+    "2026".into()
+}
+
+fn default_cover_volume() -> String {
+    "Volume 23 2026".into()
+}
+
+fn default_cover_catalogue() -> String {
+    "1102001.3215113".into()
+}
+
+fn default_cover_code_num() -> String {
+    "2828-7436".into()
+}
+
+fn default_cover_primary() -> String {
+    "#0072bc".into()
+}
+
+fn default_cover_accent() -> String {
+    "#f5ab19".into()
+}
+
+fn default_cover_dark() -> String {
+    "#122647".into()
+}
+
+fn default_cover_skyline() -> String {
+    "outputs/city_skyline.jpg".into()
+}
+
+fn default_cover_landscape() -> String {
+    "outputs/city_landscape.jpg".into()
+}
+
+fn default_cover_logo() -> String {
+    "outputs/bps_logo.png".into()
+}
+
+fn default_cover_agency_text() -> String {
+    "BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG".into()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PubgenState {
     // Card 1: Page from CSV
@@ -122,6 +170,42 @@ pub struct PubgenState {
     /// Cached ZIP archive bytes
     #[serde(skip)]
     pub generated_zip_bytes: Vec<u8>,
+
+    // Card: Publication Cover (before Quick Actions)
+    #[serde(default)]
+    pub cover_style: usize,
+    #[serde(default)]
+    pub cover_level: usize,
+    #[serde(default = "default_cover_title")]
+    pub cover_title: String,
+    #[serde(default = "default_cover_year")]
+    pub cover_year: String,
+    #[serde(default = "default_cover_volume")]
+    pub cover_volume: String,
+    #[serde(default = "default_cover_catalogue")]
+    pub cover_catalogue: String,
+    #[serde(default)]
+    pub cover_code_type: usize,
+    #[serde(default = "default_cover_code_num")]
+    pub cover_code_num: String,
+    #[serde(default)]
+    pub cover_theme_preset: usize,
+    #[serde(default = "default_cover_primary")]
+    pub cover_color_primary: String,
+    #[serde(default = "default_cover_accent")]
+    pub cover_color_accent: String,
+    #[serde(default = "default_cover_dark")]
+    pub cover_color_dark: String,
+    #[serde(default = "default_cover_skyline")]
+    pub cover_image_skyline: String,
+    #[serde(default = "default_cover_landscape")]
+    pub cover_image_landscape: String,
+    #[serde(default = "default_cover_logo")]
+    pub cover_image_logo: String,
+    #[serde(default = "default_cover_agency_text")]
+    pub cover_agency_text: String,
+    #[serde(default)]
+    pub cover_status: Option<(String, bool)>,
 }
 
 impl Default for PubgenState {
@@ -168,6 +252,23 @@ impl Default for PubgenState {
             generated_csv_files: Vec::new(),
             generated_zip_name: String::new(),
             generated_zip_bytes: Vec::new(),
+            cover_style: 2,
+            cover_level: 0,
+            cover_title: default_cover_title(),
+            cover_year: default_cover_year(),
+            cover_volume: default_cover_volume(),
+            cover_catalogue: default_cover_catalogue(),
+            cover_code_type: 0,
+            cover_code_num: default_cover_code_num(),
+            cover_theme_preset: 0,
+            cover_color_primary: default_cover_primary(),
+            cover_color_accent: default_cover_accent(),
+            cover_color_dark: default_cover_dark(),
+            cover_image_skyline: default_cover_skyline(),
+            cover_image_landscape: default_cover_landscape(),
+            cover_image_logo: default_cover_logo(),
+            cover_agency_text: default_cover_agency_text(),
+            cover_status: None,
         }
     }
 }
@@ -197,6 +298,12 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
 
     // Card 2: Table from CSV
     card2_ui(app, ui, &mut st, &t);
+
+    divider(ui);
+    rule(ui);
+
+    // Card: Publication Cover
+    card_cover_ui(app, ui, &mut st, &t);
 
     divider(ui);
     rule(ui);
@@ -500,8 +607,1160 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
     }
 }
 
+fn adjust_hex(hex: &str, factor: f32) -> String {
+    let clean = hex.trim().trim_start_matches('#');
+    if clean.len() != 6 {
+        return hex.to_string();
+    }
+    let r = u8::from_str_radix(clean.get(0..2).unwrap_or("00"), 16).unwrap_or(128);
+    let g = u8::from_str_radix(clean.get(2..4).unwrap_or("00"), 16).unwrap_or(128);
+    let b = u8::from_str_radix(clean.get(4..6).unwrap_or("00"), 16).unwrap_or(128);
+    let clamp = |c: f32| c.clamp(0.0, 255.0) as u8;
+    let r2 = clamp(r as f32 * factor);
+    let g2 = clamp(g as f32 * factor);
+    let b2 = clamp(b as f32 * factor);
+    format!("#{r2:02x}{g2:02x}{b2:02x}")
+}
+
+fn style_thumbnail_texture(ctx: &egui::Context, style_idx: usize) -> Option<egui::TextureHandle> {
+    let key = egui::Id::new(("pubgen_cover_style_thumbnail_tex", style_idx));
+    if let Some(tex) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(key)) {
+        return Some(tex);
+    }
+    let (primary_name, alt_name) = match style_idx {
+        0 => ("wave_curves.png", "karawang_timur_cover_2026.png"),
+        1 => ("geometric_medallion.png", "karawang_timur_geometric_cover.png"),
+        2 => ("folded_origami.png", "karawang_timur_origami_cover.png"),
+        3 => ("chevron_medallion.png", "karawang_timur_chevron_cover.png"),
+        4 => ("karawang_timur_hexagon_cover.png", "honeycomb_hexagon.png"),
+        _ => return None,
+    };
+    let candidates = [
+        format!("plan/pubgen/samples/thumb/{primary_name}"),
+        format!("samples/thumb/{primary_name}"),
+        format!("outputs/{primary_name}"),
+        format!("outputs/{alt_name}"),
+        primary_name.to_string(),
+        alt_name.to_string(),
+        format!("../outputs/{primary_name}"),
+        format!("../outputs/{alt_name}"),
+    ];
+    let mut bytes = None;
+    for cand in &candidates {
+        if let Ok(b) = std::fs::read(cand) {
+            bytes = Some(b);
+            break;
+        }
+    }
+    let bytes = bytes?;
+    let pm = designcraft_render::decode_pixmap_page(&bytes, 0)?;
+    let ci = egui::ColorImage::from_rgba_premultiplied(
+        [pm.width() as usize, pm.height() as usize],
+        pm.data_as_u8_slice(),
+    );
+    let fitted = crate::widgets::fit_texture(ci, 300);
+    let tex = ctx.load_texture(
+        format!("pubgen_cover_thumb_{style_idx}"),
+        fitted,
+        egui::TextureOptions::LINEAR,
+    );
+    ctx.data_mut(|d| d.insert_temp(key, tex.clone()));
+    Some(tex)
+}
+
+fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: &Tokens) {
+    let (rect, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
+    let p = ui.painter();
+    p.rect_filled(rect, 4.0, Color32::from_rgb(250, 250, 252));
+    p.rect_stroke(rect, 4.0, egui::Stroke::new(1.0, t.border), egui::StrokeKind::Outside);
+
+    match style_idx {
+        0 => {
+            let bottom_rect = egui::Rect::from_min_max(
+                rect.min + vec2(0.0, h * 0.45),
+                rect.max,
+            );
+            p.rect_filled(bottom_rect, egui::CornerRadius { nw: 0, ne: 0, sw: 4, se: 4 }, Color32::from_rgb(18, 38, 71));
+            let center = rect.center() + vec2(0.0, -h * 0.02);
+            p.circle_filled(center, w * 0.23, Color32::from_rgb(0, 114, 188));
+            p.circle_stroke(center, w * 0.25, egui::Stroke::new(2.0, Color32::from_rgb(245, 171, 25)));
+        }
+        1 => {
+            let band = egui::Rect::from_min_max(
+                rect.min + vec2(0.0, h * 0.28),
+                rect.min + vec2(w, h * 0.72),
+            );
+            p.rect_filled(band, 0.0, Color32::from_rgb(0, 114, 188));
+            let c = rect.center() + vec2(w * 0.1, h * 0.08);
+            p.circle_filled(c, w * 0.22, Color32::WHITE);
+            p.circle_stroke(c, w * 0.22, egui::Stroke::new(2.0, Color32::from_rgb(245, 171, 25)));
+        }
+        2 => {
+            let top_right = egui::Rect::from_min_max(
+                rect.min + vec2(w * 0.4, 0.0),
+                rect.min + vec2(w, h * 0.38),
+            );
+            p.rect_filled(top_right, egui::CornerRadius { nw: 0, ne: 4, sw: 0, se: 0 }, Color32::from_rgb(100, 150, 200));
+            let gold_facet = egui::Rect::from_min_max(
+                rect.min + vec2(0.0, 0.0),
+                rect.min + vec2(w * 0.4, h * 0.2),
+            );
+            p.rect_filled(gold_facet, egui::CornerRadius { nw: 4, ne: 0, sw: 0, se: 0 }, Color32::from_rgb(245, 171, 25));
+            let dark_facet = egui::Rect::from_min_max(
+                rect.min + vec2(0.0, h * 0.2),
+                rect.min + vec2(w * 0.5, h * 0.45),
+            );
+            p.rect_filled(dark_facet, 0.0, Color32::from_rgb(18, 38, 71));
+        }
+        3 => {
+            // Style 3 (Chevron & Medallion): Downward chevron + horseshoe ring + footer + center year
+            let chevron_pts = vec![
+                rect.min,
+                rect.min + vec2(w, 0.0),
+                rect.min + vec2(w, h * 0.18),
+                rect.min + vec2(w * 0.5, h * 0.53),
+                rect.min + vec2(0.0, h * 0.18),
+            ];
+
+            let c = rect.min + vec2(w * 0.5, h * 0.58);
+            p.circle_filled(c, w * 0.23, Color32::from_rgb(30, 41, 59));
+            p.add(egui::Shape::convex_polygon(chevron_pts, Color32::from_rgb(0, 114, 188), egui::Stroke::NONE));
+            p.circle_stroke(c, w * 0.28, egui::Stroke::new(3.5, Color32::from_rgb(245, 171, 25)));
+
+            let footer = egui::Rect::from_min_max(rect.min + vec2(0.0, h * 0.90), rect.max);
+            p.rect_filled(footer, egui::CornerRadius { nw: 0, ne: 0, sw: 4, se: 4 }, Color32::from_rgb(18, 38, 71));
+        }
+        _ => {
+            // Style 4 (Honeycomb Hexagon): Dark background + vertical stripes + chevron banner + tri-hexagon cluster
+            p.rect_filled(rect, 4.0, Color32::from_rgb(17, 24, 39));
+
+            // Stripes
+            let s1 = egui::Rect::from_min_max(rect.min + vec2(w * 0.60, 0.0), rect.min + vec2(w * 0.68, h));
+            let s2 = egui::Rect::from_min_max(rect.min + vec2(w * 0.70, 0.0), rect.min + vec2(w * 0.74, h));
+            let s3 = egui::Rect::from_min_max(rect.min + vec2(w * 0.76, 0.0), rect.min + vec2(w * 0.78, h));
+            p.rect_filled(s1, 0.0, Color32::from_rgba_unmultiplied(245, 171, 25, 200));
+            p.rect_filled(s2, 0.0, Color32::from_rgba_unmultiplied(245, 171, 25, 140));
+            p.rect_filled(s3, 0.0, Color32::from_rgba_unmultiplied(245, 171, 25, 90));
+
+            // Left banner
+            let banner = egui::Rect::from_min_max(rect.min + vec2(0.0, h * 0.26), rect.min + vec2(w * 0.45, h * 0.50));
+            p.rect_filled(banner, 0.0, Color32::from_rgb(0, 114, 188));
+            p.line_segment([rect.min + vec2(0.0, h * 0.50), rect.min + vec2(w * 0.45, h * 0.50)], egui::Stroke::new(2.0, Color32::from_rgb(245, 171, 25)));
+
+            // Tri-hexagon cluster representation
+            let c = rect.min + vec2(w * 0.65, h * 0.48);
+            p.circle_filled(c, w * 0.24, Color32::WHITE);
+            p.circle_filled(c, w * 0.21, Color32::from_rgb(30, 41, 59));
+            p.circle_stroke(c, w * 0.22, egui::Stroke::new(1.5, Color32::from_rgb(245, 171, 25)));
+        }
+    }
+}
+
+fn show_style_thumbnail_tooltip(ui: &mut Ui, style_idx: usize, name: &str, t: &Tokens) {
+    ui.vertical(|ui| {
+        ui.label(RichText::new(name).size(12.0).strong().color(t.text_strong));
+        ui.add_space(4.0);
+
+        let ctx = ui.ctx().clone();
+        if let Some(tex) = style_thumbnail_texture(&ctx, style_idx) {
+            let size = tex.size_vec2();
+            let thumb_w = 150.0;
+            let thumb_h = (thumb_w * size.y / size.x.max(1.0)).min(220.0);
+            let (rect, _) = ui.allocate_exact_size(vec2(thumb_w, thumb_h), Sense::hover());
+            ui.painter().rect_filled(rect, 4.0, Color32::from_gray(30));
+            ui.painter().image(
+                tex.id(),
+                rect,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                Color32::WHITE,
+            );
+            ui.painter().rect_stroke(rect, 4.0, egui::Stroke::new(1.0, t.border), egui::StrokeKind::Outside);
+        } else {
+            paint_fallback_cover_thumb(ui, style_idx, 150.0, 212.0, t);
+        }
+
+        let desc = match style_idx {
+            0 => "Wave curves, concentric cradle ring, and circular medallion photo.",
+            1 => "Modern diagonal polygon landscape background with circular cutout.",
+            2 => "Geometric origami folded facet ribbons with hexagonal photo header.",
+            3 => "Executive downward chevron crest with golden horseshoe medallion cradle.",
+            4 => "Architectural tri-hexagon honeycomb cluster with corporate chevron banner and racing stripes.",
+            _ => "",
+        };
+        ui.add_space(3.0);
+        ui.label(RichText::new(desc).size(10.0).color(t.text_dim));
+    });
+}
+
+fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    section(ui, crate::i18n::tr(&app.ui.language, "Publication Cover"), true);
+
+    // 1. Template Style with Hover Thumbnail Preview
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Style:").size(11.0).color(t.text));
+        let styles = ["Wave Curves", "Geometric & Medallion", "Folded Origami", "Chevron & Medallion", "Honeycomb Hexagon"];
+        let cur_style = styles.get(st.cover_style).copied().unwrap_or("Wave Curves");
+        let combo = egui::ComboBox::from_id_salt("pubgen_cover_style")
+            .selected_text(cur_style)
+            .width(160.0)
+            .show_ui(ui, |ui| {
+                for (idx, s) in styles.iter().enumerate() {
+                    let resp = ui.selectable_value(&mut st.cover_style, idx, *s);
+                    resp.on_hover_ui(|ui| {
+                        show_style_thumbnail_tooltip(ui, idx, *s, t);
+                    });
+                }
+            });
+        combo.response.on_hover_ui(|ui| {
+            show_style_thumbnail_tooltip(ui, st.cover_style, cur_style, t);
+        });
+
+        // Small eye preview icon button that also triggers hover preview
+        let (thumb_icon_rect, thumb_resp) = ui.allocate_exact_size(vec2(22.0, 20.0), Sense::click());
+        let icon_hovered = thumb_resp.hovered();
+        ui.painter().rect_filled(thumb_icon_rect, 3.0, if icon_hovered { t.accent } else { t.panel });
+        ui.painter().rect_stroke(thumb_icon_rect, 3.0, egui::Stroke::new(1.0, t.border), egui::StrokeKind::Outside);
+        ui.painter().text(
+            thumb_icon_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "👁",
+            egui::FontId::proportional(11.0),
+            if icon_hovered { Color32::WHITE } else { t.text_dim },
+        );
+        thumb_resp.on_hover_ui(|ui| {
+            show_style_thumbnail_tooltip(ui, st.cover_style, cur_style, t);
+        });
+    });
+
+    // Quick style pill switcher with hover thumbnail preview
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Preview:").size(10.0).color(t.text_dim));
+        let style_pills = [
+            ("🌊 Wave", 0, "Wave Curves"),
+            ("🔷 Geometric", 1, "Geometric & Medallion"),
+            ("📐 Origami", 2, "Folded Origami"),
+            ("🔰 Chevron", 3, "Chevron & Medallion"),
+            ("⬡ Hexagon", 4, "Honeycomb Hexagon"),
+        ];
+        for (label, idx, full_name) in style_pills {
+            let is_sel = st.cover_style == idx;
+            let btn = ui.selectable_label(is_sel, label);
+            if btn.clicked() {
+                st.cover_style = idx;
+            }
+            btn.on_hover_ui(|ui| {
+                show_style_thumbnail_tooltip(ui, idx, full_name, t);
+            });
+        }
+    });
+
+    // 2. Color Theme Preset
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Theme:").size(11.0).color(t.text));
+        let themes = [
+            "Classic BPS (Blue/Gold)",
+            "Corporate Navy & Amber",
+            "Emerald & Gold",
+            "Crimson & Slate",
+            "Modern Teal & Cyan",
+            "Custom",
+        ];
+        let cur_theme = themes.get(st.cover_theme_preset).copied().unwrap_or("Classic BPS (Blue/Gold)");
+        let prev_theme = st.cover_theme_preset;
+        egui::ComboBox::from_id_salt("pubgen_cover_theme")
+            .selected_text(cur_theme)
+            .width(180.0)
+            .show_ui(ui, |ui| {
+                for (idx, th) in themes.iter().enumerate() {
+                    ui.selectable_value(&mut st.cover_theme_preset, idx, *th);
+                }
+            });
+        if st.cover_theme_preset != prev_theme {
+            match st.cover_theme_preset {
+                0 => {
+                    st.cover_color_primary = "#0072bc".into();
+                    st.cover_color_accent = "#f5ab19".into();
+                    st.cover_color_dark = "#122647".into();
+                }
+                1 => {
+                    st.cover_color_primary = "#1e3a8a".into();
+                    st.cover_color_accent = "#d97706".into();
+                    st.cover_color_dark = "#0f172a".into();
+                }
+                2 => {
+                    st.cover_color_primary = "#047857".into();
+                    st.cover_color_accent = "#eab308".into();
+                    st.cover_color_dark = "#064e3b".into();
+                }
+                3 => {
+                    st.cover_color_primary = "#be123c".into();
+                    st.cover_color_accent = "#ea580c".into();
+                    st.cover_color_dark = "#1e293b".into();
+                }
+                4 => {
+                    st.cover_color_primary = "#0891b2".into();
+                    st.cover_color_accent = "#f59e0b".into();
+                    st.cover_color_dark = "#1e293b".into();
+                }
+                _ => {}
+            }
+        }
+    });
+
+    // Custom color hex inputs
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Colors:").size(10.5).color(t.text_dim));
+        ui.add_sized([60.0, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_color_primary))
+            .on_hover_text("Primary Color (e.g. #0072bc)");
+        ui.add_sized([60.0, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_color_accent))
+            .on_hover_text("Accent Color (e.g. #f5ab19)");
+        ui.add_sized([60.0, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_color_dark))
+            .on_hover_text("Dark / Secondary Color (e.g. #122647)");
+    });
+
+    // 3. Form fields
+    // #1 Level: KECAMATAN / KABUPATEN
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Level:").size(11.0).color(t.text));
+        let levels = ["KECAMATAN", "KABUPATEN"];
+        let cur_lvl = levels.get(st.cover_level).copied().unwrap_or("KECAMATAN");
+        egui::ComboBox::from_id_salt("pubgen_cover_level")
+            .selected_text(cur_lvl)
+            .width(130.0)
+            .show_ui(ui, |ui| {
+                for (idx, l) in levels.iter().enumerate() {
+                    ui.selectable_value(&mut st.cover_level, idx, *l);
+                }
+            });
+    });
+
+    // #2 Title: default "KARAWANG TIMUR"
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Title:").size(11.0).color(t.text));
+        let avail = (ui.available_width() - 4.0).max(100.0);
+        ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_title));
+    });
+
+    // #3 Year & #4 Volume
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Year:").size(11.0).color(t.text));
+        ui.add_sized([65.0, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_year));
+
+        ui.label(RichText::new("Volume:").size(11.0).color(t.text));
+        let avail = (ui.available_width() - 4.0).max(80.0);
+        ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_volume));
+    });
+
+    // #5 Catalogue Number
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Catalogue:").size(11.0).color(t.text));
+        let avail = (ui.available_width() - 4.0).max(100.0);
+        ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_catalogue));
+    });
+
+    // #6 Code: ISSN / ISBN + number
+    ui.horizontal(|ui| {
+        let code_types = ["ISSN", "ISBN"];
+        let cur_ct = code_types.get(st.cover_code_type).copied().unwrap_or("ISSN");
+        egui::ComboBox::from_id_salt("pubgen_cover_code_type")
+            .selected_text(cur_ct)
+            .width(70.0)
+            .show_ui(ui, |ui| {
+                for (idx, ct) in code_types.iter().enumerate() {
+                    ui.selectable_value(&mut st.cover_code_type, idx, *ct);
+                }
+            });
+        let avail = (ui.available_width() - 4.0).max(80.0);
+        ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_code_num));
+    });
+
+    // 4. Dynamic Cover Images based on Selected Style
+    divider(ui);
+    ui.label(RichText::new("Cover Images:").size(11.0).strong().color(t.text_strong));
+
+    match st.cover_style {
+        0 => {
+            // Style 0 (Wave Curves): 1 image (Circular Photo)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Photo:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
+                ).on_hover_text("Circular center photo");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
+                        st.cover_image_skyline = path;
+                    }
+                }
+            });
+        }
+        1 => {
+            // Style 1 (Geometric & Medallion): 2 images (Background Photo & Medallion Cutout)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Background:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_landscape).hint_text("outputs/city_landscape.jpg"),
+                ).on_hover_text("Diagonal polygon background landscape photo");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
+                        st.cover_image_landscape = path;
+                    }
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Medallion:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
+                ).on_hover_text("Circular cutout foreground photo");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
+                        st.cover_image_skyline = path;
+                    }
+                }
+            });
+        }
+        2 => {
+            // Style 2 (Folded Origami): 1 image (Header / Hexagonal Cutout Photo)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Header Photo:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
+                ).on_hover_text("Top-right hexagonal photo cutout");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
+                        st.cover_image_skyline = path;
+                    }
+                }
+            });
+        }
+        3 => {
+            // Style 3 (Chevron & Medallion): 1 image (Medallion Photo)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Medallion:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
+                ).on_hover_text("Circular center photo nestled inside the horseshoe medallion");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
+                        st.cover_image_skyline = path;
+                    }
+                }
+            });
+        }
+        _ => {
+            // Style 4 (Honeycomb Hexagon): 1 image (Tri-hexagon honeycomb cluster photo)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Honeycomb:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_landscape).hint_text("outputs/city_landscape.jpg"),
+                ).on_hover_text("Tri-hexagon honeycomb cluster photo");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
+                        st.cover_image_landscape = path;
+                    }
+                }
+            });
+        }
+    }
+
+    // 5. Logo & Agency Branding
+    divider(ui);
+    ui.label(RichText::new("Logo & Branding:").size(11.0).strong().color(t.text_strong));
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Logo:").size(10.5).color(t.text));
+        let w = (ui.available_width() - 65.0).max(80.0);
+        ui.add_sized(
+            [w, crate::widgets::FIELD_H],
+            egui::TextEdit::singleline(&mut st.cover_image_logo).hint_text("outputs/bps_logo.png"),
+        ).on_hover_text("Path to logo image file (PNG / JPG / SVG)");
+        if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
+                st.cover_image_logo = path;
+            }
+        }
+    });
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Logo Text:").size(10.5).color(t.text));
+        let avail = (ui.available_width() - 4.0).max(80.0);
+        ui.add_sized(
+            [avail, crate::widgets::FIELD_H * 1.8],
+            egui::TextEdit::multiline(&mut st.cover_agency_text).hint_text("BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG"),
+        ).on_hover_text("Text displayed next to the logo (multi-line supported)");
+    });
+
+    // Action button
+    let fw = full_width(ui);
+    let gen_btn = outline_button(ui, "Generate Cover Page", fw)
+        .on_hover_text("Automatically inserts a new cover page before Page 1 and generates layout");
+    if gen_btn.clicked() {
+        let res = execute_generate_cover(app, st);
+        st.cover_status = Some(match res {
+            Ok(msg) => (msg, true),
+            Err(err) => (err, false),
+        });
+    }
+
+    if let Some((msg, ok)) = &st.cover_status {
+        let color = if *ok { Color32::from_rgb(80, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
+        ui.add(egui::Label::new(RichText::new(msg).size(11.0).color(color)).wrap());
+    }
+}
+
+fn add_cover_text_frame(
+    app: &mut DesignApp,
+    spread: usize,
+    rect: [f64; 4],
+    text: &str,
+    color: &str,
+    font_family: &str,
+    font_style: &str,
+    size: f64,
+    leading: Option<f64>,
+    tracking: Option<f64>,
+    align: &str,
+) -> Result<u64, String> {
+    let res = app
+        .run(
+            "frame.create",
+            json!({
+                "spread": spread,
+                "rect": rect,
+                "content": "text",
+                "text": text,
+                "caret": false,
+            }),
+        )
+        .map_err(|e| format!("frame.create failed for '{text}': {e}"))?;
+
+    let id = res.get("id").and_then(Value::as_u64).ok_or("Missing frame id")?;
+    let story = res.get("story").and_then(Value::as_u64);
+
+    let mut char_attrs = json!({
+        "fontFamily": font_family,
+        "fontStyle": font_style,
+        "size": size,
+    });
+    if let Some(lead) = leading {
+        char_attrs["leading"] = json!({"kind": "points", "value": lead});
+    }
+    if let Some(track) = tracking {
+        char_attrs["tracking"] = json!(track);
+    }
+
+    if let Some(sid) = story {
+        let _ = app.run("text.select", json!({"story": sid, "anchor": 0, "focus": text.len()}));
+        let _ = app.run("object.color", json!({"color": color, "text": true}));
+        let _ = app.run("type.char", json!({"attrs": char_attrs.clone()}));
+        let _ = app.run("type.para", json!({"attrs": {"align": align}}));
+    }
+
+    let _ = app.run("selection.set", json!({"ids": [id]}));
+    let _ = app.run("object.color", json!({"color": color, "text": true}));
+    let _ = app.run("type.char", json!({"attrs": char_attrs}));
+    let _ = app.run("type.para", json!({"attrs": {"align": align}}));
+
+    Ok(id)
+}
+
+fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
+    // 1. Automatically insert a new page before the first page (Page 1)
+    app.run("layout.pages.insert", json!({"before": 0, "count": 1}))
+        .map_err(|e| format!("Failed to insert cover page: {e}"))?;
+    crate::canvas::go_to_page(app, 0);
+
+    let (pw, ph) = {
+        let active = app.session.active().ok_or("No active document")?;
+        let spread = active.doc.spreads.first().ok_or("Spread missing")?;
+        let page = spread.pages.first().ok_or("Page missing")?;
+        (page.width, page.height)
+    };
+
+    let level_text = if st.cover_level == 0 { "Kecamatan" } else { "Kabupaten" };
+    let title_text = if st.cover_title.trim().is_empty() { "KARAWANG TIMUR" } else { st.cover_title.trim() };
+    let year_text = if st.cover_year.trim().is_empty() { "2026" } else { st.cover_year.trim() };
+    let volume_text = if st.cover_volume.trim().is_empty() { "Volume 23 2026" } else { st.cover_volume.trim() };
+
+    let cat_raw = if st.cover_catalogue.trim().is_empty() { "1102001.3215113" } else { st.cover_catalogue.trim() };
+    let cat_text = if cat_raw.to_lowercase().starts_with("katalog") {
+        cat_raw.to_string()
+    } else {
+        format!("Katalog BPS: {cat_raw}")
+    };
+
+    let code_type = if st.cover_code_type == 0 { "ISSN" } else { "ISBN" };
+    let code_num = if st.cover_code_num.trim().is_empty() { "2828-7436" } else { st.cover_code_num.trim() };
+    let code_text = format!("{code_type} {code_num}");
+
+    let primary = if st.cover_color_primary.trim().is_empty() { "#0072bc" } else { st.cover_color_primary.trim() };
+    let accent = if st.cover_color_accent.trim().is_empty() { "#f5ab19" } else { st.cover_color_accent.trim() };
+    let dark = if st.cover_color_dark.trim().is_empty() { "#122647" } else { st.cover_color_dark.trim() };
+
+    let skyline = if st.cover_image_skyline.trim().is_empty() { "outputs/city_skyline.jpg" } else { st.cover_image_skyline.trim() };
+    let landscape = if st.cover_image_landscape.trim().is_empty() { "outputs/city_landscape.jpg" } else { st.cover_image_landscape.trim() };
+    let logo = if st.cover_image_logo.trim().is_empty() { "outputs/bps_logo.png" } else { st.cover_image_logo.trim() };
+
+    let agency_text = if st.cover_agency_text.trim().is_empty() {
+        "BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG"
+    } else {
+        st.cover_agency_text.trim()
+    };
+
+    let style_name = match st.cover_style {
+        0 => {
+            // Style 0: Wave Curves
+            // 1. Dark charcoal/theme full background
+            app.run("frame.create", json!({"spread": 0, "rect": [0, 0, pw, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": dark, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 2. Concentric Bottom Cradle
+            app.run("frame.create", json!({"spread": 0, "rect": [123.64, 246.0, 471.64, 594.0], "content": "unassigned", "shape": "ellipse"}))?;
+            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
+            let _ = app.run("object.dropShadow", json!({"on": true, "distance": 6, "size": 14, "opacity": 0.3}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            app.run("frame.create", json!({"spread": 0, "rect": [130.64, 253.0, 464.64, 587.0], "content": "unassigned", "shape": "ellipse"}))?;
+            let _ = app.run("object.color", json!({"color": adjust_hex(accent, 1.15), "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 3. Blue Wave Swoosh
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [pw, 280.0]}, {"p": [pw, 430.0], "in": [pw, 380.0], "out": [510.0, 490.0]},
+                {"p": [380.0, 565.0], "in": [450.0, 545.0], "out": [320.0, 580.0]},
+                {"p": [240.0, 560.0], "in": [270.0, 568.0], "out": [240.0, 560.0]},
+                {"p": [330.0, 545.0], "in": [260.0, 550.0], "out": [430.0, 500.0]},
+                {"p": [pw, 280.0], "in": [490.0, 390.0], "out": [pw, 280.0]}
+            ]}))?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.dropShadow", json!({"on": true, "distance": 8, "size": 16, "opacity": 0.32}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 4. White Top Wave
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [0.0, 0.0]}, {"p": [pw, 0.0]}, {"p": [pw, 280.0], "out": [490.0, 390.0]},
+                {"p": [330.0, 545.0], "in": [430.0, 500.0], "out": [260.0, 550.0]},
+                {"p": [160.0, 542.0], "in": [200.0, 545.0], "out": [80.0, 530.0]},
+                {"p": [0.0, 490.0], "in": [50.0, 505.0]}, {"p": [0.0, 0.0]}
+            ]}))?;
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
+            let _ = app.run("object.dropShadow", json!({"on": true, "distance": 8, "size": 16, "opacity": 0.22}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 5. Circular Medallion Rings
+            app.run("frame.create", json!({"spread": 0, "rect": [145.64, 268.0, 449.64, 572.0], "content": "unassigned", "shape": "ellipse"}))?;
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
+            let _ = app.run("object.dropShadow", json!({"on": true, "distance": 6, "size": 14, "opacity": 0.25}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            app.run("frame.create", json!({"spread": 0, "rect": [151.64, 274.0, 443.64, 566.0], "content": "unassigned", "shape": "ellipse"}))?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            app.run("frame.create", json!({"spread": 0, "rect": [158.64, 281.0, 436.64, 559.0], "content": "unassigned", "shape": "ellipse"}))?;
+            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // Photo frame
+            app.run("frame.create", json!({"spread": 0, "rect": [161.64, 284.0, 433.64, 556.0], "content": "graphic", "shape": "ellipse"}))?;
+            let _ = app.run("file.place", json!({"path": skyline}));
+            let _ = app.run("object.fit", json!({"mode": "fillProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 6. Top-Right Metadata (#5 and #6)
+            add_cover_text_frame(app, 0, [320.0, 24.0, 555.0, 42.0], &cat_text, dark, "Arial", "Bold", 8.5, None, None, "right")?;
+            add_cover_text_frame(app, 0, [320.0, 42.0, 555.0, 60.0], &code_text, dark, "Arial", "Bold", 8.5, None, None, "right")?;
+
+            // 7. Headline Block
+            add_cover_text_frame(app, 0, [40.0, 92.0, 555.0, 126.0], level_text, dark, "Arial", "Bold", 20.0, None, Some(50.0), "center")?;
+            let combined_title = format!("{title_text}\nDALAM ANGKA");
+            add_cover_text_frame(app, 0, [20.0, 126.0, 575.0, 225.0], &combined_title, primary, "Arial Black", "Regular", 33.0, Some(39.0), Some(30.0), "center")?;
+
+            // 8. Bottom-Left BPS Logo
+            app.run("frame.create", json!({"spread": 0, "rect": [40.0, 742.0, 84.0, 788.0], "content": "graphic", "shape": "rectangle"}))?;
+            let _ = app.run("file.place", json!({"path": logo}));
+            let _ = app.run("object.fit", json!({"mode": "fitProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            add_cover_text_frame(app, 0, [92.0, 746.0, 290.0, 788.0], agency_text, "#ffffff", "Arial", "Bold Italic", 10.0, Some(13.5), Some(20.0), "left")?;
+
+            // 9. Bottom-Right Year & Volume
+            add_cover_text_frame(app, 0, [320.0, 712.0, 555.0, 768.0], year_text, accent, "Arial Black", "Regular", 48.0, None, Some(30.0), "right")?;
+            add_cover_text_frame(app, 0, [320.0, 768.0, 555.0, 795.0], volume_text, "#cbd5e1", "Arial", "Bold", 12.0, None, Some(20.0), "right")?;
+
+            "Wave Curves"
+        }
+        1 => {
+            // Style 1: Geometric & Medallion
+            // 1. Clean White Base
+            app.run("frame.create", json!({"spread": 0, "rect": [0, 0, pw, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 2. Top-Right Metadata (#5 and #6)
+            add_cover_text_frame(app, 0, [320.0, 24.0, 555.0, 42.0], &cat_text, dark, "Arial", "Bold", 8.5, None, None, "right")?;
+            add_cover_text_frame(app, 0, [320.0, 42.0, 555.0, 60.0], &code_text, dark, "Arial", "Bold", 8.5, None, None, "right")?;
+
+            // 3. Diagonal Polygon Graphic Frame (Landscape)
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [0.0, 390.0]}, {"p": [170.0, 230.0]}, {"p": [410.0, 230.0]},
+                {"p": [pw, 75.0]}, {"p": [pw, 550.0]}, {"p": [340.0, 550.0]},
+                {"p": [160.0, 580.0]}, {"p": [0.0, 680.0]}
+            ]}))?;
+            let _ = app.run("object.content", json!({"type": "graphic"}));
+            let _ = app.run("file.place", json!({"path": landscape}));
+            let _ = app.run("object.fit", json!({"mode": "fillProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // Multiply color overlay
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [0.0, 390.0]}, {"p": [170.0, 230.0]}, {"p": [410.0, 230.0]},
+                {"p": [pw, 75.0]}, {"p": [pw, 550.0]}, {"p": [340.0, 550.0]},
+                {"p": [160.0, 580.0]}, {"p": [0.0, 680.0]}
+            ]}))?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.opacity", json!({"opacity": 0.82, "blend": "multiply"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // Accent stripes
+            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [{"p": [10.0, 365.0]}, {"p": [155.0, 222.0]}]}))?;
+            let _ = app.run("object.stroke", json!({"weight": 7.0}));
+            let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
+
+            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [{"p": [435.0, 220.0]}, {"p": [585.0, 95.0]}]}))?;
+            let _ = app.run("object.stroke", json!({"weight": 7.0}));
+            let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
+
+            // Bottom-left accent ribbon
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [0.0, 680.0]}, {"p": [155.0, 575.0]}, {"p": [170.0, 590.0]}, {"p": [0.0, 715.0]}
+            ]}))?;
+            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // Ribbon fold
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [140.0, 588.0]}, {"p": [170.0, 590.0]}, {"p": [162.0, 565.0]}
+            ]}))?;
+            let _ = app.run("object.color", json!({"color": adjust_hex(accent, 0.85), "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // Circular photo cutout
+            app.run("frame.create", json!({"spread": 0, "rect": [217.0, 292.0, 533.0, 608.0], "content": "unassigned", "shape": "ellipse"}))?;
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
+            let _ = app.run("object.dropShadow", json!({"on": true, "distance": 8, "size": 16, "opacity": 0.28}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            app.run("frame.create", json!({"spread": 0, "rect": [223.0, 298.0, 527.0, 602.0], "content": "graphic", "shape": "ellipse"}))?;
+            let _ = app.run("file.place", json!({"path": skyline}));
+            let _ = app.run("object.fit", json!({"mode": "fillProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // Accent arc around circle
+            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [
+                {"p": [340.0, 615.0], "out": [390.0, 625.0]},
+                {"p": [480.0, 595.0], "in": [435.0, 620.0]}
+            ]}))?;
+            let _ = app.run("object.stroke", json!({"weight": 5.0}));
+            let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
+
+            // Headline Block
+            add_cover_text_frame(app, 0, [35.0, 55.0, 380.0, 90.0], level_text, "#334155", "Arial", "Bold", 20.0, None, Some(50.0), "left")?;
+            add_cover_text_frame(app, 0, [35.0, 90.0, 440.0, 142.0], title_text, accent, "Arial Black", "Regular", 34.0, None, Some(30.0), "left")?;
+            add_cover_text_frame(app, 0, [35.0, 142.0, 440.0, 195.0], "DALAM ANGKA", dark, "Arial Black", "Regular", 34.0, None, Some(30.0), "left")?;
+
+            // Bottom-Left Logo
+            app.run("frame.create", json!({"spread": 0, "rect": [35.0, 742.0, 82.0, 788.0], "content": "graphic", "shape": "rectangle"}))?;
+            let _ = app.run("file.place", json!({"path": logo}));
+            let _ = app.run("object.fit", json!({"mode": "fitProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            add_cover_text_frame(app, 0, [90.0, 746.0, 280.0, 788.0], agency_text, dark, "Arial", "Bold Italic", 10.0, Some(13.5), Some(20.0), "left")?;
+
+            // Bottom-Right Year & Volume
+            add_cover_text_frame(app, 0, [320.0, 712.0, 560.0, 768.0], year_text, accent, "Arial Black", "Regular", 48.0, None, Some(30.0), "right")?;
+            add_cover_text_frame(app, 0, [320.0, 768.0, 560.0, 795.0], volume_text, dark, "Arial", "Bold", 12.0, None, Some(20.0), "right")?;
+
+            "Geometric & Medallion"
+        }
+        2 => {
+            // Style 2: Folded Origami
+            // 1. Clean White Base
+            app.run("frame.create", json!({"spread": 0, "rect": [0, 0, pw, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 2. Photo Polygon Frame (Top-Right Hexagonal Cutout)
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [235.0, 0.0]}, {"p": [pw, 0.0]}, {"p": [pw, 290.0]},
+                {"p": [325.0, 405.0]}, {"p": [105.0, 235.0]}, {"p": [105.0, 75.0]}
+            ]}))?;
+            let _ = app.run("object.content", json!({"type": "graphic"}));
+            let _ = app.run("file.place", json!({"path": skyline}));
+            let _ = app.run("object.fit", json!({"mode": "fillProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 3. Ribbon Border along Photo Lower Edge
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [105.0, 235.0]}, {"p": [325.0, 405.0]}, {"p": [pw, 290.0]},
+                {"p": [pw, 305.0]}, {"p": [325.0, 420.0]}, {"p": [105.0, 248.0]}
+            ]}))?;
+            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 4. Top-Left Accent Corner
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [0.0, 0.0]}, {"p": [235.0, 0.0]}, {"p": [105.0, 75.0]},
+                {"p": [105.0, 160.0]}, {"p": [0.0, 95.0]}
+            ]}))?;
+            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 5. Dark Navy / Theme Dark Polygon
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [0.0, 95.0]}, {"p": [105.0, 160.0]}, {"p": [105.0, 248.0]},
+                {"p": [265.0, 360.0]}, {"p": [145.0, 435.0]}, {"p": [0.0, 350.0]}
+            ]}))?;
+            let _ = app.run("object.color", json!({"color": dark, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 6. Amber / Shaded Facet on Left
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [0.0, 350.0]}, {"p": [145.0, 435.0]}, {"p": [0.0, 500.0]}
+            ]}))?;
+            let _ = app.run("object.color", json!({"color": adjust_hex(accent, 0.90), "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 7. Folded Origami Ribbon Facets
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [145.0, 435.0]}, {"p": [265.0, 360.0]}, {"p": [325.0, 420.0]}, {"p": [325.0, 540.0]}
+            ]}))?;
+            let _ = app.run("object.color", json!({"color": adjust_hex(accent, 0.98), "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [325.0, 420.0]}, {"p": [pw, 305.0]}, {"p": [pw, 350.0]},
+                {"p": [460.0, 460.0]}, {"p": [325.0, 540.0]}
+            ]}))?;
+            let _ = app.run("object.color", json!({"color": adjust_hex(accent, 1.08), "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [460.0, 460.0]}, {"p": [pw, 350.0]}, {"p": [pw, 540.0]}
+            ]}))?;
+            let _ = app.run("object.color", json!({"color": adjust_hex(accent, 0.92), "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 8. Top-Right Metadata (#5 and #6)
+            add_cover_text_frame(app, 0, [320.0, 24.0, 555.0, 42.0], &cat_text, dark, "Arial", "Bold", 8.5, None, None, "right")?;
+            add_cover_text_frame(app, 0, [320.0, 42.0, 555.0, 60.0], &code_text, dark, "Arial", "Bold", 8.5, None, None, "right")?;
+
+
+            // 9. Headline Block
+            add_cover_text_frame(app, 0, [40.0, 565.0, 420.0, 597.0], level_text, primary, "Arial", "Bold", 22.0, None, Some(40.0), "left")?;
+            add_cover_text_frame(app, 0, [40.0, 597.0, 550.0, 647.0], title_text, primary, "Arial Black", "Regular", 38.0, None, Some(20.0), "left")?;
+            add_cover_text_frame(app, 0, [40.0, 647.0, 550.0, 697.0], "DALAM ANGKA", dark, "Arial Black", "Regular", 38.0, None, Some(20.0), "left")?;
+
+            // 10. Bottom-Left Logo
+            app.run("frame.create", json!({"spread": 0, "rect": [40.0, 742.0, 84.0, 788.0], "content": "graphic", "shape": "rectangle"}))?;
+            let _ = app.run("file.place", json!({"path": logo}));
+            let _ = app.run("object.fit", json!({"mode": "fitProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            add_cover_text_frame(app, 0, [92.0, 746.0, 290.0, 788.0], agency_text, dark, "Arial", "Bold Italic", 10.0, Some(13.5), Some(20.0), "left")?;
+
+            // 11. Bottom-Right Year & Volume
+            add_cover_text_frame(app, 0, [320.0, 712.0, 555.0, 768.0], year_text, accent, "Arial Black", "Regular", 48.0, None, Some(30.0), "right")?;
+            add_cover_text_frame(app, 0, [320.0, 768.0, 555.0, 795.0], volume_text, dark, "Arial", "Bold", 12.0, None, Some(20.0), "right")?;
+
+            "Folded Origami"
+        }
+        3 => {
+            // Style 3: Chevron & Medallion (from design-1.designcraft)
+            let sx = pw / 595.275591;
+            let sy = ph / 841.889764;
+            let s_avg = (sx + sy) / 2.0;
+
+            // 1. Crisp white base (Item 11)
+            app.run("frame.create", json!({"spread": 0, "rect": [0, 0, pw, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 2. Mid-body subtle tint (Item 12)
+            app.run("frame.create", json!({"spread": 0, "rect": [0, 117.84 * sy, pw, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": "#f8fafc", "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 3. Oval Photo Medallion (Item 17) - Resized & placed behind chevron
+            app.run("frame.create", json!({
+                "spread": 0,
+                "rect": [162.68 * sx, 339.71 * sy, 437.95 * sx, 629.56 * sy],
+                "content": "graphic",
+                "shape": "ellipse"
+            }))?;
+            let _ = app.run("file.place", json!({"path": skyline}));
+            let _ = app.run("object.fit", json!({"mode": "fillProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 4. Downward Chevron (Item 13)
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [0.71 * sx, 0.0], "out": [151.68 * sx, 0.0]},
+                {"p": [pw, 0.0], "in": [377.97 * sx, 0.0], "out": [pw, 42.97 * sy]},
+                {"p": [pw, 147.47 * sy], "in": [pw, 94.38 * sy], "out": [449.39 * sx, 292.88 * sy]},
+                {"p": [294.74 * sx, 447.03 * sy]},
+                {"p": [0.71 * sx, 153.94 * sy], "in": [126.35 * sx, 279.18 * sy], "out": [0.71 * sx, 107.50 * sy]}
+            ]}))?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.dropShadow", json!({"on": true, "distance": 6, "size": 14, "opacity": 0.22}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 5. Accent bottom stroke along Chevron (Item 14)
+            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [
+                {"p": [0.71 * sx, 153.94 * sy], "out": [126.35 * sx, 279.18 * sy]},
+                {"p": [294.74 * sx, 447.03 * sy]},
+                {"p": [pw, 147.47 * sy], "in": [449.39 * sx, 292.88 * sy]}
+            ]}))?;
+            let _ = app.run("object.stroke", json!({"weight": 4.25 * s_avg}));
+            let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
+
+            // 6. Horseshoe Medallion Ring (Item 15)
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [116.22 * sx, 484.53 * sy], "in": [116.22 * sx, 585.77 * sy], "out": [116.22 * sx, 428.43 * sy]},
+                {"p": [181.35 * sx, 344.59 * sy], "in": [141.51 * sx, 378.21 * sy], "out": [188.35 * sx, 351.56 * sy]},
+                {"p": [202.65 * sx, 365.80 * sy], "in": [195.50 * sx, 358.69 * sy], "out": [168.58 * sx, 393.82 * sy]},
+                {"p": [146.87 * sx, 483.69 * sy], "in": [146.87 * sx, 436.22 * sy], "out": [146.87 * sx, 568.05 * sy]},
+                {"p": [300.12 * sx, 636.43 * sy], "in": [215.48 * sx, 636.43 * sy], "out": [384.74 * sx, 636.43 * sy]},
+                {"p": [453.36 * sx, 483.69 * sy], "in": [453.36 * sx, 568.05 * sy], "out": [453.36 * sx, 433.45 * sy]},
+                {"p": [391.47 * sx, 361.04 * sy], "in": [429.02 * sx, 388.87 * sy], "out": [400.42 * sx, 352.11 * sy]},
+                {"p": [412.85 * sx, 339.71 * sy], "in": [407.95 * sx, 344.59 * sy], "out": [456.14 * sx, 373.24 * sy]},
+                {"p": [484.01 * sx, 484.53 * sy], "in": [484.01 * sx, 425.64 * sy], "out": [484.01 * sx, 585.77 * sy]},
+                {"p": [300.12 * sx, 667.83 * sy], "in": [401.67 * sx, 667.83 * sy], "out": [198.55 * sx, 667.83 * sy]}
+            ]}))?;
+            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
+            let _ = app.run("object.dropShadow", json!({"on": true, "distance": 6, "size": 16, "opacity": 0.28}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 7. Bottom Footer Bar (Item 19)
+            app.run("frame.create", json!({"spread": 0, "rect": [0.0, 757.00 * sy, pw, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": dark, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 8. Footer Top Accent Stroke (Item 20)
+            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [
+                {"p": [0.0, 757.00 * sy]},
+                {"p": [pw, 757.00 * sy]}
+            ]}))?;
+            let _ = app.run("object.stroke", json!({"weight": 3.5 * sy}));
+            let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
+
+            // 9. Top-Right Metadata (Items 21 & 23)
+            add_cover_text_frame(app, 0, [311.49 * sx, 22.63 * sy, 569.74 * sx, 42.43 * sy], &cat_text, "#ffffff", "Arial", "Bold", 8.0 * s_avg, None, None, "right")?;
+            add_cover_text_frame(app, 0, [311.49 * sx, 42.43 * sy, 569.74 * sx, 62.23 * sy], &code_text, "#ffffff", "Arial", "Bold", 8.0 * s_avg, None, None, "right")?;
+
+            // 10. Headline Block Inside Chevron (Items 25 & 27)
+            add_cover_text_frame(app, 0, [28.38 * sx, 167.51 * sy, 566.90 * sx, 201.46 * sy], level_text, accent, "Arial", "Bold", 15.0 * s_avg, None, Some(40.0), "center")?;
+            let combined_title = format!("{title_text}\nDALAM ANGKA");
+            add_cover_text_frame(app, 0, [21.28 * sx, 201.46 * sy, 573.99 * sx, 330.00 * sy], &combined_title, "#ffffff", "Arial Black", "Regular", 26.0 * s_avg, Some(31.0 * s_avg), Some(20.0), "center")?;
+
+            // 11. Center Medallion Year (Item 33) - 65pt Arial Black in Accent Gold!
+            add_cover_text_frame(app, 0, [160.0 * sx, 440.0 * sy, 440.0 * sx, 530.0 * sy], year_text, accent, "Arial Black", "Regular", 65.0 * s_avg, None, Some(20.0), "center")?;
+
+            // 12. Bottom-Left Logo & Agency Text (Items 29 & 31)
+            app.run("frame.create", json!({
+                "spread": 0,
+                "rect": [28.38 * sx, 770.79 * sy, 82.30 * sx, 827.36 * sy],
+                "content": "graphic",
+                "shape": "rectangle"
+            }))?;
+            let _ = app.run("file.place", json!({"path": logo}));
+            let _ = app.run("object.fit", json!({"mode": "fitProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            add_cover_text_frame(app, 0, [93.65 * sx, 773.61 * sy, 368.92 * sx, 830.19 * sy], agency_text, "#ffffff", "Arial", "Bold Italic", 9.5 * s_avg, Some(12.5 * s_avg), Some(15.0), "left")?;
+
+            // 13. Bottom-Right Volume (Item 35)
+            add_cover_text_frame(app, 0, [368.92 * sx, 766.80 * sy, 569.74 * sx, 810.0 * sy], volume_text, "#cbd5e1", "Arial", "Bold", 9.0 * s_avg, None, Some(15.0), "right")?;
+
+            "Chevron & Medallion"
+        }
+        _ => {
+            // Style 4: Honeycomb Hexagon (from design-2.designcraft)
+            let sx = pw / 595.275591;
+            let sy = ph / 841.889764;
+            let s_avg = (sx + sy) / 2.0;
+
+            // 1. Deep Midnight Executive Background (Item 24)
+            app.run("frame.create", json!({"spread": 0, "rect": [0, 0, pw, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": dark, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 2. Three Vertical Accent Stripes (Items 26, 27, 28)
+            app.run("frame.create", json!({"spread": 0, "rect": [355.03 * sx, 0.0, 407.97 * sx, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
+            let _ = app.run("object.opacity", json!({"opacity": 0.85}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            app.run("frame.create", json!({"spread": 0, "rect": [415.03 * sx, 0.0, 443.94 * sx, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
+            let _ = app.run("object.opacity", json!({"opacity": 0.60}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            app.run("frame.create", json!({"spread": 0, "rect": [451.03 * sx, 0.0, 462.92 * sx, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
+            let _ = app.run("object.opacity", json!({"opacity": 0.35}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 3. Left Horizontal Chevron Banner (Item 13) in Corporate Sapphire
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
+                {"p": [0.0, 199.74 * sy]},
+                {"p": [176.59 * sx, 199.74 * sy]},
+                {"p": [300.92 * sx, 324.07 * sy]},
+                {"p": [180.99 * sx, 444.00 * sy]},
+                {"p": [0.0, 444.00 * sy]}
+            ]}))?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.dropShadow", json!({"on": true, "distance": 6, "size": 14, "opacity": 0.30}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // Gold bottom accent rule along chevron
+            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [
+                {"p": [0.0, 444.00 * sy]},
+                {"p": [180.99 * sx, 444.00 * sy]},
+                {"p": [300.92 * sx, 324.07 * sy]}
+            ]}))?;
+            let _ = app.run("object.stroke", json!({"weight": 4.0 * s_avg}));
+            let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
+
+            // 4. Right Horizontal Banner Extension (Item 17)
+            app.run("frame.create", json!({
+                "spread": 0,
+                "rect": [514.35 * sx, 304.60 * sy, pw, 534.00 * sy],
+                "content": "unassigned",
+                "shape": "rectangle"
+            }))?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [
+                {"p": [514.35 * sx, 534.00 * sy]},
+                {"p": [pw, 534.00 * sy]}
+            ]}))?;
+            let _ = app.run("object.stroke", json!({"weight": 4.0 * s_avg}));
+            let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
+
+            // 5. Tri-Hexagon Honeycomb Outer White Matting & Shadow (Item 19)
+            let tri_hex_anchors = json!([
+                {"p": [180.81 * sx, 424.99 * sy]},
+                {"p": [243.85 * sx, 324.44 * sy]},
+                {"p": [346.12 * sx, 325.68 * sy]},
+                {"p": [408.51 * sx, 223.50 * sy]},
+                {"p": [526.58 * sx, 224.97 * sy]},
+                {"p": [579.76 * sx, 332.72 * sy]},
+                {"p": [522.00 * sx, 428.00 * sy]},
+                {"p": [576.26 * sx, 527.77 * sy]},
+                {"p": [512.15 * sx, 626.18 * sy]},
+                {"p": [395.52 * sx, 624.82 * sy]},
+                {"p": [344.69 * sx, 528.28 * sy]},
+                {"p": [232.47 * sx, 526.92 * sy]}
+            ]);
+
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": tri_hex_anchors}))?;
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
+            let _ = app.run("object.dropShadow", json!({"on": true, "distance": 6, "size": 18, "opacity": 0.35}));
+            let _ = app.run("object.stroke", json!({"weight": 8.0 * s_avg}));
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "stroke"}));
+
+            // 6. Tri-Hexagon Photo Frame
+            let hex_res = app.run("path.create", json!({"spread": 0, "closed": true, "anchors": tri_hex_anchors}))?;
+            let hex_id = hex_res.get("id").and_then(serde_json::Value::as_u64);
+            let _ = app.run("object.content", json!({"type": "graphic"}));
+            let _ = app.run("file.place", json!({"path": landscape, "frame": hex_id}));
+            let _ = app.run("object.fit", json!({"mode": "fillProportionally", "ids": [hex_id]}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent", "ids": [hex_id]}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]", "ids": [hex_id]}));
+
+            // Inner gold piping around Tri-Hexagon
+            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": tri_hex_anchors}))?;
+            let _ = app.run("object.stroke", json!({"weight": 2.5 * s_avg}));
+            let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
+
+            // 7. Top-Left Logo & Agency Text
+            app.run("frame.create", json!({
+                "spread": 0,
+                "rect": [36.0 * sx, 32.0 * sy, 74.0 * sx, 72.0 * sy],
+                "content": "graphic",
+                "shape": "rectangle"
+            }))?;
+            let _ = app.run("file.place", json!({"path": logo}));
+            let _ = app.run("object.fit", json!({"mode": "fitProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            add_cover_text_frame(app, 0, [82.0 * sx, 34.0 * sy, 320.0 * sx, 72.0 * sy], agency_text, "#ffffff", "Arial", "Bold Italic", 9.0 * s_avg, Some(12.0 * s_avg), Some(15.0), "left")?;
+
+            // 8. Top-Right Metadata
+            add_cover_text_frame(app, 0, [pw - 250.0 * sx, 34.0 * sy, pw - 36.0 * sx, 50.0 * sy], &cat_text, "#ffffff", "Arial", "Bold", 8.0 * s_avg, None, None, "right")?;
+            add_cover_text_frame(app, 0, [pw - 250.0 * sx, 50.0 * sy, pw - 36.0 * sx, 66.0 * sy], &code_text, "#ffffff", "Arial", "Bold", 8.0 * s_avg, None, None, "right")?;
+
+            // 9. Headline Block (Inside Left Chevron Banner)
+            add_cover_text_frame(app, 0, [36.0 * sx, 235.0 * sy, 260.0 * sx, 265.0 * sy], level_text, accent, "Arial", "Bold", 14.0 * s_avg, None, Some(30.0), "left")?;
+            let combined_title = format!("{title_text}\nDALAM ANGKA");
+            add_cover_text_frame(app, 0, [36.0 * sx, 265.0 * sy, 270.0 * sx, 395.0 * sy], &combined_title, "#ffffff", "Arial Black", "Regular", 25.0 * s_avg, Some(30.0 * s_avg), Some(15.0), "left")?;
+
+            // 10. Lower-Left Focal Year Block
+            add_cover_text_frame(app, 0, [36.0 * sx, 640.0 * sy, 260.0 * sx, 715.0 * sy], year_text, "#ffffff", "Arial Black", "Regular", 60.0 * s_avg, None, Some(15.0), "left")?;
+
+            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [
+                {"p": [36.0 * sx, 722.0 * sy]},
+                {"p": [200.0 * sx, 722.0 * sy]}
+            ]}))?;
+            let _ = app.run("object.stroke", json!({"weight": 4.0 * s_avg}));
+            let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
+
+            add_cover_text_frame(app, 0, [36.0 * sx, 730.0 * sy, 260.0 * sx, 755.0 * sy], volume_text, "#cbd5e1", "Arial", "Bold", 11.0 * s_avg, None, Some(20.0), "left")?;
+
+            // 11. Bottom Subtle Rule
+            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [
+                {"p": [36.0 * sx, 795.0 * sy]},
+                {"p": [pw - 36.0 * sx, 795.0 * sy]}
+            ]}))?;
+            let _ = app.run("object.stroke", json!({"weight": 1.0 * s_avg}));
+            let _ = app.run("object.color", json!({"color": "#334155", "target": "stroke"}));
+
+            add_cover_text_frame(app, 0, [36.0 * sx, 804.0 * sy, 300.0 * sx, 824.0 * sy], "PUBLIKASI BPS KABUPATEN KARAWANG", "#94a3b8", "Arial", "Bold", 8.5 * s_avg, None, None, "left")?;
+            add_cover_text_frame(app, 0, [pw - 200.0 * sx, 804.0 * sy, pw - 36.0 * sx, 824.0 * sy], "bps.go.id", accent, "Arial", "Bold", 8.5 * s_avg, None, None, "right")?;
+
+            "Honeycomb Hexagon"
+        }
+    };
+
+    Ok(format!("Cover page generated before Page 1 (Style: {style_name})"))
+}
+
 fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     section(ui, crate::i18n::tr(&app.ui.language, "Quick Actions"), true);
+
 
     let facing = app.session.active().map(|s| s.doc.settings.facing_pages).unwrap_or(true);
     let cur_page = app
@@ -5991,5 +7250,53 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(((placed.x0 + placed.x1) / 2.0 - page_bounds.center().x).abs() < 0.5, "centred: {placed:?}");
         assert!(((placed.y0 + placed.y1) / 2.0 - page_bounds.center().y).abs() < 0.5, "centred: {placed:?}");
     }
+
+    #[test]
+    fn test_execute_generate_cover_text_formatting() {
+        for style in 0..=4 {
+            let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({})).unwrap();
+            let mut st = PubgenState::default();
+            st.cover_style = style;
+            let res = execute_generate_cover(&mut app, &st);
+            assert!(res.is_ok(), "Style {style} failed: {res:?}");
+
+            let active = app.session.active().unwrap();
+            // Assert that every story on the cover page has styled character runs
+            assert!(!active.doc.stories.is_empty(), "Style {style} should create stories");
+            for (_sid, story) in &active.doc.stories {
+                for run in &story.chars {
+                    assert!(run.format.over.size.is_some(), "Story text '{}' in style {style} must have custom size", story.text);
+                    assert!(run.format.over.fill.is_some(), "Story text '{}' in style {style} must have custom fill", story.text);
+                    let fam = run.format.over.font_family.as_deref().unwrap_or_default();
+                    let st = run.format.over.font_style.as_deref().unwrap_or_default();
+                    assert!(fam == "Arial" || fam == "Arial Black", "Expected Arial family, got {fam}");
+                    if story.text.contains("KARAWANG TIMUR") || story.text == "2026" {
+                        assert_eq!(fam, "Arial Black", "Title and Year must use Arial Black in story '{}'", story.text);
+                    }
+                    if story.text.contains("BADAN PUSAT STATISTIK") {
+                        assert_eq!(fam, "Arial", "Logo text must use Arial");
+                        assert_eq!(st, "Bold Italic", "Logo text must use Bold Italic");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_arial_and_arial_black_resolution() {
+        let db = designcraft_fonts::FontDb::with_font_dirs(designcraft_fonts::system_font_dirs());
+        let face_arial = db.face("Arial", "Regular");
+        println!("face Arial Regular: family='{}' style='{}'", face_arial.family, face_arial.style);
+        let face_ariblk = db.face("Arial Black", "Regular");
+        println!("face Arial Black Regular: family='{}' style='{}'", face_ariblk.family, face_ariblk.style);
+        let face_arial_blk = db.face("Arial", "Black");
+        println!("face Arial Black: family='{}' style='{}'", face_arial_blk.family, face_arial_blk.style);
+        let face_arial_bi = db.face("Arial", "Bold Italic");
+        println!("face Arial Bold Italic: family='{}' style='{}'", face_arial_bi.family, face_arial_bi.style);
+    }
 }
+
+
+
 

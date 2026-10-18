@@ -38,6 +38,14 @@ const ALLOWED: &[(&str, &str)] = &[
         "mcp/src/tools.rs",
         "`screenshot` reads back the PNG the connected app just wrote. Connected mode cannot be combined with the roots (the CLI refuses the pair), and the app's own engine checks the path it writes",
     ),
+    (
+        "ui-egui/src/panels/pubgen.rs",
+        "Pubgen panel reads user-picked publication CSV files and writes generated batch CSV and ZIP files chosen via file picker",
+    ),
+    (
+        "ui-egui/src/panels/pubgen_excel.rs",
+        "Pubgen Excel importer reads user-selected workbook files and writes converted CSV/ZIP files chosen via file picker",
+    ),
 ];
 
 fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {

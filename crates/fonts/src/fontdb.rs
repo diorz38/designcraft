@@ -1797,6 +1797,29 @@ impl ScopedFonts<'_> {
     /// family that isn't found as written is looked up without surrounding spaces, then without
     /// InDesign's `$ID/` prefix or a format suffix (`Minion Pro (OTF)` → `Minion Pro`).
     pub fn face(&self, family: &str, style: &str) -> Arc<FontFace> {
+        let is = |name: &str| name.eq_ignore_ascii_case(family);
+        let ns = norm(style);
+        let by_alias = |faces: &[Arc<FontFace>]| -> Option<Arc<FontFace>> {
+            faces.iter().find(|f| {
+                !is(&f.family)
+                    && f.family_aliases.iter().any(|a| is(a))
+                    && (norm(&f.style) == ns || f.style_aliases.iter().any(|sa| norm(sa) == ns) || ns.is_empty() || ns == "regular")
+            }).cloned()
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let cat_match = {
+                let catalog = self.db.read_catalog();
+                catalog.iter().find(|c| !is(&c.family) && c.aliases.iter().any(|a| is(a))).map(|c| c.family.clone())
+            };
+            if let Some(fam) = cat_match {
+                let _ = self.db.load_cataloged(&fam);
+            }
+        }
+        if let Some(f) = by_alias(self.own()).or_else(|| by_alias(&self.db.read_faces())) {
+            return f;
+        }
+
         let canonical = self
             .canonical_family(family)
             .or_else(|| alternate_names(family).find_map(|f| self.canonical_family(f)))

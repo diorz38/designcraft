@@ -112,16 +112,27 @@ pub fn specs() -> Vec<CommandSpec> {
             "Insert Pages…",
             ["Layout", "Pages"],
             Some("Cmd+Shift+P"),
-            "{count?: 1, after?: page index (default: last), parent?: id|\"A-Parent\"|\"A\"|null}",
+            "{count?: 1, after?: page index (default: last), before?: page index, parent?: id|\"A-Parent\"|\"A\"|null}",
             has_doc,
             |s, p| {
                 let count = p.get("count").and_then(Value::as_u64).unwrap_or(1).clamp(1, 9999) as usize;
                 let st = s.doc()?;
                 let n = st.doc.page_count();
-                let after = p.get("after").and_then(Value::as_u64).map(|v| usize::try_from(v).unwrap_or(usize::MAX)).unwrap_or(n.saturating_sub(1));
+                let after = if let Some(b) = p.get("before").and_then(Value::as_u64) {
+                    let bi = usize::try_from(b).unwrap_or(usize::MAX);
+                    if bi == 0 {
+                        None
+                    } else {
+                        Some(bi.saturating_sub(1).min(n.saturating_sub(1)))
+                    }
+                } else if p.get("at").and_then(Value::as_str) == Some("start") || p.get("after").map_or(false, |v| v.is_null()) {
+                    None
+                } else {
+                    Some(p.get("after").and_then(Value::as_u64).map(|v| usize::try_from(v).unwrap_or(usize::MAX)).unwrap_or(n.saturating_sub(1)))
+                };
                 let parent = parent_ref("layout.pages.insert", &st.doc, p.get("parent"))?.unwrap_or_else(|| st.doc.parents.first().map(|x| x.id));
                 s.edit(|d, _| {
-                    let ids = d.insert_pages(Some(after), count, parent)?;
+                    let ids = d.insert_pages(after, count, parent)?;
                     Ok(json!({"pages": ids.len(), "total": d.page_count()}))
                 })
             }
