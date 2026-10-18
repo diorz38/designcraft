@@ -5949,5 +5949,47 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(res_missing.is_err());
         assert!(res_missing.unwrap_err().contains("File not found"));
     }
+
+    #[test]
+    fn test_execute_page_from_image_contains_a_non_square_image_on_every_side() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // A 4:1 image: fitted into a page it must be shorter than the page, not cropped.
+        let png = designcraft_render::Rendered { width: 400, height: 100, pixels: vec![200; 400 * 100 * 4] }.to_png();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wide.png");
+        std::fs::write(&path, &png).unwrap();
+
+        let mut st = PubgenState::default();
+        st.image_as_background = true;
+        let res = execute_page_from_image(&mut app, &mut st, &path.to_string_lossy());
+        assert!(res.is_ok(), "execute_page_from_image should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let (si, pi) = active.doc.page_loc(0).unwrap();
+        let page_bounds = active.doc.spreads[si].pages[pi].bounds();
+        let it = active
+            .doc
+            .spreads[si]
+            .items
+            .iter()
+            .find(|it| matches!(it.content, designcraft_doc::Content::Graphic(_)))
+            .unwrap_or_else(|| panic!("expected a graphic frame"));
+        let designcraft_doc::Content::Graphic(g) = &it.content else { panic!("expected a graphic") };
+        let (nw, nh) = g.size;
+        let placed = g.xf.transform_rect_bbox(designcraft_geom::Rect::new(0.0, 0.0, nw, nh));
+
+        // Aspect ratio kept.
+        assert!((placed.width() / placed.height() - nw / nh).abs() < 0.01, "aspect kept: {placed:?}");
+        // All four sides inside the page.
+        assert!(placed.x0 >= page_bounds.x0 - 0.01 && placed.x1 <= page_bounds.x1 + 0.01, "{placed:?} vs {page_bounds:?}");
+        assert!(placed.y0 >= page_bounds.y0 - 0.01 && placed.y1 <= page_bounds.y1 + 0.01, "{placed:?} vs {page_bounds:?}");
+        // The wide image is limited by width, so it is shorter than the page (no height overflow).
+        assert!(placed.height() < page_bounds.height(), "no vertical overflow: {placed:?} vs {page_bounds:?}");
+        // Centred on the page.
+        assert!(((placed.x0 + placed.x1) / 2.0 - page_bounds.center().x).abs() < 0.5, "centred: {placed:?}");
+        assert!(((placed.y0 + placed.y1) / 2.0 - page_bounds.center().y).abs() < 0.5, "centred: {placed:?}");
+    }
 }
 
