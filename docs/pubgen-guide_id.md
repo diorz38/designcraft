@@ -88,9 +88,9 @@ Menu **Publication Cover** memungkinkan Anda membuat halaman sampul depan buku/l
 
 ---
 
-### 5 Gaya Sampul Eksekutif
+### 6 Gaya Sampul Eksekutif
 
-Pubgen menyediakan 5 pilihan desain sampul siap pakai:
+Pubgen menyediakan 6 pilihan desain sampul siap pakai:
 
 #### 1. Wave Curves (`🌊 Wave`)
 - **Karakter Visual**: Mengalir dinamis, modern, dan luwes.
@@ -138,10 +138,23 @@ Pubgen menyediakan 5 pilihan desain sampul siap pakai:
   - Angka tahun 60pt tebal (**Arial Black**) di kiri bawah dengan garis tebal emas.
 - **Paling Cocok Untuk**: Publikasi unggulan (*flagship*), rilis tahunan bergengsi, dan ringkasan eksekutif.
 
+#### 6. Corporate Headline (`🏢 Corporate`)
+- **Karakter Visual**: Modern korporat, arsitektural, bersih, dan berwibawa.
+- **Elemen Desain**:
+  - Kanvas putih bersih dengan garis bilah horizontal atas warna ungu (*purple* `#6c5ce7`).
+  - Logo instansi di kiri atas bersanding dengan teks nama instansi resmi (**Arial Bold Italic**).
+  - Kotak aksen ungu di kanan atas dengan bayangan halus, memuat teks "CORPORATE" dan font tebal "DESIGN".
+  - Bingkai foto gedung/arsitektur vertikal di sisi tengah-kanan dengan siku aksen ungu (*L-bracket*) di sudut kiri atas foto.
+  - Tampilan angka tahun dwi-warna di tengah-kiri (`20` berwarna abu gelap `#1e293b`, `26` berwarna ungu `#6c5ce7`) di atas teks "BUSINESS REPORT" dan garis bawah tebal.
+  - Blok judul utama warna ungu di kiri bawah dengan sudut kanan-atas melengkung halus (*rounded corner*), membingkai teks judul putih tebal (**Arial Black**).
+  - Tiga lencana bundar ungu dengan ikon vektor (grafik tren, target, globe) beserta keterangan metadata 2-baris (Katalog BPS, ISSN/ISBN, Volume).
+  - Blok aksen sudut kanan bawah dan tab sisi kanan.
+- **Paling Cocok Untuk**: Laporan bisnis tahunan, profil wilayah, publikasi statistik ekonomi kota/daerah modern.
+
 ---
 
 ### Pratinjau Thumbnail Hover
-- Di bawah menu pilihan gaya, terdapat tombol pil cepat: `🌊 Wave`, `❖ Medallion`, `◈ Origami`, `◆ Chevron`, `⬡ Hexagon`.
+- Di bawah menu pilihan gaya, terdapat tombol pil cepat: `🌊 Wave`, `❖ Medallion`, `◈ Origami`, `◆ Chevron`, `⬡ Hexagon`, `🏢 Corporate`.
 - Cukup **arahkan kursor tetikus (hover)** ke salah satu pil (atau klik ikon mata `👁` di samping menu). Jendela melayang (*tooltip*) akan langsung menampilkan thumbnail foto sampul yang sesungguhnya beresolusi tinggi, sehingga Anda dapat memilih desain dengan yakin sebelum membuatnya.
 
 ---
@@ -171,6 +184,7 @@ Pubgen secara otomatis menampilkan kotak pemilih gambar yang relevan dengan gaya
 - **Skyline Image**: Untuk sampul bergaya *Wave Curves* dan *Chevron & Medallion*.
 - **Landscape Image**: Untuk sampul bergaya *Folded Origami* dan *Geometric Medallion*.
 - **Honeycomb Image**: Untuk sampul bergaya *Honeycomb Hexagon*. Foto Anda akan otomatis dipotong rapi mengikuti bentuk segi enam bersarang (*tri-hexagon*).
+- **Photo**: Untuk sampul bergaya *Corporate Headline*. Foto arsitektur perkotaan vertikal atau gedung landmark.
 - **Logo**: Klik tombol **Browse...** untuk memilih berkas logo instansi (format `.png`, `.jpg`, atau `.webp`). Logo akan disematkan secara proporsional tanpa gepeng/terdistorsi.
 
 ---

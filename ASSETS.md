@@ -69,6 +69,14 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `docs/brand/LICENSE-brand.txt` | (licence text) | ArtCraft Team | — | Terms for the ArtCraft Marks in `docs/brand/` |
 | `packaging/macos/dmg/background.svg` | @XusBadia | original work for this repository, derived from the DesignCraft app icon (`assets/app-icon/designcraft.svg`, referenced via `<image>`, not copied); text is outlined Inter / JetBrains Mono glyph paths | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | DesignCraft macOS DMG window background for the Finder window; `packaging/macos/dmg/generate.py` renders it to `background.tiff` (2026-10-08) |
 | `packaging/macos/dmg/background.tiff` | @XusBadia | Rendered from `packaging/macos/dmg/background.svg` by `packaging/macos/dmg/generate.py` | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | 1x + 2x HiDPI TIFF for the macOS DMG window; includes the app icon (see its row) and LittleCMS's built-in sRGB profile ("No copyright, use freely") |
+| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222013.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
+| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222115.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
+| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222232.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
+| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222409.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
+| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222503.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
+| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222649.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
+| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222741.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
+| `plan/pubgen/samples/book_cover/modern-business-annual-report-template_412264-9400.avif` | DesignCraft contributor / Pubgen reference | user reference template for Pubgen Cover Style | CC0-1.0 | Reference template |
 | `plan/pubgen/samples/Sarana_Ekonomi_Karawang_Timur_2025.png` | DesignCraft contributor / Pubgen sample | synthetic infographic test asset for Pubgen Page from Image | CC0-1.0 | Test sample |
 | `plan/pubgen/samples/pembatas_bab.png` | DesignCraft contributor / Pubgen sample | synthetic chapter divider test asset for Pubgen Page from Image | CC0-1.0 | Test sample |
 | `plan/pubgen/samples/visualisasi_keuangan_perdagangan_portrait.png` | DesignCraft contributor / Pubgen sample | synthetic portrait test asset for Pubgen Page from Image | CC0-1.0 | Test sample |
@@ -78,7 +86,9 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `plan/pubgen/samples/pembatas_bab.jpg` | DesignCraft contributor / Pubgen sample | synthetic chapter divider test asset for Pubgen Page from Image | CC0-1.0 | Test sample |
 | `plan/pubgen/samples/style/design-1.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/design-2.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
+| `plan/pubgen/samples/style/design-3.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
 | `plan/pubgen/samples/thumb/chevron_medallion.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 3 (Chevron Medallion) | CC0-1.0 | Test thumbnail |
+| `plan/pubgen/samples/thumb/corporate_headline.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 5 (Corporate Headline) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/folded_origami.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 2 (Folded Origami) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/geometric_medallion.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 1 (Geometric Medallion) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/honeycomb_hexagon.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 4 (Honeycomb Hexagon) | CC0-1.0 | Test thumbnail |

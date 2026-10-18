@@ -121,9 +121,9 @@ The **Publication Cover** section allows you to synthesize a complete, professio
 
 ---
 
-### The 5 Executive Cover Styles
+### The 6 Executive Cover Styles
 
-Pubgen provides 5 corporate design styles:
+Pubgen provides 6 corporate design styles:
 
 #### 1. Wave Curves (`🌊 Wave`)
 - **Visual Personality**: Organic, modern, flowing.
@@ -171,10 +171,23 @@ Pubgen provides 5 corporate design styles:
   - Giant 60pt **Arial Black** focal year callout on the lower left with an amber underline rule.
 - **Best For**: Flagship publications, executive summaries, international releases, premium statistical editions.
 
+#### 6. Corporate Headline (`🏢 Corporate`)
+- **Visual Personality**: Contemporary corporate, bold architectural, clean editorial.
+- **Design Elements**:
+  - Crisp white canvas with an asymmetric top purple framing header (`#6c5ce7`).
+  - Top-left agency logo paired with multi-line institutional branding (**Arial Bold Italic**).
+  - Upper-right corporate accent block with soft drop shadow framing uppercase tracked "CORPORATE" and bold "DESIGN".
+  - Tall vertical architectural / cityscape photograph (`[221, 168, 565, 780]`) framed by an accent L-bracket on the upper-left.
+  - Middle-left dual-tone year display (`20` in dark charcoal `#1e293b`, `26` in purple `#6c5ce7`) above "BUSINESS REPORT" with an accent underline rule.
+  - Asymmetric focal headline purple block (`[0, 458, 340, 680]`) featuring a 46pt bezier rounded top-right corner, framing bold white title typography (**Arial Black**).
+  - Trio of circular purple badges with vector icons (trend line, bullseye target, globe grid) paired with two-line publication metadata (Katalog BPS, ISSN/ISBN, Volume).
+  - Bottom-right grounding purple corner block and mid-right edge accent tab.
+- **Best For**: Annual business reports, urban economic reviews, municipal profiles, modern regional digests.
+
 ---
 
 ### Hover Thumbnail Previews
-- **Quick Preview Pills**: Under the style dropdown, you will see 5 quick-switch pills (`🌊 Wave`, `❖ Medallion`, `◈ Origami`, `◆ Chevron`, `⬡ Hexagon`).
+- **Quick Preview Pills**: Under the style dropdown, you will see 6 quick-switch pills (`🌊 Wave`, `❖ Medallion`, `◈ Origami`, `◆ Chevron`, `⬡ Hexagon`, `🏢 Corporate`).
 - **Hover to Preview**: Simply move your mouse over any pill (or click the small eye icon `👁` next to the dropdown). A floating tooltip instantly displays the actual rendered cover thumbnail so you can choose your favorite look before generating.
 
 ---
@@ -204,6 +217,7 @@ Pubgen dynamically displays the image pickers required for the selected style:
 - **Skyline Image**: Used in *Wave Curves* and *Chevron & Medallion*. Click **Browse...** to pick any high-resolution skyline or landmark image (`.jpg`, `.png`, `.webp`).
 - **Landscape Image**: Used in *Folded Origami* and *Geometric Medallion*.
 - **Honeycomb Image**: Used in *Honeycomb Hexagon*. Automatically clips your photo into the interlocking 12-sided honeycomb frame.
+- **Photo**: Used in *Corporate Headline*. Vertical architectural, city skyline, or landmark photograph.
 - **Logo**: Click **Browse...** to choose your institution's logo file (e.g., BPS emblem, city coat of arms). It automatically fits proportionally into the branding frame without distortion.
 
 ---

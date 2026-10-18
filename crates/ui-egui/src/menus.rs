@@ -893,6 +893,8 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:window.panel|Book|{\"panel\": \"book\"}",
             "ui:window.panel|Data Merge|{\"panel\": \"dataMerge\"}",
             "ui:window.panel|Library|{\"panel\": \"library\"}",
+            #[cfg(feature = "pubgen")]
+            "ui:window.panel|Pubgen|{\"panel\": \"pubgen\"}",
             "ui:window.panel|Scripts|{\"panel\": \"scripts\"}",
             "ui:window.panel|Tags|{\"panel\": \"tags\"}",
             "<",

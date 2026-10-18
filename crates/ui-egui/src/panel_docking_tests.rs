@@ -659,8 +659,15 @@ fn close_tab_group_hides_the_panels_tabbed_together() {
     let mut app = app();
     // The default dock: Properties, Pages and Layers are one tab group.
     let r = app.run("window.panel.closeGroup", json!({"panel":"pages"})).unwrap();
-    assert_eq!(r["closed"], json!(["properties", "pages", "layers"]));
+    #[cfg(feature = "pubgen")]
+    let expected = json!(["properties", "pages", "layers", "pubgen"]);
+    #[cfg(not(feature = "pubgen"))]
+    let expected = json!(["properties", "pages", "layers"]);
+    assert_eq!(r["closed"], expected);
     let layout = app.ui.docking.clone().unwrap();
+    #[cfg(feature = "pubgen")]
+    assert!(["properties", "pages", "layers", "pubgen"].iter().all(|p| !layout.contains(&p.to_string())));
+    #[cfg(not(feature = "pubgen"))]
     assert!(["properties", "pages", "layers"].iter().all(|p| !layout.contains(&p.to_string())));
     // Window brings one back.
     app.run("window.panel.activate", json!({"panel":"pages"})).unwrap();

@@ -366,10 +366,8 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
         let (file_label, color) = if st.card1_path.is_empty() {
             (crate::i18n::tr(&app.ui.language, "No file selected").to_string(), t.text_dim)
         } else {
-            let name = std::path::Path::new(&st.card1_path)
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| st.card1_path.clone());
+            let name =
+                std::path::Path::new(&st.card1_path).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| st.card1_path.clone());
             (format!("{name} ({} records)", st.card1_records.len()), t.text)
         };
         ui.add(egui::Label::new(RichText::new(file_label).size(11.0).color(color)).truncate());
@@ -379,11 +377,7 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
     ui.horizontal(|ui| {
         ui.label(RichText::new("Path:").size(10.5).color(t.text_dim));
         let avail = (ui.available_width() - 4.0).max(60.0);
-        let resp = ui.add(
-            egui::TextEdit::singleline(&mut st.card1_path)
-                .hint_text("C:\\path\\to\\data.csv")
-                .desired_width(avail),
-        );
+        let resp = ui.add(egui::TextEdit::singleline(&mut st.card1_path).hint_text("C:\\path\\to\\data.csv").desired_width(avail));
         if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !st.card1_path.is_empty() {
             load_card1_csv(st, &st.card1_path.clone());
         }
@@ -422,14 +416,11 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
         ];
         let cur = presets.get(st.card1_preset).copied().unwrap_or("1 Row · 3 Columns");
         let combo_w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
-        egui::ComboBox::from_id_salt("pubgen_card1_preset")
-            .selected_text(cur)
-            .width(combo_w)
-            .show_ui(ui, |ui| {
-                for (i, p) in presets.iter().enumerate() {
-                    ui.selectable_value(&mut st.card1_preset, i, *p);
-                }
-            });
+        egui::ComboBox::from_id_salt("pubgen_card1_preset").selected_text(cur).width(combo_w).show_ui(ui, |ui| {
+            for (i, p) in presets.iter().enumerate() {
+                ui.selectable_value(&mut st.card1_preset, i, *p);
+            }
+        });
     });
 
     // Every preset tags its title paragraph with this paragraph style; a TOC entry's text is the
@@ -437,9 +428,8 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
     ui.horizontal(|ui| {
         ui.label(RichText::new("TOC tag style:").size(11.0).color(t.text));
         let w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
-        ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.toc_style)).on_hover_text(
-            "Paragraph style that tags each generated page's title, so the table of contents lists that page",
-        );
+        ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.toc_style))
+            .on_hover_text("Paragraph style that tags each generated page's title, so the table of contents lists that page");
     });
     if st.card1_preset != 5 {
         ui.checkbox(&mut st.card1_toc_prefix, "TOC entry: prefix with type + number");
@@ -488,21 +478,15 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
                 .and_then(|p| std::path::Path::new(p).file_name().map(|n| n.to_string_lossy().to_string()))
                 .unwrap_or_else(|| "Select sheet".into());
             let combo_w = (ui.available_width() - 4.0).clamp(100.0, 240.0);
-            egui::ComboBox::from_id_salt("pubgen_card2_sheet_selector")
-                .selected_text(cur_name)
-                .width(combo_w)
-                .show_ui(ui, |ui| {
-                    for (idx, p) in st.card2_sheet_tables.iter().enumerate() {
-                        let name = std::path::Path::new(p)
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_else(|| p.clone());
-                        let is_sel = idx == st.card2_sheet_idx;
-                        if ui.selectable_label(is_sel, name).clicked() {
-                            new_selection = Some(idx);
-                        }
+            egui::ComboBox::from_id_salt("pubgen_card2_sheet_selector").selected_text(cur_name).width(combo_w).show_ui(ui, |ui| {
+                for (idx, p) in st.card2_sheet_tables.iter().enumerate() {
+                    let name = std::path::Path::new(p).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| p.clone());
+                    let is_sel = idx == st.card2_sheet_idx;
+                    if ui.selectable_label(is_sel, name).clicked() {
+                        new_selection = Some(idx);
                     }
-                });
+                }
+            });
         });
         if let Some(idx) = new_selection {
             if let Some(p) = st.card2_sheet_tables.get(idx).cloned() {
@@ -523,10 +507,8 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
         let (file_label, color) = if st.card2_path.is_empty() {
             (crate::i18n::tr(&app.ui.language, "No file selected").to_string(), t.text_dim)
         } else {
-            let name = std::path::Path::new(&st.card2_path)
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| st.card2_path.clone());
+            let name =
+                std::path::Path::new(&st.card2_path).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| st.card2_path.clone());
             let rows = st.card2_matrix.len();
             let cols = st.card2_matrix.first().map(Vec::len).unwrap_or(0);
             (format!("{name} ({}×{} grid)", rows, cols), t.text)
@@ -538,11 +520,7 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
     ui.horizontal(|ui| {
         ui.label(RichText::new("Path:").size(10.5).color(t.text_dim));
         let avail = (ui.available_width() - 4.0).max(60.0);
-        let resp = ui.add(
-            egui::TextEdit::singleline(&mut st.card2_path)
-                .hint_text("C:\\path\\to\\table.csv")
-                .desired_width(avail),
-        );
+        let resp = ui.add(egui::TextEdit::singleline(&mut st.card2_path).hint_text("C:\\path\\to\\table.csv").desired_width(avail));
         if resp.lost_focus() && !st.card2_path.is_empty() {
             load_card2_csv(st, &st.card2_path.clone());
         }
@@ -565,11 +543,7 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
     if st.card2_first_row_header {
         let merge_count = st.card2_matrix.first().map(|r| r.iter().filter(|c| c.contains("--")).count()).unwrap_or(0);
         if merge_count > 1 {
-            let num_stacks = st
-                .card2_matrix
-                .first()
-                .map(|r| r.iter().map(|c| c.splitn(3, "--").count()).max().unwrap_or(1).clamp(1, 3))
-                .unwrap_or(1);
+            let num_stacks = st.card2_matrix.first().map(|r| r.iter().map(|c| c.splitn(3, "--").count()).max().unwrap_or(1).clamp(1, 3)).unwrap_or(1);
             let label = if num_stacks > 1 {
                 format!("✓ Auto-detected {num_stacks}-stack header columns (\"--\")")
             } else {
@@ -580,11 +554,7 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
     }
 
     if let Some(fn_text) = detect_footnote_row(&st.card2_matrix) {
-        let display_fn = if fn_text.len() > 38 {
-            format!("{}…", &fn_text[..38])
-        } else {
-            fn_text
-        };
+        let display_fn = if fn_text.len() > 38 { format!("{}…", &fn_text[..38]) } else { fn_text };
         ui.add(egui::Label::new(RichText::new(format!("✓ Auto-detected table note: \"{display_fn}\"")).size(10.5).color(t.accent)).wrap());
     }
 
@@ -606,14 +576,11 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
         let styles = ["Basic Grid", "Corporate Navy", "Minimalist", "Horizontal Rules"];
         let cur = styles.get(st.card2_style).copied().unwrap_or("Basic Grid");
         let combo_w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
-        egui::ComboBox::from_id_salt("pubgen_card2_style")
-            .selected_text(cur)
-            .width(combo_w)
-            .show_ui(ui, |ui| {
-                for (i, s) in styles.iter().enumerate() {
-                    ui.selectable_value(&mut st.card2_style, i, *s);
-                }
-            });
+        egui::ComboBox::from_id_salt("pubgen_card2_style").selected_text(cur).width(combo_w).show_ui(ui, |ui| {
+            for (i, s) in styles.iter().enumerate() {
+                ui.selectable_value(&mut st.card2_style, i, *s);
+            }
+        });
     });
 
     // Placement
@@ -674,6 +641,7 @@ fn style_thumbnail_texture(ctx: &egui::Context, style_idx: usize) -> Option<egui
         2 => ("folded_origami.png", "karawang_timur_origami_cover.png"),
         3 => ("chevron_medallion.png", "karawang_timur_chevron_cover.png"),
         4 => ("karawang_timur_hexagon_cover.png", "honeycomb_hexagon.png"),
+        5 => ("corporate_headline.png", "karawang_timur_corporate_cover.png"),
         _ => return None,
     };
     let candidates = [
@@ -695,16 +663,9 @@ fn style_thumbnail_texture(ctx: &egui::Context, style_idx: usize) -> Option<egui
     }
     let bytes = bytes?;
     let pm = designcraft_render::decode_pixmap_page(&bytes, 0)?;
-    let ci = egui::ColorImage::from_rgba_premultiplied(
-        [pm.width() as usize, pm.height() as usize],
-        pm.data_as_u8_slice(),
-    );
+    let ci = egui::ColorImage::from_rgba_premultiplied([pm.width() as usize, pm.height() as usize], pm.data_as_u8_slice());
     let fitted = crate::widgets::fit_texture(ci, 300);
-    let tex = ctx.load_texture(
-        format!("pubgen_cover_thumb_{style_idx}"),
-        fitted,
-        egui::TextureOptions::LINEAR,
-    );
+    let tex = ctx.load_texture(format!("pubgen_cover_thumb_{style_idx}"), fitted, egui::TextureOptions::LINEAR);
     ctx.data_mut(|d| d.insert_temp(key, tex.clone()));
     Some(tex)
 }
@@ -717,40 +678,25 @@ fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: 
 
     match style_idx {
         0 => {
-            let bottom_rect = egui::Rect::from_min_max(
-                rect.min + vec2(0.0, h * 0.45),
-                rect.max,
-            );
+            let bottom_rect = egui::Rect::from_min_max(rect.min + vec2(0.0, h * 0.45), rect.max);
             p.rect_filled(bottom_rect, egui::CornerRadius { nw: 0, ne: 0, sw: 4, se: 4 }, Color32::from_rgb(18, 38, 71));
             let center = rect.center() + vec2(0.0, -h * 0.02);
             p.circle_filled(center, w * 0.23, Color32::from_rgb(0, 114, 188));
             p.circle_stroke(center, w * 0.25, egui::Stroke::new(2.0, Color32::from_rgb(245, 171, 25)));
         }
         1 => {
-            let band = egui::Rect::from_min_max(
-                rect.min + vec2(0.0, h * 0.28),
-                rect.min + vec2(w, h * 0.72),
-            );
+            let band = egui::Rect::from_min_max(rect.min + vec2(0.0, h * 0.28), rect.min + vec2(w, h * 0.72));
             p.rect_filled(band, 0.0, Color32::from_rgb(0, 114, 188));
             let c = rect.center() + vec2(w * 0.1, h * 0.08);
             p.circle_filled(c, w * 0.22, Color32::WHITE);
             p.circle_stroke(c, w * 0.22, egui::Stroke::new(2.0, Color32::from_rgb(245, 171, 25)));
         }
         2 => {
-            let top_right = egui::Rect::from_min_max(
-                rect.min + vec2(w * 0.4, 0.0),
-                rect.min + vec2(w, h * 0.38),
-            );
+            let top_right = egui::Rect::from_min_max(rect.min + vec2(w * 0.4, 0.0), rect.min + vec2(w, h * 0.38));
             p.rect_filled(top_right, egui::CornerRadius { nw: 0, ne: 4, sw: 0, se: 0 }, Color32::from_rgb(100, 150, 200));
-            let gold_facet = egui::Rect::from_min_max(
-                rect.min + vec2(0.0, 0.0),
-                rect.min + vec2(w * 0.4, h * 0.2),
-            );
+            let gold_facet = egui::Rect::from_min_max(rect.min + vec2(0.0, 0.0), rect.min + vec2(w * 0.4, h * 0.2));
             p.rect_filled(gold_facet, egui::CornerRadius { nw: 4, ne: 0, sw: 0, se: 0 }, Color32::from_rgb(245, 171, 25));
-            let dark_facet = egui::Rect::from_min_max(
-                rect.min + vec2(0.0, h * 0.2),
-                rect.min + vec2(w * 0.5, h * 0.45),
-            );
+            let dark_facet = egui::Rect::from_min_max(rect.min + vec2(0.0, h * 0.2), rect.min + vec2(w * 0.5, h * 0.45));
             p.rect_filled(dark_facet, 0.0, Color32::from_rgb(18, 38, 71));
         }
         3 => {
@@ -771,7 +717,7 @@ fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: 
             let footer = egui::Rect::from_min_max(rect.min + vec2(0.0, h * 0.90), rect.max);
             p.rect_filled(footer, egui::CornerRadius { nw: 0, ne: 0, sw: 4, se: 4 }, Color32::from_rgb(18, 38, 71));
         }
-        _ => {
+        4 => {
             // Style 4 (Honeycomb Hexagon): Dark background + vertical stripes + chevron banner + tri-hexagon cluster
             p.rect_filled(rect, 4.0, Color32::from_rgb(17, 24, 39));
 
@@ -786,13 +732,40 @@ fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: 
             // Left banner
             let banner = egui::Rect::from_min_max(rect.min + vec2(0.0, h * 0.26), rect.min + vec2(w * 0.45, h * 0.50));
             p.rect_filled(banner, 0.0, Color32::from_rgb(0, 114, 188));
-            p.line_segment([rect.min + vec2(0.0, h * 0.50), rect.min + vec2(w * 0.45, h * 0.50)], egui::Stroke::new(2.0, Color32::from_rgb(245, 171, 25)));
+            p.line_segment(
+                [rect.min + vec2(0.0, h * 0.50), rect.min + vec2(w * 0.45, h * 0.50)],
+                egui::Stroke::new(2.0, Color32::from_rgb(245, 171, 25)),
+            );
 
             // Tri-hexagon cluster representation
             let c = rect.min + vec2(w * 0.65, h * 0.48);
             p.circle_filled(c, w * 0.24, Color32::WHITE);
             p.circle_filled(c, w * 0.21, Color32::from_rgb(30, 41, 59));
             p.circle_stroke(c, w * 0.22, egui::Stroke::new(1.5, Color32::from_rgb(245, 171, 25)));
+        }
+        _ => {
+            // Style 5 (Corporate Headline): White base + top bar + top-right corporate box + photo vertical frame + rounded headline block + bottom right block
+            p.rect_filled(rect, 4.0, Color32::WHITE);
+            // Top bar
+            let top_bar = egui::Rect::from_min_max(rect.min, rect.min + vec2(w * 0.90, h * 0.025));
+            p.rect_filled(top_bar, 0.0, Color32::from_rgb(108, 92, 231));
+            // Bottom-right block
+            let br_block = egui::Rect::from_min_max(rect.min + vec2(w * 0.72, h * 0.92), rect.max);
+            p.rect_filled(br_block, egui::CornerRadius { nw: 0, ne: 0, sw: 0, se: 4 }, Color32::from_rgb(108, 92, 231));
+            // Center-right vertical photo frame
+            let photo = egui::Rect::from_min_max(rect.min + vec2(w * 0.38, h * 0.20), rect.min + vec2(w * 0.95, h * 0.92));
+            p.rect_filled(photo, 0.0, Color32::from_rgb(140, 170, 200));
+            // Top-left L bracket
+            let l_h = egui::Rect::from_min_max(rect.min + vec2(w * 0.36, h * 0.19), rect.min + vec2(w * 0.55, h * 0.205));
+            let l_v = egui::Rect::from_min_max(rect.min + vec2(w * 0.36, h * 0.19), rect.min + vec2(w * 0.38, h * 0.32));
+            p.rect_filled(l_h, 0.0, Color32::from_rgb(108, 92, 231));
+            p.rect_filled(l_v, 0.0, Color32::from_rgb(108, 92, 231));
+            // Top-right corporate box
+            let corp_box = egui::Rect::from_min_max(rect.min + vec2(w * 0.58, h * 0.13), rect.min + vec2(w, h * 0.28));
+            p.rect_filled(corp_box, 0.0, Color32::from_rgb(108, 92, 231));
+            // Headline block with rounded top-right
+            let hl_block = egui::Rect::from_min_max(rect.min + vec2(0.0, h * 0.54), rect.min + vec2(w * 0.58, h * 0.81));
+            p.rect_filled(hl_block, egui::CornerRadius { nw: 0, ne: 8, sw: 0, se: 0 }, Color32::from_rgb(108, 92, 231));
         }
     }
 }
@@ -809,12 +782,7 @@ fn show_style_thumbnail_tooltip(ui: &mut Ui, style_idx: usize, name: &str, t: &T
             let thumb_h = (thumb_w * size.y / size.x.max(1.0)).min(220.0);
             let (rect, _) = ui.allocate_exact_size(vec2(thumb_w, thumb_h), Sense::hover());
             ui.painter().rect_filled(rect, 4.0, Color32::from_gray(30));
-            ui.painter().image(
-                tex.id(),
-                rect,
-                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                Color32::WHITE,
-            );
+            ui.painter().image(tex.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
             ui.painter().rect_stroke(rect, 4.0, egui::Stroke::new(1.0, t.border), egui::StrokeKind::Outside);
         } else {
             paint_fallback_cover_thumb(ui, style_idx, 150.0, 212.0, t);
@@ -826,6 +794,7 @@ fn show_style_thumbnail_tooltip(ui: &mut Ui, style_idx: usize, name: &str, t: &T
             2 => "Geometric origami folded facet ribbons with hexagonal photo header.",
             3 => "Executive downward chevron crest with golden horseshoe medallion cradle.",
             4 => "Architectural tri-hexagon honeycomb cluster with corporate chevron banner and racing stripes.",
+            5 => "Modern corporate architecture layout with top framing, headline focal block, and feature badges.",
             _ => "",
         };
         ui.add_space(3.0);
@@ -839,19 +808,16 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
     // 1. Template Style with Hover Thumbnail Preview
     ui.horizontal(|ui| {
         ui.label(RichText::new("Style:").size(11.0).color(t.text));
-        let styles = ["Wave Curves", "Geometric & Medallion", "Folded Origami", "Chevron & Medallion", "Honeycomb Hexagon"];
+        let styles = ["Wave Curves", "Geometric & Medallion", "Folded Origami", "Chevron & Medallion", "Honeycomb Hexagon", "Corporate Headline"];
         let cur_style = styles.get(st.cover_style).copied().unwrap_or("Wave Curves");
-        let combo = egui::ComboBox::from_id_salt("pubgen_cover_style")
-            .selected_text(cur_style)
-            .width(160.0)
-            .show_ui(ui, |ui| {
-                for (idx, s) in styles.iter().enumerate() {
-                    let resp = ui.selectable_value(&mut st.cover_style, idx, *s);
-                    resp.on_hover_ui(|ui| {
-                        show_style_thumbnail_tooltip(ui, idx, *s, t);
-                    });
-                }
-            });
+        let combo = egui::ComboBox::from_id_salt("pubgen_cover_style").selected_text(cur_style).width(160.0).show_ui(ui, |ui| {
+            for (idx, s) in styles.iter().enumerate() {
+                let resp = ui.selectable_value(&mut st.cover_style, idx, *s);
+                resp.on_hover_ui(|ui| {
+                    show_style_thumbnail_tooltip(ui, idx, *s, t);
+                });
+            }
+        });
         combo.response.on_hover_ui(|ui| {
             show_style_thumbnail_tooltip(ui, st.cover_style, cur_style, t);
         });
@@ -882,6 +848,7 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
             ("📐 Origami", 2, "Folded Origami"),
             ("🔰 Chevron", 3, "Chevron & Medallion"),
             ("⬡ Hexagon", 4, "Honeycomb Hexagon"),
+            ("🏢 Corporate", 5, "Corporate Headline"),
         ];
         for (label, idx, full_name) in style_pills {
             let is_sel = st.cover_style == idx;
@@ -904,18 +871,16 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
             "Emerald & Gold",
             "Crimson & Slate",
             "Modern Teal & Cyan",
+            "Modern Violet & Slate",
             "Custom",
         ];
         let cur_theme = themes.get(st.cover_theme_preset).copied().unwrap_or("Classic BPS (Blue/Gold)");
         let prev_theme = st.cover_theme_preset;
-        egui::ComboBox::from_id_salt("pubgen_cover_theme")
-            .selected_text(cur_theme)
-            .width(180.0)
-            .show_ui(ui, |ui| {
-                for (idx, th) in themes.iter().enumerate() {
-                    ui.selectable_value(&mut st.cover_theme_preset, idx, *th);
-                }
-            });
+        egui::ComboBox::from_id_salt("pubgen_cover_theme").selected_text(cur_theme).width(180.0).show_ui(ui, |ui| {
+            for (idx, th) in themes.iter().enumerate() {
+                ui.selectable_value(&mut st.cover_theme_preset, idx, *th);
+            }
+        });
         if st.cover_theme_preset != prev_theme {
             match st.cover_theme_preset {
                 0 => {
@@ -943,6 +908,11 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                     st.cover_color_accent = "#f59e0b".into();
                     st.cover_color_dark = "#1e293b".into();
                 }
+                5 => {
+                    st.cover_color_primary = "#6c5ce7".into();
+                    st.cover_color_accent = "#a29bfe".into();
+                    st.cover_color_dark = "#1e293b".into();
+                }
                 _ => {}
             }
         }
@@ -965,14 +935,11 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
         ui.label(RichText::new("Level:").size(11.0).color(t.text));
         let levels = ["KECAMATAN", "KABUPATEN"];
         let cur_lvl = levels.get(st.cover_level).copied().unwrap_or("KECAMATAN");
-        egui::ComboBox::from_id_salt("pubgen_cover_level")
-            .selected_text(cur_lvl)
-            .width(130.0)
-            .show_ui(ui, |ui| {
-                for (idx, l) in levels.iter().enumerate() {
-                    ui.selectable_value(&mut st.cover_level, idx, *l);
-                }
-            });
+        egui::ComboBox::from_id_salt("pubgen_cover_level").selected_text(cur_lvl).width(130.0).show_ui(ui, |ui| {
+            for (idx, l) in levels.iter().enumerate() {
+                ui.selectable_value(&mut st.cover_level, idx, *l);
+            }
+        });
     });
 
     // #2 Title: default "KARAWANG TIMUR"
@@ -1003,14 +970,11 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
     ui.horizontal(|ui| {
         let code_types = ["ISSN", "ISBN"];
         let cur_ct = code_types.get(st.cover_code_type).copied().unwrap_or("ISSN");
-        egui::ComboBox::from_id_salt("pubgen_cover_code_type")
-            .selected_text(cur_ct)
-            .width(70.0)
-            .show_ui(ui, |ui| {
-                for (idx, ct) in code_types.iter().enumerate() {
-                    ui.selectable_value(&mut st.cover_code_type, idx, *ct);
-                }
-            });
+        egui::ComboBox::from_id_salt("pubgen_cover_code_type").selected_text(cur_ct).width(70.0).show_ui(ui, |ui| {
+            for (idx, ct) in code_types.iter().enumerate() {
+                ui.selectable_value(&mut st.cover_code_type, idx, *ct);
+            }
+        });
         let avail = (ui.available_width() - 4.0).max(80.0);
         ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_code_num));
     });
@@ -1028,7 +992,8 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                 ui.add_sized(
                     [w, crate::widgets::FIELD_H],
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
-                ).on_hover_text("Circular center photo");
+                )
+                .on_hover_text("Circular center photo");
                 if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
                     if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
                         st.cover_image_skyline = path;
@@ -1044,7 +1009,8 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                 ui.add_sized(
                     [w, crate::widgets::FIELD_H],
                     egui::TextEdit::singleline(&mut st.cover_image_landscape).hint_text("outputs/city_landscape.jpg"),
-                ).on_hover_text("Diagonal polygon background landscape photo");
+                )
+                .on_hover_text("Diagonal polygon background landscape photo");
                 if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
                     if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
                         st.cover_image_landscape = path;
@@ -1057,7 +1023,8 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                 ui.add_sized(
                     [w, crate::widgets::FIELD_H],
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
-                ).on_hover_text("Circular cutout foreground photo");
+                )
+                .on_hover_text("Circular cutout foreground photo");
                 if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
                     if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
                         st.cover_image_skyline = path;
@@ -1073,7 +1040,8 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                 ui.add_sized(
                     [w, crate::widgets::FIELD_H],
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
-                ).on_hover_text("Top-right hexagonal photo cutout");
+                )
+                .on_hover_text("Top-right hexagonal photo cutout");
                 if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
                     if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
                         st.cover_image_skyline = path;
@@ -1089,7 +1057,8 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                 ui.add_sized(
                     [w, crate::widgets::FIELD_H],
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
-                ).on_hover_text("Circular center photo nestled inside the horseshoe medallion");
+                )
+                .on_hover_text("Circular center photo nestled inside the horseshoe medallion");
                 if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
                     if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
                         st.cover_image_skyline = path;
@@ -1097,7 +1066,7 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                 }
             });
         }
-        _ => {
+        4 => {
             // Style 4 (Honeycomb Hexagon): 1 image (Tri-hexagon honeycomb cluster photo)
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Honeycomb:").size(10.5).color(t.text));
@@ -1105,10 +1074,28 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                 ui.add_sized(
                     [w, crate::widgets::FIELD_H],
                     egui::TextEdit::singleline(&mut st.cover_image_landscape).hint_text("outputs/city_landscape.jpg"),
-                ).on_hover_text("Tri-hexagon honeycomb cluster photo");
+                )
+                .on_hover_text("Tri-hexagon honeycomb cluster photo");
                 if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
                     if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
                         st.cover_image_landscape = path;
+                    }
+                }
+            });
+        }
+        _ => {
+            // Style 5 (Corporate Headline): 1 image (Vertical architectural photo)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Photo:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
+                )
+                .on_hover_text("Vertical architecture or city skyline photo");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
+                        st.cover_image_skyline = path;
                     }
                 }
             });
@@ -1122,10 +1109,8 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
     ui.horizontal(|ui| {
         ui.label(RichText::new("Logo:").size(10.5).color(t.text));
         let w = (ui.available_width() - 65.0).max(80.0);
-        ui.add_sized(
-            [w, crate::widgets::FIELD_H],
-            egui::TextEdit::singleline(&mut st.cover_image_logo).hint_text("outputs/bps_logo.png"),
-        ).on_hover_text("Path to logo image file (PNG / JPG / SVG)");
+        ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_image_logo).hint_text("outputs/bps_logo.png"))
+            .on_hover_text("Path to logo image file (PNG / JPG / SVG)");
         if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
             if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
                 st.cover_image_logo = path;
@@ -1139,13 +1124,14 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
         ui.add_sized(
             [avail, crate::widgets::FIELD_H * 1.8],
             egui::TextEdit::multiline(&mut st.cover_agency_text).hint_text("BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG"),
-        ).on_hover_text("Text displayed next to the logo (multi-line supported)");
+        )
+        .on_hover_text("Text displayed next to the logo (multi-line supported)");
     });
 
     // Action button
     let fw = full_width(ui);
-    let gen_btn = outline_button(ui, "Generate Cover Page", fw)
-        .on_hover_text("Automatically inserts a new cover page before Page 1 and generates layout");
+    let gen_btn =
+        outline_button(ui, "Generate Cover Page", fw).on_hover_text("Automatically inserts a new cover page before Page 1 and generates layout");
     if gen_btn.clicked() {
         let res = execute_generate_cover(app, st);
         st.cover_status = Some(match res {
@@ -1218,8 +1204,7 @@ fn add_cover_text_frame(
 
 fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
     // 1. Automatically insert a new page before the first page (Page 1)
-    app.run("layout.pages.insert", json!({"before": 0, "count": 1}))
-        .map_err(|e| format!("Failed to insert cover page: {e}"))?;
+    app.run("layout.pages.insert", json!({"before": 0, "count": 1})).map_err(|e| format!("Failed to insert cover page: {e}"))?;
     crate::canvas::go_to_page(app, 0);
 
     let (pw, ph) = {
@@ -1235,11 +1220,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     let volume_text = if st.cover_volume.trim().is_empty() { "Volume 23 2026" } else { st.cover_volume.trim() };
 
     let cat_raw = if st.cover_catalogue.trim().is_empty() { "1102001.3215113" } else { st.cover_catalogue.trim() };
-    let cat_text = if cat_raw.to_lowercase().starts_with("katalog") {
-        cat_raw.to_string()
-    } else {
-        format!("Katalog BPS: {cat_raw}")
-    };
+    let cat_text = if cat_raw.to_lowercase().starts_with("katalog") { cat_raw.to_string() } else { format!("Katalog BPS: {cat_raw}") };
 
     let code_type = if st.cover_code_type == 0 { "ISSN" } else { "ISBN" };
     let code_num = if st.cover_code_num.trim().is_empty() { "2828-7436" } else { st.cover_code_num.trim() };
@@ -1253,11 +1234,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     let landscape = if st.cover_image_landscape.trim().is_empty() { "outputs/city_landscape.jpg" } else { st.cover_image_landscape.trim() };
     let logo = if st.cover_image_logo.trim().is_empty() { "outputs/bps_logo.png" } else { st.cover_image_logo.trim() };
 
-    let agency_text = if st.cover_agency_text.trim().is_empty() {
-        "BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG"
-    } else {
-        st.cover_agency_text.trim()
-    };
+    let agency_text = if st.cover_agency_text.trim().is_empty() { "BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG" } else { st.cover_agency_text.trim() };
 
     let style_name = match st.cover_style {
         0 => {
@@ -1278,24 +1255,30 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // 3. Blue Wave Swoosh
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [pw, 280.0]}, {"p": [pw, 430.0], "in": [pw, 380.0], "out": [510.0, 490.0]},
-                {"p": [380.0, 565.0], "in": [450.0, 545.0], "out": [320.0, 580.0]},
-                {"p": [240.0, 560.0], "in": [270.0, 568.0], "out": [240.0, 560.0]},
-                {"p": [330.0, 545.0], "in": [260.0, 550.0], "out": [430.0, 500.0]},
-                {"p": [pw, 280.0], "in": [490.0, 390.0], "out": [pw, 280.0]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [pw, 280.0]}, {"p": [pw, 430.0], "in": [pw, 380.0], "out": [510.0, 490.0]},
+                    {"p": [380.0, 565.0], "in": [450.0, 545.0], "out": [320.0, 580.0]},
+                    {"p": [240.0, 560.0], "in": [270.0, 568.0], "out": [240.0, 560.0]},
+                    {"p": [330.0, 545.0], "in": [260.0, 550.0], "out": [430.0, 500.0]},
+                    {"p": [pw, 280.0], "in": [490.0, 390.0], "out": [pw, 280.0]}
+                ]}),
+            )?;
             let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
             let _ = app.run("object.dropShadow", json!({"on": true, "distance": 8, "size": 16, "opacity": 0.32}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // 4. White Top Wave
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [0.0, 0.0]}, {"p": [pw, 0.0]}, {"p": [pw, 280.0], "out": [490.0, 390.0]},
-                {"p": [330.0, 545.0], "in": [430.0, 500.0], "out": [260.0, 550.0]},
-                {"p": [160.0, 542.0], "in": [200.0, 545.0], "out": [80.0, 530.0]},
-                {"p": [0.0, 490.0], "in": [50.0, 505.0]}, {"p": [0.0, 0.0]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.0, 0.0]}, {"p": [pw, 0.0]}, {"p": [pw, 280.0], "out": [490.0, 390.0]},
+                    {"p": [330.0, 545.0], "in": [430.0, 500.0], "out": [260.0, 550.0]},
+                    {"p": [160.0, 542.0], "in": [200.0, 545.0], "out": [80.0, 530.0]},
+                    {"p": [0.0, 490.0], "in": [50.0, 505.0]}, {"p": [0.0, 0.0]}
+                ]}),
+            )?;
             let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
             let _ = app.run("object.dropShadow", json!({"on": true, "distance": 8, "size": 16, "opacity": 0.22}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
@@ -1328,7 +1311,19 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             // 7. Headline Block
             add_cover_text_frame(app, 0, [40.0, 92.0, 555.0, 126.0], level_text, dark, "Arial", "Bold", 20.0, None, Some(50.0), "center")?;
             let combined_title = format!("{title_text}\nDALAM ANGKA");
-            add_cover_text_frame(app, 0, [20.0, 126.0, 575.0, 225.0], &combined_title, primary, "Arial Black", "Regular", 33.0, Some(39.0), Some(30.0), "center")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [20.0, 126.0, 575.0, 225.0],
+                &combined_title,
+                primary,
+                "Arial Black",
+                "Regular",
+                33.0,
+                Some(39.0),
+                Some(30.0),
+                "center",
+            )?;
 
             // 8. Bottom-Left BPS Logo
             app.run("frame.create", json!({"spread": 0, "rect": [40.0, 742.0, 84.0, 788.0], "content": "graphic", "shape": "rectangle"}))?;
@@ -1337,7 +1332,19 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.fit", json!({"mode": "centerContent"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            add_cover_text_frame(app, 0, [92.0, 746.0, 290.0, 788.0], agency_text, "#ffffff", "Arial", "Bold Italic", 10.0, Some(13.5), Some(20.0), "left")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [92.0, 746.0, 290.0, 788.0],
+                agency_text,
+                "#ffffff",
+                "Arial",
+                "Bold Italic",
+                10.0,
+                Some(13.5),
+                Some(20.0),
+                "left",
+            )?;
 
             // 9. Bottom-Right Year & Volume
             add_cover_text_frame(app, 0, [320.0, 712.0, 555.0, 768.0], year_text, accent, "Arial Black", "Regular", 48.0, None, Some(30.0), "right")?;
@@ -1357,11 +1364,14 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             add_cover_text_frame(app, 0, [320.0, 42.0, 555.0, 60.0], &code_text, dark, "Arial", "Bold", 8.5, None, None, "right")?;
 
             // 3. Diagonal Polygon Graphic Frame (Landscape)
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [0.0, 390.0]}, {"p": [170.0, 230.0]}, {"p": [410.0, 230.0]},
-                {"p": [pw, 75.0]}, {"p": [pw, 550.0]}, {"p": [340.0, 550.0]},
-                {"p": [160.0, 580.0]}, {"p": [0.0, 680.0]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.0, 390.0]}, {"p": [170.0, 230.0]}, {"p": [410.0, 230.0]},
+                    {"p": [pw, 75.0]}, {"p": [pw, 550.0]}, {"p": [340.0, 550.0]},
+                    {"p": [160.0, 580.0]}, {"p": [0.0, 680.0]}
+                ]}),
+            )?;
             let _ = app.run("object.content", json!({"type": "graphic"}));
             let _ = app.run("file.place", json!({"path": landscape}));
             let _ = app.run("object.fit", json!({"mode": "fillProportionally"}));
@@ -1369,11 +1379,14 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // Multiply color overlay
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [0.0, 390.0]}, {"p": [170.0, 230.0]}, {"p": [410.0, 230.0]},
-                {"p": [pw, 75.0]}, {"p": [pw, 550.0]}, {"p": [340.0, 550.0]},
-                {"p": [160.0, 580.0]}, {"p": [0.0, 680.0]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.0, 390.0]}, {"p": [170.0, 230.0]}, {"p": [410.0, 230.0]},
+                    {"p": [pw, 75.0]}, {"p": [pw, 550.0]}, {"p": [340.0, 550.0]},
+                    {"p": [160.0, 580.0]}, {"p": [0.0, 680.0]}
+                ]}),
+            )?;
             let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
             let _ = app.run("object.opacity", json!({"opacity": 0.82, "blend": "multiply"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
@@ -1388,16 +1401,22 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
 
             // Bottom-left accent ribbon
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [0.0, 680.0]}, {"p": [155.0, 575.0]}, {"p": [170.0, 590.0]}, {"p": [0.0, 715.0]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.0, 680.0]}, {"p": [155.0, 575.0]}, {"p": [170.0, 590.0]}, {"p": [0.0, 715.0]}
+                ]}),
+            )?;
             let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // Ribbon fold
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [140.0, 588.0]}, {"p": [170.0, 590.0]}, {"p": [162.0, 565.0]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [140.0, 588.0]}, {"p": [170.0, 590.0]}, {"p": [162.0, 565.0]}
+                ]}),
+            )?;
             let _ = app.run("object.color", json!({"color": adjust_hex(accent, 0.85), "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
@@ -1414,10 +1433,13 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // Accent arc around circle
-            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [
-                {"p": [340.0, 615.0], "out": [390.0, 625.0]},
-                {"p": [480.0, 595.0], "in": [435.0, 620.0]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": false, "anchors": [
+                    {"p": [340.0, 615.0], "out": [390.0, 625.0]},
+                    {"p": [480.0, 595.0], "in": [435.0, 620.0]}
+                ]}),
+            )?;
             let _ = app.run("object.stroke", json!({"weight": 5.0}));
             let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
 
@@ -1433,7 +1455,19 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.fit", json!({"mode": "centerContent"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            add_cover_text_frame(app, 0, [90.0, 746.0, 280.0, 788.0], agency_text, dark, "Arial", "Bold Italic", 10.0, Some(13.5), Some(20.0), "left")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [90.0, 746.0, 280.0, 788.0],
+                agency_text,
+                dark,
+                "Arial",
+                "Bold Italic",
+                10.0,
+                Some(13.5),
+                Some(20.0),
+                "left",
+            )?;
 
             // Bottom-Right Year & Volume
             add_cover_text_frame(app, 0, [320.0, 712.0, 560.0, 768.0], year_text, accent, "Arial Black", "Regular", 48.0, None, Some(30.0), "right")?;
@@ -1449,10 +1483,13 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // 2. Photo Polygon Frame (Top-Right Hexagonal Cutout)
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [235.0, 0.0]}, {"p": [pw, 0.0]}, {"p": [pw, 290.0]},
-                {"p": [325.0, 405.0]}, {"p": [105.0, 235.0]}, {"p": [105.0, 75.0]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [235.0, 0.0]}, {"p": [pw, 0.0]}, {"p": [pw, 290.0]},
+                    {"p": [325.0, 405.0]}, {"p": [105.0, 235.0]}, {"p": [105.0, 75.0]}
+                ]}),
+            )?;
             let _ = app.run("object.content", json!({"type": "graphic"}));
             let _ = app.run("file.place", json!({"path": skyline}));
             let _ = app.run("object.fit", json!({"mode": "fillProportionally"}));
@@ -1460,60 +1497,80 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // 3. Ribbon Border along Photo Lower Edge
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [105.0, 235.0]}, {"p": [325.0, 405.0]}, {"p": [pw, 290.0]},
-                {"p": [pw, 305.0]}, {"p": [325.0, 420.0]}, {"p": [105.0, 248.0]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [105.0, 235.0]}, {"p": [325.0, 405.0]}, {"p": [pw, 290.0]},
+                    {"p": [pw, 305.0]}, {"p": [325.0, 420.0]}, {"p": [105.0, 248.0]}
+                ]}),
+            )?;
             let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // 4. Top-Left Accent Corner
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [0.0, 0.0]}, {"p": [235.0, 0.0]}, {"p": [105.0, 75.0]},
-                {"p": [105.0, 160.0]}, {"p": [0.0, 95.0]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.0, 0.0]}, {"p": [235.0, 0.0]}, {"p": [105.0, 75.0]},
+                    {"p": [105.0, 160.0]}, {"p": [0.0, 95.0]}
+                ]}),
+            )?;
             let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // 5. Dark Navy / Theme Dark Polygon
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [0.0, 95.0]}, {"p": [105.0, 160.0]}, {"p": [105.0, 248.0]},
-                {"p": [265.0, 360.0]}, {"p": [145.0, 435.0]}, {"p": [0.0, 350.0]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.0, 95.0]}, {"p": [105.0, 160.0]}, {"p": [105.0, 248.0]},
+                    {"p": [265.0, 360.0]}, {"p": [145.0, 435.0]}, {"p": [0.0, 350.0]}
+                ]}),
+            )?;
             let _ = app.run("object.color", json!({"color": dark, "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // 6. Amber / Shaded Facet on Left
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [0.0, 350.0]}, {"p": [145.0, 435.0]}, {"p": [0.0, 500.0]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.0, 350.0]}, {"p": [145.0, 435.0]}, {"p": [0.0, 500.0]}
+                ]}),
+            )?;
             let _ = app.run("object.color", json!({"color": adjust_hex(accent, 0.90), "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // 7. Folded Origami Ribbon Facets
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [145.0, 435.0]}, {"p": [265.0, 360.0]}, {"p": [325.0, 420.0]}, {"p": [325.0, 540.0]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [145.0, 435.0]}, {"p": [265.0, 360.0]}, {"p": [325.0, 420.0]}, {"p": [325.0, 540.0]}
+                ]}),
+            )?;
             let _ = app.run("object.color", json!({"color": adjust_hex(accent, 0.98), "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [325.0, 420.0]}, {"p": [pw, 305.0]}, {"p": [pw, 350.0]},
-                {"p": [460.0, 460.0]}, {"p": [325.0, 540.0]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [325.0, 420.0]}, {"p": [pw, 305.0]}, {"p": [pw, 350.0]},
+                    {"p": [460.0, 460.0]}, {"p": [325.0, 540.0]}
+                ]}),
+            )?;
             let _ = app.run("object.color", json!({"color": adjust_hex(accent, 1.08), "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [460.0, 460.0]}, {"p": [pw, 350.0]}, {"p": [pw, 540.0]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [460.0, 460.0]}, {"p": [pw, 350.0]}, {"p": [pw, 540.0]}
+                ]}),
+            )?;
             let _ = app.run("object.color", json!({"color": adjust_hex(accent, 0.92), "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // 8. Top-Right Metadata (#5 and #6)
             add_cover_text_frame(app, 0, [320.0, 24.0, 555.0, 42.0], &cat_text, dark, "Arial", "Bold", 8.5, None, None, "right")?;
             add_cover_text_frame(app, 0, [320.0, 42.0, 555.0, 60.0], &code_text, dark, "Arial", "Bold", 8.5, None, None, "right")?;
-
 
             // 9. Headline Block
             add_cover_text_frame(app, 0, [40.0, 565.0, 420.0, 597.0], level_text, primary, "Arial", "Bold", 22.0, None, Some(40.0), "left")?;
@@ -1527,7 +1584,19 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.fit", json!({"mode": "centerContent"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            add_cover_text_frame(app, 0, [92.0, 746.0, 290.0, 788.0], agency_text, dark, "Arial", "Bold Italic", 10.0, Some(13.5), Some(20.0), "left")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [92.0, 746.0, 290.0, 788.0],
+                agency_text,
+                dark,
+                "Arial",
+                "Bold Italic",
+                10.0,
+                Some(13.5),
+                Some(20.0),
+                "left",
+            )?;
 
             // 11. Bottom-Right Year & Volume
             add_cover_text_frame(app, 0, [320.0, 712.0, 555.0, 768.0], year_text, accent, "Arial Black", "Regular", 48.0, None, Some(30.0), "right")?;
@@ -1552,51 +1621,63 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // 3. Oval Photo Medallion (Item 17) - Resized & placed behind chevron
-            app.run("frame.create", json!({
-                "spread": 0,
-                "rect": [162.68 * sx, 339.71 * sy, 437.95 * sx, 629.56 * sy],
-                "content": "graphic",
-                "shape": "ellipse"
-            }))?;
+            app.run(
+                "frame.create",
+                json!({
+                    "spread": 0,
+                    "rect": [162.68 * sx, 339.71 * sy, 437.95 * sx, 629.56 * sy],
+                    "content": "graphic",
+                    "shape": "ellipse"
+                }),
+            )?;
             let _ = app.run("file.place", json!({"path": skyline}));
             let _ = app.run("object.fit", json!({"mode": "fillProportionally"}));
             let _ = app.run("object.fit", json!({"mode": "centerContent"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // 4. Downward Chevron (Item 13)
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [0.71 * sx, 0.0], "out": [151.68 * sx, 0.0]},
-                {"p": [pw, 0.0], "in": [377.97 * sx, 0.0], "out": [pw, 42.97 * sy]},
-                {"p": [pw, 147.47 * sy], "in": [pw, 94.38 * sy], "out": [449.39 * sx, 292.88 * sy]},
-                {"p": [294.74 * sx, 447.03 * sy]},
-                {"p": [0.71 * sx, 153.94 * sy], "in": [126.35 * sx, 279.18 * sy], "out": [0.71 * sx, 107.50 * sy]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.71 * sx, 0.0], "out": [151.68 * sx, 0.0]},
+                    {"p": [pw, 0.0], "in": [377.97 * sx, 0.0], "out": [pw, 42.97 * sy]},
+                    {"p": [pw, 147.47 * sy], "in": [pw, 94.38 * sy], "out": [449.39 * sx, 292.88 * sy]},
+                    {"p": [294.74 * sx, 447.03 * sy]},
+                    {"p": [0.71 * sx, 153.94 * sy], "in": [126.35 * sx, 279.18 * sy], "out": [0.71 * sx, 107.50 * sy]}
+                ]}),
+            )?;
             let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
             let _ = app.run("object.dropShadow", json!({"on": true, "distance": 6, "size": 14, "opacity": 0.22}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // 5. Accent bottom stroke along Chevron (Item 14)
-            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [
-                {"p": [0.71 * sx, 153.94 * sy], "out": [126.35 * sx, 279.18 * sy]},
-                {"p": [294.74 * sx, 447.03 * sy]},
-                {"p": [pw, 147.47 * sy], "in": [449.39 * sx, 292.88 * sy]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": false, "anchors": [
+                    {"p": [0.71 * sx, 153.94 * sy], "out": [126.35 * sx, 279.18 * sy]},
+                    {"p": [294.74 * sx, 447.03 * sy]},
+                    {"p": [pw, 147.47 * sy], "in": [449.39 * sx, 292.88 * sy]}
+                ]}),
+            )?;
             let _ = app.run("object.stroke", json!({"weight": 4.25 * s_avg}));
             let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
 
             // 6. Horseshoe Medallion Ring (Item 15)
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [116.22 * sx, 484.53 * sy], "in": [116.22 * sx, 585.77 * sy], "out": [116.22 * sx, 428.43 * sy]},
-                {"p": [181.35 * sx, 344.59 * sy], "in": [141.51 * sx, 378.21 * sy], "out": [188.35 * sx, 351.56 * sy]},
-                {"p": [202.65 * sx, 365.80 * sy], "in": [195.50 * sx, 358.69 * sy], "out": [168.58 * sx, 393.82 * sy]},
-                {"p": [146.87 * sx, 483.69 * sy], "in": [146.87 * sx, 436.22 * sy], "out": [146.87 * sx, 568.05 * sy]},
-                {"p": [300.12 * sx, 636.43 * sy], "in": [215.48 * sx, 636.43 * sy], "out": [384.74 * sx, 636.43 * sy]},
-                {"p": [453.36 * sx, 483.69 * sy], "in": [453.36 * sx, 568.05 * sy], "out": [453.36 * sx, 433.45 * sy]},
-                {"p": [391.47 * sx, 361.04 * sy], "in": [429.02 * sx, 388.87 * sy], "out": [400.42 * sx, 352.11 * sy]},
-                {"p": [412.85 * sx, 339.71 * sy], "in": [407.95 * sx, 344.59 * sy], "out": [456.14 * sx, 373.24 * sy]},
-                {"p": [484.01 * sx, 484.53 * sy], "in": [484.01 * sx, 425.64 * sy], "out": [484.01 * sx, 585.77 * sy]},
-                {"p": [300.12 * sx, 667.83 * sy], "in": [401.67 * sx, 667.83 * sy], "out": [198.55 * sx, 667.83 * sy]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [116.22 * sx, 484.53 * sy], "in": [116.22 * sx, 585.77 * sy], "out": [116.22 * sx, 428.43 * sy]},
+                    {"p": [181.35 * sx, 344.59 * sy], "in": [141.51 * sx, 378.21 * sy], "out": [188.35 * sx, 351.56 * sy]},
+                    {"p": [202.65 * sx, 365.80 * sy], "in": [195.50 * sx, 358.69 * sy], "out": [168.58 * sx, 393.82 * sy]},
+                    {"p": [146.87 * sx, 483.69 * sy], "in": [146.87 * sx, 436.22 * sy], "out": [146.87 * sx, 568.05 * sy]},
+                    {"p": [300.12 * sx, 636.43 * sy], "in": [215.48 * sx, 636.43 * sy], "out": [384.74 * sx, 636.43 * sy]},
+                    {"p": [453.36 * sx, 483.69 * sy], "in": [453.36 * sx, 568.05 * sy], "out": [453.36 * sx, 433.45 * sy]},
+                    {"p": [391.47 * sx, 361.04 * sy], "in": [429.02 * sx, 388.87 * sy], "out": [400.42 * sx, 352.11 * sy]},
+                    {"p": [412.85 * sx, 339.71 * sy], "in": [407.95 * sx, 344.59 * sy], "out": [456.14 * sx, 373.24 * sy]},
+                    {"p": [484.01 * sx, 484.53 * sy], "in": [484.01 * sx, 425.64 * sy], "out": [484.01 * sx, 585.77 * sy]},
+                    {"p": [300.12 * sx, 667.83 * sy], "in": [401.67 * sx, 667.83 * sy], "out": [198.55 * sx, 667.83 * sy]}
+                ]}),
+            )?;
             let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
             let _ = app.run("object.dropShadow", json!({"on": true, "distance": 6, "size": 16, "opacity": 0.28}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
@@ -1607,45 +1688,135 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // 8. Footer Top Accent Stroke (Item 20)
-            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [
-                {"p": [0.0, 757.00 * sy]},
-                {"p": [pw, 757.00 * sy]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": false, "anchors": [
+                    {"p": [0.0, 757.00 * sy]},
+                    {"p": [pw, 757.00 * sy]}
+                ]}),
+            )?;
             let _ = app.run("object.stroke", json!({"weight": 3.5 * sy}));
             let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
 
             // 9. Top-Right Metadata (Items 21 & 23)
-            add_cover_text_frame(app, 0, [311.49 * sx, 22.63 * sy, 569.74 * sx, 42.43 * sy], &cat_text, "#ffffff", "Arial", "Bold", 8.0 * s_avg, None, None, "right")?;
-            add_cover_text_frame(app, 0, [311.49 * sx, 42.43 * sy, 569.74 * sx, 62.23 * sy], &code_text, "#ffffff", "Arial", "Bold", 8.0 * s_avg, None, None, "right")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [311.49 * sx, 22.63 * sy, 569.74 * sx, 42.43 * sy],
+                &cat_text,
+                "#ffffff",
+                "Arial",
+                "Bold",
+                8.0 * s_avg,
+                None,
+                None,
+                "right",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [311.49 * sx, 42.43 * sy, 569.74 * sx, 62.23 * sy],
+                &code_text,
+                "#ffffff",
+                "Arial",
+                "Bold",
+                8.0 * s_avg,
+                None,
+                None,
+                "right",
+            )?;
 
             // 10. Headline Block Inside Chevron (Items 25 & 27)
-            add_cover_text_frame(app, 0, [28.38 * sx, 167.51 * sy, 566.90 * sx, 201.46 * sy], level_text, accent, "Arial", "Bold", 15.0 * s_avg, None, Some(40.0), "center")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [28.38 * sx, 167.51 * sy, 566.90 * sx, 201.46 * sy],
+                level_text,
+                accent,
+                "Arial",
+                "Bold",
+                15.0 * s_avg,
+                None,
+                Some(40.0),
+                "center",
+            )?;
             let combined_title = format!("{title_text}\nDALAM ANGKA");
-            add_cover_text_frame(app, 0, [21.28 * sx, 201.46 * sy, 573.99 * sx, 330.00 * sy], &combined_title, "#ffffff", "Arial Black", "Regular", 26.0 * s_avg, Some(31.0 * s_avg), Some(20.0), "center")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [21.28 * sx, 201.46 * sy, 573.99 * sx, 330.00 * sy],
+                &combined_title,
+                "#ffffff",
+                "Arial Black",
+                "Regular",
+                26.0 * s_avg,
+                Some(31.0 * s_avg),
+                Some(20.0),
+                "center",
+            )?;
 
             // 11. Center Medallion Year (Item 33) - 65pt Arial Black in Accent Gold!
-            add_cover_text_frame(app, 0, [160.0 * sx, 440.0 * sy, 440.0 * sx, 530.0 * sy], year_text, accent, "Arial Black", "Regular", 65.0 * s_avg, None, Some(20.0), "center")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [160.0 * sx, 440.0 * sy, 440.0 * sx, 530.0 * sy],
+                year_text,
+                accent,
+                "Arial Black",
+                "Regular",
+                65.0 * s_avg,
+                None,
+                Some(20.0),
+                "center",
+            )?;
 
             // 12. Bottom-Left Logo & Agency Text (Items 29 & 31)
-            app.run("frame.create", json!({
-                "spread": 0,
-                "rect": [28.38 * sx, 770.79 * sy, 82.30 * sx, 827.36 * sy],
-                "content": "graphic",
-                "shape": "rectangle"
-            }))?;
+            app.run(
+                "frame.create",
+                json!({
+                    "spread": 0,
+                    "rect": [28.38 * sx, 770.79 * sy, 82.30 * sx, 827.36 * sy],
+                    "content": "graphic",
+                    "shape": "rectangle"
+                }),
+            )?;
             let _ = app.run("file.place", json!({"path": logo}));
             let _ = app.run("object.fit", json!({"mode": "fitProportionally"}));
             let _ = app.run("object.fit", json!({"mode": "centerContent"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            add_cover_text_frame(app, 0, [93.65 * sx, 773.61 * sy, 368.92 * sx, 830.19 * sy], agency_text, "#ffffff", "Arial", "Bold Italic", 9.5 * s_avg, Some(12.5 * s_avg), Some(15.0), "left")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [93.65 * sx, 773.61 * sy, 368.92 * sx, 830.19 * sy],
+                agency_text,
+                "#ffffff",
+                "Arial",
+                "Bold Italic",
+                9.5 * s_avg,
+                Some(12.5 * s_avg),
+                Some(15.0),
+                "left",
+            )?;
 
             // 13. Bottom-Right Volume (Item 35)
-            add_cover_text_frame(app, 0, [368.92 * sx, 766.80 * sy, 569.74 * sx, 810.0 * sy], volume_text, "#cbd5e1", "Arial", "Bold", 9.0 * s_avg, None, Some(15.0), "right")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [368.92 * sx, 766.80 * sy, 569.74 * sx, 810.0 * sy],
+                volume_text,
+                "#cbd5e1",
+                "Arial",
+                "Bold",
+                9.0 * s_avg,
+                None,
+                Some(15.0),
+                "right",
+            )?;
 
             "Chevron & Medallion"
         }
-        _ => {
+        4 => {
             // Style 4: Honeycomb Hexagon (from design-2.designcraft)
             let sx = pw / 595.275591;
             let sy = ph / 841.889764;
@@ -1657,56 +1828,77 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // 2. Three Vertical Accent Stripes (Items 26, 27, 28)
-            app.run("frame.create", json!({"spread": 0, "rect": [355.03 * sx, 0.0, 407.97 * sx, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            app.run(
+                "frame.create",
+                json!({"spread": 0, "rect": [355.03 * sx, 0.0, 407.97 * sx, ph], "content": "unassigned", "shape": "rectangle"}),
+            )?;
             let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
             let _ = app.run("object.opacity", json!({"opacity": 0.85}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            app.run("frame.create", json!({"spread": 0, "rect": [415.03 * sx, 0.0, 443.94 * sx, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            app.run(
+                "frame.create",
+                json!({"spread": 0, "rect": [415.03 * sx, 0.0, 443.94 * sx, ph], "content": "unassigned", "shape": "rectangle"}),
+            )?;
             let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
             let _ = app.run("object.opacity", json!({"opacity": 0.60}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            app.run("frame.create", json!({"spread": 0, "rect": [451.03 * sx, 0.0, 462.92 * sx, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            app.run(
+                "frame.create",
+                json!({"spread": 0, "rect": [451.03 * sx, 0.0, 462.92 * sx, ph], "content": "unassigned", "shape": "rectangle"}),
+            )?;
             let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
             let _ = app.run("object.opacity", json!({"opacity": 0.35}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // 3. Left Horizontal Chevron Banner (Item 13) in Corporate Sapphire
-            app.run("path.create", json!({"spread": 0, "closed": true, "anchors": [
-                {"p": [0.0, 199.74 * sy]},
-                {"p": [176.59 * sx, 199.74 * sy]},
-                {"p": [300.92 * sx, 324.07 * sy]},
-                {"p": [180.99 * sx, 444.00 * sy]},
-                {"p": [0.0, 444.00 * sy]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.0, 199.74 * sy]},
+                    {"p": [176.59 * sx, 199.74 * sy]},
+                    {"p": [300.92 * sx, 324.07 * sy]},
+                    {"p": [180.99 * sx, 444.00 * sy]},
+                    {"p": [0.0, 444.00 * sy]}
+                ]}),
+            )?;
             let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
             let _ = app.run("object.dropShadow", json!({"on": true, "distance": 6, "size": 14, "opacity": 0.30}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
             // Gold bottom accent rule along chevron
-            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [
-                {"p": [0.0, 444.00 * sy]},
-                {"p": [180.99 * sx, 444.00 * sy]},
-                {"p": [300.92 * sx, 324.07 * sy]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": false, "anchors": [
+                    {"p": [0.0, 444.00 * sy]},
+                    {"p": [180.99 * sx, 444.00 * sy]},
+                    {"p": [300.92 * sx, 324.07 * sy]}
+                ]}),
+            )?;
             let _ = app.run("object.stroke", json!({"weight": 4.0 * s_avg}));
             let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
 
             // 4. Right Horizontal Banner Extension (Item 17)
-            app.run("frame.create", json!({
-                "spread": 0,
-                "rect": [514.35 * sx, 304.60 * sy, pw, 534.00 * sy],
-                "content": "unassigned",
-                "shape": "rectangle"
-            }))?;
+            app.run(
+                "frame.create",
+                json!({
+                    "spread": 0,
+                    "rect": [514.35 * sx, 304.60 * sy, pw, 534.00 * sy],
+                    "content": "unassigned",
+                    "shape": "rectangle"
+                }),
+            )?;
             let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [
-                {"p": [514.35 * sx, 534.00 * sy]},
-                {"p": [pw, 534.00 * sy]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": false, "anchors": [
+                    {"p": [514.35 * sx, 534.00 * sy]},
+                    {"p": [pw, 534.00 * sy]}
+                ]}),
+            )?;
             let _ = app.run("object.stroke", json!({"weight": 4.0 * s_avg}));
             let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
 
@@ -1747,52 +1939,518 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
 
             // 7. Top-Left Logo & Agency Text
-            app.run("frame.create", json!({
-                "spread": 0,
-                "rect": [36.0 * sx, 32.0 * sy, 74.0 * sx, 72.0 * sy],
-                "content": "graphic",
-                "shape": "rectangle"
-            }))?;
+            app.run(
+                "frame.create",
+                json!({
+                    "spread": 0,
+                    "rect": [36.0 * sx, 32.0 * sy, 74.0 * sx, 72.0 * sy],
+                    "content": "graphic",
+                    "shape": "rectangle"
+                }),
+            )?;
             let _ = app.run("file.place", json!({"path": logo}));
             let _ = app.run("object.fit", json!({"mode": "fitProportionally"}));
             let _ = app.run("object.fit", json!({"mode": "centerContent"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            add_cover_text_frame(app, 0, [82.0 * sx, 34.0 * sy, 320.0 * sx, 72.0 * sy], agency_text, "#ffffff", "Arial", "Bold Italic", 9.0 * s_avg, Some(12.0 * s_avg), Some(15.0), "left")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [82.0 * sx, 34.0 * sy, 320.0 * sx, 72.0 * sy],
+                agency_text,
+                "#ffffff",
+                "Arial",
+                "Bold Italic",
+                9.0 * s_avg,
+                Some(12.0 * s_avg),
+                Some(15.0),
+                "left",
+            )?;
 
             // 8. Top-Right Metadata
-            add_cover_text_frame(app, 0, [pw - 250.0 * sx, 34.0 * sy, pw - 36.0 * sx, 50.0 * sy], &cat_text, "#ffffff", "Arial", "Bold", 8.0 * s_avg, None, None, "right")?;
-            add_cover_text_frame(app, 0, [pw - 250.0 * sx, 50.0 * sy, pw - 36.0 * sx, 66.0 * sy], &code_text, "#ffffff", "Arial", "Bold", 8.0 * s_avg, None, None, "right")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [pw - 250.0 * sx, 34.0 * sy, pw - 36.0 * sx, 50.0 * sy],
+                &cat_text,
+                "#ffffff",
+                "Arial",
+                "Bold",
+                8.0 * s_avg,
+                None,
+                None,
+                "right",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [pw - 250.0 * sx, 50.0 * sy, pw - 36.0 * sx, 66.0 * sy],
+                &code_text,
+                "#ffffff",
+                "Arial",
+                "Bold",
+                8.0 * s_avg,
+                None,
+                None,
+                "right",
+            )?;
 
             // 9. Headline Block (Inside Left Chevron Banner)
-            add_cover_text_frame(app, 0, [36.0 * sx, 235.0 * sy, 260.0 * sx, 265.0 * sy], level_text, accent, "Arial", "Bold", 14.0 * s_avg, None, Some(30.0), "left")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [36.0 * sx, 235.0 * sy, 260.0 * sx, 265.0 * sy],
+                level_text,
+                accent,
+                "Arial",
+                "Bold",
+                14.0 * s_avg,
+                None,
+                Some(30.0),
+                "left",
+            )?;
             let combined_title = format!("{title_text}\nDALAM ANGKA");
-            add_cover_text_frame(app, 0, [36.0 * sx, 265.0 * sy, 270.0 * sx, 395.0 * sy], &combined_title, "#ffffff", "Arial Black", "Regular", 25.0 * s_avg, Some(30.0 * s_avg), Some(15.0), "left")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [36.0 * sx, 265.0 * sy, 270.0 * sx, 395.0 * sy],
+                &combined_title,
+                "#ffffff",
+                "Arial Black",
+                "Regular",
+                25.0 * s_avg,
+                Some(30.0 * s_avg),
+                Some(15.0),
+                "left",
+            )?;
 
             // 10. Lower-Left Focal Year Block
-            add_cover_text_frame(app, 0, [36.0 * sx, 640.0 * sy, 260.0 * sx, 715.0 * sy], year_text, "#ffffff", "Arial Black", "Regular", 60.0 * s_avg, None, Some(15.0), "left")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [36.0 * sx, 640.0 * sy, 260.0 * sx, 715.0 * sy],
+                year_text,
+                "#ffffff",
+                "Arial Black",
+                "Regular",
+                60.0 * s_avg,
+                None,
+                Some(15.0),
+                "left",
+            )?;
 
-            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [
-                {"p": [36.0 * sx, 722.0 * sy]},
-                {"p": [200.0 * sx, 722.0 * sy]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": false, "anchors": [
+                    {"p": [36.0 * sx, 722.0 * sy]},
+                    {"p": [200.0 * sx, 722.0 * sy]}
+                ]}),
+            )?;
             let _ = app.run("object.stroke", json!({"weight": 4.0 * s_avg}));
             let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
 
-            add_cover_text_frame(app, 0, [36.0 * sx, 730.0 * sy, 260.0 * sx, 755.0 * sy], volume_text, "#cbd5e1", "Arial", "Bold", 11.0 * s_avg, None, Some(20.0), "left")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [36.0 * sx, 730.0 * sy, 260.0 * sx, 755.0 * sy],
+                volume_text,
+                "#cbd5e1",
+                "Arial",
+                "Bold",
+                11.0 * s_avg,
+                None,
+                Some(20.0),
+                "left",
+            )?;
 
             // 11. Bottom Subtle Rule
-            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [
-                {"p": [36.0 * sx, 795.0 * sy]},
-                {"p": [pw - 36.0 * sx, 795.0 * sy]}
-            ]}))?;
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": false, "anchors": [
+                    {"p": [36.0 * sx, 795.0 * sy]},
+                    {"p": [pw - 36.0 * sx, 795.0 * sy]}
+                ]}),
+            )?;
             let _ = app.run("object.stroke", json!({"weight": 1.0 * s_avg}));
             let _ = app.run("object.color", json!({"color": "#334155", "target": "stroke"}));
 
-            add_cover_text_frame(app, 0, [36.0 * sx, 804.0 * sy, 300.0 * sx, 824.0 * sy], "PUBLIKASI BPS KABUPATEN KARAWANG", "#94a3b8", "Arial", "Bold", 8.5 * s_avg, None, None, "left")?;
-            add_cover_text_frame(app, 0, [pw - 200.0 * sx, 804.0 * sy, pw - 36.0 * sx, 824.0 * sy], "bps.go.id", accent, "Arial", "Bold", 8.5 * s_avg, None, None, "right")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [36.0 * sx, 804.0 * sy, 300.0 * sx, 824.0 * sy],
+                "PUBLIKASI BPS KABUPATEN KARAWANG",
+                "#94a3b8",
+                "Arial",
+                "Bold",
+                8.5 * s_avg,
+                None,
+                None,
+                "left",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [pw - 200.0 * sx, 804.0 * sy, pw - 36.0 * sx, 824.0 * sy],
+                "bps.go.id",
+                accent,
+                "Arial",
+                "Bold",
+                8.5 * s_avg,
+                None,
+                None,
+                "right",
+            )?;
 
             "Honeycomb Hexagon"
+        }
+        _ => {
+            // Style 5: Corporate Headline (from design-3.designcraft)
+            let sx = pw / 595.275591;
+            let sy = ph / 841.889764;
+            let s_avg = (sx + sy) / 2.0;
+
+            // 1. Base white background
+            app.run("frame.create", json!({"spread": 0, "rect": [0, 0, pw, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 2. Top accent bar
+            app.run("frame.create", json!({"spread": 0, "rect": [0.0, 0.0, 548.0 * sx, 16.0 * sy], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 3. Bottom-right purple block
+            app.run("frame.create", json!({"spread": 0, "rect": [438.0 * sx, 780.0 * sy, pw, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 4. Mid-right accent tab
+            app.run(
+                "frame.create",
+                json!({"spread": 0, "rect": [565.0 * sx, 680.0 * sy, pw, 720.0 * sy], "content": "unassigned", "shape": "rectangle"}),
+            )?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 5. Center-right vertical photo frame
+            let photo_res = app.run(
+                "frame.create",
+                json!({
+                    "spread": 0,
+                    "rect": [221.0 * sx, 168.0 * sy, 565.0 * sx, 780.0 * sy],
+                    "content": "graphic",
+                    "shape": "rectangle"
+                }),
+            )?;
+            let photo_id = photo_res.get("id").and_then(Value::as_u64);
+            let _ = app.run("file.place", json!({"path": skyline, "frame": photo_id}));
+            let _ = app.run("object.fit", json!({"mode": "fillProportionally", "ids": [photo_id]}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent", "ids": [photo_id]}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]", "ids": [photo_id]}));
+            let _ = app.run("object.dropShadow", json!({"on": true, "distance": 8, "size": 18, "opacity": 0.22, "ids": [photo_id]}));
+
+            // 6. Top-left L-bracket framing the photo
+            app.run(
+                "frame.create",
+                json!({"spread": 0, "rect": [213.0 * sx, 161.0 * sy, 325.0 * sx, 170.0 * sy], "content": "unassigned", "shape": "rectangle"}),
+            )?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            app.run(
+                "frame.create",
+                json!({"spread": 0, "rect": [213.0 * sx, 161.0 * sy, 221.0 * sx, 265.0 * sy], "content": "unassigned", "shape": "rectangle"}),
+            )?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 7. Top-right "CORPORATE DESIGN" purple box
+            app.run(
+                "frame.create",
+                json!({"spread": 0, "rect": [342.0 * sx, 108.0 * sy, pw, 234.0 * sy], "content": "unassigned", "shape": "rectangle"}),
+            )?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+            let _ = app.run("object.dropShadow", json!({"on": true, "distance": 6, "size": 14, "opacity": 0.22}));
+
+            add_cover_text_frame(
+                app,
+                0,
+                [356.0 * sx, 126.0 * sy, pw - 20.0 * sx, 154.0 * sy],
+                "CORPORATE",
+                "#ffffff",
+                "Arial",
+                "Bold",
+                16.0 * s_avg,
+                None,
+                Some(80.0),
+                "left",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [354.0 * sx, 150.0 * sy, pw - 20.0 * sx, 218.0 * sy],
+                "DESIGN",
+                "#ffffff",
+                "Arial Black",
+                "Regular",
+                36.0 * s_avg,
+                None,
+                Some(20.0),
+                "left",
+            )?;
+
+            // 8. Top-left Logo & Agency Branding
+            app.run(
+                "frame.create",
+                json!({
+                    "spread": 0,
+                    "rect": [36.0 * sx, 38.0 * sy, 74.0 * sx, 76.0 * sy],
+                    "content": "graphic",
+                    "shape": "rectangle"
+                }),
+            )?;
+            let _ = app.run("file.place", json!({"path": logo}));
+            let _ = app.run("object.fit", json!({"mode": "fitProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            add_cover_text_frame(
+                app,
+                0,
+                [84.0 * sx, 38.0 * sy, 320.0 * sx, 78.0 * sy],
+                agency_text,
+                dark,
+                "Arial",
+                "Bold Italic",
+                10.5 * s_avg,
+                Some(14.0 * s_avg),
+                None,
+                "left",
+            )?;
+
+            // 9. Middle-left Big Year & Subtitle
+            let (y1, y2) = if year_text.len() >= 4 { (&year_text[..2], &year_text[2..]) } else { (year_text, "") };
+            add_cover_text_frame(
+                app,
+                0,
+                [36.0 * sx, 260.0 * sy, 118.0 * sx, 335.0 * sy],
+                y1,
+                dark,
+                "Arial Black",
+                "Regular",
+                62.0 * s_avg,
+                None,
+                Some(10.0),
+                "left",
+            )?;
+            if !y2.is_empty() {
+                add_cover_text_frame(
+                    app,
+                    0,
+                    [116.0 * sx, 260.0 * sy, 215.0 * sx, 335.0 * sy],
+                    y2,
+                    primary,
+                    "Arial Black",
+                    "Regular",
+                    62.0 * s_avg,
+                    None,
+                    Some(10.0),
+                    "left",
+                )?;
+            }
+
+            add_cover_text_frame(
+                app,
+                0,
+                [36.0 * sx, 340.0 * sy, 205.0 * sx, 358.0 * sy],
+                "BUSINESS REPORT",
+                dark,
+                "Arial",
+                "Bold",
+                11.0 * s_avg,
+                None,
+                Some(40.0),
+                "left",
+            )?;
+
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": false, "anchors": [
+                    {"p": [36.0 * sx, 362.0 * sy]},
+                    {"p": [205.0 * sx, 362.0 * sy]}
+                ]}),
+            )?;
+            let _ = app.run("object.stroke", json!({"weight": 2.5 * s_avg}));
+            let _ = app.run("object.color", json!({"color": primary, "target": "stroke"}));
+
+            // 10. Headline Purple Block (Bottom-Left)
+            let r_corner = 46.0 * s_avg;
+            app.run(
+                "path.create",
+                json!({
+                    "spread": 0,
+                    "closed": true,
+                    "anchors": [
+                        {"p": [0.0, 458.0 * sy]},
+                        {"p": [340.0 * sx - r_corner, 458.0 * sy], "out": [340.0 * sx - r_corner + r_corner * 0.552, 458.0 * sy]},
+                        {"p": [340.0 * sx, 458.0 * sy + r_corner], "in": [340.0 * sx, 458.0 * sy + r_corner - r_corner * 0.552]},
+                        {"p": [340.0 * sx, 680.0 * sy]},
+                        {"p": [0.0, 680.0 * sy]}
+                    ]
+                }),
+            )?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+            let _ = app.run("object.dropShadow", json!({"on": true, "distance": 8, "size": 16, "opacity": 0.28}));
+
+            let level_upper = level_text.to_uppercase();
+            add_cover_text_frame(
+                app,
+                0,
+                [28.0 * sx, 478.0 * sy, 320.0 * sx, 506.0 * sy],
+                &level_upper,
+                "#ffffff",
+                "Arial",
+                "Bold",
+                15.0 * s_avg,
+                None,
+                Some(40.0),
+                "left",
+            )?;
+
+            let formatted_title = if title_text.contains(' ') { title_text.replace(' ', "\n") } else { title_text.to_string() };
+            add_cover_text_frame(
+                app,
+                0,
+                [26.0 * sx, 508.0 * sy, 330.0 * sx, 616.0 * sy],
+                &formatted_title,
+                "#ffffff",
+                "Arial Black",
+                "Regular",
+                34.0 * s_avg,
+                Some(39.0 * s_avg),
+                Some(10.0),
+                "left",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [28.0 * sx, 624.0 * sy, 320.0 * sx, 654.0 * sy],
+                "DALAM ANGKA",
+                "#ffffff",
+                "Arial",
+                "Bold",
+                15.0 * s_avg,
+                None,
+                Some(50.0),
+                "left",
+            )?;
+
+            // 11. Bottom-left 3 Feature Badges with vector icons & metadata
+            // Badge 1 (Katalog BPS / Trend)
+            let b1_x = 52.0;
+            let b1_y = 702.0;
+            app.run("frame.create", json!({"spread": 0, "rect": [b1_x * sx, b1_y * sy, (b1_x + 24.0) * sx, (b1_y + 24.0) * sy], "content": "unassigned", "shape": "ellipse"}))?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            app.run(
+                "path.create",
+                json!({
+                    "spread": 0,
+                    "closed": false,
+                    "anchors": [
+                        {"p": [(b1_x + 5.5) * sx, (b1_y + 16.0) * sy]},
+                        {"p": [(b1_x + 10.5) * sx, (b1_y + 11.5) * sy]},
+                        {"p": [(b1_x + 14.5) * sx, (b1_y + 14.5) * sy]},
+                        {"p": [(b1_x + 18.5) * sx, (b1_y + 7.5) * sy]}
+                    ]
+                }),
+            )?;
+            let _ = app.run("object.stroke", json!({"weight": 2.0 * s_avg}));
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "stroke"}));
+
+            add_cover_text_frame(
+                app,
+                0,
+                [(b1_x - 18.0) * sx, (b1_y + 28.0) * sy, (b1_x + 42.0) * sx, (b1_y + 58.0) * sy],
+                &cat_text,
+                dark,
+                "Arial",
+                "Regular",
+                6.8 * s_avg,
+                Some(8.8 * s_avg),
+                None,
+                "center",
+            )?;
+
+            // Badge 2 (ISSN/ISBN / Target)
+            let b2_x = 116.0;
+            let b2_y = 702.0;
+            app.run("frame.create", json!({"spread": 0, "rect": [b2_x * sx, b2_y * sy, (b2_x + 24.0) * sx, (b2_y + 24.0) * sy], "content": "unassigned", "shape": "ellipse"}))?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            app.run("frame.create", json!({"spread": 0, "rect": [(b2_x + 5.0) * sx, (b2_y + 5.0) * sy, (b2_x + 19.0) * sx, (b2_y + 19.0) * sy], "content": "unassigned", "shape": "ellipse"}))?;
+            let _ = app.run("object.stroke", json!({"weight": 1.5 * s_avg}));
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "stroke"}));
+            let _ = app.run("object.fill", json!({"swatch": "[None]"}));
+
+            app.run("frame.create", json!({"spread": 0, "rect": [(b2_x + 10.0) * sx, (b2_y + 10.0) * sy, (b2_x + 14.0) * sx, (b2_y + 14.0) * sy], "content": "unassigned", "shape": "ellipse"}))?;
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            add_cover_text_frame(
+                app,
+                0,
+                [(b2_x - 18.0) * sx, (b2_y + 28.0) * sy, (b2_x + 42.0) * sx, (b2_y + 58.0) * sy],
+                &code_text,
+                dark,
+                "Arial",
+                "Regular",
+                6.8 * s_avg,
+                Some(8.8 * s_avg),
+                None,
+                "center",
+            )?;
+
+            // Badge 3 (Volume / Globe)
+            let b3_x = 180.0;
+            let b3_y = 702.0;
+            app.run("frame.create", json!({"spread": 0, "rect": [b3_x * sx, b3_y * sy, (b3_x + 24.0) * sx, (b3_y + 24.0) * sy], "content": "unassigned", "shape": "ellipse"}))?;
+            let _ = app.run("object.color", json!({"color": primary, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            app.run("frame.create", json!({"spread": 0, "rect": [(b3_x + 4.5) * sx, (b3_y + 4.5) * sy, (b3_x + 19.5) * sx, (b3_y + 19.5) * sy], "content": "unassigned", "shape": "ellipse"}))?;
+            let _ = app.run("object.stroke", json!({"weight": 1.3 * s_avg}));
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "stroke"}));
+            let _ = app.run("object.fill", json!({"swatch": "[None]"}));
+
+            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [{"p": [(b3_x + 5.0) * sx, (b3_y + 12.0) * sy]}, {"p": [(b3_x + 19.0) * sx, (b3_y + 12.0) * sy]}]}))?;
+            let _ = app.run("object.stroke", json!({"weight": 1.2 * s_avg}));
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "stroke"}));
+
+            app.run("path.create", json!({"spread": 0, "closed": false, "anchors": [{"p": [(b3_x + 12.0) * sx, (b3_y + 5.0) * sy]}, {"p": [(b3_x + 12.0) * sx, (b3_y + 19.0) * sy]}]}))?;
+            let _ = app.run("object.stroke", json!({"weight": 1.2 * s_avg}));
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "stroke"}));
+
+            let b3_caption = format!("Publikasi\n{volume_text}");
+            add_cover_text_frame(
+                app,
+                0,
+                [(b3_x - 18.0) * sx, (b3_y + 28.0) * sy, (b3_x + 42.0) * sx, (b3_y + 58.0) * sy],
+                &b3_caption,
+                dark,
+                "Arial",
+                "Regular",
+                6.8 * s_avg,
+                Some(8.8 * s_avg),
+                None,
+                "center",
+            )?;
+
+            "Corporate Headline"
         }
     };
 
@@ -1802,24 +2460,15 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     section(ui, crate::i18n::tr(&app.ui.language, "Quick Actions"), true);
 
-
     let facing = app.session.active().map(|s| s.doc.settings.facing_pages).unwrap_or(true);
-    let cur_page = app
-        .session
-        .active()
-        .and_then(|s| s.selection.page)
-        .or_else(|| crate::canvas::current_page(app))
-        .unwrap_or_else(|| target_page_index(app));
+    let cur_page =
+        app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app)).unwrap_or_else(|| target_page_index(app));
     let cur_label = app.session.page_label(cur_page);
 
     // Button 1: switch Facing Pages
     // When currently Facing (Double-sided), button offers switching to Single-sided.
     // When currently Single-sided, button offers switching to Double-sided.
-    let facing_text = if facing {
-        crate::i18n::tr(&app.ui.language, "Single-sided")
-    } else {
-        crate::i18n::tr(&app.ui.language, "Double-sided")
-    };
+    let facing_text = if facing { crate::i18n::tr(&app.ui.language, "Single-sided") } else { crate::i18n::tr(&app.ui.language, "Double-sided") };
     let add_page_text = crate::i18n::tr(&app.ui.language, "Add Blank Page");
 
     let fw = full_width(ui);
@@ -1837,14 +2486,8 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
         if resp_facing.clicked() {
             let next_facing = !facing;
             let _ = app.run("layout.documentSetup", json!({"facingPages": next_facing}));
-            st.card3_status = Some((
-                if next_facing {
-                    "Switched to Double-sided (Facing Pages)".into()
-                } else {
-                    "Switched to Single-sided layout".into()
-                },
-                true,
-            ));
+            st.card3_status =
+                Some((if next_facing { "Switched to Double-sided (Facing Pages)".into() } else { "Switched to Single-sided layout".into() }, true));
         }
 
         let tip_page = format!("Insert a blank page after Page {cur_label}");
@@ -1935,14 +2578,11 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
         ui.add(egui::DragValue::new(&mut st.card3_renumber_start).range(1..=9999).prefix("Start: "));
         let styles = ["1, 2, 3…", "i, ii, iii…", "I, II, III…"];
         let cur_style = styles.get(st.card3_renumber_style).copied().unwrap_or("1, 2, 3…");
-        egui::ComboBox::from_id_salt("pubgen_renumber_style")
-            .selected_text(cur_style)
-            .width(80.0)
-            .show_ui(ui, |ui| {
-                for (idx, s) in styles.iter().enumerate() {
-                    ui.selectable_value(&mut st.card3_renumber_style, idx, *s);
-                }
-            });
+        egui::ComboBox::from_id_salt("pubgen_renumber_style").selected_text(cur_style).width(80.0).show_ui(ui, |ui| {
+            for (idx, s) in styles.iter().enumerate() {
+                ui.selectable_value(&mut st.card3_renumber_style, idx, *s);
+            }
+        });
     });
     let hw_renum = (ui.available_width() - 4.0) * 0.5;
     ui.horizontal(|ui| {
@@ -1968,10 +2608,7 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
     divider(ui);
     ui.horizontal(|ui| {
         let w = (ui.available_width() - 65.0).max(80.0);
-        ui.add_sized(
-            [w, crate::widgets::FIELD_H],
-            egui::TextEdit::singleline(&mut st.rtf_path).hint_text("Path to .rtf file…"),
-        );
+        ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.rtf_path).hint_text("Path to .rtf file…"));
         if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
             if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
                 st.rtf_path = path;
@@ -1997,10 +2634,7 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
     divider(ui);
     ui.horizontal(|ui| {
         let w = (ui.available_width() - 65.0).max(80.0);
-        ui.add_sized(
-            [w, crate::widgets::FIELD_H],
-            egui::TextEdit::singleline(&mut st.image_path).hint_text("Path to image file…"),
-        );
+        ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.image_path).hint_text("Path to image file…"));
         if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
             if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
                 st.image_path = path;
@@ -2009,12 +2643,10 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
     });
     ui.horizontal(|ui| {
         ui.label(RichText::new("As:").size(11.0).color(t.text));
-        ui.radio_value(&mut st.image_as_background, false, "Image object").on_hover_text(
-            "Create an image object fitted inside the page margins of the selected page",
-        );
-        ui.radio_value(&mut st.image_as_background, true, "Page background").on_hover_text(
-            "Fit image proportionally to full page, keeping aspect ratio (sent to the back, behind all items)",
-        );
+        ui.radio_value(&mut st.image_as_background, false, "Image object")
+            .on_hover_text("Create an image object fitted inside the page margins of the selected page");
+        ui.radio_value(&mut st.image_as_background, true, "Page background")
+            .on_hover_text("Fit image proportionally to full page, keeping aspect ratio (sent to the back, behind all items)");
     });
     let tip_img = if st.image_as_background {
         format!("Apply image as page background to Page {cur_label} (proportional, sent to back)")
@@ -2037,7 +2669,8 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
 
     // Helper: Excel (.xlsx) to CSV Data
     divider(ui);
-    let tip_excel = "Convert a multi-sheet Excel file (.xlsx) into 1 catalog CSV for Page from CSV + individual table CSVs (with auto-merged headers)";
+    let tip_excel =
+        "Convert a multi-sheet Excel file (.xlsx) into 1 catalog CSV for Page from CSV + individual table CSVs (with auto-merged headers)";
     let resp_excel = outline_button(ui, "Excel to CSV Data…", full_width(ui)).on_hover_text(tip_excel);
     if resp_excel.clicked() {
         if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge")) {
@@ -2050,11 +2683,8 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
     }
 
     let tip_zip = "Download all generated catalog and table CSVs packaged in a single .zip archive";
-    let zip_label = if !st.generated_zip_name.is_empty() {
-        format!("Download {}…", st.generated_zip_name)
-    } else {
-        "Download CSVs as ZIP…".to_string()
-    };
+    let zip_label =
+        if !st.generated_zip_name.is_empty() { format!("Download {}…", st.generated_zip_name) } else { "Download CSVs as ZIP…".to_string() };
     if outline_button(ui, &zip_label, full_width(ui)).on_hover_text(tip_zip).clicked() {
         let res = execute_download_csv_zip(app, st);
         st.card3_status = Some(match res {
@@ -2064,14 +2694,7 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
     }
 
     let mode_str = if facing { "Double-sided" } else { "Single-sided" };
-    ui.add(
-        egui::Label::new(
-            RichText::new(format!("Mode: {mode_str} · Selected: Page {cur_label}"))
-                .size(10.5)
-                .color(t.text_dim),
-        )
-        .truncate(),
-    );
+    ui.add(egui::Label::new(RichText::new(format!("Mode: {mode_str} · Selected: Page {cur_label}")).size(10.5).color(t.text_dim)).truncate());
 
     if let Some((msg, ok)) = &st.card3_status {
         let color = if *ok { Color32::from_rgb(80, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
@@ -2351,20 +2974,13 @@ pub fn detect_footnote_row(matrix: &[Vec<String>]) -> Option<String> {
     let last = matrix.last()?;
     let first = last.first().map(|s| s.trim()).unwrap_or("");
     let rest_empty = last.iter().skip(1).all(|c| c.trim().is_empty());
-    if !first.is_empty() && rest_empty {
-        Some(first.to_string())
-    } else {
-        None
-    }
+    if !first.is_empty() && rest_empty { Some(first.to_string()) } else { None }
 }
 
 /// Check if a cell starts with one of the summary/break keywords:
 /// Jumlah, Tahun, Kab, Kabupaten, Kec, Kecamatan (or Total).
 pub fn matches_pubgen_row_condition(text: &str) -> bool {
-    let trimmed = text
-        .trim()
-        .trim_start_matches(|c: char| c == '*' || c == '-' || c == '•' || c == '–' || c == '—')
-        .trim();
+    let trimmed = text.trim().trim_start_matches(|c: char| c == '*' || c == '-' || c == '•' || c == '–' || c == '—').trim();
     let lower = trimmed.to_lowercase();
     if lower.is_empty() {
         return false;
@@ -2396,8 +3012,7 @@ pub fn matches_pubgen_row_condition(text: &str) -> bool {
 
 pub fn is_index_or_empty(text: &str) -> bool {
     let t = text.trim();
-    t.is_empty()
-        || t.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | ')' | '(' | '-' | '#'))
+    t.is_empty() || t.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | ')' | '(' | '-' | '#'))
 }
 
 /// Detect row indices (0-based relative to matrix) matching the summary/break keyword condition.
@@ -2449,7 +3064,6 @@ fn estimate_text_width(text: &str, is_uppercase_kicker: bool) -> f64 {
     let buffer = if is_uppercase_kicker { 12.0 } else { 8.0 };
     (w + buffer).max(20.0)
 }
-
 
 fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
     if st.card1_records.is_empty() {
@@ -2736,11 +3350,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         generated_count = generated_count.saturating_add(1);
     }
 
-    let tbl_msg = if inserted_tables_count > 0 {
-        format!(" (with {inserted_tables_count} tables auto-inserted)")
-    } else {
-        String::new()
-    };
+    let tbl_msg = if inserted_tables_count > 0 { format!(" (with {inserted_tables_count} tables auto-inserted)") } else { String::new() };
     Ok(format!("Successfully generated {generated_count} pages{tbl_msg}!"))
 }
 
@@ -2782,9 +3392,7 @@ fn ensure_para_style(app: &mut DesignApp, name: &str) {
 /// Create a text frame and tag its paragraph with the TOC paragraph style, so `toc.generate`
 /// lists the frame's text as an entry (one entry per generated page).
 fn frame_with_style(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], text: &str, style: &str) -> Option<u64> {
-    let res = app
-        .run("frame.create", json!({"spread": spread_idx, "rect": rect, "content": "text", "text": text, "caret": false}))
-        .ok()?;
+    let res = app.run("frame.create", json!({"spread": spread_idx, "rect": rect, "content": "text", "text": text, "caret": false})).ok()?;
     let story = res.get("story").and_then(Value::as_u64)?;
     let end = text.chars().count().max(1) as u64;
     let _ = app.run("text.select", json!({"story": story, "anchor": 0, "focus": end}));
@@ -2795,11 +3403,7 @@ fn frame_with_style(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], text
 /// The number of paragraphs the TOC would collect for `style` right now.
 #[cfg(test)]
 fn toc_entry_count(app: &mut DesignApp, style: &str) -> usize {
-    app.session
-        .execute("toc.entries", &json!({"entries": [{"style": style, "level": 1}]}))
-        .ok()
-        .and_then(|v| v.as_array().map(Vec::len))
-        .unwrap_or(0)
+    app.session.execute("toc.entries", &json!({"entries": [{"style": style, "level": 1}]})).ok().and_then(|v| v.as_array().map(Vec::len)).unwrap_or(0)
 }
 
 pub fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
@@ -2834,11 +3438,7 @@ pub fn execute_insert_table_matrix(
             }
         }
     }
-    let footnote_text = if footnotes.is_empty() {
-        None
-    } else {
-        Some(footnotes.join("\n"))
-    };
+    let footnote_text = if footnotes.is_empty() { None } else { Some(footnotes.join("\n")) };
 
     let rows_count = matrix.len();
 
@@ -2850,11 +3450,7 @@ pub fn execute_insert_table_matrix(
                 (0..cols_count)
                     .map(|c| {
                         let val = row.get(c).map(|s| s.trim()).unwrap_or("");
-                        if val.contains("--") {
-                            val.splitn(3, "--").map(|s| s.trim().to_string()).collect()
-                        } else {
-                            vec![val.to_string()]
-                        }
+                        if val.contains("--") { val.splitn(3, "--").map(|s| s.trim().to_string()).collect() } else { vec![val.to_string()] }
                     })
                     .collect()
             })
@@ -2888,10 +3484,7 @@ pub fn execute_insert_table_matrix(
             for r in 0..num_header_rows {
                 if r < k.saturating_sub(1) {
                     // Ancestor group level: emit text only at the start of the group
-                    let is_start = c == 0
-                        || (0..=r).any(|l| {
-                            col_levels.get(c.saturating_sub(1)).and_then(|prev| prev.get(l)) != lvls.get(l)
-                        });
+                    let is_start = c == 0 || (0..=r).any(|l| col_levels.get(c.saturating_sub(1)).and_then(|prev| prev.get(l)) != lvls.get(l));
                     if is_start {
                         if let Some(txt) = lvls.get(r) {
                             header_grid[r][c] = txt.trim().to_string();
@@ -3031,11 +3624,7 @@ pub fn execute_insert_table_matrix(
 
             let has_footnote = footnote_text.is_some();
             let gap_below_title = 20.0;
-            let table_y0 = if title_bottom > margin.y0 {
-                title_bottom + gap_below_title
-            } else {
-                margin.y0 + 20.0
-            };
+            let table_y0 = if title_bottom > margin.y0 { title_bottom + gap_below_title } else { margin.y0 + 20.0 };
             let available_h = (margin.y1 - table_y0).max(60.0);
             let max_table_h = if has_footnote { (available_h - 32.0).max(40.0) } else { available_h };
             let frame_h = max_table_h;
@@ -3095,7 +3684,13 @@ pub fn execute_insert_table_matrix(
     // Step 4: Convert Text to Table
     let res = app.run("table.convertFromText", json!({"columnSeparator": "tab"}))?;
 
-    let header_rows_count = if has_merged_headers { num_header_rows } else if st.card2_first_row_header && rows_count > 1 { 1 } else { 0 };
+    let header_rows_count = if has_merged_headers {
+        num_header_rows
+    } else if st.card2_first_row_header && rows_count > 1 {
+        1
+    } else {
+        0
+    };
     let footer_rows_count = if st.card2_table_footer && rows_count > header_rows_count + 1 { 1 } else { 0 };
     if header_rows_count > 0 || footer_rows_count > 0 {
         let mut opts = json!({});
@@ -3124,11 +3719,14 @@ pub fn execute_insert_table_matrix(
         }
     }
 
-    let table_id = res["table"].as_u64().or_else(|| {
-        let act = app.session.active()?;
-        let story = act.doc.story(designcraft_doc::StoryId(story_id))?;
-        story.tables.keys().copied().next()
-    }).ok_or("Failed to find table ID")?;
+    let table_id = res["table"]
+        .as_u64()
+        .or_else(|| {
+            let act = app.session.active()?;
+            let story = act.doc.story(designcraft_doc::StoryId(story_id))?;
+            story.tables.keys().copied().next()
+        })
+        .ok_or("Failed to find table ID")?;
 
     app.session
         .edit(|doc, _| {
@@ -3142,21 +3740,14 @@ pub fn execute_insert_table_matrix(
             let story = doc
                 .story_mut(designcraft_doc::StoryId(story_id))
                 .ok_or_else(|| designcraft_engine::EngineError::Other("Story not found".to_string()))?;
-            let table = story
-                .table_mut(table_id)
-                .ok_or_else(|| designcraft_engine::EngineError::Other("Table not found".to_string()))?;
+            let table = story.table_mut(table_id).ok_or_else(|| designcraft_engine::EngineError::Other("Table not found".to_string()))?;
 
             if has_merged_headers {
                 // 1. Vertical merges: for columns where leaf row is before (num_header_rows - 1)
                 for (c, lvls) in col_levels.iter().enumerate() {
                     let k = lvls.len();
                     if k < num_header_rows {
-                        let _ = table.merge(designcraft_doc::CellRange {
-                            r0: k.saturating_sub(1),
-                            c0: c,
-                            r1: num_header_rows - 1,
-                            c1: c,
-                        });
+                        let _ = table.merge(designcraft_doc::CellRange { r0: k.saturating_sub(1), c0: c, r1: num_header_rows - 1, c1: c });
                     }
                 }
 
@@ -3175,12 +3766,7 @@ pub fn execute_insert_table_matrix(
                             }
                             let end = c;
                             if end > start {
-                                let _ = table.merge(designcraft_doc::CellRange {
-                                    r0: r,
-                                    c0: start,
-                                    r1: r,
-                                    c1: end,
-                                });
+                                let _ = table.merge(designcraft_doc::CellRange { r0: r, c0: start, r1: r, c1: end });
                             }
                         }
                         c += 1;
@@ -3238,7 +3824,13 @@ pub fn execute_insert_table_matrix(
                         ..Default::default()
                     };
 
-                    let header_rows = if has_merged_headers { num_header_rows } else if st.card2_first_row_header { 1 } else { 0 };
+                    let header_rows = if has_merged_headers {
+                        num_header_rows
+                    } else if st.card2_first_row_header {
+                        1
+                    } else {
+                        0
+                    };
                     if header_rows > 0 {
                         // Top of header (row 0 top)
                         for c in 0..nc {
@@ -3339,8 +3931,7 @@ pub fn execute_insert_table_matrix(
                             let matches = {
                                 let col0 = table.cell(r, 0).map(|c| c.text.text.as_str()).unwrap_or("");
                                 let col1 = table.cell(r, 1).map(|c| c.text.text.as_str()).unwrap_or("");
-                                matches_pubgen_row_condition(col0)
-                                    || (is_index_or_empty(col0) && matches_pubgen_row_condition(col1))
+                                matches_pubgen_row_condition(col0) || (is_index_or_empty(col0) && matches_pubgen_row_condition(col1))
                             };
 
                             if matches {
@@ -3393,15 +3984,9 @@ pub fn execute_insert_table_matrix(
         let fit_h = {
             let active = app.session.active().ok_or("No active document")?;
             let cs = designcraft_compose::compose_story(&active.doc, designcraft_doc::StoryId(story_id), &Default::default());
-            let measured_h = cs.frames.first().and_then(|f| {
-                f.tables.first().map(|t| t.rect.height()).or(Some(f.content_height))
-            });
+            let measured_h = cs.frames.first().and_then(|f| f.tables.first().map(|t| t.rect.height()).or(Some(f.content_height)));
 
-            if let Some(th) = measured_h {
-                (th + 4.0).min(max_h).max(40.0)
-            } else {
-                (total_rows as f64 * 32.0 + 40.0).min(max_h).max(60.0)
-            }
+            if let Some(th) = measured_h { (th + 4.0).min(max_h).max(40.0) } else { (total_rows as f64 * 32.0 + 40.0).min(max_h).max(60.0) }
         };
 
         let _ = app.session.edit(|doc, _| {
@@ -3564,11 +4149,7 @@ pub fn wrap_toc_title(title: &str, width: f64, hanging_indent: f64, page_str: Op
 
     for word in words {
         let max_w = if is_first { max_line0 } else { max_line_cont };
-        let candidate = if cur_line.is_empty() {
-            word.to_string()
-        } else {
-            format!("{cur_line} {word}")
-        };
+        let candidate = if cur_line.is_empty() { word.to_string() } else { format!("{cur_line} {word}") };
 
         if estimate_text_advance(&candidate) <= max_w || cur_line.is_empty() {
             cur_line = candidate;
@@ -3613,11 +4194,7 @@ pub fn wrap_tablepage_title(title: &str, width: f64, hanging_indent: f64, page_s
     let mut cur_line = String::new();
 
     for word in words {
-        let candidate = if cur_line.is_empty() {
-            word.to_string()
-        } else {
-            format!("{cur_line} {word}")
-        };
+        let candidate = if cur_line.is_empty() { word.to_string() } else { format!("{cur_line} {word}") };
 
         if estimate_text_advance(&candidate) <= max_line_w || cur_line.is_empty() {
             cur_line = candidate;
@@ -3806,11 +4383,8 @@ fn enrich_toc_story(
 
             if is_self_entry {
                 if plan.include_self {
-                    let wrapped = if plan.hanging {
-                        wrap_toc_title(self_title, width, hanging_indent, Some(&toc_page_label))
-                    } else {
-                        self_title.to_string()
-                    };
+                    let wrapped =
+                        if plan.hanging { wrap_toc_title(self_title, width, hanging_indent, Some(&toc_page_label)) } else { self_title.to_string() };
                     new_lines.push(format!("{wrapped}\t{toc_page_label}"));
                 } else {
                     changed = true;
@@ -3880,24 +4454,12 @@ fn enrich_toc_story(
                 let clean_num = matched_num.trim_end_matches('.');
                 let is_sec = is_section_header(&matched_type, clean_num, &clean_title);
                 if is_sec {
-                    let entry = if !clean_num.is_empty() {
-                        format!("{clean_num}\t{clean_title}")
-                    } else {
-                        clean_title
-                    };
+                    let entry = if !clean_num.is_empty() { format!("{clean_num}\t{clean_title}") } else { clean_title };
                     new_lines.push(entry);
                 } else {
-                    let wrapped = if plan.hanging {
-                        wrap_tablepage_title(&clean_title, width, hanging_indent, page_part)
-                    } else {
-                        clean_title
-                    };
+                    let wrapped = if plan.hanging { wrap_tablepage_title(&clean_title, width, hanging_indent, page_part) } else { clean_title };
                     let entry = if let Some(p_str) = page_part {
-                        if !clean_num.is_empty() {
-                            format!("{clean_num}\t{wrapped}\t{p_str}")
-                        } else {
-                            format!("{wrapped}\t{p_str}")
-                        }
+                        if !clean_num.is_empty() { format!("{clean_num}\t{wrapped}\t{p_str}") } else { format!("{wrapped}\t{p_str}") }
                     } else {
                         wrapped
                     };
@@ -3907,29 +4469,17 @@ fn enrich_toc_story(
             } else {
                 // Standard mode
                 let mut prefix_opt = None;
-                let expected_prefix = [&matched_type, &matched_num]
-                    .into_iter()
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" ");
+                let expected_prefix =
+                    [&matched_type, &matched_num].into_iter().filter(|s| !s.is_empty()).map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
 
                 let starts_with_type = !matched_type.is_empty() && raw_title.to_lowercase().starts_with(&matched_type.to_lowercase());
                 if !expected_prefix.is_empty() && !raw_title.starts_with(&expected_prefix) && !starts_with_type {
                     prefix_opt = Some(expected_prefix);
                 }
 
-                let title_to_use = if let Some(prefix) = prefix_opt {
-                    format!("{prefix} {raw_title}")
-                } else {
-                    raw_title.to_string()
-                };
+                let title_to_use = if let Some(prefix) = prefix_opt { format!("{prefix} {raw_title}") } else { raw_title.to_string() };
 
-                let wrapped_title = if plan.hanging {
-                    wrap_toc_title(&title_to_use, width, hanging_indent, page_part)
-                } else {
-                    title_to_use
-                };
+                let wrapped_title = if plan.hanging { wrap_toc_title(&title_to_use, width, hanging_indent, page_part) } else { title_to_use };
 
                 let original_entry_title = line.split_once('\t').map(|(t, _)| t).unwrap_or(line);
                 if wrapped_title != original_entry_title {
@@ -3955,11 +4505,8 @@ fn enrich_toc_story(
                     || t.eq_ignore_ascii_case("daftar tabel")
             });
             if !already_has {
-                let wrapped = if plan.hanging {
-                    wrap_toc_title(self_title, width, hanging_indent, Some(&toc_page_label))
-                } else {
-                    self_title.to_string()
-                };
+                let wrapped =
+                    if plan.hanging { wrap_toc_title(self_title, width, hanging_indent, Some(&toc_page_label)) } else { self_title.to_string() };
                 let insert_pos = if is_table_page && new_lines.len() > 1 { 2 } else { 1 };
                 let insert_pos = insert_pos.min(new_lines.len());
                 new_lines.insert(insert_pos, format!("{wrapped}\t{toc_page_label}"));
@@ -3995,11 +4542,7 @@ fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hangin
                 leader: String::new(),
                 align_on: String::new(),
             };
-            let (li, fi) = if hanging {
-                (Some(hanging_indent), Some(-hanging_indent))
-            } else {
-                (Some(0.0), Some(0.0))
-            };
+            let (li, fi) = if hanging { (Some(hanging_indent), Some(-hanging_indent)) } else { (Some(0.0), Some(0.0)) };
 
             let mut found_level1 = false;
             let mut found_sec = false;
@@ -4069,11 +4612,7 @@ fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hangin
                         tabs: Some(vec![tab_stop_num]),
                         ..Default::default()
                     },
-                    chars: designcraft_doc::CharAttrs {
-                        font_style: Some("Bold".into()),
-                        size: Some(10.5),
-                        ..Default::default()
-                    },
+                    chars: designcraft_doc::CharAttrs { font_style: Some("Bold".into()), size: Some(10.5), ..Default::default() },
                     shortcut: String::new(),
                 });
             }
@@ -4093,11 +4632,7 @@ fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hangin
                         }]),
                         ..Default::default()
                     },
-                    chars: designcraft_doc::CharAttrs {
-                        size: Some(10.0),
-                        fill_tint: Some(0.6),
-                        ..Default::default()
-                    },
+                    chars: designcraft_doc::CharAttrs { size: Some(10.0), fill_tint: Some(0.6), ..Default::default() },
                     shortcut: String::new(),
                 });
             }
@@ -4109,11 +4644,7 @@ fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hangin
                     found = true;
                     let level_idx: usize = style.name.strip_prefix("TOC Level ").and_then(|s| s.parse().ok()).unwrap_or(1);
                     let base_indent = (level_idx.saturating_sub(1) as f64) * 12.0;
-                    let (li, fi) = if hanging {
-                        (Some(base_indent + hanging_indent), Some(-hanging_indent))
-                    } else {
-                        (Some(base_indent), Some(0.0))
-                    };
+                    let (li, fi) = if hanging { (Some(base_indent + hanging_indent), Some(-hanging_indent)) } else { (Some(base_indent), Some(0.0)) };
                     style.para.left_indent = li;
                     style.para.first_line_indent = fi;
                     style.para.tabs = Some(vec![tab_stop.clone()]);
@@ -4121,11 +4652,7 @@ fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hangin
             }
 
             if !found {
-                let (left_ind, first_ind) = if hanging {
-                    (Some(hanging_indent), Some(-hanging_indent))
-                } else {
-                    (Some(0.0), Some(0.0))
-                };
+                let (left_ind, first_ind) = if hanging { (Some(hanging_indent), Some(-hanging_indent)) } else { (Some(0.0), Some(0.0)) };
                 let st = d.styles_mut();
                 st.paragraph.push(designcraft_doc::ParagraphStyle {
                     name: style_name.to_string(),
@@ -4151,16 +4678,13 @@ fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hangin
 fn compute_detected_prefix_width(st: &PubgenState) -> f64 {
     if st.toc_layout_style == 1 {
         // TablePage: measure width of number column only (e.g. "4.2.1", "04.01", "4.10.12")
-        let max_w = st.card1_records
+        let max_w = st
+            .card1_records
             .iter()
             .filter_map(|row| {
                 let r_num = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
                 let clean_num = r_num.trim_end_matches('.');
-                if clean_num.is_empty() {
-                    None
-                } else {
-                    Some(estimate_text_advance(&format!("{clean_num}  ")))
-                }
+                if clean_num.is_empty() { None } else { Some(estimate_text_advance(&format!("{clean_num}  "))) }
             })
             .max_by(|a, b| a.total_cmp(b))
             .unwrap_or(36.0);
@@ -4172,11 +4696,7 @@ fn compute_detected_prefix_width(st: &PubgenState) -> f64 {
                 let r_type = row.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("").trim();
                 let r_num = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
                 let prefix = [r_type, r_num].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
-                if prefix.is_empty() {
-                    None
-                } else {
-                    Some(estimate_text_advance(&format!("{prefix} ")))
-                }
+                if prefix.is_empty() { None } else { Some(estimate_text_advance(&format!("{prefix} "))) }
             })
             .max_by(|a, b| a.total_cmp(b))
             .unwrap_or(68.0)
@@ -4201,7 +4721,13 @@ fn apply_toc_post_process(
             for (pi, r) in ranges.into_iter().enumerate() {
                 let para_text = story.text[r.clone()].trim();
                 let style_name = if plan.layout == 1 {
-                    if pi == 0 && !plan.title.trim().is_empty() && (para_text == plan.title.trim() || para_text.eq_ignore_ascii_case("contents") || para_text.eq_ignore_ascii_case("daftar isi") || para_text.eq_ignore_ascii_case("daftar tabel")) {
+                    if pi == 0
+                        && !plan.title.trim().is_empty()
+                        && (para_text == plan.title.trim()
+                            || para_text.eq_ignore_ascii_case("contents")
+                            || para_text.eq_ignore_ascii_case("daftar isi")
+                            || para_text.eq_ignore_ascii_case("daftar tabel"))
+                    {
                         "TOC Title"
                     } else if is_toc_header_line(para_text) {
                         "TOC TablePage Header"
@@ -4291,21 +4817,14 @@ pub fn remove_toc_continuation_headers_of(app: &mut DesignApp, sid: designcraft_
     });
 }
 
-fn sync_toc_continuation_headers(
-    app: &mut DesignApp,
-    st: &PubgenState,
-    sid: designcraft_doc::StoryId,
-    plan: &TocPlan,
-    mut pages_added: u64,
-) -> u64 {
+fn sync_toc_continuation_headers(app: &mut DesignApp, st: &PubgenState, sid: designcraft_doc::StoryId, plan: &TocPlan, mut pages_added: u64) -> u64 {
     remove_toc_continuation_headers_of(app, sid);
 
     let (header_text, style_name) = if plan.layout == 1 {
-        let detected = app.session.active().and_then(|a| {
-            a.doc.story(sid).and_then(|s| {
-                s.text.lines().find(|l| is_toc_header_line(l.trim())).map(|l| l.trim().to_string())
-            })
-        });
+        let detected = app
+            .session
+            .active()
+            .and_then(|a| a.doc.story(sid).and_then(|s| s.text.lines().find(|l| is_toc_header_line(l.trim())).map(|l| l.trim().to_string())));
 
         let text = detected.unwrap_or_else(|| toc_header_line(plan, st));
 
@@ -4366,9 +4885,7 @@ fn sync_toc_continuation_headers(
 
             let layer = active.doc.item(fid).map(|it| it.layer).unwrap_or_else(|| active.doc.default_layer());
 
-            let has_hdr = spread.items.iter().any(|it| {
-                it.label == TOC_CONTINUATION_HEADER_LABEL && active.doc.page_of_item(it.id) == Some(pg)
-            });
+            let has_hdr = spread.items.iter().any(|it| it.label == TOC_CONTINUATION_HEADER_LABEL && active.doc.page_of_item(it.id) == Some(pg));
 
             let current_b = active.doc.item(fid).map(|it| it.bounds()).unwrap_or(designcraft_geom::Rect::ZERO);
             let needs_resize = (current_b.y0 - flow_top).abs() > 1.0;
@@ -4394,10 +4911,7 @@ fn sync_toc_continuation_headers(
         let _ = app.session.edit(|doc, _| {
             for p in &plans {
                 if p.needs_header {
-                    let para = designcraft_doc::ParaFormat {
-                        style: style_name.to_string(),
-                        ..Default::default()
-                    };
+                    let para = designcraft_doc::ParaFormat { style: style_name.to_string(), ..Default::default() };
                     if let Ok((hdr_id, _)) = doc.add_text_frame(p.spread_ref, p.header_rect, p.layer, &header_text, para) {
                         if let Some(it) = doc.item_mut(hdr_id) {
                             it.label = TOC_CONTINUATION_HEADER_LABEL.to_string();
@@ -4454,22 +4968,12 @@ fn page_margin_width(app: &DesignApp, page: usize) -> Result<f64, String> {
 /// Hanging indent of wrapped TOC entries for a layout.
 fn toc_hanging_indent(st: &PubgenState, layout: usize) -> f64 {
     let detected = compute_detected_prefix_width(st);
-    if layout == 1 {
-        detected.round().clamp(28.0, 60.0)
-    } else {
-        detected.round().clamp(48.0, 140.0)
-    }
+    if layout == 1 { detected.round().clamp(28.0, 60.0) } else { detected.round().clamp(48.0, 140.0) }
 }
 
 /// Generate (or regenerate) one table of contents on `page` and run the panel's post-process
 /// (type/number merging, title styles, continuation pages and headers).
-fn generate_toc(
-    app: &mut DesignApp,
-    st: &PubgenState,
-    page: usize,
-    plan: &TocPlan,
-    replace: bool,
-) -> Result<(u64, u64), String> {
+fn generate_toc(app: &mut DesignApp, st: &PubgenState, page: usize, plan: &TocPlan, replace: bool) -> Result<(u64, u64), String> {
     let width = page_margin_width(app, page)?;
     let hanging_indent = toc_hanging_indent(st, plan.layout);
 
@@ -4505,11 +5009,7 @@ pub fn execute_add_toc(app: &mut DesignApp, st: &mut PubgenState) -> Result<Stri
     let replace = toc_story_on_page(app, cur_page).is_some();
     let (count, final_pages_added) = generate_toc(app, st, cur_page, &plan, replace)?;
 
-    let cont_msg = if final_pages_added > 0 {
-        format!(" across {} pages", final_pages_added + 1)
-    } else {
-        String::new()
-    };
+    let cont_msg = if final_pages_added > 0 { format!(" across {} pages", final_pages_added + 1) } else { String::new() };
 
     let kind = TOC_KINDS.get(plan.kind()).copied().unwrap_or(TOC_KINDS[0]);
     Ok(format!("Added {kind} on Page {cur_label} ({count} entries{cont_msg})"))
@@ -4532,11 +5032,7 @@ pub fn execute_rebuild_toc(app: &mut DesignApp, st: &mut PubgenState) -> Result<
     let toc_label = app.session.page_label(cur_page);
     let (count, final_pages_added) = generate_toc(app, st, cur_page, &plan, true)?;
 
-    let cont_msg = if final_pages_added > 0 {
-        format!(" across {} pages", final_pages_added + 1)
-    } else {
-        String::new()
-    };
+    let cont_msg = if final_pages_added > 0 { format!(" across {} pages", final_pages_added + 1) } else { String::new() };
 
     Ok(format!("Rebuilt TOC on Page {toc_label} ({count} entries{cont_msg})"))
 }
@@ -4632,16 +5128,8 @@ pub fn execute_continue_numbering(app: &mut DesignApp, st: &mut PubgenState) -> 
     Ok(format!("Continued numbering on Page {page_num} (now '{new_label}'){toc_msg}"))
 }
 
-pub fn execute_page_from_rtf(
-    app: &mut DesignApp,
-    st: &mut PubgenState,
-    path: &str,
-) -> Result<String, String> {
-    let target_path = if path.trim().is_empty() {
-        st.rtf_path.trim().to_string()
-    } else {
-        path.trim().to_string()
-    };
+pub fn execute_page_from_rtf(app: &mut DesignApp, st: &mut PubgenState, path: &str) -> Result<String, String> {
+    let target_path = if path.trim().is_empty() { st.rtf_path.trim().to_string() } else { path.trim().to_string() };
     if target_path.is_empty() {
         return Err("No RTF file path specified".into());
     }
@@ -4650,12 +5138,8 @@ pub fn execute_page_from_rtf(
         return Err(format!("File not found: {target_path}"));
     }
 
-    let cur_page = app
-        .session
-        .active()
-        .and_then(|s| s.selection.page)
-        .or_else(|| crate::canvas::current_page(app))
-        .unwrap_or_else(|| target_page_index(app));
+    let cur_page =
+        app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app)).unwrap_or_else(|| target_page_index(app));
     let cur_label = app.session.page_label(cur_page);
 
     // If a text frame on the selected page is selected, place into that frame.
@@ -4664,12 +5148,10 @@ pub fn execute_page_from_rtf(
         let active = app.session.active().ok_or("No active document")?;
         active.selection.items.first().copied().filter(|&id| {
             active.doc.page_of_item(id) == Some(cur_page)
-                && active.doc.item(id).is_some_and(|it| {
-                    matches!(
-                        it.content,
-                        designcraft_doc::Content::Unassigned | designcraft_doc::Content::Text(_)
-                    )
-                })
+                && active
+                    .doc
+                    .item(id)
+                    .is_some_and(|it| matches!(it.content, designcraft_doc::Content::Unassigned | designcraft_doc::Content::Text(_)))
         })
     };
 
@@ -4699,16 +5181,9 @@ pub fn execute_page_from_rtf(
 
     let pages_added = res.get("pagesAdded").and_then(Value::as_u64).unwrap_or(0);
     let overset = res.get("overset").and_then(Value::as_bool).unwrap_or(false);
-    let filename = std::path::Path::new(&target_path)
-        .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-        .unwrap_or_else(|| target_path.clone());
+    let filename = std::path::Path::new(&target_path).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| target_path.clone());
 
-    let page_info = if pages_added > 0 {
-        format!(" across {} pages ({} added)", pages_added + 1, pages_added)
-    } else {
-        String::new()
-    };
+    let page_info = if pages_added > 0 { format!(" across {} pages ({} added)", pages_added + 1, pages_added) } else { String::new() };
     let overset_info = if overset { " (text still overset)" } else { "" };
 
     Ok(format!("Imported '{filename}' to Page {cur_label}{page_info}{overset_info}"))
@@ -4716,11 +5191,7 @@ pub fn execute_page_from_rtf(
 
 /// Page from Image: place an image on the selected page either as an image object fitted inside
 /// the page margins, or as a full-page background (page bounds, sent to the back).
-pub fn execute_page_from_image(
-    app: &mut DesignApp,
-    st: &mut PubgenState,
-    path: &str,
-) -> Result<String, String> {
+pub fn execute_page_from_image(app: &mut DesignApp, st: &mut PubgenState, path: &str) -> Result<String, String> {
     let target_path = if path.trim().is_empty() {
         st.image_path.trim().trim_matches('"').trim().to_string()
     } else {
@@ -4733,12 +5204,8 @@ pub fn execute_page_from_image(
         return Err(format!("File not found: {target_path}"));
     }
 
-    let cur_page = app
-        .session
-        .active()
-        .and_then(|s| s.selection.page)
-        .or_else(|| crate::canvas::current_page(app))
-        .unwrap_or_else(|| target_page_index(app));
+    let cur_page =
+        app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app)).unwrap_or_else(|| target_page_index(app));
     let cur_label = app.session.page_label(cur_page);
 
     // Image object fits inside the page margins; a page background covers the whole page.
@@ -4778,15 +5245,9 @@ pub fn execute_page_from_image(
     crate::canvas::go_to_page(app, cur_page);
     st.image_path = target_path.clone();
 
-    let filename = std::path::Path::new(&target_path)
-        .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-        .unwrap_or_else(|| target_path.clone());
-    let mode_desc = if st.image_as_background {
-        "page background (fitted proportionally to page, sent to back)"
-    } else {
-        "image object (fitted inside margins)"
-    };
+    let filename = std::path::Path::new(&target_path).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| target_path.clone());
+    let mode_desc =
+        if st.image_as_background { "page background (fitted proportionally to page, sent to back)" } else { "image object (fitted inside margins)" };
 
     Ok(format!("Placed '{filename}' as {mode_desc} on Page {cur_label}"))
 }
@@ -4810,10 +5271,7 @@ pub fn execute_excel_to_csvs(st: &mut PubgenState, path: &str) -> Result<String,
     st.generated_zip_name = pkg.zip_name.clone();
     st.generated_zip_bytes = pkg.zip_bytes;
 
-    let folder_name = std::path::Path::new(&pkg.parent_dir)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or(pkg.parent_dir);
+    let folder_name = std::path::Path::new(&pkg.parent_dir).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or(pkg.parent_dir);
     let count = pkg.table_count;
     let zip_name = pkg.zip_name;
     Ok(format!("Converted {count} sheets → catalog CSV + {count} table CSVs + {zip_name} in {folder_name} (loaded in Page & Table from CSV)"))
@@ -4878,10 +5336,7 @@ pub fn execute_download_csv_zip(app: &mut DesignApp, st: &mut PubgenState) -> Re
             st.generated_zip_bytes = bytes;
             if st.generated_zip_name.is_empty() {
                 let stem = if !st.card1_path.is_empty() {
-                    std::path::Path::new(&st.card1_path)
-                        .file_stem()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "pubgen".into())
+                    std::path::Path::new(&st.card1_path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "pubgen".into())
                 } else {
                     "pubgen_data".into()
                 };
@@ -4894,30 +5349,20 @@ pub fn execute_download_csv_zip(app: &mut DesignApp, st: &mut PubgenState) -> Re
         return Err("No CSV zip data generated".into());
     }
 
-    let zip_name = if st.generated_zip_name.is_empty() {
-        "pubgen_csvs.zip".to_string()
-    } else {
-        st.generated_zip_name.clone()
-    };
+    let zip_name = if st.generated_zip_name.is_empty() { "pubgen_csvs.zip".to_string() } else { st.generated_zip_name.clone() };
 
     // Deliver bytes via Web download or Desktop save dialog
     if let Some(download) = app.services.download.as_mut() {
-        download(&zip_name, &st.generated_zip_bytes)
-            .map_err(|e| format!("Could not download {zip_name}: {e}"))?;
+        download(&zip_name, &st.generated_zip_bytes).map_err(|e| format!("Could not download {zip_name}: {e}"))?;
         Ok(format!("Downloaded {zip_name}"))
     } else if let Some(pick_save) = app.services.pick_save.as_mut() {
         if let Some(save_path) = pick_save(&zip_name) {
             if let Some(w) = app.services.write.as_mut() {
-                w(&save_path, &st.generated_zip_bytes)
-                    .map_err(|e| format!("Could not save {save_path}: {e}"))?;
+                w(&save_path, &st.generated_zip_bytes).map_err(|e| format!("Could not save {save_path}: {e}"))?;
             } else {
-                std::fs::write(&save_path, &st.generated_zip_bytes)
-                    .map_err(|e| format!("Could not save {save_path}: {e}"))?;
+                std::fs::write(&save_path, &st.generated_zip_bytes).map_err(|e| format!("Could not save {save_path}: {e}"))?;
             }
-            let file_name = std::path::Path::new(&save_path)
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or(save_path);
+            let file_name = std::path::Path::new(&save_path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or(save_path);
             Ok(format!("Saved {file_name}"))
         } else {
             Ok("ZIP download cancelled".into())
@@ -4930,8 +5375,7 @@ pub fn execute_download_csv_zip(app: &mut DesignApp, st: &mut PubgenState) -> Re
             std::path::PathBuf::from(".")
         };
         let save_path = target_dir.join(&zip_name);
-        std::fs::write(&save_path, &st.generated_zip_bytes)
-            .map_err(|e| format!("Could not save {}: {e}", save_path.display()))?;
+        std::fs::write(&save_path, &st.generated_zip_bytes).map_err(|e| format!("Could not save {}: {e}", save_path.display()))?;
         Ok(format!("Saved {}", save_path.display()))
     }
 }
@@ -5019,10 +5463,7 @@ mod tests {
         assert_eq!(st1.card1_num_col, 1);
         assert_eq!(st1.card1_title_col, 2);
         assert_eq!(st1.card1_records.len(), 194);
-        assert_eq!(
-            st1.card1_records[0],
-            vec!["Tabel", "01.01.", "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006"]
-        );
+        assert_eq!(st1.card1_records[0], vec!["Tabel", "01.01.", "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006"]);
 
         let mut st2 = PubgenState::default();
         load_card2_csv(&mut st2, path);
@@ -5115,9 +5556,7 @@ mod tests {
 
         // 1. Generate pages with Card 1 (preset 0: 1 Row · 3 Columns)
         let st_card1 = PubgenState {
-            card1_records: vec![
-                vec!["Chapter".into(), "1".into(), "Introduction to Layout".into()],
-            ],
+            card1_records: vec![vec!["Chapter".into(), "1".into(), "Introduction to Layout".into()]],
             card1_headers: vec!["type".into(), "number".into(), "title".into()],
             card1_type_col: 0,
             card1_num_col: 1,
@@ -5134,11 +5573,7 @@ mod tests {
 
         // 2. Insert table with placement = 2 ("At page")
         let st_card2 = PubgenState {
-            card2_matrix: vec![
-                vec!["Item".into(), "Price".into()],
-                vec!["Widget A".into(), "$10".into()],
-                vec!["Widget B".into(), "$20".into()],
-            ],
+            card2_matrix: vec![vec!["Item".into(), "Price".into()], vec!["Widget A".into(), "$10".into()], vec!["Widget B".into(), "$20".into()]],
             card2_first_row_header: true,
             card2_placement: 2, // At page
             card2_style: 0,
@@ -5154,11 +5589,11 @@ mod tests {
         let margin = page.margin_rect();
 
         // Find the table frame (its story contains tables)
-        let table_item = spread.items.iter().find(|it| {
-            it.text_frame()
-                .and_then(|tf| active.doc.story(tf.story))
-                .is_some_and(|st| !st.tables.is_empty())
-        }).expect("Table item should exist on spread");
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|st| !st.tables.is_empty()))
+            .expect("Table item should exist on spread");
 
         // In preset 0, title row has row_y1 = margin.y0 + 80.0
         // The table frame should start at margin.y0 + 80.0 + 20.0 = margin.y0 + 100.0
@@ -5191,11 +5626,11 @@ mod tests {
         let active = app.session.active().unwrap();
         let spread = active.doc.spreads.first().unwrap();
 
-        let table_item = spread.items.iter().find(|it| {
-            it.text_frame()
-                .and_then(|tf| active.doc.story(tf.story))
-                .is_some_and(|s| !s.tables.is_empty())
-        }).expect("Table item should exist on spread");
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
 
         let tf = table_item.text_frame().unwrap();
         let story = active.doc.story(tf.story).unwrap();
@@ -5243,11 +5678,11 @@ mod tests {
         let active = app.session.active().unwrap();
         let spread = active.doc.spreads.first().unwrap();
 
-        let table_item = spread.items.iter().find(|it| {
-            it.text_frame()
-                .and_then(|tf| active.doc.story(tf.story))
-                .is_some_and(|s| !s.tables.is_empty())
-        }).expect("Table item should exist on spread");
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
 
         let tf = table_item.text_frame().unwrap();
         let story = active.doc.story(tf.story).unwrap();
@@ -5317,11 +5752,11 @@ mod tests {
         let active = app.session.active().unwrap();
         let spread = active.doc.spreads.first().unwrap();
 
-        let table_item = spread.items.iter().find(|it| {
-            it.text_frame()
-                .and_then(|tf| active.doc.story(tf.story))
-                .is_some_and(|s| !s.tables.is_empty())
-        }).expect("Table item should exist on spread");
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
 
         let tf = table_item.text_frame().unwrap();
         let story = active.doc.story(tf.story).unwrap();
@@ -5376,11 +5811,11 @@ mod tests {
         let active = app.session.active().unwrap();
         let spread = active.doc.spreads.first().unwrap();
 
-        let table_item = spread.items.iter().find(|it| {
-            it.text_frame()
-                .and_then(|tf| active.doc.story(tf.story))
-                .is_some_and(|s| !s.tables.is_empty())
-        }).expect("Table item should exist on spread");
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
 
         let tf = table_item.text_frame().unwrap();
         let story = active.doc.story(tf.story).unwrap();
@@ -5468,11 +5903,11 @@ mod tests {
         let active = app.session.active().unwrap();
         let spread = active.doc.spreads.first().unwrap();
 
-        let table_item = spread.items.iter().find(|it| {
-            it.text_frame()
-                .and_then(|tf| active.doc.story(tf.story))
-                .is_some_and(|s| !s.tables.is_empty())
-        }).expect("Table item should exist on spread");
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
 
         let tf = table_item.text_frame().unwrap();
         let story = active.doc.story(tf.story).unwrap();
@@ -5541,11 +5976,11 @@ mod tests {
         let active = app.session.active().unwrap();
         let spread = active.doc.spreads.first().unwrap();
 
-        let table_item = spread.items.iter().find(|it| {
-            it.text_frame()
-                .and_then(|tf| active.doc.story(tf.story))
-                .is_some_and(|s| !s.tables.is_empty())
-        }).expect("Table item should exist on spread");
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
 
         let tf = table_item.text_frame().unwrap();
         let story = active.doc.story(tf.story).unwrap();
@@ -5669,11 +6104,11 @@ mod tests {
         let active = app.session.active().unwrap();
         let spread = active.doc.spreads.first().unwrap();
 
-        let table_item = spread.items.iter().find(|it| {
-            it.text_frame()
-                .and_then(|tf| active.doc.story(tf.story))
-                .is_some_and(|s| !s.tables.is_empty())
-        }).expect("Table item should exist on spread");
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
 
         let tf = table_item.text_frame().unwrap();
         let story = active.doc.story(tf.story).unwrap();
@@ -5715,16 +6150,10 @@ mod tests {
         ];
         assert_eq!(detect_footnote_row(&rows), Some("Sources: Karawang Region Government Office".to_string()));
 
-        let rows_normal = vec![
-            vec!["Header 1".into(), "Header 2".into()],
-            vec!["Data 1".into(), "Data 2".into()],
-        ];
+        let rows_normal = vec![vec!["Header 1".into(), "Header 2".into()], vec!["Data 1".into(), "Data 2".into()]];
         assert_eq!(detect_footnote_row(&rows_normal), None);
 
-        let rows_single_col = vec![
-            vec!["Single 1".into()],
-            vec!["Single 2".into()],
-        ];
+        let rows_single_col = vec![vec!["Single 1".into()], vec!["Single 2".into()]];
         assert_eq!(detect_footnote_row(&rows_single_col), None);
     }
 
@@ -5755,11 +6184,11 @@ mod tests {
         let spread = active.doc.spreads.first().unwrap();
 
         // 1. Verify table exists and has 4 rows (1 header + 2 data + 1 total) - NOT 5 rows!
-        let table_item = spread.items.iter().find(|it| {
-            it.text_frame()
-                .and_then(|tf| active.doc.story(tf.story))
-                .is_some_and(|s| !s.tables.is_empty())
-        }).expect("Table item should exist on spread");
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
 
         let tf = table_item.text_frame().unwrap();
         let story = active.doc.story(tf.story).unwrap();
@@ -5782,14 +6211,18 @@ mod tests {
         assert_eq!(table.cell(3, 0).unwrap().strokes[2].weight, 1.0);
 
         // 2. Verify normal text box below table was created with footnote text
-        let fn_item = spread.items.iter().find(|it| {
-            if it.id == table_item.id {
-                return false;
-            }
-            it.text_frame()
-                .and_then(|tf| active.doc.story(tf.story))
-                .is_some_and(|s| s.text.contains("Sources: Karawang Region Government Office"))
-        }).expect("Footnote text frame should exist on spread");
+        let fn_item = spread
+            .items
+            .iter()
+            .find(|it| {
+                if it.id == table_item.id {
+                    return false;
+                }
+                it.text_frame()
+                    .and_then(|tf| active.doc.story(tf.story))
+                    .is_some_and(|s| s.text.contains("Sources: Karawang Region Government Office"))
+            })
+            .expect("Footnote text frame should exist on spread");
 
         // Footnote frame is positioned below table frame
         assert!(fn_item.bounds().y0 >= table_item.bounds().y1);
@@ -5821,11 +6254,11 @@ mod tests {
         let active = app.session.active().unwrap();
         let spread = active.doc.spreads.first().unwrap();
 
-        let table_item = spread.items.iter().find(|it| {
-            it.text_frame()
-                .and_then(|tf| active.doc.story(tf.story))
-                .is_some_and(|s| !s.tables.is_empty())
-        }).expect("Table item should exist on spread");
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
 
         let tf = table_item.text_frame().unwrap();
         let story = active.doc.story(tf.story).unwrap();
@@ -5846,14 +6279,18 @@ mod tests {
         assert_eq!(table.cell(9, 0).unwrap().strokes[2].weight, 1.0);
 
         // Footnote frame exists below table
-        let fn_item = spread.items.iter().find(|it| {
-            if it.id == table_item.id {
-                return false;
-            }
-            it.text_frame()
-                .and_then(|tf| active.doc.story(tf.story))
-                .is_some_and(|s| s.text.contains("Sources: Karawang Region Government Office"))
-        }).expect("Footnote text frame should exist on spread");
+        let fn_item = spread
+            .items
+            .iter()
+            .find(|it| {
+                if it.id == table_item.id {
+                    return false;
+                }
+                it.text_frame()
+                    .and_then(|tf| active.doc.story(tf.story))
+                    .is_some_and(|s| s.text.contains("Sources: Karawang Region Government Office"))
+            })
+            .expect("Footnote text frame should exist on spread");
 
         assert!(fn_item.bounds().y0 >= table_item.bounds().y1);
     }
@@ -5897,11 +6334,11 @@ mod tests {
 
         let active = app.session.active().unwrap();
         let spread = active.doc.spreads.last().unwrap();
-        let table_item = spread.items.iter().find(|it| {
-            it.text_frame()
-                .and_then(|tf| active.doc.story(tf.story))
-                .is_some_and(|s| !s.tables.is_empty())
-        }).expect("Table item should exist on spread");
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
 
         let tf = table_item.text_frame().unwrap();
         let story = active.doc.story(tf.story).unwrap();
@@ -5985,11 +6422,11 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let active = app.session.active().unwrap();
         let spread = active.doc.spreads.first().unwrap();
 
-        let table_item = spread.items.iter().find(|it| {
-            it.text_frame()
-                .and_then(|tf| active.doc.story(tf.story))
-                .is_some_and(|s| !s.tables.is_empty())
-        }).expect("Table item should exist on spread");
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
 
         let tf = table_item.text_frame().unwrap();
         let story = active.doc.story(tf.story).unwrap();
@@ -6033,7 +6470,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
                 vec!["Penyakit A".into(), "40".into()],
                 vec!["Penyakit B".into(), "60".into()],
                 vec!["Jumlah Subtotal".into(), "100".into()], // Condition row 2 (intermediate)
-                vec!["Tahun 2006".into(), "150".into()], // Condition row 3 (intermediate)
+                vec!["Tahun 2006".into(), "150".into()],      // Condition row 3 (intermediate)
                 vec!["Penyakit A".into(), "70".into()],
                 vec!["Jumlah Total".into(), "250".into()], // Condition row 4 (last row)
             ],
@@ -6051,11 +6488,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         let active = app.session.active().unwrap();
         let spread = active.doc.spreads.first().unwrap();
-        let table_item = spread.items.iter().find(|it| {
-            it.text_frame()
-                .and_then(|tf| active.doc.story(tf.story))
-                .is_some_and(|s| !s.tables.is_empty())
-        }).unwrap();
+        let table_item =
+            spread.items.iter().find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty())).unwrap();
 
         let tf = table_item.text_frame().unwrap();
         let story = active.doc.story(tf.story).unwrap();
@@ -6143,13 +6577,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         // One combined paragraph per record, not three separate frames.
         let active = app.session.active().unwrap();
-        let mut lines: Vec<&str> = active
-            .doc
-            .stories
-            .values()
-            .filter(|s| s.paras.first().is_some_and(|p| p.style == "TOC Entry"))
-            .map(|s| s.text.trim())
-            .collect();
+        let mut lines: Vec<&str> =
+            active.doc.stories.values().filter(|s| s.paras.first().is_some_and(|p| p.style == "TOC Entry")).map(|s| s.text.trim()).collect();
         lines.sort_unstable();
         assert_eq!(lines, ["Grafik 3.1. Piramida Penduduk", "Tabel 01.01. Jarak Antar Kecamatan"], "one styled paragraph per record");
     }
@@ -6266,10 +6695,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             // 2nd textbox contains: "02.01" (correct value)
             assert_eq!(s2.text.trim(), "02.01");
             // 3rd textbox contains ONLY title, NOT including type and number!
-            assert_eq!(
-                s3.text.trim(),
-                "Jumlah Rukun Warga (RW) dan Rukun Tetangga (RT) Menurut Desa/Kelurahan di Kecamatan Karawang Timur, 2025"
-            );
+            assert_eq!(s3.text.trim(), "Jumlah Rukun Warga (RW) dan Rukun Tetangga (RT) Menurut Desa/Kelurahan di Kecamatan Karawang Timur, 2025");
         }
 
         // When Add TOC is executed, verify the generated TOC entry merges type + number + title:
@@ -6281,7 +6707,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let toc_story = active.doc.story(active.doc.tocs.last().unwrap().story).unwrap();
         let clean_text = toc_story.text.replace(designcraft_doc::story::FORCED_LINE_BREAK, " ");
         assert!(
-            clean_text.contains("Tabel 02.01 Jumlah Rukun Warga (RW) dan Rukun Tetangga (RT) Menurut Desa/Kelurahan di Kecamatan Karawang Timur, 2025"),
+            clean_text
+                .contains("Tabel 02.01 Jumlah Rukun Warga (RW) dan Rukun Tetangga (RT) Menurut Desa/Kelurahan di Kecamatan Karawang Timur, 2025"),
             "TOC should contain merged type + number + title: {}",
             toc_story.text
         );
@@ -6296,16 +6723,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         // Tabel;01.01.;Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006
         let mut st = PubgenState {
             card1_records: vec![
-                vec![
-                    "Tabel".into(),
-                    "01.01.".into(),
-                    "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006".into(),
-                ],
-                vec![
-                    "Tabel".into(),
-                    "01.02.".into(),
-                    "Keadaan Curah Hujan Tiap Bulan menurut Kecamatan (mm), 2006".into(),
-                ],
+                vec!["Tabel".into(), "01.01.".into(), "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006".into()],
+                vec!["Tabel".into(), "01.02.".into(), "Keadaan Curah Hujan Tiap Bulan menurut Kecamatan (mm), 2006".into()],
             ],
             card1_type_col: 0,
             card1_num_col: 1,
@@ -6346,11 +6765,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         app.run("file.new", json!({})).unwrap();
 
         let mut st = PubgenState {
-            card1_records: vec![vec![
-                "Tabel".into(),
-                "01.01.".into(),
-                "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006".into(),
-            ]],
+            card1_records: vec![vec!["Tabel".into(), "01.01.".into(), "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006".into()]],
             card1_type_col: 0,
             card1_num_col: 1,
             card1_title_col: 2,
@@ -6381,11 +6796,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         app.run("file.new", json!({})).unwrap();
 
         let st = PubgenState {
-            card1_records: vec![vec![
-                "Tabel".into(),
-                "01.01.".into(),
-                "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006".into(),
-            ]],
+            card1_records: vec![vec!["Tabel".into(), "01.01.".into(), "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006".into()]],
             card1_type_col: 0,
             card1_num_col: 1,
             card1_title_col: 2,
@@ -6398,11 +6809,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         execute_generate_pages(&mut app, &st).unwrap();
 
         // Now simulate empty card1_records (e.g. session without CSV in memory)
-        let mut st_empty = PubgenState {
-            card1_records: Vec::new(),
-            toc_style: "TOC Entry".into(),
-            ..Default::default()
-        };
+        let mut st_empty = PubgenState { card1_records: Vec::new(), toc_style: "TOC Entry".into(), ..Default::default() };
 
         app.run("layout.pages.insert", json!({"count": 1})).unwrap();
         let res = execute_add_toc(&mut app, &mut st_empty);
@@ -6424,11 +6831,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         app.run("file.new", json!({})).unwrap();
 
         let mut st = PubgenState {
-            card1_records: vec![vec![
-                "Tabel".into(),
-                "01.01.".into(),
-                "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006".into(),
-            ]],
+            card1_records: vec![vec!["Tabel".into(), "01.01.".into(), "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006".into()]],
             card1_type_col: 0,
             card1_num_col: 1,
             card1_title_col: 2,
@@ -6462,14 +6865,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let text = &active.doc.story(toc.story).unwrap().text;
 
         // Must NOT contain footnote text
-        assert!(
-            !text.to_lowercase().contains("sources"),
-            "TOC must not incorporate footnote/source text: {text}"
-        );
-        assert!(
-            text.contains("Tabel 01.01. Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006"),
-            "TOC must contain clean entry: {text}"
-        );
+        assert!(!text.to_lowercase().contains("sources"), "TOC must not incorporate footnote/source text: {text}");
+        assert!(text.contains("Tabel 01.01. Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006"), "TOC must contain clean entry: {text}");
     }
 
     #[test]
@@ -6478,15 +6875,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         app.run("file.new", json!({})).unwrap();
 
         // 80 entries - definitely cannot fit in 1 page (typical page holds ~35 entries)
-        let records: Vec<Vec<String>> = (1..=80)
-            .map(|i| {
-                vec![
-                    "Tabel".into(),
-                    format!("01.{i:02}."),
-                    format!("Dataset Observation Record Number {i} in Region"),
-                ]
-            })
-            .collect();
+        let records: Vec<Vec<String>> =
+            (1..=80).map(|i| vec!["Tabel".into(), format!("01.{i:02}."), format!("Dataset Observation Record Number {i} in Region")]).collect();
 
         let mut st = PubgenState {
             card1_records: records,
@@ -6541,10 +6931,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         // 2. Long title (Grafik 4.6. from user request) wraps early with \u{2028}
         let long = "Grafik 4.6. Banyaknya Tenaga Medis/Dokter Menurut Keahlian di Kabupaten Karawang, 2006";
         let wrapped_long = wrap_toc_title(long, width, hanging, Some("44"));
-        assert!(
-            wrapped_long.contains(designcraft_doc::story::FORCED_LINE_BREAK),
-            "Title should be wrapped with FORCED_LINE_BREAK"
-        );
+        assert!(wrapped_long.contains(designcraft_doc::story::FORCED_LINE_BREAK), "Title should be wrapped with FORCED_LINE_BREAK");
         let parts: Vec<&str> = wrapped_long.split(designcraft_doc::story::FORCED_LINE_BREAK).collect();
         assert_eq!(parts.len(), 2);
         assert!(parts[0].starts_with("Grafik 4.6. Banyaknya"));
@@ -6560,11 +6947,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         app.run("file.new", json!({})).unwrap();
 
         let records = vec![
-            vec![
-                "Grafik".into(),
-                "4.6.".into(),
-                "Banyaknya Tenaga Medis/Dokter Menurut Keahlian di Kabupaten Karawang, 2006".into(),
-            ],
+            vec!["Grafik".into(), "4.6.".into(), "Banyaknya Tenaga Medis/Dokter Menurut Keahlian di Kabupaten Karawang, 2006".into()],
             vec![
                 "Tabel".into(),
                 "04.01.".into(),
@@ -6636,15 +7019,9 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         // Headers and records keep extra columns (e.g. column 3 for 'file')
         assert_eq!(st.card1_headers.len(), 5);
         assert_eq!(st.card1_records.len(), 2);
-        assert_eq!(
-            st.card1_records[0].get(0..3).unwrap(),
-            &["Tabel", "01.01.", "Jarak Antar Kecamatan"]
-        );
+        assert_eq!(st.card1_records[0].get(0..3).unwrap(), &["Tabel", "01.01.", "Jarak Antar Kecamatan"]);
         assert_eq!(st.card1_records[0].get(3).map(String::as_str), Some("data1.csv"));
-        assert_eq!(
-            st.card1_records[1].get(0..3).unwrap(),
-            &["Grafik", "02.01.", "Distribusi Penduduk"]
-        );
+        assert_eq!(st.card1_records[1].get(0..3).unwrap(), &["Grafik", "02.01.", "Distribusi Penduduk"]);
         assert_eq!(st.card1_records[1].get(3).map(String::as_str), Some("data2.csv"));
 
         let _ = std::fs::remove_file(csv_path);
@@ -6739,10 +7116,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         }));
 
         let mut st = PubgenState {
-            generated_csv_files: vec![
-                ("cat.csv".into(), "type,number,title\nT,1,Test\n".into()),
-                ("tbl.csv".into(), "A,B\n1,2\n".into()),
-            ],
+            generated_csv_files: vec![("cat.csv".into(), "type,number,title\nT,1,Test\n".into()), ("tbl.csv".into(), "A,B\n1,2\n".into())],
             generated_zip_name: "test_export.zip".into(),
             ..Default::default()
         };
@@ -6854,9 +7228,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         app.run("file.new", json!({})).unwrap();
 
         let mut st = PubgenState {
-            card1_records: vec![
-                vec!["Tabel".into(), "01.01.".into(), "Data Demografi".into()],
-            ],
+            card1_records: vec![vec!["Tabel".into(), "01.01.".into(), "Data Demografi".into()]],
             card1_type_col: 0,
             card1_num_col: 1,
             card1_title_col: 2,
@@ -6895,9 +7267,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         app.run("file.new", json!({})).unwrap();
 
         let mut st = PubgenState {
-            card1_records: vec![
-                vec!["Bab".into(), "1".into(), "Pendahuluan".into()],
-            ],
+            card1_records: vec![vec!["Bab".into(), "1".into(), "Pendahuluan".into()]],
             card1_type_col: 0,
             card1_num_col: 1,
             card1_title_col: 2,
@@ -6979,14 +7349,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(text.contains("Tabel\thalaman"), "Should contain TablePage header line: {text}");
 
         // 2. Entries must use standalone number column: {num}\t{title}\t{page}
-        assert!(
-            text.contains("02.01\tJumlah Rukun Warga (RW)\t2"),
-            "Entry 1 must have standalone number column: {text}"
-        );
-        assert!(
-            text.contains("02.02\tJumlah Pegawai Negeri Sipil\t3"),
-            "Entry 2 must have standalone number column: {text}"
-        );
+        assert!(text.contains("02.01\tJumlah Rukun Warga (RW)\t2"), "Entry 1 must have standalone number column: {text}");
+        assert!(text.contains("02.02\tJumlah Pegawai Negeri Sipil\t3"), "Entry 2 must have standalone number column: {text}");
 
         // 3. Verify paragraph styles applied
         assert!(active.doc.styles.para("TOC TablePage Header").is_some());
@@ -7027,16 +7391,10 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(text.starts_with("Tabel\thalaman"), "Should start with header when title is empty: {text}");
 
         // 2. Section header 4.3 must NOT have page number or leader dots
-        assert!(
-            text.contains("4.3\tPerumahan dan Lingkungan\n"),
-            "Section header must not have a page number: {text}"
-        );
+        assert!(text.contains("4.3\tPerumahan dan Lingkungan\n"), "Section header must not have a page number: {text}");
 
         // 3. Table entry 4.3.1 must have page number
-        assert!(
-            text.contains("4.3.1\tBanyaknya Desa Menurut Penerangan Jalan\t3"),
-            "Table entry must have page number: {text}"
-        );
+        assert!(text.contains("4.3.1\tBanyaknya Desa Menurut Penerangan Jalan\t3"), "Table entry must have page number: {text}");
 
         // 4. Styles
         assert!(active.doc.styles.para("TOC Section Header").is_some());
@@ -7048,15 +7406,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         app.run("file.new", json!({})).unwrap();
 
         // 80 records so TOC spans across multiple pages (at least 2 pages)
-        let records: Vec<Vec<String>> = (1..=80)
-            .map(|i| {
-                vec![
-                    "Tabel".into(),
-                    format!("01.{i:02}."),
-                    format!("Dataset Observation Record Number {i} in Region"),
-                ]
-            })
-            .collect();
+        let records: Vec<Vec<String>> =
+            (1..=80).map(|i| vec!["Tabel".into(), format!("01.{i:02}."), format!("Dataset Observation Record Number {i} in Region")]).collect();
 
         let mut st = PubgenState {
             card1_records: records,
@@ -7135,11 +7486,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
                 }
             }
         }
-        assert_eq!(
-            cont_count,
-            cont_headers_after.len(),
-            "Rebuild should not duplicate continuation headers"
-        );
+        assert_eq!(cont_count, cont_headers_after.len(), "Rebuild should not duplicate continuation headers");
     }
 
     #[test]
@@ -7159,12 +7506,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(msg.contains("ulasan_bab_1.rtf"), "Success message should contain filename: {msg}");
 
         let active = app.session.active().unwrap();
-        let story = active
-            .doc
-            .stories
-            .values()
-            .find(|s| s.text.contains("Dalam bab ini membahas"))
-            .expect("Imported story must be present");
+        let story = active.doc.stories.values().find(|s| s.text.contains("Dalam bab ini membahas")).expect("Imported story must be present");
 
         // Verify numbered list item (Pusat Pemukiman Padat)
         let num_idx = story.text.find("Pusat Pemukiman Padat").expect("must contain Pusat Pemukiman Padat");
@@ -7215,7 +7557,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         // Verify threaded text frames exist across the new pages
         let active = app.session.active().unwrap();
-        let text_frames_count = active.doc.spreads.iter().flat_map(|sp| &sp.items).filter(|it| matches!(it.content, designcraft_doc::Content::Text(_))).count();
+        let text_frames_count =
+            active.doc.spreads.iter().flat_map(|sp| &sp.items).filter(|it| matches!(it.content, designcraft_doc::Content::Text(_))).count();
         assert!(text_frames_count >= final_pages, "Each page should have a threaded text frame");
     }
 
@@ -7225,14 +7568,16 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         app.run("file.new", json!({})).unwrap();
 
         // Create an empty text frame on page 0
-        let add_res = app.run(
-            "frame.create",
-            json!({
-                "page": 1,
-                "rect": [72, 72, 300, 400],
-                "content": "text"
-            }),
-        ).unwrap();
+        let add_res = app
+            .run(
+                "frame.create",
+                json!({
+                    "page": 1,
+                    "rect": [72, 72, 300, 400],
+                    "content": "text"
+                }),
+            )
+            .unwrap();
         let fid = add_res.get("id").unwrap().as_u64().unwrap();
 
         // Select the text frame
@@ -7292,9 +7637,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let active = app.session.active().unwrap();
         let (si, pi) = active.doc.page_loc(0).unwrap();
         let expected = active.doc.spreads[si].pages[pi].margin_rect();
-        let frame = active
-            .doc
-            .spreads[si]
+        let frame = active.doc.spreads[si]
             .items
             .iter()
             .find(|it| matches!(it.content, designcraft_doc::Content::Graphic(_)))
@@ -7313,9 +7656,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         app.run("file.new", json!({})).unwrap();
 
         // Existing content on the page: the background must end up behind it.
-        let text = app
-            .run("frame.create", json!({ "rect": [72, 72, 300, 400], "content": "text", "text": "Hello" }))
-            .unwrap();
+        let text = app.run("frame.create", json!({ "rect": [72, 72, 300, 400], "content": "text", "text": "Hello" })).unwrap();
         let text_id = text.get("id").and_then(Value::as_u64).unwrap();
 
         let mut st = PubgenState::default();
@@ -7328,21 +7669,13 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let page = &active.doc.spreads[si].pages[pi];
         let expected = page.bounds();
 
-        let bg_index = active
-            .doc
-            .spreads[si]
+        let bg_index = active.doc.spreads[si]
             .items
             .iter()
             .position(|it| matches!(it.content, designcraft_doc::Content::Graphic(_)))
             .unwrap_or_else(|| panic!("expected a background graphic frame"));
         assert_eq!(bg_index, 0, "the background frame must be at the back of the spread");
-        let text_index = active
-            .doc
-            .spreads[si]
-            .items
-            .iter()
-            .position(|it| it.id.0 == text_id)
-            .unwrap();
+        let text_index = active.doc.spreads[si].items.iter().position(|it| it.id.0 == text_id).unwrap();
         assert!(text_index > bg_index, "existing items stay above the background");
 
         let b = active.doc.spreads[si].items[bg_index].bounds();
@@ -7388,9 +7721,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let active = app.session.active().unwrap();
         let (si, pi) = active.doc.page_loc(0).unwrap();
         let page_bounds = active.doc.spreads[si].pages[pi].bounds();
-        let it = active
-            .doc
-            .spreads[si]
+        let it = active.doc.spreads[si]
             .items
             .iter()
             .find(|it| matches!(it.content, designcraft_doc::Content::Graphic(_)))
@@ -7413,7 +7744,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
     #[test]
     fn test_execute_generate_cover_text_formatting() {
-        for style in 0..=4 {
+        for style in 0..=5 {
             let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
             app.run("file.new", json!({})).unwrap();
             let mut st = PubgenState::default();
@@ -7431,7 +7762,13 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
                     let fam = run.format.over.font_family.as_deref().unwrap_or_default();
                     let st = run.format.over.font_style.as_deref().unwrap_or_default();
                     assert!(fam == "Arial" || fam == "Arial Black", "Expected Arial family, got {fam}");
-                    if story.text.contains("KARAWANG TIMUR") || story.text == "2026" {
+                    if story.text.contains("KARAWANG TIMUR")
+                        || story.text.contains("KARAWANG\nTIMUR")
+                        || story.text == "2026"
+                        || story.text == "20"
+                        || story.text == "26"
+                        || story.text == "DESIGN"
+                    {
                         assert_eq!(fam, "Arial Black", "Title and Year must use Arial Black in story '{}'", story.text);
                     }
                     if story.text.contains("BADAN PUSAT STATISTIK") {
@@ -7609,29 +7946,22 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
         let mut ready = false;
-        let mut harness = egui_kittest::Harness::builder()
-            .with_size(vec2(520.0, 2400.0))
-            .wgpu()
-            .build_ui_state(
-                move |ui, app: &mut DesignApp| {
-                    if !ready {
-                        crate::theme::install_fonts(ui.ctx(), "en");
-                        crate::theme::apply(ui.ctx(), &Tokens::for_brightness(crate::theme::Brightness::MediumDark));
-                        let st = PubgenState { toc_kind: 1, toc_title: "Daftar Table".into(), ..Default::default() };
-                        ui.data_mut(|d| d.insert_temp(egui::Id::new(PANEL_ID), st));
-                        ready = true;
-                        return;
-                    }
-                    show(app, ui);
-                },
-                app,
-            );
+        let mut harness = egui_kittest::Harness::builder().with_size(vec2(520.0, 2400.0)).wgpu().build_ui_state(
+            move |ui, app: &mut DesignApp| {
+                if !ready {
+                    crate::theme::install_fonts(ui.ctx(), "en");
+                    crate::theme::apply(ui.ctx(), &Tokens::for_brightness(crate::theme::Brightness::MediumDark));
+                    let st = PubgenState { toc_kind: 1, toc_title: "Daftar Table".into(), ..Default::default() };
+                    ui.data_mut(|d| d.insert_temp(egui::Id::new(PANEL_ID), st));
+                    ready = true;
+                    return;
+                }
+                show(app, ui);
+            },
+            app,
+        );
         harness.input_mut().max_texture_side = Some(8192);
         harness.run_steps(4);
         harness.render().unwrap().save(directory.join("pubgen-toc-table.png")).unwrap();
     }
 }
-
-
-
-
