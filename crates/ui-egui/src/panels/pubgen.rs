@@ -5,7 +5,7 @@
 //!    multi-page layouts using geometric templates.
 //! 2. "Table from CSV": Ingests tabular CSV matrix data and constructs native styled tables.
 
-use egui::{Color32, RichText, Sense, Ui, vec2};
+use egui::{Color32, RichText, Sense, Ui, pos2, vec2};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -233,6 +233,10 @@ pub struct PubgenState {
     #[serde(default = "default_true")]
     pub excel_auto_generate: bool,
 
+    /// Status message for header actions (e.g. Set Page Margin)
+    #[serde(default)]
+    pub header_status: Option<(String, bool)>,
+
     // Card: Publication Cover (before Quick Actions)
     #[serde(default)]
     pub cover_style: usize,
@@ -333,7 +337,59 @@ impl Default for PubgenState {
             cover_agency_text: default_cover_agency_text(),
             cover_status: None,
             excel_auto_generate: true,
+            header_status: None,
         }
+    }
+}
+
+/// Sets document margins across all spreads and parents:
+/// - Top: 20.20 mm
+/// - Bottom: 20.00 mm
+/// - Inside: 19.00 mm
+/// - Outside: 15.00 mm
+pub fn execute_set_page_margins(app: &mut DesignApp) -> Result<String, String> {
+    const PT_PER_MM: f64 = 72.0 / 25.4;
+    let top_pt = 20.20 * PT_PER_MM;
+    let bottom_pt = 20.0 * PT_PER_MM;
+    let inside_pt = 19.0 * PT_PER_MM;
+    let outside_pt = 15.0 * PT_PER_MM;
+
+    app.run(
+        "layout.documentSetup",
+        json!({
+            "margins": {
+                "top": top_pt,
+                "bottom": bottom_pt,
+                "inside": inside_pt,
+                "outside": outside_pt
+            }
+        }),
+    )?;
+
+    Ok("Page margins set: Top 20.20 mm, Bottom 20 mm, Inside 19 mm, Outside 15 mm".to_string())
+}
+
+fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    ui.horizontal(|ui| {
+        ui.set_min_height(33.0);
+        let g = crate::rtl::plain(ui.ctx(), "Pubgen", crate::theme::semibold(11.5), t.text_strong);
+        let (r, _) = ui.allocate_exact_size(vec2(g.size().x + 10.0, 33.0), Sense::hover());
+        ui.painter().galley(pos2(r.min.x, r.center().y - g.size().y / 2.0), g, t.text_strong);
+
+        let tip = "Set document margins:\nTop: 20.20 mm\nBottom: 20 mm\nInside: 19 mm\nOutside: 15 mm";
+        let resp = outline_button(ui, "Set Page Margin", 120.0).on_hover_text(tip);
+        if resp.clicked() {
+            match execute_set_page_margins(app) {
+                Ok(msg) => st.header_status = Some((msg, true)),
+                Err(err) => st.header_status = Some((err, false)),
+            }
+        }
+    });
+    rule(ui);
+
+    if let Some((msg, ok)) = &st.header_status {
+        let color = if *ok { Color32::from_rgb(80, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
+        ui.add(egui::Label::new(RichText::new(msg).size(10.5).color(color)).wrap());
     }
 }
 
@@ -349,10 +405,10 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
     ui.set_max_width(max_w);
     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
     ui.spacing_mut().item_spacing = vec2(6.0, 5.0);
-    selection_band(ui, "Pubgen");
-
     let state_id = egui::Id::new(PANEL_ID);
     let mut st: PubgenState = ui.data(|d| d.get_temp(state_id)).unwrap_or_default();
+
+    pubgen_header_band(app, ui, &mut st, &t);
 
     // Card 1: Page from CSV
     card1_ui(app, ui, &mut st, &t);
@@ -383,10 +439,10 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
 
     // File picker row
     ui.horizontal(|ui| {
-        if outline_button(ui, crate::i18n::tr(&app.ui.language, "Browse…"), 68.0).clicked() {
-            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge")) {
-                load_card1_csv(st, &path);
-            }
+        if outline_button(ui, crate::i18n::tr(&app.ui.language, "Browse…"), 68.0).clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
+        {
+            load_card1_csv(st, &path);
         }
         let (file_label, color) = if st.card1_path.is_empty() {
             (crate::i18n::tr(&app.ui.language, "No file selected").to_string(), t.text_dim)
@@ -513,21 +569,21 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
                 }
             });
         });
-        if let Some(idx) = new_selection {
-            if let Some(p) = st.card2_sheet_tables.get(idx).cloned() {
-                st.card2_sheet_idx = idx;
-                st.card2_path = p.clone();
-                load_card2_csv(st, &p);
-            }
+        if let Some(idx) = new_selection
+            && let Some(p) = st.card2_sheet_tables.get(idx).cloned()
+        {
+            st.card2_sheet_idx = idx;
+            st.card2_path = p.clone();
+            load_card2_csv(st, &p);
         }
     }
 
     // File picker row
     ui.horizontal(|ui| {
-        if outline_button(ui, crate::i18n::tr(&app.ui.language, "Browse…"), 68.0).clicked() {
-            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge")) {
-                load_card2_csv(st, &path);
-            }
+        if outline_button(ui, crate::i18n::tr(&app.ui.language, "Browse…"), 68.0).clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
+        {
+            load_card2_csv(st, &path);
         }
         let (file_label, color) = if st.card2_path.is_empty() {
             (crate::i18n::tr(&app.ui.language, "No file selected").to_string(), t.text_dim)
@@ -556,13 +612,13 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
     ui.checkbox(&mut st.card2_table_footer, "Table footer (last row)");
     ui.checkbox(&mut st.card2_row_conditions, "Condition rules (Jumlah, Tahun, Kab, Kec…)");
 
-    if !st.card2_matrix.is_empty() {
-        if let Some(d) = st.card2_delim {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Delimiter:").size(10.5).color(t.text_dim));
-                badge(ui, t, "delim", delimiter_name(d));
-            });
-        }
+    if !st.card2_matrix.is_empty()
+        && let Some(d) = st.card2_delim
+    {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Delimiter:").size(10.5).color(t.text_dim));
+            badge(ui, t, "delim", delimiter_name(d));
+        });
     }
 
     if st.card2_first_row_header {
@@ -1067,7 +1123,7 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
             for (idx, s) in styles.iter().enumerate() {
                 let resp = ui.selectable_value(&mut st.cover_style, idx, *s);
                 resp.on_hover_ui(|ui| {
-                    show_style_thumbnail_tooltip(ui, idx, *s, t);
+                    show_style_thumbnail_tooltip(ui, idx, s, t);
                 });
             }
         });
@@ -1260,10 +1316,10 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
                 .on_hover_text("Circular center photo");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
-                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
-                        st.cover_image_skyline = path;
-                    }
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_skyline = path;
                 }
             });
         }
@@ -1277,10 +1333,10 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                     egui::TextEdit::singleline(&mut st.cover_image_landscape).hint_text("outputs/city_landscape.jpg"),
                 )
                 .on_hover_text("Diagonal polygon background landscape photo");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
-                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
-                        st.cover_image_landscape = path;
-                    }
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_landscape = path;
                 }
             });
             ui.horizontal(|ui| {
@@ -1291,10 +1347,10 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
                 .on_hover_text("Circular cutout foreground photo");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
-                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
-                        st.cover_image_skyline = path;
-                    }
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_skyline = path;
                 }
             });
         }
@@ -1308,10 +1364,10 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
                 .on_hover_text("Top-right hexagonal photo cutout");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
-                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
-                        st.cover_image_skyline = path;
-                    }
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_skyline = path;
                 }
             });
         }
@@ -1325,10 +1381,10 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
                 .on_hover_text("Circular center photo nestled inside the horseshoe medallion");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
-                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
-                        st.cover_image_skyline = path;
-                    }
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_skyline = path;
                 }
             });
         }
@@ -1342,10 +1398,10 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                     egui::TextEdit::singleline(&mut st.cover_image_landscape).hint_text("outputs/city_landscape.jpg"),
                 )
                 .on_hover_text("Tri-hexagon honeycomb cluster photo");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
-                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
-                        st.cover_image_landscape = path;
-                    }
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_landscape = path;
                 }
             });
         }
@@ -1359,10 +1415,10 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
                 .on_hover_text("Vertical architecture or city skyline photo");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
-                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
-                        st.cover_image_skyline = path;
-                    }
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_skyline = path;
                 }
             });
         }
@@ -1376,10 +1432,10 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
                 .on_hover_text("Full-height cityscape panel behind the diagonal band and arrow");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
-                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
-                        st.cover_image_skyline = path;
-                    }
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_skyline = path;
                 }
             });
         }
@@ -1398,10 +1454,10 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
                 .on_hover_text(hover);
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
-                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
-                        st.cover_image_skyline = path;
-                    }
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_skyline = path;
                 }
             });
         }
@@ -1416,10 +1472,10 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
         let w = (ui.available_width() - 65.0).max(80.0);
         ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_image_logo).hint_text("outputs/bps_logo.png"))
             .on_hover_text("Path to logo image file (PNG / JPG / SVG)");
-        if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
-            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
-                st.cover_image_logo = path;
-            }
+        if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+        {
+            st.cover_image_logo = path;
         }
     });
 
@@ -3262,7 +3318,7 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
         } else {
             "Current: Single-sided layout. Click to switch to Double-sided (facing pages)"
         };
-        let resp_facing = outline_button(ui, &facing_text, hw).on_hover_text(tip_facing);
+        let resp_facing = outline_button(ui, facing_text, hw).on_hover_text(tip_facing);
         if resp_facing.clicked() {
             let next_facing = !facing;
             let _ = app.run("layout.documentSetup", json!({"facingPages": next_facing}));
@@ -3271,7 +3327,7 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
         }
 
         let tip_page = format!("Insert a blank page after Page {cur_label}");
-        let resp_page = outline_button(ui, &add_page_text, hw).on_hover_text(tip_page);
+        let resp_page = outline_button(ui, add_page_text, hw).on_hover_text(tip_page);
         if resp_page.clicked() {
             let _ = app.run("layout.pages.insert", json!({"after": cur_page, "count": 1}));
             crate::canvas::go_to_page(app, cur_page + 1);
@@ -3389,18 +3445,18 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
     ui.horizontal(|ui| {
         let w = (ui.available_width() - 65.0).max(80.0);
         ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.rtf_path).hint_text("Path to .rtf file…"));
-        if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
-            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
-                st.rtf_path = path;
-            }
+        if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+        {
+            st.rtf_path = path;
         }
     });
     let tip_rtf = format!("Import RTF document to Page {cur_label} (auto-flows to new pages if needed)");
     if outline_button(ui, "Page from RTF", full_width(ui)).on_hover_text(tip_rtf).clicked() {
-        if st.rtf_path.trim().is_empty() {
-            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
-                st.rtf_path = path;
-            }
+        if st.rtf_path.trim().is_empty()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+        {
+            st.rtf_path = path;
         }
         let path = st.rtf_path.trim().to_string();
         let res = execute_page_from_rtf(app, st, &path);
@@ -3415,10 +3471,10 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
     ui.horizontal(|ui| {
         let w = (ui.available_width() - 65.0).max(80.0);
         ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.image_path).hint_text("Path to image file…"));
-        if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
-            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
-                st.image_path = path;
-            }
+        if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+        {
+            st.image_path = path;
         }
     });
     ui.horizontal(|ui| {
@@ -3434,10 +3490,10 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
         format!("Place image fitted inside the page margins of Page {cur_label}")
     };
     if outline_button(ui, "Page from Image", full_width(ui)).on_hover_text(tip_img).clicked() {
-        if st.image_path.trim().is_empty() {
-            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
-                st.image_path = path;
-            }
+        if st.image_path.trim().is_empty()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+        {
+            st.image_path = path;
         }
         let path = st.image_path.trim().to_string();
         let res = execute_page_from_image(app, st, &path);
@@ -3454,14 +3510,14 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
     ui.checkbox(&mut st.excel_auto_generate, "Auto-generate pages & tables from sheets")
         .on_hover_text("When checked, picking an Excel file automatically runs 'Page from CSV' and inserts each sheet's table with default options");
     let resp_excel = outline_button(ui, "Excel to CSV Data…", full_width(ui)).on_hover_text(tip_excel);
-    if resp_excel.clicked() {
-        if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge")) {
-            let res = execute_excel_and_generate(app, st, &path);
-            st.card3_status = Some(match res {
-                Ok(msg) => (msg, true),
-                Err(e) => (e, false),
-            });
-        }
+    if resp_excel.clicked()
+        && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
+    {
+        let res = execute_excel_and_generate(app, st, &path);
+        st.card3_status = Some(match res {
+            Ok(msg) => (msg, true),
+            Err(e) => (e, false),
+        });
     }
 
     let tip_zip = "Download all generated catalog and table CSVs packaged in a single .zip archive";
@@ -3762,7 +3818,7 @@ pub fn detect_footnote_row(matrix: &[Vec<String>]) -> Option<String> {
 /// Check if a cell starts with one of the summary/break keywords:
 /// Jumlah, Tahun, Kab, Kabupaten, Kec, Kecamatan (or Total).
 pub fn matches_pubgen_row_condition(text: &str) -> bool {
-    let trimmed = text.trim().trim_start_matches(|c: char| c == '*' || c == '-' || c == '•' || c == '–' || c == '—').trim();
+    let trimmed = text.trim().trim_start_matches(['*', '-', '•', '–', '—']).trim();
     let lower = trimmed.to_lowercase();
     if lower.is_empty() {
         return false;
@@ -4250,33 +4306,33 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 }
             }
             // Auto-insert table from 'file' column if enabled
-            if st.card1_auto_insert_tables {
-                if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty()) {
-                    let catalog_p = std::path::Path::new(&st.card1_path);
-                    let dir = catalog_p.parent().unwrap_or(std::path::Path::new("."));
-                    let candidate1 = dir.join(file_str);
-                    let candidate2 = dir.join(format!("{file_str}.csv"));
-                    let candidate3 = dir.join(format!("{}.csv", excel::sanitize_filename(file_str)));
-                    let resolved = if candidate1.exists() && candidate1.is_file() {
-                        Some(candidate1)
-                    } else if candidate2.exists() && candidate2.is_file() {
-                        Some(candidate2)
-                    } else if candidate3.exists() && candidate3.is_file() {
-                        Some(candidate3)
-                    } else {
-                        None
-                    };
+            if st.card1_auto_insert_tables
+                && let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
+            {
+                let catalog_p = std::path::Path::new(&st.card1_path);
+                let dir = catalog_p.parent().unwrap_or(std::path::Path::new("."));
+                let candidate1 = dir.join(file_str);
+                let candidate2 = dir.join(format!("{file_str}.csv"));
+                let candidate3 = dir.join(format!("{}.csv", excel::sanitize_filename(file_str)));
+                let resolved = if candidate1.exists() && candidate1.is_file() {
+                    Some(candidate1)
+                } else if candidate2.exists() && candidate2.is_file() {
+                    Some(candidate2)
+                } else if candidate3.exists() && candidate3.is_file() {
+                    Some(candidate3)
+                } else {
+                    None
+                };
 
-                    if let Some(tbl_file) = resolved {
-                        if let Ok(content) = std::fs::read_to_string(&tbl_file) {
-                            let delim = detect_delimiter(&content);
-                            let tbl_matrix = parse_csv_content_with_delim(&content, delim);
-                            if !tbl_matrix.is_empty() {
-                                let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
-                                if execute_insert_table_matrix(app, st, Some(&tbl_matrix), Some(cur_page_idx)).is_ok() {
-                                    inserted_tables_count = inserted_tables_count.saturating_add(1);
-                                }
-                            }
+                if let Some(tbl_file) = resolved
+                    && let Ok(content) = std::fs::read_to_string(&tbl_file)
+                {
+                    let delim = detect_delimiter(&content);
+                    let tbl_matrix = parse_csv_content_with_delim(&content, delim);
+                    if !tbl_matrix.is_empty() {
+                        let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
+                        if execute_insert_table_matrix(app, st, Some(&tbl_matrix), Some(cur_page_idx)).is_ok() {
+                            inserted_tables_count = inserted_tables_count.saturating_add(1);
                         }
                     }
                 }
@@ -4307,12 +4363,11 @@ pub fn target_page_index(app: &DesignApp) -> usize {
     }
     if let Some(st) = app.session.active() {
         let sel_id = st.selection.items.first().copied().or_else(|| st.selection.text.and_then(|t| t.frame));
-        if let Some(id) = sel_id {
-            if let Some(loc) = st.doc.find(id) {
-                if let designcraft_doc::SpreadRef::Doc(si) = loc.spread {
-                    return st.doc.first_page_of_spread(si);
-                }
-            }
+        if let Some(id) = sel_id
+            && let Some(loc) = st.doc.find(id)
+            && let designcraft_doc::SpreadRef::Doc(si) = loc.spread
+        {
+            return st.doc.first_page_of_spread(si);
         }
         st.doc.page_count().saturating_sub(1)
     } else {
@@ -4465,6 +4520,7 @@ pub fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<Str
     execute_insert_table_matrix(app, st, None, None)
 }
 
+#[allow(clippy::needless_range_loop)]
 pub fn execute_insert_table_matrix(
     app: &mut DesignApp,
     st: &PubgenState,
@@ -4482,7 +4538,7 @@ pub fn execute_insert_table_matrix(
     let cols_count = matrix.iter().map(Vec::len).max().unwrap_or(0);
     if cols_count > 1 {
         while matrix.len() > 1 {
-            let last = matrix.last().unwrap();
+            let Some(last) = matrix.last() else { break };
             let first = last.first().map(|s| s.trim()).unwrap_or("");
             let rest_empty = last.iter().skip(1).all(|c| c.trim().is_empty());
             if !first.is_empty() && rest_empty {
@@ -4540,10 +4596,8 @@ pub fn execute_insert_table_matrix(
                 if r < k.saturating_sub(1) {
                     // Ancestor group level: emit text only at the start of the group
                     let is_start = c == 0 || (0..=r).any(|l| col_levels.get(c.saturating_sub(1)).and_then(|prev| prev.get(l)) != lvls.get(l));
-                    if is_start {
-                        if let Some(txt) = lvls.get(r) {
-                            header_grid[r][c] = txt.trim().to_string();
-                        }
+                    if is_start && let Some(txt) = lvls.get(r) {
+                        header_grid[r][c] = txt.trim().to_string();
                     }
                 } else if r == k.saturating_sub(1) {
                     // Leaf level
@@ -4639,19 +4693,16 @@ pub fn execute_insert_table_matrix(
             // At cursor
             let story = active.selection.text.map(|t| t.story.0).ok_or("No active story")?;
             let mut fn_target = None;
-            if let Some(fid) = active.selection.text.and_then(|t| t.frame) {
-                if let Some(loc) = active.doc.find(fid) {
-                    if let designcraft_doc::SpreadRef::Doc(si) = loc.spread {
-                        if let Some(spread) = active.doc.spreads.get(si) {
-                            if let Some(item) = spread.items.iter().find(|it| it.id == fid) {
-                                let b = item.bounds();
-                                let fn_y0 = b.y1 + 6.0;
-                                let fn_y1 = fn_y0 + 24.0;
-                                fn_target = Some((si, [b.x0, fn_y0, b.x1, fn_y1]));
-                            }
-                        }
-                    }
-                }
+            if let Some(fid) = active.selection.text.and_then(|t| t.frame)
+                && let Some(loc) = active.doc.find(fid)
+                && let designcraft_doc::SpreadRef::Doc(si) = loc.spread
+                && let Some(spread) = active.doc.spreads.get(si)
+                && let Some(item) = spread.items.iter().find(|it| it.id == fid)
+            {
+                let b = item.bounds();
+                let fn_y0 = b.y1 + 6.0;
+                let fn_y1 = fn_y0 + 24.0;
+                fn_target = Some((si, [b.x0, fn_y0, b.x1, fn_y1]));
             }
             (story, None, None, fn_target)
         }
@@ -4760,18 +4811,18 @@ pub fn execute_insert_table_matrix(
 
     // Step 5: Table Style (if not Horizontal Rules, apply via command first)
     let style_names = ["Basic Grid", "Corporate Navy", "Minimalist", "Horizontal Rules"];
-    if st.card2_style != 3 {
-        if let Some(&style_name) = style_names.get(st.card2_style) {
-            let border_weight = if st.card2_style == 1 { 2.0 } else { 0.5 };
-            let _ = app.run(
-                "style.table.create",
-                json!({
-                    "name": style_name,
-                    "border": {"weight": border_weight}
-                }),
-            );
-            let _ = app.run("style.table.apply", json!({"name": style_name}));
-        }
+    if st.card2_style != 3
+        && let Some(&style_name) = style_names.get(st.card2_style)
+    {
+        let border_weight = if st.card2_style == 1 { 2.0 } else { 0.5 };
+        let _ = app.run(
+            "style.table.create",
+            json!({
+                "name": style_name,
+                "border": {"weight": border_weight}
+            }),
+        );
+        let _ = app.run("style.table.apply", json!({"name": style_name}));
     }
 
     let table_id = res["table"]
@@ -4786,9 +4837,11 @@ pub fn execute_insert_table_matrix(
     app.session
         .edit(|doc, _| {
             if st.card2_style == 3 && !doc.styles.table.iter().any(|s| s.name == "Horizontal Rules") {
-                let mut ts = designcraft_doc::TableStyle::default();
-                ts.name = "Horizontal Rules".to_string();
-                ts.border = Some(designcraft_doc::CellStroke::none());
+                let ts = designcraft_doc::TableStyle {
+                    name: "Horizontal Rules".to_string(),
+                    border: Some(designcraft_doc::CellStroke::none()),
+                    ..designcraft_doc::TableStyle::default()
+                };
                 doc.styles_mut().table.push(ts);
             }
 
@@ -4914,10 +4967,10 @@ pub fn execute_insert_table_matrix(
                             if let Some(cell) = table.cell_mut(bottom_header_row, c) {
                                 cell.strokes[2] = rule_thin.clone();
                             }
-                            if nr > header_rows {
-                                if let Some(cell) = table.cell_mut(header_rows, c) {
-                                    cell.strokes[0] = rule_thin.clone();
-                                }
+                            if nr > header_rows
+                                && let Some(cell) = table.cell_mut(header_rows, c)
+                            {
+                                cell.strokes[0] = rule_thin.clone();
                             }
                         }
 
@@ -4928,10 +4981,10 @@ pub fn execute_insert_table_matrix(
                                 if let Some(cell) = table.cell_mut(col_num_row, c) {
                                     cell.strokes[2] = rule_thin.clone();
                                 }
-                                if nr > col_num_row + 1 {
-                                    if let Some(cell) = table.cell_mut(col_num_row + 1, c) {
-                                        cell.strokes[0] = rule_thin.clone();
-                                    }
+                                if nr > col_num_row + 1
+                                    && let Some(cell) = table.cell_mut(col_num_row + 1, c)
+                                {
+                                    cell.strokes[0] = rule_thin.clone();
                                 }
                             }
                         }
@@ -4942,10 +4995,10 @@ pub fn execute_insert_table_matrix(
                                 cell.strokes[0] = rule_thick.clone();
                                 cell.strokes[2] = rule_thin.clone();
                             }
-                            if nr > 1 {
-                                if let Some(cell) = table.cell_mut(1, c) {
-                                    cell.strokes[0] = rule_thin.clone();
-                                }
+                            if nr > 1
+                                && let Some(cell) = table.cell_mut(1, c)
+                            {
+                                cell.strokes[0] = rule_thin.clone();
                             }
                         }
                     } else {
@@ -4964,10 +5017,10 @@ pub fn execute_insert_table_matrix(
                             if let Some(cell) = table.cell_mut(footer_row, c) {
                                 cell.strokes[0] = rule_thin.clone();
                             }
-                            if footer_row > 0 {
-                                if let Some(cell) = table.cell_mut(footer_row - 1, c) {
-                                    cell.strokes[2] = rule_thin.clone();
-                                }
+                            if footer_row > 0
+                                && let Some(cell) = table.cell_mut(footer_row - 1, c)
+                            {
+                                cell.strokes[2] = rule_thin.clone();
                             }
                         }
                     }
@@ -4995,10 +5048,10 @@ pub fn execute_insert_table_matrix(
                                     if let Some(cell) = table.cell_mut(r, c) {
                                         cell.strokes[0] = rule_thin.clone();
                                     }
-                                    if r > 0 {
-                                        if let Some(cell) = table.cell_mut(r - 1, c) {
-                                            cell.strokes[2] = rule_thin.clone();
-                                        }
+                                    if r > 0
+                                        && let Some(cell) = table.cell_mut(r - 1, c)
+                                    {
+                                        cell.strokes[2] = rule_thin.clone();
                                     }
                                     // Bottom border
                                     if r + 1 < nr {
@@ -5026,8 +5079,11 @@ pub fn execute_insert_table_matrix(
                 }
             }
 
-            if st.card2_table_footer && table.nrows() > header_rows_count + 1 {
-                table.rows.last_mut().map(|r| r.kind = designcraft_doc::RowKind::Footer);
+            if st.card2_table_footer
+                && table.nrows() > header_rows_count + 1
+                && let Some(r) = table.rows.last_mut()
+            {
+                r.kind = designcraft_doc::RowKind::Footer;
             }
 
             Ok(())
@@ -5486,23 +5542,24 @@ fn enrich_toc_story(
                     ("", trimmed_title)
                 };
 
-                if let Some((first_word, rest_of_title)) = after_type.split_once(' ') {
-                    if first_word.chars().any(|c| c.is_ascii_digit()) && first_word.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-') {
-                        matched_type = det_type.to_string();
-                        matched_num = first_word.to_string();
-                        clean_title = rest_of_title.trim().to_string();
-                    }
+                if let Some((first_word, rest_of_title)) = after_type.split_once(' ')
+                    && first_word.chars().any(|c| c.is_ascii_digit())
+                    && first_word.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-')
+                {
+                    matched_type = det_type.to_string();
+                    matched_num = first_word.to_string();
+                    clean_title = rest_of_title.trim().to_string();
                 }
             }
 
             // 3. Fallback: inspect page frames ONLY if no record in st.card1_records matched!
-            if matched_num.is_empty() && !matched_record {
-                if let Some(p_str) = page_part {
-                    if let Some((t_val, n_val)) = find_type_and_number_on_page(doc, p_str, raw_title) {
-                        matched_type = t_val;
-                        matched_num = n_val;
-                    }
-                }
+            if matched_num.is_empty()
+                && !matched_record
+                && let Some(p_str) = page_part
+                && let Some((t_val, n_val)) = find_type_and_number_on_page(doc, p_str, raw_title)
+            {
+                matched_type = t_val;
+                matched_num = n_val;
             }
 
             if is_table_page {
@@ -5810,10 +5867,10 @@ fn apply_toc_post_process(
 
     ensure_toc_entry_style(app, width, plan.hanging, hanging_indent, plan.layout);
 
-    if let Ok(af_res) = app.run("text.autoflow", json!({"story": sid.0, "maxPages": 50})) {
-        if let Some(extra) = af_res.get("pagesAdded").and_then(Value::as_u64) {
-            pages_added += extra;
-        }
+    if let Ok(af_res) = app.run("text.autoflow", json!({"story": sid.0, "maxPages": 50}))
+        && let Some(extra) = af_res.get("pagesAdded").and_then(Value::as_u64)
+    {
+        pages_added += extra;
     }
 
     pages_added = sync_toc_continuation_headers(app, st, sid, plan, pages_added);
@@ -5967,28 +6024,28 @@ fn sync_toc_continuation_headers(app: &mut DesignApp, st: &PubgenState, sid: des
             for p in &plans {
                 if p.needs_header {
                     let para = designcraft_doc::ParaFormat { style: style_name.to_string(), ..Default::default() };
-                    if let Ok((hdr_id, _)) = doc.add_text_frame(p.spread_ref, p.header_rect, p.layer, &header_text, para) {
-                        if let Some(it) = doc.item_mut(hdr_id) {
-                            it.label = TOC_CONTINUATION_HEADER_LABEL.to_string();
-                            it.name = "TOC Continuation Header".to_string();
-                        }
+                    if let Ok((hdr_id, _)) = doc.add_text_frame(p.spread_ref, p.header_rect, p.layer, &header_text, para)
+                        && let Some(it) = doc.item_mut(hdr_id)
+                    {
+                        it.label = TOC_CONTINUATION_HEADER_LABEL.to_string();
+                        it.name = "TOC Continuation Header".to_string();
                     }
                 }
-                if p.needs_resize {
-                    if let Some(it) = doc.item_mut(p.fid) {
-                        it.path = designcraft_geom::shapes::rectangle(p.flow_rect);
-                        resized_any = true;
-                    }
+                if p.needs_resize
+                    && let Some(it) = doc.item_mut(p.fid)
+                {
+                    it.path = designcraft_geom::shapes::rectangle(p.flow_rect);
+                    resized_any = true;
                 }
             }
             Ok(serde_json::Value::Null)
         });
 
         if resized_any {
-            if let Ok(af_res) = app.run("text.autoflow", json!({"story": sid.0, "maxPages": 50})) {
-                if let Some(extra) = af_res.get("pagesAdded").and_then(Value::as_u64) {
-                    pages_added += extra;
-                }
+            if let Ok(af_res) = app.run("text.autoflow", json!({"story": sid.0, "maxPages": 50}))
+                && let Some(extra) = af_res.get("pagesAdded").and_then(Value::as_u64)
+            {
+                pages_added += extra;
             }
         } else {
             break;
@@ -6392,10 +6449,10 @@ pub fn execute_download_csv_zip(app: &mut DesignApp, st: &mut PubgenState) -> Re
                 let p = std::path::Path::new(tbl_p_str);
                 if p.is_file() {
                     let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "table.csv".into());
-                    if let Ok(content) = std::fs::read_to_string(p) {
-                        if !files.iter().any(|(n, _)| n == &name) {
-                            files.push((name, content));
-                        }
+                    if let Ok(content) = std::fs::read_to_string(p)
+                        && !files.iter().any(|(n, _)| n == &name)
+                    {
+                        files.push((name, content));
                     }
                 }
             }
@@ -6405,10 +6462,10 @@ pub fn execute_download_csv_zip(app: &mut DesignApp, st: &mut PubgenState) -> Re
                 let p = std::path::Path::new(&st.card2_path);
                 if p.is_file() {
                     let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "table.csv".into());
-                    if !files.iter().any(|(n, _)| n == &name) {
-                        if let Ok(content) = std::fs::read_to_string(p) {
-                            files.push((name, content));
-                        }
+                    if !files.iter().any(|(n, _)| n == &name)
+                        && let Ok(content) = std::fs::read_to_string(p)
+                    {
+                        files.push((name, content));
                     }
                 }
             }
@@ -8811,8 +8868,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
 
-        let mut st = PubgenState::default();
-        st.image_as_background = false;
+        let mut st = PubgenState { image_as_background: false, ..PubgenState::default() };
         let res = execute_page_from_image(&mut app, &mut st, &sample_image_path());
         assert!(res.is_ok(), "execute_page_from_image (object) should succeed: {res:?}");
 
@@ -8842,8 +8898,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let text = app.run("frame.create", json!({ "rect": [72, 72, 300, 400], "content": "text", "text": "Hello" })).unwrap();
         let text_id = text.get("id").and_then(Value::as_u64).unwrap();
 
-        let mut st = PubgenState::default();
-        st.image_as_background = true;
+        let mut st = PubgenState { image_as_background: true, ..PubgenState::default() };
         let res = execute_page_from_image(&mut app, &mut st, &sample_image_path());
         assert!(res.is_ok(), "execute_page_from_image (background) should succeed: {res:?}");
 
@@ -8896,8 +8951,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let path = dir.path().join("wide.png");
         std::fs::write(&path, &png).unwrap();
 
-        let mut st = PubgenState::default();
-        st.image_as_background = true;
+        let mut st = PubgenState { image_as_background: true, ..PubgenState::default() };
         let res = execute_page_from_image(&mut app, &mut st, &path.to_string_lossy());
         assert!(res.is_ok(), "execute_page_from_image should succeed: {res:?}");
 
@@ -8930,15 +8984,14 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         for style in 0..=8 {
             let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
             app.run("file.new", json!({})).unwrap();
-            let mut st = PubgenState::default();
-            st.cover_style = style;
+            let st = PubgenState { cover_style: style, ..PubgenState::default() };
             let res = execute_generate_cover(&mut app, &st);
             assert!(res.is_ok(), "Style {style} failed: {res:?}");
 
             let active = app.session.active().unwrap();
             // Assert that every story on the cover page has styled character runs
             assert!(!active.doc.stories.is_empty(), "Style {style} should create stories");
-            for (_sid, story) in &active.doc.stories {
+            for story in active.doc.stories.values() {
                 for run in &story.chars {
                     assert!(run.format.over.size.is_some(), "Story text '{}' in style {style} must have custom size", story.text);
                     assert!(run.format.over.fill.is_some(), "Story text '{}' in style {style} must have custom fill", story.text);
@@ -8967,11 +9020,13 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
-        let mut st = PubgenState::default();
-        st.cover_style = 5;
-        st.cover_color_primary = "#6c5ce7".into();
-        st.cover_color_accent = "#a29bfe".into();
-        st.cover_color_dark = "#1e293b".into();
+        let mut st = PubgenState {
+            cover_style: 5,
+            cover_color_primary: "#6c5ce7".into(),
+            cover_color_accent: "#a29bfe".into(),
+            cover_color_dark: "#1e293b".into(),
+            ..PubgenState::default()
+        };
         st.cover_image_skyline = root.join("outputs").join("city_skyline.jpg").to_string_lossy().to_string();
         st.cover_image_logo = root.join("outputs").join("bps_logo.png").to_string_lossy().to_string();
         execute_generate_cover(&mut app, &st).unwrap();
@@ -8990,10 +9045,12 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
-        let mut st = PubgenState::default();
-        st.cover_style = 6;
-        st.cover_image_skyline = root.join("outputs").join("city_skyline.jpg").to_string_lossy().to_string();
-        st.cover_image_logo = root.join("outputs").join("bps_logo.png").to_string_lossy().to_string();
+        let st = PubgenState {
+            cover_style: 6,
+            cover_image_skyline: root.join("outputs").join("city_skyline.jpg").to_string_lossy().to_string(),
+            cover_image_logo: root.join("outputs").join("bps_logo.png").to_string_lossy().to_string(),
+            ..PubgenState::default()
+        };
         execute_generate_cover(&mut app, &st).unwrap();
         let _ = app.run("layout.pages.delete", json!({"page": 1}));
         // A scratch file, never `design-4.designcraft`: that one is the hand-authored reference this
@@ -9008,8 +9065,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     fn test_cover_style_8_text_is_options_only() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
-        let mut st = PubgenState::default();
-        st.cover_style = BUSINESS_STYLE;
+        let st = PubgenState { cover_style: BUSINESS_STYLE, ..PubgenState::default() };
         execute_generate_cover(&mut app, &st).unwrap();
 
         let active = app.session.active().unwrap();
@@ -9041,11 +9097,13 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         // A4: the size the cover designs are drawn for.
         app.run("file.new", json!({"width": 595.275591, "height": 841.889764})).unwrap();
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
-        let mut st = PubgenState::default();
-        st.cover_style = HORIZON_STYLE;
+        let mut st = PubgenState {
+            cover_style: HORIZON_STYLE,
+            cover_image_skyline: root.join("outputs").join("city_skyline.jpg").to_string_lossy().to_string(),
+            cover_image_logo: root.join("outputs").join("bps_logo.png").to_string_lossy().to_string(),
+            ..PubgenState::default()
+        };
         apply_report_palette(&mut st);
-        st.cover_image_skyline = root.join("outputs").join("city_skyline.jpg").to_string_lossy().to_string();
-        st.cover_image_logo = root.join("outputs").join("bps_logo.png").to_string_lossy().to_string();
         execute_generate_cover(&mut app, &st).unwrap();
         let _ = app.run("layout.pages.delete", json!({"page": 1}));
         // A scratch file, never `design-5.designcraft`: that one is the traced reference this style
@@ -9060,8 +9118,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     fn test_cover_style_6_text_is_options_only() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
-        let mut st = PubgenState::default();
-        st.cover_style = 6;
+        let st = PubgenState { cover_style: 6, ..PubgenState::default() };
         execute_generate_cover(&mut app, &st).unwrap();
 
         let active = app.session.active().unwrap();
@@ -9104,8 +9161,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     fn test_cover_style_7_text_is_options_only_and_position_locked() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
-        let mut st = PubgenState::default();
-        st.cover_style = HORIZON_STYLE;
+        let st = PubgenState { cover_style: HORIZON_STYLE, ..PubgenState::default() };
         execute_generate_cover(&mut app, &st).unwrap();
 
         let active = app.session.active().unwrap();
@@ -9465,5 +9521,38 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         // 2. Check graphic frame placed inside margins
         let graphic_frame = spread.items.iter().find(|it| matches!(it.content, designcraft_doc::Content::Graphic(_)));
         assert!(graphic_frame.is_some(), "Page must contain a placed graphic frame");
+    }
+
+    #[test]
+    fn test_execute_set_page_margins() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let res = execute_set_page_margins(&mut app);
+        assert!(res.is_ok(), "execute_set_page_margins should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let page = active.doc.page(0).expect("first page exists");
+
+        const PT_PER_MM: f64 = 72.0 / 25.4;
+        let expected_top = 20.20 * PT_PER_MM;
+        let expected_bottom = 20.0 * PT_PER_MM;
+        let expected_inside = 19.0 * PT_PER_MM;
+        let expected_outside = 15.0 * PT_PER_MM;
+
+        assert!((page.margins.top - expected_top).abs() < 1e-6, "Top margin mismatch: got {}, expected {}", page.margins.top, expected_top);
+        assert!((page.margins.bottom - expected_bottom).abs() < 1e-6, "Bottom margin mismatch: got {}, expected {}", page.margins.bottom, expected_bottom);
+        assert!((page.margins.inside - expected_inside).abs() < 1e-6, "Inside margin mismatch: got {}, expected {}", page.margins.inside, expected_inside);
+        assert!((page.margins.outside - expected_outside).abs() < 1e-6, "Outside margin mismatch: got {}, expected {}", page.margins.outside, expected_outside);
+
+        // Also verify parent pages
+        for sp in &active.doc.parents {
+            for pg in &sp.pages {
+                assert!((pg.margins.top - expected_top).abs() < 1e-6);
+                assert!((pg.margins.bottom - expected_bottom).abs() < 1e-6);
+                assert!((pg.margins.inside - expected_inside).abs() < 1e-6);
+                assert!((pg.margins.outside - expected_outside).abs() < 1e-6);
+            }
+        }
     }
 }

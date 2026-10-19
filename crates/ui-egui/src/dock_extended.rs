@@ -10,12 +10,8 @@ use crate::{DesignApp, icons, panels};
 pub mod pubgen;
 
 /// (id, label, icon) of the tabs in the expanded group.
-pub const DOCK_TABS: &[(&str, &str, &str)] = &[
-    ("properties", "Properties", "panel-properties"),
-    ("pages", "Pages", "panel-pages"),
-    ("layers", "Layers", "panel-layers"),
-    ("pubgen", "Pubgen", "panel-pages"),
-];
+pub const DOCK_TABS: &[(&str, &str, &str)] =
+    &[("properties", "Properties", "panel-properties"), ("pages", "Pages", "panel-pages"), ("layers", "Layers", "panel-layers"), ("pubgen", "Pubgen", "panel-pages")];
 
 /// Panels in the collapsed icon column.
 pub const ICON_PANELS: &[(&str, &str, &str)] = &[

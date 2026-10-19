@@ -60,7 +60,7 @@ Pubgen is seamlessly integrated into DesignCraft's right dock tab strip alongsid
 +-------------------------------------------------------+
 |  [Properties]   [Pages]   [Layers]   [Pubgen]         | ← Right Dock Tab Strip
 +-------------------------------------------------------+
-|  PUBGEN                                         [•••] | ← Selection Band (33pt)
+|  Pubgen                 [ Set Page Margin ]           | ← Header Band (33pt)
 +-------------------------------------------------------+
 |  Page from CSV                                        | ← Card 1: Section Header
 |  Source:  [ Browse… ]  articles.csv (24 rows)        |
@@ -89,7 +89,7 @@ Pubgen is seamlessly integrated into DesignCraft's right dock tab strip alongsid
 
 ### Visual & Design Tokens
 Pubgen strictly adopts DesignCraft’s InDesign-parity design token system (`crate::theme::Tokens`):
-- **Header Band:** `selection_band(ui, "Pubgen")` with 33pt height and bottom section rule.
+- **Header Band:** 33pt header band with "Pubgen" title and **[ Set Page Margin ]** button to apply standard publication margins (Top: 20.20 mm, Bottom: 20 mm, Inside: 19 mm, Outside: 15 mm).
 - **Section Headers:** `section(ui, title, true)` with 11.5pt semibold typography.
 - **Rules & Dividers:** `rule(ui)` (1.5pt solid rule) and `divider(ui)` between card blocks.
 - **Form Controls:** 21pt input fields (`FIELD_H = 21.0`), 20pt outline buttons (`outline_button(...)`), and chevron dropdown pickers (`dropdown(...)`).

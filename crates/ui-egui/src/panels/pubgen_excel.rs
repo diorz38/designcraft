@@ -180,10 +180,10 @@ pub fn parse_rtf_review_sheet(sheet: &ExcelSheetData) -> Option<(String, String,
         for cell in row {
             let t = cell.trim();
             for sep in [';', ':', '='] {
-                if let Some((k, v)) = t.split_once(sep) {
-                    if k.trim().eq_ignore_ascii_case(expected_key) {
-                        return v.trim().trim_matches('"').trim().to_string();
-                    }
+                if let Some((k, v)) = t.split_once(sep)
+                    && k.trim().eq_ignore_ascii_case(expected_key)
+                {
+                    return v.trim().trim_matches('"').trim().to_string();
                 }
             }
         }
@@ -252,10 +252,10 @@ pub fn parse_chart_sheet(sheet: &ExcelSheetData) -> Option<(String, String, Stri
         for cell in row {
             let t = cell.trim();
             for sep in [';', ':', '='] {
-                if let Some((k, v)) = t.split_once(sep) {
-                    if k.trim().eq_ignore_ascii_case(expected_key) {
-                        return v.trim().trim_matches('"').trim().to_string();
-                    }
+                if let Some((k, v)) = t.split_once(sep)
+                    && k.trim().eq_ignore_ascii_case(expected_key)
+                {
+                    return v.trim().trim_matches('"').trim().to_string();
                 }
             }
         }
@@ -292,6 +292,7 @@ pub fn parse_chart_sheet(sheet: &ExcelSheetData) -> Option<(String, String, Stri
 
 /// Automatically reconstruct table column headers by propagating horizontal & vertical
 /// cell merges across header rows and joining ancestor levels with `--`.
+#[allow(clippy::needless_range_loop)]
 pub fn build_merged_table_headers(
     grid: &[Vec<String>],
     merges: &[((usize, usize), (usize, usize))],
@@ -341,10 +342,8 @@ pub fn build_merged_table_headers(
             // Check if this cell is a continuation of a vertical merge
             let is_vert_merge_continuation = merges.iter().any(|&((sc, sr), (ec, er))| sc <= c && c <= ec && sr < abs_row && er >= abs_row);
 
-            if !val.is_empty() && !is_vert_merge_continuation {
-                if parts.last().map(|s| s.as_str()) != Some(val) {
-                    parts.push(val.to_string());
-                }
+            if !val.is_empty() && !is_vert_merge_continuation && parts.last().map(|s| s.as_str()) != Some(val) {
+                parts.push(val.to_string());
             }
         }
 
@@ -459,33 +458,33 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         let safe_name = sanitize_filename(sheet_name);
 
         // Check if sheet is an RXX RTF chapter review sheet
-        if is_rtf_review_sheet(sheet_name) {
-            if let Some((t_val, n_val, title_val, f_val)) = parse_rtf_review_sheet(sheet) {
-                catalog_rows.push(format!(
-                    "{},{},{},{}",
-                    escape_csv_field(&t_val),
-                    escape_csv_field(&n_val),
-                    escape_csv_field(&title_val),
-                    escape_csv_field(&f_val)
-                ));
-                // RXX sheets are narrative review chapters (RTF), not tabular data
-                continue;
-            }
+        if is_rtf_review_sheet(sheet_name)
+            && let Some((t_val, n_val, title_val, f_val)) = parse_rtf_review_sheet(sheet)
+        {
+            catalog_rows.push(format!(
+                "{},{},{},{}",
+                escape_csv_field(&t_val),
+                escape_csv_field(&n_val),
+                escape_csv_field(&title_val),
+                escape_csv_field(&f_val)
+            ));
+            // RXX sheets are narrative review chapters (RTF), not tabular data
+            continue;
         }
 
         // Check if sheet is a CXX_XX chart / figure sheet
-        if is_chart_sheet(sheet_name) {
-            if let Some((t_val, n_val, title_val, f_val)) = parse_chart_sheet(sheet) {
-                catalog_rows.push(format!(
-                    "{},{},{},{}",
-                    escape_csv_field(&t_val),
-                    escape_csv_field(&n_val),
-                    escape_csv_field(&title_val),
-                    escape_csv_field(&f_val)
-                ));
-                // CXX sheets are graphic chart figures, not tabular data
-                continue;
-            }
+        if is_chart_sheet(sheet_name)
+            && let Some((t_val, n_val, title_val, f_val)) = parse_chart_sheet(sheet)
+        {
+            catalog_rows.push(format!(
+                "{},{},{},{}",
+                escape_csv_field(&t_val),
+                escape_csv_field(&n_val),
+                escape_csv_field(&title_val),
+                escape_csv_field(&f_val)
+            ));
+            // CXX sheets are graphic chart figures, not tabular data
+            continue;
         }
 
         // 1. Process first row for catalog
@@ -611,10 +610,8 @@ pub fn parse_xlsx_sheets(path: &str) -> Result<Vec<ExcelSheetData>, String> {
                     }
                 }
                 Ok(quick_xml::events::Event::Text(ref t)) => {
-                    if inside_t {
-                        if let Ok(txt) = t.decode() {
-                            current_si.push_str(&txt);
-                        }
+                    if inside_t && let Ok(txt) = t.decode() {
+                        current_si.push_str(&txt);
                     }
                 }
                 Ok(quick_xml::events::Event::End(ref e)) => {
@@ -703,10 +700,10 @@ pub fn parse_xlsx_sheets(path: &str) -> Result<Vec<ExcelSheetData>, String> {
                     _ => {}
                 },
                 Ok(quick_xml::events::Event::Text(ref t)) => {
-                    if inside_v || inside_inline_t {
-                        if let Ok(txt) = t.decode() {
-                            cur_v.push_str(&txt);
-                        }
+                    if (inside_v || inside_inline_t)
+                        && let Ok(txt) = t.decode()
+                    {
+                        cur_v.push_str(&txt);
                     }
                 }
                 Ok(quick_xml::events::Event::End(ref e)) => match e.name().local_name().as_ref() {
