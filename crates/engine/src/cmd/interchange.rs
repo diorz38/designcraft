@@ -501,8 +501,11 @@ mod tests {
         for link in links {
             let (idml, _) = linked_idml(link, false).unwrap();
             let (doc, seen) = crate::io::touched(|| import(&idml, Some(&package)).unwrap());
-            // Beside the package, and the link itself where it is on this computer.
-            assert!(seen.iter().all(|p| p.starts_with(&dir) || p == std::path::Path::new(link)), "{link}: {seen:?}");
+            // Beside the package, and the link itself where it is on this computer. The link is
+            // resolved the way the import resolves it, so a `/`-rooted link (`/dev/zero`, which
+            // Windows reads as a path on the current drive) is compared against its real path.
+            let here = crate::io::document_path(link, Some(&package)).ok();
+            assert!(seen.iter().all(|p| p.starts_with(&dir) || here.as_deref() == Some(p.as_path())), "{link}: {seen:?}");
             let asset = doc.assets.values().next().unwrap();
             assert!(asset.data.is_empty(), "{link}");
             assert_eq!(super::super::links::status(asset, None), "missing", "{link}");

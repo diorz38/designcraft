@@ -521,13 +521,18 @@ mod tests {
             }
         }
         let linked = dir.join("Links").join("my photo.png");
-        let uri = format!("file:{}", linked.to_string_lossy().replace(' ', "%20"));
+        // A file URI names the packaged copy: forward slashes on every platform, spaces escaped.
+        let uri = format!("file:{}", linked.to_string_lossy().replace('\\', "/").replace(' ', "%20"));
         assert!(spreads.contains(&format!(r#"LinkResourceURI="{uri}""#)), "{spreads}");
         assert!(!spreads.contains("<Contents") && !spreads.contains(r#"StoredState="Embedded""#), "no image is embedded");
         let back = designcraft_idml::import_idml_with(&idml, &|_| None).unwrap();
         let asset = back.assets.values().next().unwrap();
         assert!(asset.data.is_empty(), "no image is embedded");
-        assert_eq!(asset.link.as_deref(), linked.to_str());
+        // The link comes back exactly as the URI named it (forward slashes; Windows opens them
+        // just as well), which is the path the package wrote.
+        let named = linked.to_string_lossy().replace('\\', "/");
+        assert_eq!(std::path::Path::new(asset.link.as_deref().unwrap()), linked.as_path());
+        assert_eq!(asset.link.as_deref(), Some(named.as_str()));
     }
 
     /// A link whose file is gone has no bytes to copy: the package leaves it out of Links/, the

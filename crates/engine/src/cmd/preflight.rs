@@ -354,11 +354,18 @@ mod placed_vector_tests {
         s.execute("file.place", &json!({"base64": base64_encode(&png), "name": "photo.jpg", "x": 72, "y": 72, "width": 20})).unwrap();
         let doc = std::sync::Arc::make_mut(&mut s.doc_mut().unwrap().doc);
         let asset = doc.assets.values_mut().next().unwrap();
-        std::sync::Arc::make_mut(asset).link = Some("/definitely/missing dir/photo.jpg".into());
+        let link = "/definitely/missing dir/photo.jpg";
+        std::sync::Arc::make_mut(asset).link = Some(link.into());
         let r = s.execute("preflight.run", &json!({})).unwrap();
         let missing: Vec<&str> =
             r["issues"].as_array().unwrap().iter().filter(|i| i["kind"] == "missingLink").map(|i| i["message"].as_str().unwrap()).collect();
-        assert_eq!(missing, ["Missing link: /definitely/missing dir/photo.jpg"]);
+        // A `/`-rooted link has no drive on Windows, so Preflight names the path as unfollowable:
+        // the message carries the path either way.
+        let expected = match crate::io::document_path(link, None).err() {
+            Some(why) => format!("Missing link: {link} ({why})"),
+            None => format!("Missing link: {link}"),
+        };
+        assert_eq!(missing, [expected.as_str()]);
     }
 }
 
