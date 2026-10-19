@@ -3605,6 +3605,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     let slice = st.card1_records.get(start_idx..end_idx).ok_or("Invalid range")?;
     let mut generated_count = 0usize;
     let mut inserted_tables_count = 0usize;
+    let mut inserted_rtfs_count = 0usize;
 
     // Every preset tags its title (or the combined TOC line) with the TOC paragraph style, so the
     // Quick Actions "Add TOC" lists one entry per generated page.
@@ -3628,225 +3629,46 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         let num_val = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
         let title_val = row.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("").trim();
 
-        // 3. Compute Frame Geometry per Preset
-        match st.card1_preset {
-            1 => {
-                // 1 Row · 3 Equal Columns (1/3 width each)
-                let gutter = 12.0;
-                let total_w = (margin.x1 - margin.x0).max(120.0);
-                let avail = (total_w - 2.0 * gutter).max(60.0);
-                let col_w = avail / 3.0;
+        if type_val.eq_ignore_ascii_case("Ulasan") {
+            // Ulasan / Editorial Chapter layout:
+            // Split title "BAB 01 Pemerintahan" into "BAB 01" and "Pemerintahan"
+            let (ch_line, title_line) = split_chapter_title(title_val, num_val);
 
-                let c1_x0 = margin.x0;
-                let c1_x1 = c1_x0 + col_w;
-
-                let c2_x0 = c1_x1 + gutter;
-                let c2_x1 = c2_x0 + col_w;
-
-                let c3_x0 = c2_x1 + gutter;
-                let c3_x1 = margin.x1;
-
-                let row_y0 = margin.y0 + 20.0;
-                let row_y1 = margin.y0 + 80.0;
-
-                if !type_val.is_empty() {
-                    let _ = app.run(
-                        "frame.create",
-                        json!({
-                            "spread": spread_idx,
-                            "rect": [c1_x0, row_y0, c1_x1, row_y1],
-                            "content": "text",
-                            "text": type_val.to_uppercase(),
-                            "caret": false
-                        }),
-                    );
-                }
-                if !num_val.is_empty() {
-                    let _ = app.run(
-                        "frame.create",
-                        json!({
-                            "spread": spread_idx,
-                            "rect": [c2_x0, row_y0, c2_x1, row_y1],
-                            "content": "text",
-                            "text": num_val,
-                            "caret": false
-                        }),
-                    );
-                }
-                if !title_val.is_empty() {
-                    frame_with_style(app, spread_idx, [c3_x0, row_y0, c3_x1, row_y1], title_val, &st.toc_style);
-                }
-            }
-            2 => {
-                // Editorial Chapter (Stacked)
-                if !type_val.is_empty() {
-                    let _ = app.run(
-                        "frame.create",
-                        json!({
-                            "spread": spread_idx,
-                            "rect": [margin.x0, margin.y0 + 20.0, margin.x1, margin.y0 + 42.0],
-                            "content": "text",
-                            "text": type_val.to_uppercase(),
-                            "caret": false
-                        }),
-                    );
-                }
-                if !num_val.is_empty() {
-                    let _ = app.run(
-                        "frame.create",
-                        json!({
-                            "spread": spread_idx,
-                            "rect": [margin.x0, margin.y0 + 46.0, margin.x1, margin.y0 + 106.0],
-                            "content": "text",
-                            "text": num_val,
-                            "caret": false
-                        }),
-                    );
-                }
-                if !title_val.is_empty() {
-                    frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 112.0, margin.x1, margin.y0 + 220.0], title_val, &st.toc_style);
-                }
-            }
-            3 => {
-                // Technical Spec Card
-                // Accent banner (graphic rectangle)
-                let _ = app.run(
-                    "frame.create",
-                    json!({
-                        "spread": spread_idx,
-                        "rect": [margin.x0, margin.y0, margin.x1, margin.y0 + 6.0],
-                        "content": "unassigned"
-                    }),
+            // 1st Textbox: "BAB 01" (font Arial Black, size 24.0) -> first row
+            if !ch_line.is_empty() {
+                frame_with_font_and_style(
+                    app,
+                    spread_idx,
+                    [margin.x0, margin.y0 + 20.0, margin.x1, margin.y0 + 56.0],
+                    &ch_line,
+                    "Arial Black",
+                    24.0,
+                    None,
                 );
-                // Numeral box at top right
-                if !num_val.is_empty() {
-                    let _ = app.run(
-                        "frame.create",
-                        json!({
-                            "spread": spread_idx,
-                            "rect": [margin.x1 - 80.0, margin.y0 + 16.0, margin.x1, margin.y0 + 56.0],
-                            "content": "text",
-                            "text": num_val,
-                            "caret": false
-                        }),
-                    );
-                }
-                // Kicker
-                if !type_val.is_empty() {
-                    let _ = app.run(
-                        "frame.create",
-                        json!({
-                            "spread": spread_idx,
-                            "rect": [margin.x0, margin.y0 + 16.0, margin.x1 - 90.0, margin.y0 + 36.0],
-                            "content": "text",
-                            "text": type_val.to_uppercase(),
-                            "caret": false
-                        }),
-                    );
-                }
-                // Title
-                if !title_val.is_empty() {
-                    frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 40.0, margin.x1 - 90.0, margin.y0 + 110.0], title_val, &st.toc_style);
-                }
             }
-            4 => {
-                // Minimal Zine
-                if !num_val.is_empty() {
-                    let _ = app.run(
-                        "frame.create",
-                        json!({
-                            "spread": spread_idx,
-                            "rect": [margin.x0, margin.y0 + 60.0, margin.x1, margin.y0 + 110.0],
-                            "content": "text",
-                            "text": num_val,
-                            "caret": false
-                        }),
-                    );
-                }
-                if !title_val.is_empty() {
-                    frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 120.0, margin.x1, margin.y0 + 200.0], title_val, &st.toc_style);
-                }
+
+            // 2nd Textbox: "Pemerintahan" (font Arial Black, size 20.0) -> second row
+            // Tag with TOC style so TOC lists this chapter
+            if !title_line.is_empty() {
+                frame_with_font_and_style(
+                    app,
+                    spread_idx,
+                    [margin.x0, margin.y0 + 62.0, margin.x1, margin.y0 + 102.0],
+                    &title_line,
+                    "Arial Black",
+                    20.0,
+                    Some(&st.toc_style),
+                );
             }
-            5 => {
-                // TOC Line: one combined paragraph per record (type + number + title), so each record
-                // becomes a single table-of-contents entry.
-                let parts: Vec<&str> = [type_val, num_val, title_val].into_iter().filter(|s| !s.is_empty()).collect();
-                let line = parts.join(" ");
-                if !line.is_empty() {
-                    frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 20.0, margin.x1, margin.y0 + 60.0], &line, &st.toc_style);
-                }
-            }
-            _ => {
-                // 0 or Default: 1 Row · 3 Columns (Col 1 & 2 fit tightly to content, Col 3 takes rest of width with space at end)
-                let gutter = 8.0;
-                let end_space = 20.0;
-                let row_y0 = margin.y0 + 20.0;
-                let row_y1 = margin.y0 + 80.0;
-                let mut cur_x = margin.x0;
 
-                // Col 1: Type (Fit tightly to content, right-aligned)
-                if !type_val.is_empty() {
-                    let formatted_type = type_val.to_uppercase();
-                    let c1_w = estimate_text_width(&formatted_type, true);
-                    let c1_x0 = cur_x;
-                    let c1_x1 = (c1_x0 + c1_w).min(margin.x1 - 100.0);
-                    cur_x = c1_x1 + gutter;
-
-                    if let Ok(res) = app.run(
-                        "frame.create",
-                        json!({
-                            "spread": spread_idx,
-                            "rect": [c1_x0, row_y0, c1_x1, row_y1],
-                            "content": "text",
-                            "text": formatted_type,
-                            "caret": false
-                        }),
-                    ) {
-                        if let Some(id) = res.get("id").and_then(Value::as_u64) {
-                            let _ = app.run("selection.set", json!({"ids": [id]}));
-                        }
-                        let _ = app.run("type.alignRight", json!({}));
-                    }
-                }
-
-                // Col 2: Number (Fit tightly to content)
-                if !num_val.is_empty() {
-                    let c2_w = estimate_text_width(num_val, false);
-                    let c2_x0 = cur_x;
-                    let c2_x1 = (c2_x0 + c2_w).min(margin.x1 - 60.0);
-                    cur_x = c2_x1 + gutter;
-
-                    let _ = app.run(
-                        "frame.create",
-                        json!({
-                            "spread": spread_idx,
-                            "rect": [c2_x0, row_y0, c2_x1, row_y1],
-                            "content": "text",
-                            "text": num_val,
-                            "caret": false
-                        }),
-                    );
-                }
-
-                // Col 3: Title (Takes rest of width with space in the end)
-                if !title_val.is_empty() {
-                    let c3_x0 = cur_x;
-                    let max_x1 = (margin.x1 - end_space).max(c3_x0 + 40.0);
-                    let c3_x1 = max_x1.min(margin.x1);
-
-                    frame_with_style(app, spread_idx, [c3_x0, row_y0, c3_x1, row_y1], title_val, &st.toc_style);
-                }
-            }
-        }
-        // Auto-insert table from 'file' column if enabled
-        if st.card1_auto_insert_tables {
+            // Place RTF narrative body into a frame below the headers
             if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty()) {
                 let catalog_p = std::path::Path::new(&st.card1_path);
                 let dir = catalog_p.parent().unwrap_or(std::path::Path::new("."));
                 let candidate1 = dir.join(file_str);
-                let candidate2 = dir.join(format!("{file_str}.csv"));
-                let candidate3 = dir.join(format!("{}.csv", excel::sanitize_filename(file_str)));
-                let resolved = if candidate1.exists() && candidate1.is_file() {
+                let candidate2 = std::path::PathBuf::from(file_str);
+                let candidate3 = dir.join(format!("{file_str}.rtf"));
+                let resolved_rtf = if candidate1.exists() && candidate1.is_file() {
                     Some(candidate1)
                 } else if candidate2.exists() && candidate2.is_file() {
                     Some(candidate2)
@@ -3856,14 +3678,278 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     None
                 };
 
-                if let Some(tbl_file) = resolved {
-                    if let Ok(content) = std::fs::read_to_string(&tbl_file) {
-                        let delim = detect_delimiter(&content);
-                        let tbl_matrix = parse_csv_content_with_delim(&content, delim);
-                        if !tbl_matrix.is_empty() {
-                            let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
-                            if execute_insert_table_matrix(app, st, Some(&tbl_matrix), Some(cur_page_idx)).is_ok() {
-                                inserted_tables_count = inserted_tables_count.saturating_add(1);
+                if let Some(rtf_file) = resolved_rtf {
+                    let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
+                    crate::canvas::go_to_page(app, cur_page_idx);
+                    let rtf_y0 = margin.y0 + 116.0;
+                    let rtf_rect = [margin.x0, rtf_y0, margin.x1, margin.y1];
+                    let created_fid = app
+                        .run(
+                            "frame.create",
+                            json!({
+                                "spread": spread_idx,
+                                "rect": rtf_rect,
+                                "content": "text",
+                                "caret": false
+                            }),
+                        )
+                        .ok()
+                        .and_then(|res| res.get("id").and_then(Value::as_u64));
+
+                    if let Some(fid) = created_fid {
+                        let _ = app.run("selection.set", json!({"ids": [fid]}));
+                        let mut st_copy = st.clone();
+                        let rtf_path_str = rtf_file.to_string_lossy().to_string();
+                        if execute_page_from_rtf(app, &mut st_copy, &rtf_path_str).is_ok() {
+                            inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
+                        }
+                    }
+                }
+            }
+        } else {
+            // 3. Compute Frame Geometry per Preset
+            match st.card1_preset {
+                1 => {
+                    // 1 Row · 3 Equal Columns (1/3 width each)
+                    let gutter = 12.0;
+                    let total_w = (margin.x1 - margin.x0).max(120.0);
+                    let avail = (total_w - 2.0 * gutter).max(60.0);
+                    let col_w = avail / 3.0;
+
+                    let c1_x0 = margin.x0;
+                    let c1_x1 = c1_x0 + col_w;
+
+                    let c2_x0 = c1_x1 + gutter;
+                    let c2_x1 = c2_x0 + col_w;
+
+                    let c3_x0 = c2_x1 + gutter;
+                    let c3_x1 = margin.x1;
+
+                    let row_y0 = margin.y0 + 20.0;
+                    let row_y1 = margin.y0 + 80.0;
+
+                    if !type_val.is_empty() {
+                        let _ = app.run(
+                            "frame.create",
+                            json!({
+                                "spread": spread_idx,
+                                "rect": [c1_x0, row_y0, c1_x1, row_y1],
+                                "content": "text",
+                                "text": type_val.to_uppercase(),
+                                "caret": false
+                            }),
+                        );
+                    }
+                    if !num_val.is_empty() {
+                        let _ = app.run(
+                            "frame.create",
+                            json!({
+                                "spread": spread_idx,
+                                "rect": [c2_x0, row_y0, c2_x1, row_y1],
+                                "content": "text",
+                                "text": num_val,
+                                "caret": false
+                            }),
+                        );
+                    }
+                    if !title_val.is_empty() {
+                        frame_with_style(app, spread_idx, [c3_x0, row_y0, c3_x1, row_y1], title_val, &st.toc_style);
+                    }
+                }
+                2 => {
+                    // Editorial Chapter (Stacked)
+                    if !type_val.is_empty() {
+                        let _ = app.run(
+                            "frame.create",
+                            json!({
+                                "spread": spread_idx,
+                                "rect": [margin.x0, margin.y0 + 20.0, margin.x1, margin.y0 + 42.0],
+                                "content": "text",
+                                "text": type_val.to_uppercase(),
+                                "caret": false
+                            }),
+                        );
+                    }
+                    if !num_val.is_empty() {
+                        let _ = app.run(
+                            "frame.create",
+                            json!({
+                                "spread": spread_idx,
+                                "rect": [margin.x0, margin.y0 + 46.0, margin.x1, margin.y0 + 106.0],
+                                "content": "text",
+                                "text": num_val,
+                                "caret": false
+                            }),
+                        );
+                    }
+                    if !title_val.is_empty() {
+                        frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 112.0, margin.x1, margin.y0 + 220.0], title_val, &st.toc_style);
+                    }
+                }
+                3 => {
+                    // Technical Spec Card
+                    // Accent banner (graphic rectangle)
+                    let _ = app.run(
+                        "frame.create",
+                        json!({
+                            "spread": spread_idx,
+                            "rect": [margin.x0, margin.y0, margin.x1, margin.y0 + 6.0],
+                            "content": "unassigned"
+                        }),
+                    );
+                    // Numeral box at top right
+                    if !num_val.is_empty() {
+                        let _ = app.run(
+                            "frame.create",
+                            json!({
+                                "spread": spread_idx,
+                                "rect": [margin.x1 - 80.0, margin.y0 + 16.0, margin.x1, margin.y0 + 56.0],
+                                "content": "text",
+                                "text": num_val,
+                                "caret": false
+                            }),
+                        );
+                    }
+                    // Kicker
+                    if !type_val.is_empty() {
+                        let _ = app.run(
+                            "frame.create",
+                            json!({
+                                "spread": spread_idx,
+                                "rect": [margin.x0, margin.y0 + 16.0, margin.x1 - 90.0, margin.y0 + 36.0],
+                                "content": "text",
+                                "text": type_val.to_uppercase(),
+                                "caret": false
+                            }),
+                        );
+                    }
+                    // Title
+                    if !title_val.is_empty() {
+                        frame_with_style(
+                            app,
+                            spread_idx,
+                            [margin.x0, margin.y0 + 40.0, margin.x1 - 90.0, margin.y0 + 110.0],
+                            title_val,
+                            &st.toc_style,
+                        );
+                    }
+                }
+                4 => {
+                    // Minimal Zine
+                    if !num_val.is_empty() {
+                        let _ = app.run(
+                            "frame.create",
+                            json!({
+                                "spread": spread_idx,
+                                "rect": [margin.x0, margin.y0 + 60.0, margin.x1, margin.y0 + 110.0],
+                                "content": "text",
+                                "text": num_val,
+                                "caret": false
+                            }),
+                        );
+                    }
+                    if !title_val.is_empty() {
+                        frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 120.0, margin.x1, margin.y0 + 200.0], title_val, &st.toc_style);
+                    }
+                }
+                5 => {
+                    // TOC Line: one combined paragraph per record (type + number + title), so each record
+                    // becomes a single table-of-contents entry.
+                    let parts: Vec<&str> = [type_val, num_val, title_val].into_iter().filter(|s| !s.is_empty()).collect();
+                    let line = parts.join(" ");
+                    if !line.is_empty() {
+                        frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 20.0, margin.x1, margin.y0 + 60.0], &line, &st.toc_style);
+                    }
+                }
+                _ => {
+                    // 0 or Default: 1 Row · 3 Columns (Col 1 & 2 fit tightly to content, Col 3 takes rest of width with space at end)
+                    let gutter = 8.0;
+                    let end_space = 20.0;
+                    let row_y0 = margin.y0 + 20.0;
+                    let row_y1 = margin.y0 + 80.0;
+                    let mut cur_x = margin.x0;
+
+                    // Col 1: Type (Fit tightly to content, right-aligned)
+                    if !type_val.is_empty() {
+                        let formatted_type = type_val.to_uppercase();
+                        let c1_w = estimate_text_width(&formatted_type, true);
+                        let c1_x0 = cur_x;
+                        let c1_x1 = (c1_x0 + c1_w).min(margin.x1 - 100.0);
+                        cur_x = c1_x1 + gutter;
+
+                        if let Ok(res) = app.run(
+                            "frame.create",
+                            json!({
+                                "spread": spread_idx,
+                                "rect": [c1_x0, row_y0, c1_x1, row_y1],
+                                "content": "text",
+                                "text": formatted_type,
+                                "caret": false
+                            }),
+                        ) {
+                            if let Some(id) = res.get("id").and_then(Value::as_u64) {
+                                let _ = app.run("selection.set", json!({"ids": [id]}));
+                            }
+                            let _ = app.run("type.alignRight", json!({}));
+                        }
+                    }
+
+                    // Col 2: Number (Fit tightly to content)
+                    if !num_val.is_empty() {
+                        let c2_w = estimate_text_width(num_val, false);
+                        let c2_x0 = cur_x;
+                        let c2_x1 = (c2_x0 + c2_w).min(margin.x1 - 60.0);
+                        cur_x = c2_x1 + gutter;
+
+                        let _ = app.run(
+                            "frame.create",
+                            json!({
+                                "spread": spread_idx,
+                                "rect": [c2_x0, row_y0, c2_x1, row_y1],
+                                "content": "text",
+                                "text": num_val,
+                                "caret": false
+                            }),
+                        );
+                    }
+
+                    // Col 3: Title (Takes rest of width with space in the end)
+                    if !title_val.is_empty() {
+                        let c3_x0 = cur_x;
+                        let max_x1 = (margin.x1 - end_space).max(c3_x0 + 40.0);
+                        let c3_x1 = max_x1.min(margin.x1);
+
+                        frame_with_style(app, spread_idx, [c3_x0, row_y0, c3_x1, row_y1], title_val, &st.toc_style);
+                    }
+                }
+            }
+            // Auto-insert table from 'file' column if enabled
+            if st.card1_auto_insert_tables {
+                if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                    let catalog_p = std::path::Path::new(&st.card1_path);
+                    let dir = catalog_p.parent().unwrap_or(std::path::Path::new("."));
+                    let candidate1 = dir.join(file_str);
+                    let candidate2 = dir.join(format!("{file_str}.csv"));
+                    let candidate3 = dir.join(format!("{}.csv", excel::sanitize_filename(file_str)));
+                    let resolved = if candidate1.exists() && candidate1.is_file() {
+                        Some(candidate1)
+                    } else if candidate2.exists() && candidate2.is_file() {
+                        Some(candidate2)
+                    } else if candidate3.exists() && candidate3.is_file() {
+                        Some(candidate3)
+                    } else {
+                        None
+                    };
+
+                    if let Some(tbl_file) = resolved {
+                        if let Ok(content) = std::fs::read_to_string(&tbl_file) {
+                            let delim = detect_delimiter(&content);
+                            let tbl_matrix = parse_csv_content_with_delim(&content, delim);
+                            if !tbl_matrix.is_empty() {
+                                let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
+                                if execute_insert_table_matrix(app, st, Some(&tbl_matrix), Some(cur_page_idx)).is_ok() {
+                                    inserted_tables_count = inserted_tables_count.saturating_add(1);
+                                }
                             }
                         }
                     }
@@ -3873,7 +3959,14 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         generated_count = generated_count.saturating_add(1);
     }
 
-    let tbl_msg = if inserted_tables_count > 0 { format!(" (with {inserted_tables_count} tables auto-inserted)") } else { String::new() };
+    let mut details = Vec::new();
+    if inserted_rtfs_count > 0 {
+        details.push(format!("{inserted_rtfs_count} RTF chapter(s) placed"));
+    }
+    if inserted_tables_count > 0 {
+        details.push(format!("{inserted_tables_count} tables auto-inserted"));
+    }
+    let tbl_msg = if !details.is_empty() { format!(" (with {})", details.join(", ")) } else { String::new() };
     Ok(format!("Successfully generated {generated_count} pages{tbl_msg}!"))
 }
 
@@ -3921,6 +4014,55 @@ fn frame_with_style(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], text
     let _ = app.run("text.select", json!({"story": story, "anchor": 0, "focus": end}));
     let _ = app.run("style.paragraph.apply", json!({"name": style}));
     Some(story)
+}
+
+/// Create a text frame with specific font family, font size, and optional paragraph style.
+fn frame_with_font_and_style(
+    app: &mut DesignApp,
+    spread_idx: usize,
+    rect: [f64; 4],
+    text: &str,
+    font_family: &str,
+    font_size: f64,
+    style_opt: Option<&str>,
+) -> Option<u64> {
+    let res = app.run("frame.create", json!({"spread": spread_idx, "rect": rect, "content": "text", "text": text, "caret": false})).ok()?;
+    let story = res.get("story").and_then(Value::as_u64)?;
+    let end = text.chars().count().max(1) as u64;
+    let _ = app.run("text.select", json!({"story": story, "anchor": 0, "focus": end}));
+    if let Some(style) = style_opt {
+        let _ = app.run("style.paragraph.apply", json!({"name": style}));
+    }
+    let _ = app.run("text.select", json!({"story": story, "anchor": 0, "focus": end}));
+    let _ = app.run("type.char", json!({"fontFamily": font_family, "size": font_size}));
+    Some(story)
+}
+
+/// Split title like "BAB 01 Pemerintahan" into ("BAB 01", "Pemerintahan")
+pub fn split_chapter_title(title: &str, num_val: &str) -> (String, String) {
+    let t = title.trim();
+    let words: Vec<&str> = t.split_whitespace().collect();
+    if words.len() >= 3 && words[0].eq_ignore_ascii_case("bab") {
+        let ch_num = words[1].trim_matches(|c: char| c == '.' || c == ':' || c == ';');
+        let chapter_line = format!("{} {}", words[0].to_uppercase(), ch_num);
+        let title_line = words[2..].join(" ");
+        return (chapter_line, title_line);
+    }
+    if words.len() >= 2 && words[0].eq_ignore_ascii_case("bab") {
+        let ch_num = words[1].trim_matches(|c: char| c == '.' || c == ':' || c == ';');
+        return (format!("{} {}", words[0].to_uppercase(), ch_num), String::new());
+    }
+
+    if !num_val.is_empty() {
+        let chapter_line = format!("BAB {num_val}");
+        let clean = t.strip_prefix("BAB").or_else(|| t.strip_prefix("bab")).unwrap_or(t).trim();
+        let clean2 = clean.strip_prefix(num_val).unwrap_or(clean).trim();
+        let clean3 = clean2.trim_matches(|c: char| c == '.' || c == ':' || c == ';').trim();
+        let final_title = if clean3.is_empty() { t.to_string() } else { clean3.to_string() };
+        return (chapter_line, final_title);
+    }
+
+    (t.to_string(), String::new())
 }
 
 /// The number of paragraphs the TOC would collect for `style` right now.
@@ -8797,5 +8939,54 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         harness.input_mut().max_texture_side = Some(8192);
         harness.run_steps(4);
         harness.render().unwrap().save(directory.join("pubgen-toc-table.png")).unwrap();
+    }
+
+    #[test]
+    fn test_split_chapter_title() {
+        assert_eq!(split_chapter_title("BAB 01 Pemerintahan", "01"), ("BAB 01".into(), "Pemerintahan".into()));
+        assert_eq!(split_chapter_title("BAB 01. Pemerintahan Daerah", "01"), ("BAB 01".into(), "Pemerintahan Daerah".into()));
+        assert_eq!(split_chapter_title("BAB 2 Keadaan Alam", "02"), ("BAB 2".into(), "Keadaan Alam".into()));
+        assert_eq!(split_chapter_title("Pemerintahan", "01"), ("BAB 01".into(), "Pemerintahan".into()));
+    }
+
+    #[test]
+    fn test_execute_generate_pages_ulasan_rtf_layout() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("ulasan_test.rtf");
+        let rtf_content = br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Bab satu ulasan pemerintahan daerah di Karawang Timur.}"#;
+        std::fs::write(&rtf_path, rtf_content).unwrap();
+
+        let st = PubgenState {
+            card1_records: vec![vec!["Ulasan".into(), "01".into(), "BAB 01 Pemerintahan".into(), rtf_path.to_string_lossy().to_string()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for Ulasan should succeed: {res:?}");
+        let msg = res.unwrap();
+        assert!(msg.contains("1 RTF chapter(s) placed"), "Summary should confirm RTF placed: {msg}");
+
+        // Verify items on the generated page (page 1)
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2, "1 initial page + 1 generated page");
+
+        let (spread_idx, _) = active.doc.page_loc(1).unwrap();
+        let spread = &active.doc.spreads[spread_idx];
+        let texts: Vec<String> =
+            spread.items.iter().filter_map(|it| it.text_frame()).filter_map(|tf| active.doc.story(tf.story)).map(|st| st.text.clone()).collect();
+
+        // Must contain "BAB 01", "Pemerintahan", and the RTF text
+        assert!(texts.iter().any(|t| t.contains("BAB 01")), "Page should contain 'BAB 01', found: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Pemerintahan")), "Page should contain 'Pemerintahan', found: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Bab satu ulasan pemerintahan")), "Page should contain imported RTF content, found: {texts:?}");
     }
 }

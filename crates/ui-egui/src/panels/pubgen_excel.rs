@@ -137,6 +137,85 @@ pub fn parse_catalog_entry(first_row_cells: &[String], sheet_name: &str) -> (Str
     ("Tabel".into(), sheet_name.into(), full, sheet_name.into())
 }
 
+/// Check if a sheet is an RTF review sheet (named RXX where XX is 01-99).
+pub fn is_rtf_review_sheet(sheet_name: &str) -> bool {
+    let s = sheet_name.trim();
+    if s.len() >= 2 && (s.starts_with('R') || s.starts_with('r')) {
+        let rest = &s[1..];
+        rest.chars().all(|c| c.is_ascii_digit())
+    } else {
+        false
+    }
+}
+
+/// Extract first two-digit number from a string, e.g. "BAB 01 Pemerintahan" -> "01".
+pub fn extract_first_two_digit_number(text: &str) -> Option<String> {
+    let mut num_str = String::new();
+    let mut in_num = false;
+    for ch in text.chars() {
+        if ch.is_ascii_digit() {
+            num_str.push(ch);
+            in_num = true;
+        } else if in_num {
+            break;
+        }
+    }
+    if num_str.is_empty() {
+        None
+    } else if let Ok(val) = num_str.parse::<u32>() {
+        Some(format!("{val:02}"))
+    } else {
+        Some(num_str)
+    }
+}
+
+/// Parse an RXX RTF review sheet with 2 rows:
+/// Row 1: title;"BAB 01 Pemerintahan"
+/// Row 2: file;[path to file RTF]
+pub fn parse_rtf_review_sheet(sheet: &ExcelSheetData) -> Option<(String, String, String, String)> {
+    let row1 = sheet.grid.first()?;
+    let row2 = sheet.grid.get(1);
+
+    let extract_field = |row: &[String], expected_key: &str| -> String {
+        for cell in row {
+            let t = cell.trim();
+            for sep in [';', ':', '='] {
+                if let Some((k, v)) = t.split_once(sep) {
+                    if k.trim().eq_ignore_ascii_case(expected_key) {
+                        return v.trim().trim_matches('"').trim().to_string();
+                    }
+                }
+            }
+        }
+        let non_empty: Vec<&str> = row.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        if non_empty.len() >= 2 && non_empty[0].eq_ignore_ascii_case(expected_key) {
+            return non_empty[1].trim_matches('"').trim().to_string();
+        }
+        for &c in &non_empty {
+            if !c.eq_ignore_ascii_case(expected_key) {
+                return c.trim_matches('"').trim().to_string();
+            }
+        }
+        String::new()
+    };
+
+    let title_val = extract_field(row1, "title");
+    let file_val = row2.map(|r| extract_field(r, "file")).unwrap_or_default();
+
+    let num_val = extract_first_two_digit_number(&title_val).unwrap_or_else(|| {
+        let digits: String = sheet.name.chars().filter(|c| c.is_ascii_digit()).collect();
+        if digits.len() == 1 {
+            format!("0{digits}")
+        } else if !digits.is_empty() {
+            digits
+        } else {
+            "01".to_string()
+        }
+    });
+
+    Some(("Ulasan".to_string(), num_val, title_val, file_val))
+}
+
 /// Automatically reconstruct table column headers by propagating horizontal & vertical
 /// cell merges across header rows and joining ancestor levels with `--`.
 pub fn build_merged_table_headers(
@@ -304,6 +383,21 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
     for sheet in sheets {
         let sheet_name = sheet.name.trim();
         let safe_name = sanitize_filename(sheet_name);
+
+        // Check if sheet is an RXX RTF chapter review sheet
+        if is_rtf_review_sheet(sheet_name) {
+            if let Some((t_val, n_val, title_val, f_val)) = parse_rtf_review_sheet(sheet) {
+                catalog_rows.push(format!(
+                    "{},{},{},{}",
+                    escape_csv_field(&t_val),
+                    escape_csv_field(&n_val),
+                    escape_csv_field(&title_val),
+                    escape_csv_field(&f_val)
+                ));
+                // RXX sheets are narrative review chapters (RTF), not tabular data
+                continue;
+            }
+        }
 
         // 1. Process first row for catalog
         let first_row = sheet.grid.first().cloned().unwrap_or_default();
@@ -700,6 +794,46 @@ mod tests {
         assert_eq!(n2, "01.01.");
         assert_eq!(title2, "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006");
         assert_eq!(file2, "01_01");
+    }
+
+    #[test]
+    fn test_is_rtf_review_sheet_and_parse_rxx() {
+        assert!(is_rtf_review_sheet("R01"));
+        assert!(is_rtf_review_sheet("R02"));
+        assert!(is_rtf_review_sheet("R1"));
+        assert!(is_rtf_review_sheet("R99"));
+        assert!(is_rtf_review_sheet("r05"));
+        assert!(!is_rtf_review_sheet("02_01"));
+        assert!(!is_rtf_review_sheet("Report"));
+        assert!(!is_rtf_review_sheet("Table1"));
+
+        assert_eq!(extract_first_two_digit_number("BAB 01 Pemerintahan"), Some("01".into()));
+        assert_eq!(extract_first_two_digit_number("BAB 2 Keadaan Alam"), Some("02".into()));
+        assert_eq!(extract_first_two_digit_number("BAB 12"), Some("12".into()));
+
+        // Test with semicolon syntax: title;BAB 01 Pemerintahan and file;path/to/file.rtf
+        let sheet1 = ExcelSheetData {
+            name: "R01".into(),
+            grid: vec![vec!["title;BAB 01 Pemerintahan".into()], vec!["file;plan/pubgen/samples/ulasan_bab_1.rtf".into()]],
+            merges: Vec::new(),
+        };
+        let (t1, n1, title1, f1) = parse_rtf_review_sheet(&sheet1).unwrap();
+        assert_eq!(t1, "Ulasan");
+        assert_eq!(n1, "01");
+        assert_eq!(title1, "BAB 01 Pemerintahan");
+        assert_eq!(f1, "plan/pubgen/samples/ulasan_bab_1.rtf");
+
+        // Test with multi-column syntax: col 0 = "title", col 1 = "BAB 02 Keadaan Alam"
+        let sheet2 = ExcelSheetData {
+            name: "R02".into(),
+            grid: vec![vec!["title".into(), "BAB 02 Keadaan Alam".into()], vec!["file".into(), "ulasan_bab_2.rtf".into()]],
+            merges: Vec::new(),
+        };
+        let (t2, n2, title2, f2) = parse_rtf_review_sheet(&sheet2).unwrap();
+        assert_eq!(t2, "Ulasan");
+        assert_eq!(n2, "02");
+        assert_eq!(title2, "BAB 02 Keadaan Alam");
+        assert_eq!(f2, "ulasan_bab_2.rtf");
     }
 
     #[test]
