@@ -187,7 +187,11 @@ cargo build --release -p designcraft -p designcraft-cli --features designcraft/p
 $DistDir = "dist\designcraft-portable-x64"
 if (Test-Path $DistDir) { Remove-Item -Recurse -Force $DistDir }
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "samples") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "samples\csv") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "samples\xlsx") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "samples\images") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "samples\style") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "samples\thumb") | Out-Null
 ```
 
 #### Step 3: Copy Binaries and Assets
@@ -196,8 +200,12 @@ New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "samples") | Out-N
 Copy-Item "target\x86_64-pc-windows-msvc\release\designcraft.exe" $DistDir
 Copy-Item "target\x86_64-pc-windows-msvc\release\designcraft-cli.exe" $DistDir
 
-# Copy sample CSV datasets for demonstration
-Copy-Item "plan\pubgen\samples\*.csv" (Join-Path $DistDir "samples")
+# Copy sample CSV and XLSX datasets into dedicated subfolders (no files in root samples folder)
+Copy-Item "plan\pubgen\samples\*.csv" (Join-Path $DistDir "samples\csv")
+Copy-Item "plan\pubgen\samples\BAB_02_2025.xlsx" (Join-Path $DistDir "samples\xlsx")
+if (Test-Path "plan\pubgen\samples\images") { Copy-Item -Recurse "plan\pubgen\samples\images\*" (Join-Path $DistDir "samples\images") }
+if (Test-Path "plan\pubgen\samples\style") { Copy-Item -Recurse "plan\pubgen\samples\style\*" (Join-Path $DistDir "samples\style") }
+if (Test-Path "plan\pubgen\samples\thumb") { Copy-Item -Recurse "plan\pubgen\samples\thumb\*" (Join-Path $DistDir "samples\thumb") }
 ```
 
 #### Step 4: Create the `portable.txt` Marker
@@ -221,9 +229,10 @@ Double-click designcraft.exe to start the app.
 TESTING PUBGEN:
 1. File > New Document (Ctrl+N) > Create.
 2. Open the 'Pubgen' tab in the right dock panel.
-3. Test 'Page from CSV' with samples\KBDA2026_chapters.csv.
-4. Test 'Table from CSV' with samples\kbda_2005.csv (Style: Horizontal Rules).
-5. Test 'Quick Actions' to switch Double-sided / Single-sided or add blank pages.
+3. Test 'Page from CSV' with samples\csv\KBDA2026_chapters.csv.
+4. Test 'Table from CSV' with samples\csv\kbda_2005.csv (Style: Horizontal Rules).
+5. Test 'Excel to CSV' with samples\xlsx\BAB_02_2025.xlsx.
+6. Test 'Quick Actions' to switch Double-sided / Single-sided or add blank pages.
 ========================================================================
 "@
 ```
@@ -257,12 +266,40 @@ cargo build --release -p designcraft -p designcraft-cli --features designcraft/p
 
 Write-Host '==> 2. Assembling portable folder...'
 Remove-Item -Recurse -Force `$DistDir -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force -Path (Join-Path `$DistDir 'samples') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path `$DistDir 'samples\csv') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path `$DistDir 'samples\xlsx') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path `$DistDir 'samples\images') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path `$DistDir 'samples\style') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path `$DistDir 'samples\thumb') | Out-Null
+
 Copy-Item 'target\x86_64-pc-windows-msvc\release\designcraft.exe' `$DistDir
 Copy-Item 'target\x86_64-pc-windows-msvc\release\designcraft-cli.exe' `$DistDir
-Copy-Item 'plan\pubgen\samples\*.csv' (Join-Path `$DistDir 'samples')
+
+Copy-Item 'plan\pubgen\samples\*.csv' (Join-Path `$DistDir 'samples\csv')
+Copy-Item 'plan\pubgen\samples\BAB_02_2025.xlsx' (Join-Path `$DistDir 'samples\xlsx')
+if (Test-Path 'plan\pubgen\samples\images') { Copy-Item -Recurse 'plan\pubgen\samples\images\*' (Join-Path `$DistDir 'samples\images') }
+if (Test-Path 'plan\pubgen\samples\style') { Copy-Item -Recurse 'plan\pubgen\samples\style\*' (Join-Path `$DistDir 'samples\style') }
+if (Test-Path 'plan\pubgen\samples\thumb') { Copy-Item -Recurse 'plan\pubgen\samples\thumb\*' (Join-Path `$DistDir 'samples\thumb') }
 
 Set-Content -Encoding ascii -Path (Join-Path `$DistDir 'portable.txt') -Value 'DesignCraft portable: preferences, logs and crash recovery are kept in the DesignCraftData folder next to designcraft.exe.'
+
+Set-Content -Encoding utf8 -Path (Join-Path `$DistDir 'README-PORTABLE.txt') -Value @'
+========================================================================
+DesignCraft - Standalone Portable Demo (Windows x64)
+========================================================================
+
+HOW TO RUN:
+Double-click designcraft.exe to start the app.
+
+TESTING PUBGEN:
+1. File > New Document (Ctrl+N) > Create.
+2. Open the 'Pubgen' tab in the right dock panel.
+3. Test 'Page from CSV' with samples\csv\KBDA2026_chapters.csv.
+4. Test 'Table from CSV' with samples\csv\kbda_2005.csv (Style: Horizontal Rules).
+5. Test 'Excel to CSV' with samples\xlsx\BAB_02_2025.xlsx.
+6. Test 'Quick Actions' to switch Double-sided / Single-sided or add blank pages.
+========================================================================
+'@
 
 Write-Host '==> 3. Creating portable zip...'
 Remove-Item -Force `$ZipPath -ErrorAction SilentlyContinue

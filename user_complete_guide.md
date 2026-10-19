@@ -403,11 +403,11 @@ cargo test -p designcraft-ui-egui --features pubgen -- pubgen
 
 ### 7.4 Packaging Portable Windows Builds
 
-To package a standalone, portable Windows x64 ZIP containing static CRT binaries and sample CSV datasets:
+To package a standalone, portable Windows x64 ZIP containing static CRT binaries and sample datasets (organized under `samples\csv\` and `samples\xlsx\`):
 
 ```powershell
 $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = "-C target-feature=+crt-static"
 cargo build --release -p designcraft -p designcraft-cli --features designcraft/pubgen --target x86_64-pc-windows-msvc
 ```
 
-Then assemble the release folder under `dist\designcraft-portable-x64\` with a `portable.txt` marker file.
+Then assemble the release folder under `dist\designcraft-portable-x64\` with a `portable.txt` marker file and `samples\csv\` / `samples\xlsx\` subdirectories.
