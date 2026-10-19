@@ -9,7 +9,7 @@
 2. [Finding the Pubgen Panel in DesignCraft](#2-finding-the-pubgen-panel-in-designcraft)
 3. [Card 1: Publication Cover (Cover Page Generator)](#3-card-1-publication-cover-cover-page-generator)
    - [Overview & Position](#overview--position)
-   - [The 8 Executive Cover Styles](#the-8-executive-cover-styles)
+   - [The 9 Executive Cover Styles](#the-9-executive-cover-styles)
    - [Hover Thumbnail Previews](#hover-thumbnail-previews)
    - [Theme Colors & Color Customization](#theme-colors--color-customization)
    - [Metadata & Content Fields](#metadata--content-fields)
@@ -95,7 +95,8 @@ The **Publication Cover** section allows you to synthesize a complete, professio
 +-------------------------------------------------------------------+
 | Publication Cover                                                 |
 | Style: [ Folded Origami        ▼ ]  [👁 Preview]                   |
-| Preview: [🌊 Wave] [❖ Medallion] [◈ Origami] [◆ Chevron] [⬡ Hexagon]|
+| Preview: [🌊 Wave] [🔷 Geometric] [📐 Origami] [🔰 Chevron] [⬡ Hexagon]|
+|          [🏢 Corporate] [↗ Arrow] [🌇 Horizon] [📊 Report]         |
 |                                                                   |
 | Theme:  [ Corporate Sapphire ▼ ]                                  |
 | Colors: [ Primary: #0072bc ] [ Accent: #f5ab19 ] [ Dark: #111827 ]|
@@ -121,9 +122,9 @@ The **Publication Cover** section allows you to synthesize a complete, professio
 
 ---
 
-### The 8 Executive Cover Styles
+### The 9 Executive Cover Styles
 
-Pubgen provides 8 corporate design styles:
+Pubgen provides 9 corporate design styles:
 
 #### 1. Wave Curves (`🌊 Wave`)
 - **Visual Personality**: Organic, modern, flowing.
@@ -210,10 +211,22 @@ Pubgen provides 8 corporate design styles:
   - Its own palette (**Report Navy & Orange**, `#082641` + `#f5871f`) matches the reference cover; picking the style selects that theme automatically, and any other theme still works.
 - **Best For**: Annual statistical yearbooks, regional profiles in numbers, institutional reports, government publications.
 
+#### 9. Business Report (`📊 Report`)
+- **Visual Personality**: Bold, corporate, high-contrast business-to-business.
+- **Design Elements**:
+  - Crisp white canvas crossed by **navy diagonal wedges** (a broad upper-left wedge and a lower-left wedge) that frame a central photograph band.
+  - A **skyscraper photograph** in the middle diagonal band, with a bold **orange accent wedge** on the right edge and an **orange lower-right wedge** filling the base.
+  - Top-right headline stack in **Arial Black**: the region level (navy), the publication title (orange), and `DALAM ANGKA` (navy) — echoing the navy/orange/navy rhythm of the reference image.
+  - **Position Lock**: publication metadata (Line #1: `Katalog BPS: <number>`, Line #2: `ISSN/ISBN <number>` in crisp **Arial Bold**) sits top-right.
+  - A two-tone year in giant **Arial Black** over the orange wedge, with the **Volume** line directly beneath it.
+  - **Position Lock**: top-left official agency logo paired with multi-line institutional branding (**Arial Bold Italic**).
+  - Its own palette (**Report Navy & Orange**, `#082641` + `#f5871f`); picking the style selects that theme automatically, and any other theme still works.
+- **Best For**: Business reports, corporate annual reviews, investment and industry publications, city profiles.
+
 ---
 
 ### Hover Thumbnail Previews
-- **Quick Preview Pills**: Under the style dropdown, you will see 8 quick-switch pills (`🌊 Wave`, `❖ Medallion`, `◈ Origami`, `◆ Chevron`, `⬡ Hexagon`, `🏢 Corporate`, `↗ Arrow`, `🌇 Horizon`).
+- **Quick Preview Pills**: Under the style dropdown, you will see 9 quick-switch pills (`🌊 Wave`, `🔷 Geometric`, `📐 Origami`, `🔰 Chevron`, `⬡ Hexagon`, `🏢 Corporate`, `↗ Arrow`, `🌇 Horizon`, `📊 Report`).
 - **Hover to Preview**: Simply move your mouse over any pill (or click the small eye icon `👁` next to the dropdown). A floating tooltip instantly displays the actual rendered cover thumbnail so you can choose your favorite look before generating.
 
 ---

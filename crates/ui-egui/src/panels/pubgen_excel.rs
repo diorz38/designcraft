@@ -216,6 +216,80 @@ pub fn parse_rtf_review_sheet(sheet: &ExcelSheetData) -> Option<(String, String,
     Some(("Ulasan".to_string(), num_val, title_val, file_val))
 }
 
+/// Check if a sheet is a chart / graphic sheet (named CXX_XX or CXX where XX is digits, e.g. C02_01).
+pub fn is_chart_sheet(sheet_name: &str) -> bool {
+    let s = sheet_name.trim();
+    if s.len() >= 2 && (s.starts_with('C') || s.starts_with('c')) {
+        let rest = &s[1..];
+        rest.chars().all(|c| c.is_ascii_digit() || c == '_') && rest.chars().any(|c| c.is_ascii_digit())
+    } else {
+        false
+    }
+}
+
+/// Extract the first dotted number from a string, e.g. "Grafik 02.01 Panjang..." -> "02.01".
+pub fn extract_dotted_number(text: &str) -> Option<String> {
+    for word in text.split_whitespace() {
+        let clean = word.trim_matches(|c: char| c == ':' || c == ';' || c == ',');
+        if clean.contains('.') && clean.chars().any(|c| c.is_ascii_digit()) {
+            let num = clean.trim_matches('.');
+            if !num.is_empty() && num.chars().all(|c| c.is_ascii_digit() || c == '.') {
+                return Some(num.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Parse a CXX_XX chart/figure sheet with 2 rows:
+/// Row 1: title;"Grafik 02.01 Panjang Jalan..." (or col 0: title, col 1: text)
+/// Row 2: file;[path of image file] (or col 0: file, col 1: path)
+pub fn parse_chart_sheet(sheet: &ExcelSheetData) -> Option<(String, String, String, String)> {
+    let row1 = sheet.grid.first()?;
+    let row2 = sheet.grid.get(1);
+
+    let extract_field = |row: &[String], expected_key: &str| -> String {
+        for cell in row {
+            let t = cell.trim();
+            for sep in [';', ':', '='] {
+                if let Some((k, v)) = t.split_once(sep) {
+                    if k.trim().eq_ignore_ascii_case(expected_key) {
+                        return v.trim().trim_matches('"').trim().to_string();
+                    }
+                }
+            }
+        }
+        let non_empty: Vec<&str> = row.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        if non_empty.len() >= 2 && non_empty[0].eq_ignore_ascii_case(expected_key) {
+            return non_empty[1].trim_matches('"').trim().to_string();
+        }
+        for &c in &non_empty {
+            if !c.eq_ignore_ascii_case(expected_key) {
+                return c.trim_matches('"').trim().to_string();
+            }
+        }
+        String::new()
+    };
+
+    let title_val = extract_field(row1, "title");
+    let file_val = row2.map(|r| extract_field(r, "file")).unwrap_or_default();
+
+    let first_word = title_val.split_whitespace().next().unwrap_or("Grafik");
+    let type_val = if ["grafik", "graph", "chart", "bagan", "diagram", "peta", "map"].iter().any(|k| first_word.eq_ignore_ascii_case(k)) {
+        first_word.to_string()
+    } else {
+        "Grafik".to_string()
+    };
+
+    let num_val = extract_dotted_number(&title_val).unwrap_or_else(|| {
+        let clean = sheet.name.trim();
+        let stripped = clean.strip_prefix('C').or_else(|| clean.strip_prefix('c')).unwrap_or(clean);
+        stripped.replace('_', ".")
+    });
+
+    Some((type_val, num_val, title_val, file_val))
+}
+
 /// Automatically reconstruct table column headers by propagating horizontal & vertical
 /// cell merges across header rows and joining ancestor levels with `--`.
 pub fn build_merged_table_headers(
@@ -395,6 +469,21 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
                     escape_csv_field(&f_val)
                 ));
                 // RXX sheets are narrative review chapters (RTF), not tabular data
+                continue;
+            }
+        }
+
+        // Check if sheet is a CXX_XX chart / figure sheet
+        if is_chart_sheet(sheet_name) {
+            if let Some((t_val, n_val, title_val, f_val)) = parse_chart_sheet(sheet) {
+                catalog_rows.push(format!(
+                    "{},{},{},{}",
+                    escape_csv_field(&t_val),
+                    escape_csv_field(&n_val),
+                    escape_csv_field(&title_val),
+                    escape_csv_field(&f_val)
+                ));
+                // CXX sheets are graphic chart figures, not tabular data
                 continue;
             }
         }
@@ -837,6 +926,51 @@ mod tests {
     }
 
     #[test]
+    fn test_is_chart_sheet_and_parse_cxx() {
+        assert!(is_chart_sheet("C02_01"));
+        assert!(is_chart_sheet("C01_02"));
+        assert!(is_chart_sheet("c02_01"));
+        assert!(is_chart_sheet("C02"));
+        assert!(!is_chart_sheet("R02"));
+        assert!(!is_chart_sheet("02_01"));
+        assert!(!is_chart_sheet("Chart"));
+
+        assert_eq!(extract_dotted_number("Grafik 02.01 Panjang Jalan"), Some("02.01".into()));
+        assert_eq!(extract_dotted_number("Panjang Jalan 02.01"), Some("02.01".into()));
+        assert_eq!(extract_dotted_number("Grafik 1.2"), Some("1.2".into()));
+        assert_eq!(extract_dotted_number("No digits here"), None);
+
+        // Test with multi-column syntax matching user's sample C02_01:
+        // Row 1: col 0 = "title", col 1 = "Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026"
+        // Row 2: col 0 = "file", col 1 = "plan/pubgen/samples/C02_01.png"
+        let sheet1 = ExcelSheetData {
+            name: "C02_01".into(),
+            grid: vec![
+                vec!["title".into(), "Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026".into()],
+                vec!["file".into(), "plan/pubgen/samples/C02_01.png".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let (t1, n1, title1, f1) = parse_chart_sheet(&sheet1).unwrap();
+        assert_eq!(t1, "Grafik");
+        assert_eq!(n1, "02.01");
+        assert_eq!(title1, "Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026");
+        assert_eq!(f1, "plan/pubgen/samples/C02_01.png");
+
+        // Test with semicolon syntax:
+        let sheet2 = ExcelSheetData {
+            name: "C02_02".into(),
+            grid: vec![vec!["title;Grafik 02.02 Produksi Padi".into()], vec!["file;C02_02.jpg".into()]],
+            merges: Vec::new(),
+        };
+        let (t2, n2, title2, f2) = parse_chart_sheet(&sheet2).unwrap();
+        assert_eq!(t2, "Grafik");
+        assert_eq!(n2, "02.02");
+        assert_eq!(title2, "Grafik 02.02 Produksi Padi");
+        assert_eq!(f2, "C02_02.jpg");
+    }
+
+    #[test]
     fn test_build_merged_table_headers_with_double_dash() {
         // Reconstruct user's exact spreadsheet from attached image:
         // Row 1: Tingkat Pendidikan | Jenis Kelamin (merged B2:C2) | Jumlah
@@ -1061,9 +1195,10 @@ mod tests {
         let sheets = parse_xlsx_sheets(path.to_str().unwrap());
         assert!(sheets.is_ok(), "Should parse sheets from BAB_02_2025.xlsx: {:?}", sheets);
         let s_list = sheets.unwrap();
-        assert_eq!(s_list.len(), 3);
+        assert_eq!(s_list.len(), 5, "BAB_02_2025.xlsx has 5 sheets: R02, C02_01, 02_01, 02_02, 02_03");
 
         let converted = convert_excel_to_csv_data(&s_list, "BAB_02_2025");
+        // R02 (Ulasan) and C02_01 (Grafik) are not tables, so only the 3 tabular sheets produce table CSVs
         assert_eq!(converted.table_csvs.len(), 3);
         assert_eq!(converted.table_csvs[0].0, "02_01.csv");
         assert_eq!(converted.table_csvs[1].0, "02_02.csv");
@@ -1072,5 +1207,10 @@ mod tests {
             assert!(tbl_name.ends_with(".csv"));
             assert!(!tbl_csv.is_empty());
         }
+
+        // Verify catalog content includes both Ulasan and Grafik
+        assert!(converted.catalog_csv_content.contains("Ulasan,02,Bab 02  Pemerintahan,"));
+        assert!(converted.catalog_csv_content.contains("Grafik,02.01,Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026,"));
+        assert!(converted.catalog_csv_content.contains("Tabel,02.01,"));
     }
 }

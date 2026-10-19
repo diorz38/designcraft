@@ -169,9 +169,15 @@ This workflow packages a self-contained, portable Windows x64 demonstration buil
 
 Open PowerShell in the repository root (`f:\GitHub\designcraft`):
 
-#### Step 1: Compile Release Binaries with Static CRT
-Set the target rustflags to statically link the CRT, then compile in optimized `--release` mode with the `pubgen` feature:
+#### Step 1: Compile Release Binaries with Static CRT & Embedded Icon
+Ensure the Windows Resource Compiler (`rc.exe`) is on `$env:PATH`, require resource embedding, and set target rustflags to statically link the CRT, then compile in optimized `--release` mode with the `pubgen` feature:
 ```powershell
+# Ensure rc.exe (Windows SDK) is in PATH so the application icon is embedded
+if (-not (Get-Command rc.exe -ErrorAction SilentlyContinue)) {
+    $rc = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits", "C:\Program Files\Microsoft Visual Studio" -Filter "rc.exe" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*\x64\rc.exe" } | Select-Object -First 1
+    if ($rc) { $env:PATH = "$($rc.DirectoryName);$env:PATH" }
+}
+$env:DESIGNCRAFT_REQUIRE_WINRES = "1"
 $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = "-C target-feature=+crt-static"
 cargo build --release -p designcraft -p designcraft-cli --features designcraft/pubgen --target x86_64-pc-windows-msvc
 ```
@@ -240,7 +246,12 @@ powershell -Command "
 `$DistDir = 'dist\designcraft-portable-x64'
 `$ZipPath = 'dist\designcraft-portable-x64.zip'
 
-Write-Host '==> 1. Building release binaries (static CRT)...'
+Write-Host '==> 1. Building release binaries (static CRT & embedded icon)...'
+if (-not (Get-Command rc.exe -ErrorAction SilentlyContinue)) {
+    `$rc = Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits', 'C:\Program Files\Microsoft Visual Studio' -Filter 'rc.exe' -Recurse -ErrorAction SilentlyContinue | Where-Object { `$_.FullName -like '*\x64\rc.exe' } | Select-Object -First 1
+    if (`$rc) { `$env:PATH = "`$(`$rc.DirectoryName);`$env:PATH" }
+}
+`$env:DESIGNCRAFT_REQUIRE_WINRES = '1'
 `$env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = '-C target-feature=+crt-static'
 cargo build --release -p designcraft -p designcraft-cli --features designcraft/pubgen --target x86_64-pc-windows-msvc
 

@@ -9,7 +9,7 @@
 2. [Menemukan Panel Pubgen di DesignCraft](#2-menemukan-panel-pubgen-di-designcraft)
 3. [Bagian 1: Publication Cover (Pembuat Halaman Sampul Otomatis)](#3-bagian-1-publication-cover-pembuat-halaman-sampul-otomatis)
    - [Ikhtisar & Posisi Halaman](#ikhtisar--posisi-halaman)
-   - [8 Gaya Sampul Eksekutif](#8-gaya-sampul-eksekutif)
+   - [9 Gaya Sampul Eksekutif](#9-gaya-sampul-eksekutif)
    - [Pratinjau Thumbnail Hover](#pratinjau-thumbnail-hover)
    - [Tema Warna & Kustomisasi Palet](#tema-warna--kustomisasi-palet)
    - [Metadata & Isian Informasi Publikasi](#metadata--isian-informasi-publikasi)
@@ -88,9 +88,9 @@ Menu **Publication Cover** memungkinkan Anda membuat halaman sampul depan buku/l
 
 ---
 
-### 8 Gaya Sampul Eksekutif
+### 9 Gaya Sampul Eksekutif
 
-Pubgen menyediakan 8 pilihan desain sampul siap pakai:
+Pubgen menyediakan 9 pilihan desain sampul siap pakai:
 
 #### 1. Wave Curves (`🌊 Wave`)
 - **Karakter Visual**: Mengalir dinamis, modern, dan luwes.
@@ -177,10 +177,22 @@ Pubgen menyediakan 8 pilihan desain sampul siap pakai:
   - Palet bawaannya (**Report Navy & Orange**, `#082641` + `#f5871f`) mengikuti warna sampul referensi; memilih gaya ini otomatis memilih tema tersebut, dan tema lain tetap dapat dipakai.
 - **Paling Cocok Untuk**: Buku tahunan statistik, profil daerah dalam angka, laporan institusional, dan publikasi pemerintah.
 
+#### 9. Business Report (`📊 Report`)
+- **Karakter Visual**: Tegas, korporat, dan kontras tinggi bergaya bisnis-ke-bisnis.
+- **Elemen Desain**:
+  - Kanvas putih bersih yang dilintasi **baji diagonal navy** (baji lebar kiri-atas dan baji kiri-bawah) yang membingkai pita foto di bagian tengah.
+  - **Foto gedung pencakar langit** pada pita diagonal tengah, dengan **baji aksen jingga** tebal di tepi kanan dan **baji jingga kanan-bawah** memenuhi bagian dasar.
+  - Tumpukan judul kanan-atas dengan **Arial Black**: jenjang wilayah (navy), judul publikasi (jingga), dan `DALAM ANGKA` (navy) — mengikuti irama navy/jingga/navy pada gambar referensi.
+  - **Position Lock**: metadata publikasi (Baris 1: `Katalog BPS: <nomor>`, Baris 2: `ISSN/ISBN <nomor>` dengan font **Arial Bold**) berada di kanan atas.
+  - Angka tahun dwi-warna raksasa dengan **Arial Black** di atas baji jingga, dengan baris **Volume** tepat di bawahnya.
+  - **Position Lock**: logo instansi resmi di kiri atas bersanding dengan teks nama instansi resmi (**Arial Bold Italic**).
+  - Palet bawaannya (**Report Navy & Orange**, `#082641` + `#f5871f`); memilih gaya ini otomatis memilih tema tersebut, dan tema lain tetap dapat dipakai.
+- **Paling Cocok Untuk**: Laporan bisnis, tinjauan tahunan korporat, publikasi investasi dan industri, serta profil kota.
+
 ---
 
 ### Pratinjau Thumbnail Hover
-- Di bawah menu pilihan gaya, terdapat tombol pil cepat: `🌊 Wave`, `❖ Medallion`, `◈ Origami`, `◆ Chevron`, `⬡ Hexagon`, `🏢 Corporate`, `↗ Arrow`, `🌇 Horizon`.
+- Di bawah menu pilihan gaya, terdapat tombol pil cepat: `🌊 Wave`, `🔷 Geometric`, `📐 Origami`, `🔰 Chevron`, `⬡ Hexagon`, `🏢 Corporate`, `↗ Arrow`, `🌇 Horizon`, `📊 Report`.
 - Cukup **arahkan kursor tetikus (hover)** ke salah satu pil (atau klik ikon mata `👁` di samping menu). Jendela melayang (*tooltip*) akan langsung menampilkan thumbnail foto sampul yang sesungguhnya beresolusi tinggi, sehingga Anda dapat memilih desain dengan yakin sebelum membuatnya.
 
 ---

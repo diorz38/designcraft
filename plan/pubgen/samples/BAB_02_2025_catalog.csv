@@ -1,5 +1,6 @@
 type,number,title,file
-Ulasan,02,Bab 02  Pemerintahan,E:\Github\designcraft\plan\pubgen\samples\ulasan_bab_1.rtf
+Ulasan,02,Bab 02  Pemerintahan,F:\GitHub\designcraft\plan\pubgen\samples\ulasan_bab_1.rtf
 Tabel,02.01,"Jumlah Rukun Warga (RW) dan Rukun Tetangga (RT) Menurut Desa/Kelurahan di Kecamatan Karawang Timur, 2025",02_01
 Tabel,02.02,"Jumlah Pegawai Negeri Sipil Menurut Pemerintah Daerah dan Jenis Kelamin di Kecamatan Karawang Timur, 2025",02_02
 Tabel,02.03,"Jumlah Pegawai Negeri Sipil Pemerintah Kecamatan Karawang Timur Menurut Tingkat Pendidikan dan Jenis Kelamin, 2025",02_03
+Grafik,02.01,Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026,F:\GitHub\designcraft\plan\pubgen\samples\C02_01.png

@@ -22,6 +22,10 @@ const PANEL_ID: &str = "pubgen_panel_state";
 /// design, whose palette is navy + orange rather than the amber of the other presets.
 const HORIZON_STYLE: usize = 7;
 
+/// Index of the "Business Report" cover style — the navy/orange diagonal cover derived from the
+/// business-report reference image, sharing the Horizon palette.
+const BUSINESS_STYLE: usize = 8;
+
 /// Theme preset index and colours of the reference annual-report cover (navy + orange).
 const REPORT_THEME: usize = 6;
 
@@ -665,6 +669,7 @@ fn style_thumbnail_texture(ctx: &egui::Context, style_idx: usize) -> Option<egui
         5 => ("corporate_headline.png", "karawang_timur_corporate_cover.png"),
         6 => ("diagonal_arrow.png", "karawang_timur_diagonal_cover.png"),
         7 => ("modern_horizon.png", "karawang_timur_modern_horizon_cover.png"),
+        8 => ("business_report.png", "karawang_timur_business_cover.png"),
         _ => return None,
     };
     let candidates = [
@@ -891,7 +896,7 @@ fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: 
             p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.15, h * 0.892), rect.min + vec2(w * 0.47, h * 0.905)), 1.0, navy);
             p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.15, h * 0.915), rect.min + vec2(w * 0.42, h * 0.928)), 1.0, navy);
         }
-        _ => {
+        7 => {
             // Style 7 (Modern Horizon): full-bleed photo under a sweeping arc + orange swoosh +
             // navy bottom block with the rounded top-left corner carrying the headline
             p.rect_filled(rect, 4.0, Color32::WHITE);
@@ -946,6 +951,59 @@ fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: 
             p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.16, h * 0.892), rect.min + vec2(w * 0.52, h * 0.905)), 1.0, Color32::WHITE);
             p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.16, h * 0.915), rect.min + vec2(w * 0.46, h * 0.928)), 1.0, Color32::WHITE);
         }
+        _ => {
+            // Style 8 (Business Report): white base, crossed navy/orange diagonal bands with the
+            // photograph in the middle, headline upper-right, year lower-right.
+            p.rect_filled(rect, 4.0, Color32::WHITE);
+            let navy = Color32::from_rgb(30, 58, 95);
+            let orange = Color32::from_rgb(240, 130, 35);
+
+            // Navy wedge from top-left down into the middle.
+            p.add(egui::Shape::convex_polygon(
+                vec![rect.min, rect.min + vec2(w * 0.62, 0.0), rect.min + vec2(0.0, h * 0.42)],
+                navy,
+                egui::Stroke::NONE,
+            ));
+            // Orange wedge in the middle-right edge.
+            p.add(egui::Shape::convex_polygon(
+                vec![rect.min + vec2(w, h * 0.30), rect.min + vec2(w, h * 0.50), rect.min + vec2(w * 0.66, h * 0.40)],
+                orange,
+                egui::Stroke::NONE,
+            ));
+            // Photograph band crossing the middle.
+            p.add(egui::Shape::convex_polygon(
+                vec![rect.min + vec2(w * 0.30, h * 0.34), rect.min + vec2(w, h * 0.30), rect.min + vec2(w, h * 0.74), rect.min + vec2(0.0, h * 0.66)],
+                Color32::from_rgb(150, 172, 196),
+                egui::Stroke::NONE,
+            ));
+            // Orange bottom wedge under the photo.
+            p.add(egui::Shape::convex_polygon(
+                vec![rect.min + vec2(w * 0.30, h * 0.66), rect.min + vec2(w, h * 0.70), rect.min + vec2(w, h), rect.min + vec2(w * 0.44, h)],
+                orange,
+                egui::Stroke::NONE,
+            ));
+
+            // Top-left logo mark + company line.
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.030), rect.min + vec2(w * 0.13, h * 0.072)), 1.0, navy);
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.15, h * 0.038), rect.min + vec2(w * 0.40, h * 0.050)),
+                1.0,
+                Color32::from_gray(70),
+            );
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.15, h * 0.056), rect.min + vec2(w * 0.34, h * 0.066)),
+                1.0,
+                Color32::from_gray(70),
+            );
+
+            // Top-right headline: navy line over an orange line.
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.50, h * 0.045), rect.min + vec2(w * 0.94, h * 0.075)), 2.0, navy);
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.46, h * 0.085), rect.min + vec2(w * 0.94, h * 0.115)), 2.0, orange);
+
+            // Lower-right year & caption over the orange wedge.
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.56, h * 0.752), rect.min + vec2(w * 0.84, h * 0.812)), 2.0, navy);
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.59, h * 0.822), rect.min + vec2(w * 0.95, h * 0.840)), 1.0, Color32::WHITE);
+        }
     }
 }
 
@@ -976,6 +1034,7 @@ fn show_style_thumbnail_tooltip(ui: &mut Ui, style_idx: usize, name: &str, t: &T
             5 => "Modern corporate architecture layout with top framing, headline focal block, and position-locked institutional metadata.",
             6 => "Navy diagonal banner and amber corner wedge over a half-bleed cityscape, with a forward navy wedge carrying the year and volume, and a position-locked agency footer.",
             7 => "Full-bleed cityscape under a sweeping arc with an accent wedge that follows it, a dark institutional block carrying the headline, and a position-locked agency footer.",
+            8 => "Crossed navy and orange diagonal bands framing a skyscraper photograph, headline upper-right and a two-tone year lower-right.",
             _ => "",
         };
         ui.add_space(3.0);
@@ -998,6 +1057,7 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
             "Corporate Headline",
             "Diagonal Arrow",
             "Modern Horizon",
+            "Business Report",
         ];
         let cur_style = styles.get(st.cover_style).copied().unwrap_or("Wave Curves");
         // The dock can be as narrow as 220 pt: the dropdown takes what the row has left.
@@ -1011,7 +1071,7 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                 });
             }
         });
-        if st.cover_style != prev_style && st.cover_style == HORIZON_STYLE {
+        if st.cover_style != prev_style && (st.cover_style == HORIZON_STYLE || st.cover_style == BUSINESS_STYLE) {
             apply_report_palette(st);
         }
         combo.response.on_hover_ui(|ui| {
@@ -1047,13 +1107,14 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
             ("🏢 Corporate", 5, "Corporate Headline"),
             ("↗ Arrow", 6, "Diagonal Arrow"),
             ("🌇 Horizon", 7, "Modern Horizon"),
+            ("📊 Report", 8, "Business Report"),
         ];
         for (label, idx, full_name) in style_pills {
             let is_sel = st.cover_style == idx;
             let btn = ui.selectable_label(is_sel, label);
             if btn.clicked() {
                 st.cover_style = idx;
-                if idx == HORIZON_STYLE {
+                if idx == HORIZON_STYLE || idx == BUSINESS_STYLE {
                     apply_report_palette(st);
                 }
             }
@@ -1323,15 +1384,20 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
             });
         }
         _ => {
-            // Style 7 (Modern Horizon): 1 image (Hero photograph clipped by the arc)
+            // Style 7 (Modern Horizon) & Style 8 (Business Report): 1 image (Hero photograph)
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Photo:").size(10.5).color(t.text));
                 let w = (ui.available_width() - 65.0).max(80.0);
+                let hover = if st.cover_style == BUSINESS_STYLE {
+                    "Skyscraper photograph filling the crossed diagonal bands"
+                } else {
+                    "Hero photograph clipped by the sweeping arc across the upper page"
+                };
                 ui.add_sized(
                     [w, crate::widgets::FIELD_H],
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
-                .on_hover_text("Hero photograph clipped by the sweeping arc across the upper page");
+                .on_hover_text(hover);
                 if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
                     if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
                         st.cover_image_skyline = path;
@@ -2786,7 +2852,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 
             "Diagonal Arrow"
         }
-        _ => {
+        7 => {
             // Style 7: Modern Horizon (from design-5.designcraft)
             // A full-bleed photograph under a sweeping arc, an accent wedge that follows the arc and
             // turns into the accent block on the right, and a dark block across the lower page whose
@@ -2973,6 +3039,199 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 
             "Modern Horizon"
         }
+        8 => {
+            // Style 8: Business Report (from the business-report reference image)
+            // Crossed navy diagonals framing a skyscraper photograph, an orange accent wedge, the
+            // headline stack top-right (navy / orange / navy), and a two-tone year over the orange
+            // wedge bottom-right. Every text frame maps to a Publication Cover option.
+            let sx = pw / 595.275591;
+            let sy = ph / 841.889764;
+            let s_avg = (sx + sy) / 2.0;
+            let x = |v: f64| v * sx;
+            let y = |v: f64| v * sy;
+
+            // 1. Base white background
+            app.run("frame.create", json!({"spread": 0, "rect": [0, 0, pw, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 2. Navy upper-left wedge (leaves the company corner white)
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.0, y(101.0)]},
+                    {"p": [x(369.0), 0.0]},
+                    {"p": [0.0, y(387.0)]}
+                ]}),
+            )?;
+            let _ = app.run("object.color", json!({"color": dark, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 3. Navy lower-left wedge
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.0, y(421.0)]},
+                    {"p": [x(179.0), y(555.0)]},
+                    {"p": [x(238.0), ph]},
+                    {"p": [0.0, ph]}
+                ]}),
+            )?;
+            let _ = app.run("object.color", json!({"color": dark, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 4. Skyscraper photograph across the middle diagonal band
+            let photo_res = app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [x(179.0), y(286.0)]},
+                    {"p": [pw, y(236.0)]},
+                    {"p": [pw, y(606.0)]},
+                    {"p": [x(179.0), y(555.0)]}
+                ]}),
+            )?;
+            let photo_id = photo_res.get("id").and_then(Value::as_u64);
+            let _ = app.run("object.content", json!({"type": "graphic", "ids": [photo_id]}));
+            let _ = app.run("file.place", json!({"path": skyline, "frame": photo_id}));
+            let _ = app.run("object.fit", json!({"mode": "fillProportionally", "ids": [photo_id]}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent", "ids": [photo_id]}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]", "ids": [photo_id]}));
+
+            // 5. Orange accent wedge on the right edge
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [pw, y(236.0)]},
+                    {"p": [pw, y(421.0)]},
+                    {"p": [x(381.0), y(337.0)]}
+                ]}),
+            )?;
+            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 6. Orange lower-right wedge carrying the year
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [x(238.0), y(589.0)]},
+                    {"p": [pw, y(555.0)]},
+                    {"p": [pw, ph]},
+                    {"p": [x(238.0), ph]}
+                ]}),
+            )?;
+            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 7. Top-right publication metadata (Position Lock: catalogue, then ISSN/ISBN)
+            add_cover_text_frame(app, 0, [x(320.0), y(24.0), x(560.0), y(42.0)], &cat_text, dark, "Arial", "Bold", 8.5 * s_avg, None, None, "right")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [x(320.0), y(42.0), x(560.0), y(60.0)],
+                &code_text,
+                dark,
+                "Arial",
+                "Bold",
+                8.5 * s_avg,
+                None,
+                None,
+                "right",
+            )?;
+
+            // 8. Top-right headline stack: level (navy), title (orange), DALAM ANGKA (navy) — the
+            //    navy / orange / navy rhythm of the reference.
+            add_cover_text_frame(
+                app,
+                0,
+                [x(300.0), y(78.0), x(560.0), y(112.0)],
+                &level_text.to_uppercase(),
+                dark,
+                "Arial Black",
+                "Regular",
+                24.0 * s_avg,
+                None,
+                Some(30.0),
+                "right",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [x(280.0), y(114.0), x(566.0), y(186.0)],
+                title_text,
+                accent,
+                "Arial Black",
+                "Regular",
+                34.0 * s_avg,
+                Some(38.0 * s_avg),
+                Some(10.0),
+                "right",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [x(300.0), y(190.0), x(560.0), y(224.0)],
+                "DALAM ANGKA",
+                dark,
+                "Arial Black",
+                "Regular",
+                24.0 * s_avg,
+                None,
+                Some(25.0),
+                "right",
+            )?;
+
+            // 9. Year over the orange wedge, volume directly beneath (Position Lock)
+            add_cover_text_frame(
+                app,
+                0,
+                [x(330.0), y(690.0), x(560.0), y(775.0)],
+                year_text,
+                "#ffffff",
+                "Arial Black",
+                "Regular",
+                58.0 * s_avg,
+                None,
+                Some(15.0),
+                "center",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [x(330.0), y(778.0), x(560.0), y(802.0)],
+                volume_text,
+                "#ffffff",
+                "Arial",
+                "Bold",
+                11.0 * s_avg,
+                None,
+                Some(40.0),
+                "center",
+            )?;
+
+            // 10. Top-left company logo & agency text (Position Lock)
+            app.run("frame.create", json!({"spread": 0, "rect": [x(40.0), y(28.0), x(80.0), y(68.0)], "content": "graphic", "shape": "rectangle"}))?;
+            let _ = app.run("file.place", json!({"path": logo}));
+            let _ = app.run("object.fit", json!({"mode": "fitProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            add_cover_text_frame(
+                app,
+                0,
+                [x(88.0), y(30.0), x(300.0), y(72.0)],
+                agency_text,
+                dark,
+                "Arial",
+                "Bold Italic",
+                10.0 * s_avg,
+                Some(13.5 * s_avg),
+                None,
+                "left",
+            )?;
+
+            "Business Report"
+        }
+        _ => return Err(format!("Unsupported cover style: {}", st.cover_style)),
     };
 
     Ok(format!("Cover page generated before Page 1 (Style: {style_name})"))
@@ -3606,6 +3865,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     let mut generated_count = 0usize;
     let mut inserted_tables_count = 0usize;
     let mut inserted_rtfs_count = 0usize;
+    let mut inserted_images_count = 0usize;
 
     // Every preset tags its title (or the combined TOC line) with the TOC paragraph style, so the
     // Quick Actions "Add TOC" lists one entry per generated page.
@@ -3629,7 +3889,15 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         let num_val = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
         let title_val = row.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("").trim();
 
-        if type_val.eq_ignore_ascii_case("Ulasan") {
+        if st.card1_preset == 5 {
+            // TOC Line: one combined paragraph per record (type + number + title), so each record
+            // becomes a single table-of-contents entry.
+            let parts: Vec<&str> = [type_val, num_val, title_val].into_iter().filter(|s| !s.is_empty()).collect();
+            let line = parts.join(" ");
+            if !line.is_empty() {
+                frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 20.0, margin.x1, margin.y0 + 60.0], &line, &st.toc_style);
+            }
+        } else if type_val.eq_ignore_ascii_case("Ulasan") {
             // Ulasan / Editorial Chapter layout:
             // Split title "BAB 01 Pemerintahan" into "BAB 01" and "Pemerintahan"
             let (ch_line, title_line) = split_chapter_title(title_val, num_val);
@@ -3703,6 +3971,64 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         if execute_page_from_rtf(app, &mut st_copy, &rtf_path_str).is_ok() {
                             inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
                         }
+                    }
+                }
+            }
+        } else if is_chart_type(type_val) {
+            // Chart / Grafik layout:
+            // 1. Centered 2-line title in Arial Bold: "Grafik 02.01\nPanjang Jalan Kecamatan Karawang Timur 2026"
+            let (ch_line, title_line) = split_chart_title(title_val, num_val, type_val);
+            let full_text = if title_line.is_empty() { ch_line } else { format!("{ch_line}\n{title_line}") };
+
+            let title_rect = [margin.x0, margin.y0 + 20.0, margin.x1, margin.y0 + 68.0];
+            frame_with_centered_bold_title(app, spread_idx, title_rect, &full_text, Some(&st.toc_style));
+
+            // 2. Place image from 'file' column inside margins below the title
+            if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                let catalog_p = std::path::Path::new(&st.card1_path);
+                let dir = catalog_p.parent().unwrap_or(std::path::Path::new("."));
+                let candidate1 = dir.join(file_str);
+                let candidate2 = std::path::PathBuf::from(file_str);
+                let candidate3 = dir.join(format!("{file_str}.png"));
+                let candidate4 = dir.join(format!("{file_str}.jpg"));
+                let resolved_img = if candidate1.exists() && candidate1.is_file() {
+                    Some(candidate1)
+                } else if candidate2.exists() && candidate2.is_file() {
+                    Some(candidate2)
+                } else if candidate3.exists() && candidate3.is_file() {
+                    Some(candidate3)
+                } else if candidate4.exists() && candidate4.is_file() {
+                    Some(candidate4)
+                } else {
+                    None
+                };
+
+                if let Some(img_file) = resolved_img {
+                    let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
+                    crate::canvas::go_to_page(app, cur_page_idx);
+                    let img_y0 = margin.y0 + 76.0;
+                    let img_rect = [margin.x0, img_y0, margin.x1, margin.y1];
+                    let created_fid = app
+                        .run(
+                            "frame.create",
+                            json!({
+                                "spread": spread_idx,
+                                "rect": img_rect,
+                                "content": "graphic",
+                                "caret": false
+                            }),
+                        )
+                        .ok()
+                        .and_then(|res| res.get("id").and_then(Value::as_u64));
+
+                    if let Some(fid) = created_fid {
+                        let img_path_str = img_file.to_string_lossy().to_string();
+                        let _ = app.run("file.place", json!({"path": img_path_str, "frame": fid}));
+                        let _ = app.run("object.fit", json!({"mode": "fitProportionally", "ids": [fid]}));
+                        let _ = app.run("object.fit", json!({"mode": "centerContent", "ids": [fid]}));
+                        let _ = app.run("object.fit", json!({"mode": "fitFrameToContent", "ids": [fid]}));
+                        let _ = app.run("selection.set", json!({"ids": [fid]}));
+                        inserted_images_count = inserted_images_count.saturating_add(1);
                     }
                 }
             }
@@ -3963,6 +4289,9 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     if inserted_rtfs_count > 0 {
         details.push(format!("{inserted_rtfs_count} RTF chapter(s) placed"));
     }
+    if inserted_images_count > 0 {
+        details.push(format!("{inserted_images_count} chart image(s) placed"));
+    }
     if inserted_tables_count > 0 {
         details.push(format!("{inserted_tables_count} tables auto-inserted"));
     }
@@ -4063,6 +4392,67 @@ pub fn split_chapter_title(title: &str, num_val: &str) -> (String, String) {
     }
 
     (t.to_string(), String::new())
+}
+
+/// Create a centered text frame with Arial Bold and optional paragraph style.
+fn frame_with_centered_bold_title(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], text: &str, style_opt: Option<&str>) -> Option<u64> {
+    let res = app.run("frame.create", json!({"spread": spread_idx, "rect": rect, "content": "text", "text": text, "caret": false})).ok()?;
+    let fid = res.get("id").and_then(Value::as_u64)?;
+    let story = res.get("story").and_then(Value::as_u64)?;
+    let end = text.chars().count().max(1) as u64;
+    let _ = app.run("text.select", json!({"story": story, "anchor": 0, "focus": end}));
+    if let Some(style) = style_opt {
+        let _ = app.run("style.paragraph.apply", json!({"name": style}));
+    }
+    let _ = app.run("text.select", json!({"story": story, "anchor": 0, "focus": end}));
+    let _ = app.run("type.char", json!({"fontFamily": "Arial", "fontStyle": "Bold", "size": 11.0}));
+    let _ = app.run("selection.set", json!({"ids": [fid]}));
+    let _ = app.run("type.alignCenter", json!({}));
+    Some(story)
+}
+
+/// Split chart title like "Grafik 02.01 Panjang Jalan..." into ("Grafik 02.01", "Panjang Jalan...")
+pub fn split_chart_title(title: &str, num_val: &str, type_val: &str) -> (String, String) {
+    let t = title.trim();
+    let words: Vec<&str> = t.split_whitespace().collect();
+    let eff_type = if type_val.trim().is_empty() { "Grafik" } else { type_val.trim() };
+
+    if words.len() >= 3 && is_chart_type(words[0]) {
+        let ch_num = words[1].trim_matches(|c: char| c == ':' || c == ';');
+        let line1 = format!("{} {}", words[0], ch_num);
+        let line2 = words[2..].join(" ");
+        return (line1, line2);
+    }
+
+    if words.len() >= 2 && is_chart_type(words[0]) {
+        let ch_num = words[1].trim_matches(|c: char| c == ':' || c == ';');
+        return (format!("{} {}", words[0], ch_num), String::new());
+    }
+
+    if words.len() >= 2 && words[0].contains('.') && words[0].chars().any(|c| c.is_ascii_digit()) {
+        let ch_num = words[0].trim_matches(|c: char| c == ':' || c == ';');
+        let line1 = format!("{eff_type} {ch_num}");
+        let line2 = words[1..].join(" ");
+        return (line1, line2);
+    }
+
+    if !num_val.is_empty() {
+        let line1 = format!("{eff_type} {num_val}");
+        let clean = words
+            .iter()
+            .copied()
+            .filter(|w| !is_chart_type(w) && !w.trim_matches(|c: char| c == ':' || c == ';' || c == '.').eq_ignore_ascii_case(num_val))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let final_title = if clean.is_empty() { t.to_string() } else { clean };
+        return (line1, final_title);
+    }
+
+    (t.to_string(), String::new())
+}
+
+pub fn is_chart_type(type_val: &str) -> bool {
+    ["grafik", "graph", "chart", "bagan", "diagram"].iter().any(|k| type_val.eq_ignore_ascii_case(k))
 }
 
 /// The number of paragraphs the TOC would collect for `style` right now.
@@ -7764,12 +8154,12 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         // Card 1 must have catalog loaded
         assert!(st.card1_path.ends_with("BAB_02_2025_catalog.csv"));
-        assert_eq!(st.card1_records.len(), 3);
+        assert_eq!(st.card1_records.len(), 5, "5 sheets in BAB_02_2025.xlsx: R02, C02_01, 02_01, 02_02, 02_03");
         assert!(st.card1_headers.contains(&"file".to_string()));
 
         // Card 2 must have first table loaded and sheet table list populated
         assert!(st.card2_path.ends_with("02_01.csv"));
-        assert_eq!(st.card2_sheet_tables.len(), 3);
+        assert_eq!(st.card2_sheet_tables.len(), 3, "Only the 3 tabular sheets produce table CSVs");
         assert_eq!(st.card2_sheet_idx, 0);
         assert!(!st.card2_matrix.is_empty());
 
@@ -7808,10 +8198,12 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let msg = res.unwrap();
         assert!(msg.contains("auto-generated pages"), "Status should confirm auto-generated pages: {msg}");
         assert!(msg.contains("3 tables auto-inserted"), "Status should confirm 3 tables auto-inserted: {msg}");
+        assert!(msg.contains("1 RTF chapter(s) placed"), "Status should confirm 1 RTF placed: {msg}");
+        assert!(msg.contains("1 chart image(s) placed"), "Status should confirm 1 chart placed: {msg}");
 
-        // Initial doc has 1 page + 3 generated pages = 4 pages
+        // Initial doc has 1 page + 2 RTF chapter pages + 1 Grafik page + 3 table pages = 7 pages
         let page_count = app.session.active().unwrap().doc.page_count();
-        assert_eq!(page_count, 4, "Expected 4 pages after generating 3 sheet pages into 1 blank page doc");
+        assert_eq!(page_count, 7, "Expected 7 pages after generating 5 sheet records (RTF flows to 2 pages)");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -8535,7 +8927,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
     #[test]
     fn test_execute_generate_cover_text_formatting() {
-        for style in 0..=7 {
+        for style in 0..=8 {
             let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
             app.run("file.new", json!({})).unwrap();
             let mut st = PubgenState::default();
@@ -8610,6 +9002,37 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let res = app.run("file.saveAs", json!({"path": path.to_string_lossy()}));
         assert!(res.is_ok(), "Failed to save: {res:?}");
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_cover_style_8_text_is_options_only() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let mut st = PubgenState::default();
+        st.cover_style = BUSINESS_STYLE;
+        execute_generate_cover(&mut app, &st).unwrap();
+
+        let active = app.session.active().unwrap();
+        let allowed = [
+            "KECAMATAN",
+            "KABUPATEN",
+            "KARAWANG TIMUR",
+            "KARAWANG\nTIMUR",
+            "2026",
+            "VOLUME 23",
+            "KATALOG BPS",
+            "ISSN",
+            "ISBN",
+            "BADAN PUSAT STATISTIK",
+            "DALAM ANGKA",
+        ];
+        for story in active.doc.stories.values() {
+            for banned in ["COMPANY NAME", "YOUR HEADLINE HERE", "LOREM IPSUM", "BUSINESS REPORT 2050"] {
+                assert!(!story.text.contains(banned), "template text '{banned}' must not reach the cover: {}", story.text);
+            }
+            let upper = story.text.to_uppercase();
+            assert!(allowed.iter().any(|a| upper.contains(a)), "text must come from the cover options: {}", story.text);
+        }
     }
 
     #[test]
@@ -8988,5 +9411,59 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(texts.iter().any(|t| t.contains("BAB 01")), "Page should contain 'BAB 01', found: {texts:?}");
         assert!(texts.iter().any(|t| t.contains("Pemerintahan")), "Page should contain 'Pemerintahan', found: {texts:?}");
         assert!(texts.iter().any(|t| t.contains("Bab satu ulasan pemerintahan")), "Page should contain imported RTF content, found: {texts:?}");
+    }
+
+    #[test]
+    fn test_split_chart_title() {
+        assert_eq!(
+            split_chart_title("Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026", "02.01", "Grafik"),
+            ("Grafik 02.01".into(), "Panjang Jalan Kecamatan Karawang Timur 2026".into())
+        );
+        assert_eq!(split_chart_title("Grafik 02.01", "02.01", "Grafik"), ("Grafik 02.01".into(), "".into()));
+        assert_eq!(split_chart_title("02.01 Panjang Jalan", "02.01", "Grafik"), ("Grafik 02.01".into(), "Panjang Jalan".into()));
+        assert_eq!(split_chart_title("Panjang Jalan Kecamatan", "02.01", "Grafik"), ("Grafik 02.01".into(), "Panjang Jalan Kecamatan".into()));
+    }
+
+    #[test]
+    fn test_execute_generate_pages_grafik_image_layout() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let img_path = sample_image_path();
+
+        let st = PubgenState {
+            card1_records: vec![vec!["Grafik".into(), "02.01".into(), "Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026".into(), img_path]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for Grafik should succeed: {res:?}");
+        let msg = res.unwrap();
+        assert!(msg.contains("1 chart image(s) placed"), "Summary should confirm chart image placed: {msg}");
+
+        // Verify items on the generated page (page 1)
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2, "1 initial page + 1 generated page");
+
+        let (spread_idx, _) = active.doc.page_loc(1).unwrap();
+        let spread = &active.doc.spreads[spread_idx];
+
+        // 1. Check title text frame
+        let texts: Vec<String> =
+            spread.items.iter().filter_map(|it| it.text_frame()).filter_map(|tf| active.doc.story(tf.story)).map(|st| st.text.clone()).collect();
+        assert!(
+            texts.iter().any(|t| t.contains("Grafik 02.01") && t.contains("Panjang Jalan Kecamatan Karawang Timur 2026")),
+            "Page must contain centered 2-line title, found: {texts:?}"
+        );
+
+        // 2. Check graphic frame placed inside margins
+        let graphic_frame = spread.items.iter().find(|it| matches!(it.content, designcraft_doc::Content::Graphic(_)));
+        assert!(graphic_frame.is_some(), "Page must contain a placed graphic frame");
     }
 }

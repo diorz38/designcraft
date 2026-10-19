@@ -381,3 +381,10 @@ Forks and modified versions must remove them.
   <a href="https://getartcraft.com/"><img alt="ArtCraft" src="docs/brand/artcraft-mark.svg" width="28"></a><br>
   <sub>Made by the <a href="https://getartcraft.com/">ArtCraft</a> team and community.</sub>
 </p>
+example prompt:
+i want extend function of "Excel to CSV" Data (pubgen Quick Actions) by adding new style of page, reference in excel is:
+1. sheet name is CXX, XX is 2 digit number, in sheet only have two rows data, first row col 1: title, col 2: "Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026", 2nd row col 1: file, col 2: [path of image file]
+2. for that kind of ref, function "Page from CSV" will add text box: "Grafik 02.01<br>Panjang Jalan Kecamatan Karawang Timur 2026" align center Arial Bold
+3. for that kind of ref, function "Table from CSV" will add in csv: col type: "Grafik" (first word from first row col 2), col number: 02.01 (fist digit number with "." as delimitent), col title: "Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026" from first row col 2, col file: [path of image file] from 2nd row col 2
+4. for that kind of ref, function "Page from Image" will read image from [path of image file] added to page As Image Object option selected.
+Is that doable? first check current functions of "Excel to CSV"

@@ -20,6 +20,7 @@ Pubgen's **Publication Cover** generator builds executive, publication-ready cov
 | `5` | `🏢 Corporate` | Corporate Headline | Modern architecture layout with focal rounded headline block |
 | `6` | `↗ Arrow` | Diagonal Arrow | Navy diagonal banner with amber corner wedge, a forward wedge carrying the year, and a half-bleed cityscape panel |
 | `7` | `🌇 Horizon` | Modern Horizon | Full-bleed cityscape under a sweeping arc, an accent wedge that follows it into the right-hand accent block, and a dark block with a rounded top-left corner carrying the headline |
+| `8` | `📊 Report` | Business Report | Crossed navy diagonals framing a skyscraper photograph, an orange accent wedge, a headline stack upper-right, and a two-tone year over the orange wedge |
 
 ---
 
@@ -145,17 +146,19 @@ let styles = [
     "Corporate Headline", // Index 5
     "Diagonal Arrow",     // Index 6
     "Modern Horizon",     // Index 7
+    "Business Report",    // Index 8
 ];
 
-let style_pills: [(&str, usize, &str); 8] = [
+let style_pills: [(&str, usize, &str); 9] = [
     ("🌊 Wave", 0, "Wave Curves"),
-    ("❖ Medallion", 1, "Geometric Medallion"),
+    ("🔷 Geometric", 1, "Geometric & Medallion"),
     ("📐 Origami", 2, "Folded Origami"),
     ("🔰 Chevron", 3, "Chevron & Medallion"),
     ("⬡ Hexagon", 4, "Honeycomb Hexagon"),
     ("🏢 Corporate", 5, "Corporate Headline"),
     ("↗ Arrow", 6, "Diagonal Arrow"),
     ("🌇 Horizon", 7, "Modern Horizon"),
+    ("📊 Report", 8, "Business Report"),
 ];
 ```
 
