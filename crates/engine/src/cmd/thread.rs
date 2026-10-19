@@ -58,21 +58,13 @@ fn autoflow_cmd(s: &mut Session, p: &Value) -> Result<Value> {
         StoryId(id)
     } else if let Some(fid) = p.get("frame").and_then(Value::as_u64) {
         let act = s.active().ok_or_else(|| bad(CMD, "no active document"))?;
-        act.doc
-            .item(ItemId(fid))
-            .and_then(|i| i.text_frame())
-            .map(|t| t.story)
-            .ok_or_else(|| bad(CMD, "frame is not a text frame"))?
+        act.doc.item(ItemId(fid)).and_then(|i| i.text_frame()).map(|t| t.story).ok_or_else(|| bad(CMD, "frame is not a text frame"))?
     } else {
         let act = s.active().ok_or_else(|| bad(CMD, "no active document"))?;
         if let Some(sel) = &act.selection.text {
             sel.story
         } else if let Some(&item_id) = act.selection.items.first() {
-            act.doc
-                .item(item_id)
-                .and_then(|i| i.text_frame())
-                .map(|t| t.story)
-                .ok_or_else(|| bad(CMD, "selected item is not a text frame"))?
+            act.doc.item(item_id).and_then(|i| i.text_frame()).map(|t| t.story).ok_or_else(|| bad(CMD, "selected item is not a text frame"))?
         } else {
             return Err(bad(CMD, "no story or frame specified"));
         }

@@ -120,12 +120,8 @@ pub fn specs() -> Vec<CommandSpec> {
                 let n = st.doc.page_count();
                 let after = if let Some(b) = p.get("before").and_then(Value::as_u64) {
                     let bi = usize::try_from(b).unwrap_or(usize::MAX);
-                    if bi == 0 {
-                        None
-                    } else {
-                        Some(bi.saturating_sub(1).min(n.saturating_sub(1)))
-                    }
-                } else if p.get("at").and_then(Value::as_str) == Some("start") || p.get("after").map_or(false, |v| v.is_null()) {
+                    if bi == 0 { None } else { Some(bi.saturating_sub(1).min(n.saturating_sub(1))) }
+                } else if p.get("at").and_then(Value::as_str) == Some("start") || p.get("after").is_some_and(Value::is_null) {
                     None
                 } else {
                     Some(p.get("after").and_then(Value::as_u64).map(|v| usize::try_from(v).unwrap_or(usize::MAX)).unwrap_or(n.saturating_sub(1)))

@@ -480,11 +480,8 @@ impl Document {
         }
         // Generated text is rebuilt from its source data. Merging body text into it would
         // silently discard that text on the next update (endnotes update after every edit).
-        let generated = |sid| {
-            self.endnote_story == Some(sid)
-                || self.tocs.iter().any(|t| t.story == sid)
-                || self.index.as_ref().is_some_and(|i| i.story == sid)
-        };
+        let generated =
+            |sid| self.endnote_story == Some(sid) || self.tocs.iter().any(|t| t.story == sid) || self.index.as_ref().is_some_and(|i| i.story == sid);
         let (fs, ts) = (story(from), story(to));
         if fs.is_some_and(generated) && ts.and_then(|sid| self.story(sid)).is_some_and(|st| !st.text.is_empty()) {
             return Err(DocError::Invalid("cannot merge body text into a generated story".into()));

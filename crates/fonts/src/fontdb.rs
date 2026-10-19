@@ -1800,11 +1800,14 @@ impl ScopedFonts<'_> {
         let is = |name: &str| name.eq_ignore_ascii_case(family);
         let ns = norm(style);
         let by_alias = |faces: &[Arc<FontFace>]| -> Option<Arc<FontFace>> {
-            faces.iter().find(|f| {
-                !is(&f.family)
-                    && f.family_aliases.iter().any(|a| is(a))
-                    && (norm(&f.style) == ns || f.style_aliases.iter().any(|sa| norm(sa) == ns) || ns.is_empty() || ns == "regular")
-            }).cloned()
+            faces
+                .iter()
+                .find(|f| {
+                    !is(&f.family)
+                        && f.family_aliases.iter().any(|a| is(a))
+                        && (norm(&f.style) == ns || f.style_aliases.iter().any(|sa| norm(sa) == ns) || ns.is_empty() || ns == "regular")
+                })
+                .cloned()
         };
         #[cfg(not(target_arch = "wasm32"))]
         {

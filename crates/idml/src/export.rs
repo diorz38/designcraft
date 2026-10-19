@@ -2289,11 +2289,7 @@ impl<'a> Ex<'a> {
             .position(|t| t.story == s.id)
             .map(toc_style_id)
             .unwrap_or_else(|| "n".into());
-        let mut el = El::new("Story")
-            .attr("Self", uid(s.id.0))
-            .attr("AppliedTOCStyle", toc)
-            .attr("TrackChanges", "false")
-            .attr("StoryTitle", "$ID/");
+        let mut el = El::new("Story").attr("Self", uid(s.id.0)).attr("AppliedTOCStyle", toc).attr("TrackChanges", "false").attr("StoryTitle", "$ID/");
         el.push(
             El::new("StoryPreference")
                 .attr("OpticalMarginAlignment", "false")

@@ -1481,11 +1481,7 @@ impl<'r> Importer<'r> {
     /// The tables of contents: each TOC style with the story it generates
     /// (`AppliedTOCStyle`). Styles the document doesn't have fall back to the generated TOC styles.
     fn tocs_of(&self, top: &[El]) -> Vec<designcraft_doc::Toc> {
-        top.iter()
-            .filter(|e| e.local() == "TOCStyle")
-            .filter_map(|ts| self.toc_of(ts, top))
-            .take(designcraft_doc::MAX_TOCS)
-            .collect()
+        top.iter().filter(|e| e.local() == "TOCStyle").filter_map(|ts| self.toc_of(ts, top)).take(designcraft_doc::MAX_TOCS).collect()
     }
 
     /// One TOC style and the story that names it in `AppliedTOCStyle`.
@@ -1518,17 +1514,7 @@ impl<'r> Importer<'r> {
                 let page_number_style = known_chars(e.get("PageNumberStyle"));
                 let separator_style = known_chars(e.get("SeparatorStyle"));
                 let sort = e.get("Sort").is_some_and(|v| v.trim() == "true");
-                Some(TocEntry {
-                    style,
-                    level,
-                    entry_style,
-                    page_number,
-                    separator,
-                    page_number_style,
-                    separator_style,
-                    sort,
-                    page_title: Vec::new(),
-                })
+                Some(TocEntry { style, level, entry_style, page_number, separator, page_number_style, separator_style, sort, page_title: Vec::new() })
             })
             .take(64)
             .collect();

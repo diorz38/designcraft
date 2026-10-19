@@ -56,13 +56,10 @@ fn clean_lines(content: &str, strip_hooks: bool) -> Vec<String> {
             if line.is_empty() {
                 return false;
             }
-            if strip_hooks {
-                if line.contains("pub mod pubgen;")
-                    || line.contains("panels/pubgen.rs")
-                    || line.contains(r#""pubgen" => pubgen::show(app, ui),"#)
-                {
-                    return false;
-                }
+            if strip_hooks
+                && (line.contains("pub mod pubgen;") || line.contains("panels/pubgen.rs") || line.contains(r#""pubgen" => pubgen::show(app, ui),"#))
+            {
+                return false;
             }
             true
         })

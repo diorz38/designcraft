@@ -132,11 +132,7 @@ pub fn import(bytes: &[u8]) -> Result<Imported, ImportError> {
                         && !stack.last().is_some_and(|s| s.skip)
                     {
                         units.reset();
-                        let ch = if b == 0xB7 && stack.last().is_some_and(|s| s.in_listtext) {
-                            '\u{2022}'
-                        } else {
-                            cp1252(b)
-                        };
+                        let ch = if b == 0xB7 && stack.last().is_some_and(|s| s.in_listtext) { '\u{2022}' } else { cp1252(b) };
                         buf.push(ch);
                     }
                     continue;
@@ -258,12 +254,7 @@ pub fn import(bytes: &[u8]) -> Result<Imported, ImportError> {
                             if let Some(existing) = tabs.iter_mut().find(|t| (t.position - pos_pt).abs() < 0.01) {
                                 existing.align = next_tab_align;
                             } else if tabs.len() < designcraft_doc::MAX_TAB_STOPS {
-                                tabs.push(TabStop {
-                                    position: pos_pt,
-                                    align: next_tab_align,
-                                    leader: String::new(),
-                                    align_on: String::new(),
-                                });
+                                tabs.push(TabStop { position: pos_pt, align: next_tab_align, leader: String::new(), align_on: String::new() });
                                 tabs.sort_by(|a, b| a.position.partial_cmp(&b.position).unwrap_or(std::cmp::Ordering::Equal));
                             }
                             cur_para.tabs = Some(tabs);
@@ -461,4 +452,3 @@ Caf\'e9 \u8364? price\tab tab\line next\par
         assert_eq!(imp.story.text, "\u{2022}\tBullet item");
     }
 }
-

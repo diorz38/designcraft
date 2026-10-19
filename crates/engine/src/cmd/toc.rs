@@ -28,19 +28,27 @@ pub fn specs() -> Vec<CommandSpec> {
             has_doc,
             generate
         ),
-        cmd!("toc.update", "Update Table of Contents", ["Layout"], None, "{} — regenerate every table of contents in the document", has_toc, |s, _| {
-            s.edit(|d, _| {
-                let tocs = d.tocs.clone();
-                if tocs.is_empty() {
-                    return Err(bad("toc.update", "no table of contents"));
-                }
-                let mut entries = 0;
-                for toc in &tocs {
-                    entries += fill(d, toc, None)?;
-                }
-                Ok(json!({"entries": entries, "tocs": tocs.len()}))
-            })
-        }),
+        cmd!(
+            "toc.update",
+            "Update Table of Contents",
+            ["Layout"],
+            None,
+            "{} — regenerate every table of contents in the document",
+            has_toc,
+            |s, _| {
+                s.edit(|d, _| {
+                    let tocs = d.tocs.clone();
+                    if tocs.is_empty() {
+                        return Err(bad("toc.update", "no table of contents"));
+                    }
+                    let mut entries = 0;
+                    for toc in &tocs {
+                        entries += fill(d, toc, None)?;
+                    }
+                    Ok(json!({"entries": entries, "tocs": tocs.len()}))
+                })
+            }
+        ),
         cmd!(query "toc.entries", "Table of Contents Entries", [], None, "{entries | styles} → [{level, text, page}] without changing the document", has_doc, |s, p| {
             let entries = entries_param(p)?;
             let d = &s.doc()?.doc;
@@ -591,7 +599,12 @@ mod tests {
         );
 
         // A table of contents on the page after the content, listing the tables only.
-        let r = s.execute("toc.generate", &json!({"page": page, "title": "Daftar Table", "entries": [{"style": "TOC Entry", "pageTitle": ["Tabel", "Table"]}]})).unwrap();
+        let r = s
+            .execute(
+                "toc.generate",
+                &json!({"page": page, "title": "Daftar Table", "entries": [{"style": "TOC Entry", "pageTitle": ["Tabel", "Table"]}]}),
+            )
+            .unwrap();
         let tables = StoryId(r["story"].as_u64().unwrap());
         let text = s.doc().unwrap().doc.story(tables).unwrap().text.clone();
         assert!(text.contains("Tabel 1.1. Jarak Antar Kecamatan"), "{text}");
@@ -603,17 +616,10 @@ mod tests {
 
     #[test]
     fn a_document_holds_several_tables_of_contents_and_updates_them_all() {
-        let (mut s, page) = doc_of_pages(&[
-            ("Tabel 1.1. Jarak Antar Kecamatan", "TOC Entry"),
-            ("Grafik 1.1. Curah Hujan Tiap Bulan", "TOC Entry"),
-        ]);
+        let (mut s, page) = doc_of_pages(&[("Tabel 1.1. Jarak Antar Kecamatan", "TOC Entry"), ("Grafik 1.1. Curah Hujan Tiap Bulan", "TOC Entry")]);
         let make_toc = |s: &mut Session, page: usize, title: &str, words: &[&str]| {
-            let r = s
-                .execute(
-                    "toc.generate",
-                    &json!({"page": page, "title": title, "entries": [{"style": "TOC Entry", "pageTitle": words}]}),
-                )
-                .unwrap();
+            let r =
+                s.execute("toc.generate", &json!({"page": page, "title": title, "entries": [{"style": "TOC Entry", "pageTitle": words}]})).unwrap();
             StoryId(r["story"].as_u64().unwrap())
         };
         let tables = make_toc(&mut s, page, "Daftar Table", &["Tabel"]);

@@ -6306,12 +6306,10 @@ fn toc_params(app: &DesignApp, d: &Dialog) -> Value {
     // the one the dialog is showing: the page in view, or (with none there) the last one's page.
     // A new table of contents goes on the page in view.
     let cur = crate::canvas::current_page(app);
-    let shown = cur
-        .and_then(|p| app.session.active().and_then(|a| a.doc.toc_on_page(p)).map(|_| p))
-        .or_else(|| {
-            let a = app.session.active()?;
-            a.doc.toc_page(a.doc.tocs.last()?)
-        });
+    let shown = cur.and_then(|p| app.session.active().and_then(|a| a.doc.toc_on_page(p)).map(|_| p)).or_else(|| {
+        let a = app.session.active()?;
+        a.doc.toc_page(a.doc.tocs.last()?)
+    });
     let page = if d.b("replace") { shown.or(cur) } else { cur };
     if let Some(page) = page {
         p["page"] = json!(page + 1);
@@ -9280,7 +9278,8 @@ mod tests {
     fn toc_dialog_replace_targets_the_table_of_contents_it_shows() {
         let mut app = test_app();
         app.session.execute("style.paragraph.create", &json!({"name": "Head"})).unwrap();
-        let sid = app.session.execute("frame.create", &json!({"rect": [36, 36, 300, 200], "content": "text", "text": "Pears"})).unwrap()["story"].clone();
+        let sid =
+            app.session.execute("frame.create", &json!({"rect": [36, 36, 300, 200], "content": "text", "text": "Pears"})).unwrap()["story"].clone();
         app.session.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 0})).unwrap();
         app.session.execute("style.paragraph.apply", &json!({"name": "Head"})).unwrap();
         app.session.execute("layout.pages.insert", &json!({"count": 2})).unwrap();

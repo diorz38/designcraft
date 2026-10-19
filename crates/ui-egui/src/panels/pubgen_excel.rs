@@ -74,11 +74,7 @@ pub fn sanitize_filename(name: &str) -> String {
         })
         .collect();
     let trimmed = sanitized.trim();
-    if trimmed.is_empty() {
-        "sheet".to_string()
-    } else {
-        trimmed.to_string()
-    }
+    if trimmed.is_empty() { "sheet".to_string() } else { trimmed.to_string() }
 }
 
 /// Escape a string for RFC 4180 CSV output.
@@ -115,11 +111,9 @@ pub fn parse_catalog_entry(first_row_cells: &[String], sheet_name: &str) -> (Str
     let words: Vec<&str> = full.split_whitespace().collect();
     if words.len() >= 3 {
         let first_lower = words[0].to_lowercase();
-        let is_type = [
-            "tabel", "table", "grafik", "graph", "bagan", "chart", "bab", "chapter", "section", "peta", "map",
-        ]
-        .iter()
-        .any(|k| first_lower.starts_with(k));
+        let is_type = ["tabel", "table", "grafik", "graph", "bagan", "chart", "bab", "chapter", "section", "peta", "map"]
+            .iter()
+            .any(|k| first_lower.starts_with(k));
 
         if is_type {
             let t = words[0].to_string();
@@ -192,9 +186,7 @@ pub fn build_merged_table_headers(
             let abs_row = r_off + header_start_row;
 
             // Check if this cell is a continuation of a vertical merge
-            let is_vert_merge_continuation = merges.iter().any(|&((sc, sr), (ec, er))| {
-                sc <= c && c <= ec && sr < abs_row && er >= abs_row
-            });
+            let is_vert_merge_continuation = merges.iter().any(|&((sc, sr), (ec, er))| sc <= c && c <= ec && sr < abs_row && er >= abs_row);
 
             if !val.is_empty() && !is_vert_merge_continuation {
                 if parts.last().map(|s| s.as_str()) != Some(val) {
@@ -214,12 +206,7 @@ pub fn build_merged_table_headers(
 }
 
 /// Determine where the multi-row table header ends (typically row 1 to row 2 or 3).
-pub fn detect_header_end_row(
-    grid: &[Vec<String>],
-    merges: &[((usize, usize), (usize, usize))],
-    header_start_row: usize,
-    num_cols: usize,
-) -> usize {
+pub fn detect_header_end_row(grid: &[Vec<String>], merges: &[((usize, usize), (usize, usize))], header_start_row: usize, num_cols: usize) -> usize {
     if grid.len() <= header_start_row + 1 {
         return header_start_row;
     }
@@ -236,9 +223,7 @@ pub fn detect_header_end_row(
     // Check if the next row only has values under horizontally merged columns
     let candidate = header_start_row + 1;
     if candidate < grid.len() && candidate <= end_row + 1 && candidate < header_start_row + 3 {
-        let has_horizontal_merges_in_parent = merges.iter().any(|&((sc, sr), (ec, _))| {
-            sr == header_start_row && sc < ec
-        });
+        let has_horizontal_merges_in_parent = merges.iter().any(|&((sc, sr), (ec, _))| sr == header_start_row && sc < ec);
         if has_horizontal_merges_in_parent {
             let row_cells = &grid[candidate];
             let non_empty_count = row_cells.iter().take(num_cols).filter(|s| !s.trim().is_empty()).count();
@@ -337,11 +322,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         }
     }
 
-    ExcelConversionResult {
-        catalog_csv_name: format!("{base_stem}_catalog.csv"),
-        catalog_csv_content: catalog_rows.join("\n"),
-        table_csvs,
-    }
+    ExcelConversionResult { catalog_csv_name: format!("{base_stem}_catalog.csv"), catalog_csv_content: catalog_rows.join("\n"), table_csvs }
 }
 
 /// Parse all worksheets from an `.xlsx` file using `zip` and `quick-xml`.
@@ -410,9 +391,7 @@ pub fn parse_xlsx_sheets(path: &str) -> Result<Vec<ExcelSheetData>, String> {
                                 r_id = String::from_utf8_lossy(&attr.value).to_string();
                             }
                         }
-                        let target = rels.get(&r_id).cloned().unwrap_or_else(|| {
-                            format!("xl/worksheets/sheet{}.xml", sheets_to_load.len() + 1)
-                        });
+                        let target = rels.get(&r_id).cloned().unwrap_or_else(|| format!("xl/worksheets/sheet{}.xml", sheets_to_load.len() + 1));
                         if !name.is_empty() {
                             sheets_to_load.push((name, target));
                         }
@@ -507,41 +486,39 @@ pub fn parse_xlsx_sheets(path: &str) -> Result<Vec<ExcelSheetData>, String> {
                         }
                     }
                 }
-                Ok(quick_xml::events::Event::Start(ref e)) => {
-                    match e.name().local_name().as_ref() {
-                        b"mergeCell" => {
-                            for attr in e.attributes().flatten() {
-                                if attr.key.local_name().as_ref() == b"ref" {
-                                    let ref_str = String::from_utf8_lossy(&attr.value);
-                                    if let Some(range) = parse_range(&ref_str) {
-                                        merges.push(range);
-                                    }
+                Ok(quick_xml::events::Event::Start(ref e)) => match e.name().local_name().as_ref() {
+                    b"mergeCell" => {
+                        for attr in e.attributes().flatten() {
+                            if attr.key.local_name().as_ref() == b"ref" {
+                                let ref_str = String::from_utf8_lossy(&attr.value);
+                                if let Some(range) = parse_range(&ref_str) {
+                                    merges.push(range);
                                 }
                             }
                         }
-                        b"c" => {
-                            cur_v.clear();
-                            cur_type.clear();
-                            cur_coord = None;
-                            for attr in e.attributes().flatten() {
-                                if attr.key.local_name().as_ref() == b"r" {
-                                    let r_val = String::from_utf8_lossy(&attr.value);
-                                    cur_coord = parse_cell_ref(&r_val);
-                                } else if attr.key.local_name().as_ref() == b"t" {
-                                    cur_type = String::from_utf8_lossy(&attr.value).to_string();
-                                }
-                            }
-                        }
-                        b"v" => {
-                            inside_v = true;
-                            cur_v.clear();
-                        }
-                        b"t" if cur_coord.is_some() => {
-                            inside_inline_t = true;
-                        }
-                        _ => {}
                     }
-                }
+                    b"c" => {
+                        cur_v.clear();
+                        cur_type.clear();
+                        cur_coord = None;
+                        for attr in e.attributes().flatten() {
+                            if attr.key.local_name().as_ref() == b"r" {
+                                let r_val = String::from_utf8_lossy(&attr.value);
+                                cur_coord = parse_cell_ref(&r_val);
+                            } else if attr.key.local_name().as_ref() == b"t" {
+                                cur_type = String::from_utf8_lossy(&attr.value).to_string();
+                            }
+                        }
+                    }
+                    b"v" => {
+                        inside_v = true;
+                        cur_v.clear();
+                    }
+                    b"t" if cur_coord.is_some() => {
+                        inside_inline_t = true;
+                    }
+                    _ => {}
+                },
                 Ok(quick_xml::events::Event::Text(ref t)) => {
                     if inside_v || inside_inline_t {
                         if let Ok(txt) = t.decode() {
@@ -549,34 +526,32 @@ pub fn parse_xlsx_sheets(path: &str) -> Result<Vec<ExcelSheetData>, String> {
                         }
                     }
                 }
-                Ok(quick_xml::events::Event::End(ref e)) => {
-                    match e.name().local_name().as_ref() {
-                        b"v" => {
-                            inside_v = false;
-                        }
-                        b"t" => {
-                            inside_inline_t = false;
-                        }
-                        b"c" => {
-                            if let Some((c, r)) = cur_coord {
-                                let val_str = if cur_type == "s" {
-                                    let idx = cur_v.trim().parse::<usize>().unwrap_or(usize::MAX);
-                                    shared_strings.get(idx).cloned().unwrap_or_default()
-                                } else {
-                                    cur_v.trim().to_string()
-                                };
-                                if !val_str.is_empty() {
-                                    max_col = max_col.max(c);
-                                    max_row = max_row.max(r);
-                                    cell_map.insert((c, r), val_str);
-                                }
-                            }
-                            cur_coord = None;
-                            cur_v.clear();
-                        }
-                        _ => {}
+                Ok(quick_xml::events::Event::End(ref e)) => match e.name().local_name().as_ref() {
+                    b"v" => {
+                        inside_v = false;
                     }
-                }
+                    b"t" => {
+                        inside_inline_t = false;
+                    }
+                    b"c" => {
+                        if let Some((c, r)) = cur_coord {
+                            let val_str = if cur_type == "s" {
+                                let idx = cur_v.trim().parse::<usize>().unwrap_or(usize::MAX);
+                                shared_strings.get(idx).cloned().unwrap_or_default()
+                            } else {
+                                cur_v.trim().to_string()
+                            };
+                            if !val_str.is_empty() {
+                                max_col = max_col.max(c);
+                                max_row = max_row.max(r);
+                                cell_map.insert((c, r), val_str);
+                            }
+                        }
+                        cur_coord = None;
+                        cur_v.clear();
+                    }
+                    _ => {}
+                },
                 Ok(quick_xml::events::Event::Eof) | Err(_) => break,
                 _ => {}
             }
@@ -593,11 +568,7 @@ pub fn parse_xlsx_sheets(path: &str) -> Result<Vec<ExcelSheetData>, String> {
             }
         }
 
-        result_sheets.push(ExcelSheetData {
-            name: sheet_name,
-            grid,
-            merges,
-        });
+        result_sheets.push(ExcelSheetData { name: sheet_name, grid, merges });
     }
 
     Ok(result_sheets)
@@ -624,16 +595,12 @@ pub fn create_csv_zip(files: &[(&str, &str)]) -> Result<Vec<u8>, String> {
     let mut buf = std::io::Cursor::new(Vec::new());
     {
         let mut z = zip::ZipWriter::new(&mut buf);
-        let options = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
+        let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
         for (filename, content) in files {
-            z.start_file(*filename, options)
-                .map_err(|e| format!("Failed to add '{filename}' to zip archive: {e}"))?;
-            z.write_all(content.as_bytes())
-                .map_err(|e| format!("Failed to write '{filename}' content to zip archive: {e}"))?;
+            z.start_file(*filename, options).map_err(|e| format!("Failed to add '{filename}' to zip archive: {e}"))?;
+            z.write_all(content.as_bytes()).map_err(|e| format!("Failed to write '{filename}' content to zip archive: {e}"))?;
         }
-        z.finish()
-            .map_err(|e| format!("Failed to finalize zip archive: {e}"))?;
+        z.finish().map_err(|e| format!("Failed to finalize zip archive: {e}"))?;
     }
     Ok(buf.into_inner())
 }
@@ -665,8 +632,7 @@ pub fn execute_convert_excel(path: &str) -> Result<ConvertedExcelPackage, String
     let mut table_paths = Vec::with_capacity(table_count);
     for (tbl_name, tbl_content) in &converted.table_csvs {
         let tbl_path = parent_dir.join(tbl_name);
-        std::fs::write(&tbl_path, tbl_content)
-            .map_err(|e| format!("Failed to write table CSV '{}': {e}", tbl_path.display()))?;
+        std::fs::write(&tbl_path, tbl_content).map_err(|e| format!("Failed to write table CSV '{}': {e}", tbl_path.display()))?;
         table_paths.push(tbl_path.to_string_lossy().to_string());
     }
 
@@ -682,8 +648,7 @@ pub fn execute_convert_excel(path: &str) -> Result<ConvertedExcelPackage, String
 
     let zip_name = format!("{stem}_csvs.zip");
     let zip_path = parent_dir.join(&zip_name);
-    std::fs::write(&zip_path, &zip_bytes)
-        .map_err(|e| format!("Failed to write ZIP archive '{}': {e}", zip_path.display()))?;
+    std::fs::write(&zip_path, &zip_bytes).map_err(|e| format!("Failed to write ZIP archive '{}': {e}", zip_path.display()))?;
 
     Ok(ConvertedExcelPackage {
         parent_dir: parent_dir.to_string_lossy().to_string(),
@@ -719,23 +684,17 @@ mod tests {
     fn test_parse_catalog_entry_from_first_row() {
         // User example from prompt:
         let row = vec![
-            "Tabel 02.03 Jumlah Pegawai Negeri Sipil Pemerintah Kecamatan Karawang Timur Menurut Tingkat Pendidikan dan Jenis Kelamin, 2025".to_string()
+            "Tabel 02.03 Jumlah Pegawai Negeri Sipil Pemerintah Kecamatan Karawang Timur Menurut Tingkat Pendidikan dan Jenis Kelamin, 2025"
+                .to_string(),
         ];
         let (t, n, title, file) = parse_catalog_entry(&row, "02_03");
         assert_eq!(t, "Tabel");
         assert_eq!(n, "02.03");
-        assert_eq!(
-            title,
-            "Jumlah Pegawai Negeri Sipil Pemerintah Kecamatan Karawang Timur Menurut Tingkat Pendidikan dan Jenis Kelamin, 2025"
-        );
+        assert_eq!(title, "Jumlah Pegawai Negeri Sipil Pemerintah Kecamatan Karawang Timur Menurut Tingkat Pendidikan dan Jenis Kelamin, 2025");
         assert_eq!(file, "02_03");
 
         // Cell split case
-        let row_split = vec![
-            "Tabel".into(),
-            "01.01.".into(),
-            "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006".into(),
-        ];
+        let row_split = vec!["Tabel".into(), "01.01.".into(), "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006".into()];
         let (t2, n2, title2, file2) = parse_catalog_entry(&row_split, "01_01");
         assert_eq!(t2, "Tabel");
         assert_eq!(n2, "01.01.");
@@ -749,15 +708,10 @@ mod tests {
         // Row 1: Tingkat Pendidikan | Jenis Kelamin (merged B2:C2) | Jumlah
         // Row 2: (merged A2:A3)     | Laki-Laki    | Perempuan     | (merged D2:D3)
         let grid = vec![
-            vec!["Tabel 02.03 Title".into()], // Row 0 (Title)
-            vec![
-                "Tingkat Pendidikan".into(),
-                "Jenis Kelamin".into(),
-                "".into(),
-                "Jumlah".into(),
-            ], // Row 1
-            vec!["".into(), "Laki-Laki".into(), "Perempuan".into(), "".into()], // Row 2
-            vec!["Sekolah Dasar (SD)".into(), "-".into(), "-".into(), "-".into()], // Row 3
+            vec!["Tabel 02.03 Title".into()],                                                      // Row 0 (Title)
+            vec!["Tingkat Pendidikan".into(), "Jenis Kelamin".into(), "".into(), "Jumlah".into()], // Row 1
+            vec!["".into(), "Laki-Laki".into(), "Perempuan".into(), "".into()],                    // Row 2
+            vec!["Sekolah Dasar (SD)".into(), "-".into(), "-".into(), "-".into()],                 // Row 3
         ];
         let merges = vec![
             ((0, 1), (0, 2)), // A2:A3
@@ -778,7 +732,10 @@ mod tests {
         let sheet1 = ExcelSheetData {
             name: "02_03".into(),
             grid: vec![
-                vec!["Tabel 02.03 Jumlah Pegawai Negeri Sipil Pemerintah Kecamatan Karawang Timur Menurut Tingkat Pendidikan dan Jenis Kelamin, 2025".into()],
+                vec![
+                    "Tabel 02.03 Jumlah Pegawai Negeri Sipil Pemerintah Kecamatan Karawang Timur Menurut Tingkat Pendidikan dan Jenis Kelamin, 2025"
+                        .into(),
+                ],
                 vec!["Tingkat Pendidikan".into(), "Jenis Kelamin".into(), "".into(), "Jumlah".into()],
                 vec!["".into(), "Laki-Laki".into(), "Perempuan".into(), "".into()],
                 vec!["Sekolah Dasar (SD)".into(), "-".into(), "-".into(), "-".into()],
@@ -786,11 +743,7 @@ mod tests {
                 vec!["Jumlah".into(), "22".into(), "5".into(), "27".into()],
                 vec!["Sumber: BPS Kabupaten Karawang / Dinas terkait".into(), "".into(), "".into(), "".into()],
             ],
-            merges: vec![
-                ((0, 1), (0, 2)),
-                ((1, 1), (2, 1)),
-                ((3, 1), (3, 2)),
-            ],
+            merges: vec![((0, 1), (0, 2)), ((1, 1), (2, 1)), ((3, 1), (3, 2))],
         };
 
         let sheet2 = ExcelSheetData {
@@ -814,10 +767,7 @@ mod tests {
             cat_lines[1],
             "Tabel,02.03,\"Jumlah Pegawai Negeri Sipil Pemerintah Kecamatan Karawang Timur Menurut Tingkat Pendidikan dan Jenis Kelamin, 2025\",02_03"
         );
-        assert_eq!(
-            cat_lines[2],
-            "Tabel,02.04,\"Nama dan Luas Desa Per Kecamatan di Kabupaten Karawang, 2026\",02_04"
-        );
+        assert_eq!(cat_lines[2], "Tabel,02.04,\"Nama dan Luas Desa Per Kecamatan di Kabupaten Karawang, 2026\",02_04");
 
         // Verify 2 table CSVs generated
         assert_eq!(res.table_csvs.len(), 2);
@@ -850,10 +800,13 @@ mod tests {
 
             // xl/_rels/workbook.xml.rels
             zip.start_file("xl/_rels/workbook.xml.rels", options).unwrap();
-            zip.write_all(br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            zip.write_all(
+                br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-</Relationships>"#).unwrap();
+</Relationships>"#,
+            )
+            .unwrap();
 
             // xl/workbook.xml
             zip.start_file("xl/workbook.xml", options).unwrap();
@@ -866,7 +819,8 @@ mod tests {
 
             // xl/sharedStrings.xml
             zip.start_file("xl/sharedStrings.xml", options).unwrap();
-            zip.write_all(br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            zip.write_all(
+                br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="8" uniqueCount="8">
   <si><t>Tabel 02.03 Jumlah Pegawai Negeri Sipil Pemerintah Kecamatan Karawang Timur Menurut Tingkat Pendidikan dan Jenis Kelamin, 2025</t></si>
   <si><t>Tingkat Pendidikan</t></si>
@@ -876,11 +830,14 @@ mod tests {
   <si><t>Perempuan</t></si>
   <si><t>Sekolah Dasar (SD)</t></si>
   <si><t>Sumber: BPS Kabupaten Karawang / Dinas terkait</t></si>
-</sst>"#).unwrap();
+</sst>"#,
+            )
+            .unwrap();
 
             // xl/worksheets/sheet1.xml
             zip.start_file("xl/worksheets/sheet1.xml", options).unwrap();
-            zip.write_all(br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            zip.write_all(
+                br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetData>
     <row r="1">
@@ -910,7 +867,9 @@ mod tests {
     <mergeCell ref="B2:C2"/>
     <mergeCell ref="D2:D3"/>
   </mergeCells>
-</worksheet>"#).unwrap();
+</worksheet>"#,
+            )
+            .unwrap();
 
             zip.finish().unwrap();
         }
