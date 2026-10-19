@@ -77,6 +77,10 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222649.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
 | `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222741.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
 | `plan/pubgen/samples/book_cover/modern-business-annual-report-template_412264-9400.avif` | DesignCraft contributor / Pubgen reference | user reference template for Pubgen Cover Style | CC0-1.0 | Reference template |
+| `plan/pubgen/samples/book_cover/modern-business-annual-report-template_412264-9400.jpg` | DesignCraft contributor / Pubgen reference | user reference template for Pubgen Cover Style (same template, JPEG rendition of the .avif row) | CC0-1.0 | Reference template |
+| `plan/pubgen/samples/images/bps_logo.png` | DesignCraft contributor / Pubgen sample | agency emblem placed by the Pubgen Cover generator (`cover_image_logo`); replace with your own before publishing | CC0-1.0 — **confirm**: an official emblem is not automatically CC0 | Test sample |
+| `plan/pubgen/samples/images/city_landscape.jpg` | DesignCraft contributor / Pubgen sample | wide landscape photo placed by the Pubgen Cover generator (`cover_image_landscape`) | CC0-1.0 — **confirm** if the photo is third-party | Test sample |
+| `plan/pubgen/samples/images/city_skyline.jpg` | DesignCraft contributor / Pubgen sample | vertical city photo placed by the Pubgen Cover generator (`cover_image_skyline`) | CC0-1.0 — **confirm** if the photo is third-party | Test sample |
 | `plan/pubgen/samples/Sarana_Ekonomi_Karawang_Timur_2025.png` | DesignCraft contributor / Pubgen sample | synthetic infographic test asset for Pubgen Page from Image | CC0-1.0 | Test sample |
 | `plan/pubgen/samples/pembatas_bab.png` | DesignCraft contributor / Pubgen sample | synthetic chapter divider test asset for Pubgen Page from Image | CC0-1.0 | Test sample |
 | `plan/pubgen/samples/visualisasi_keuangan_perdagangan_portrait.png` | DesignCraft contributor / Pubgen sample | synthetic portrait test asset for Pubgen Page from Image | CC0-1.0 | Test sample |
@@ -87,12 +91,16 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `plan/pubgen/samples/style/design-1.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/design-2.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/design-3.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
+| `plan/pubgen/samples/style/design-4.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
+| `plan/pubgen/samples/style/design-5.designcraft` | DesignCraft contributor (traced) | traced cover geometry for Cover Style 7 (Modern Horizon), drawn over the Pubgen reference template | CC0-1.0 | Test document |
 | `plan/pubgen/samples/thumb/chevron_medallion.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 3 (Chevron Medallion) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/corporate_headline.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 5 (Corporate Headline) | CC0-1.0 | Test thumbnail |
+| `plan/pubgen/samples/thumb/diagonal_arrow.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 6 (Diagonal Arrow) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/folded_origami.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 2 (Folded Origami) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/geometric_medallion.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 1 (Geometric Medallion) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/honeycomb_hexagon.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 4 (Honeycomb Hexagon) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/karawang_timur_hexagon_cover.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 4 (Honeycomb Hexagon) | CC0-1.0 | Test thumbnail |
+| `plan/pubgen/samples/thumb/modern_horizon.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 7 (Modern Horizon) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/wave_curves.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 0 (Wave Curves) | CC0-1.0 | Test thumbnail |
 | `docs/images/thumb01.png` | DesignCraft contributors | screenshot of Pubgen dock panel in DesignCraft | MIT OR Apache-2.0 | Original UI screenshot |
 | `docs/images/thumb02.png` | DesignCraft contributors | screenshot of Publication Cover card in DesignCraft | MIT OR Apache-2.0 | Original UI screenshot |

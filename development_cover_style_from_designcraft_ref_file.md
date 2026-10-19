@@ -18,6 +18,8 @@ Pubgen's **Publication Cover** generator builds executive, publication-ready cov
 | `3` | `◆ Chevron` | Chevron & Medallion | Corporate sapphire downward chevron with gold ring |
 | `4` | `⬡ Hexagon` | Honeycomb Hexagon | Dark slate background with 12-vertex tri-hexagon cluster |
 | `5` | `🏢 Corporate` | Corporate Headline | Modern architecture layout with focal rounded headline block |
+| `6` | `↗ Arrow` | Diagonal Arrow | Navy diagonal banner with amber corner wedge, a forward wedge carrying the year, and a half-bleed cityscape panel |
+| `7` | `🌇 Horizon` | Modern Horizon | Full-bleed cityscape under a sweeping arc, an accent wedge that follows it into the right-hand accent block, and a dark block with a rounded top-left corner carrying the headline |
 
 ---
 
@@ -141,15 +143,19 @@ let styles = [
     "Chevron & Medallion",
     "Honeycomb Hexagon",
     "Corporate Headline", // Index 5
+    "Diagonal Arrow",     // Index 6
+    "Modern Horizon",     // Index 7
 ];
 
-let style_pills: [(&str, usize, &str); 6] = [
+let style_pills: [(&str, usize, &str); 8] = [
     ("🌊 Wave", 0, "Wave Curves"),
     ("❖ Medallion", 1, "Geometric Medallion"),
     ("📐 Origami", 2, "Folded Origami"),
     ("🔰 Chevron", 3, "Chevron & Medallion"),
     ("⬡ Hexagon", 4, "Honeycomb Hexagon"),
     ("🏢 Corporate", 5, "Corporate Headline"),
+    ("↗ Arrow", 6, "Diagonal Arrow"),
+    ("🌇 Horizon", 7, "Modern Horizon"),
 ];
 ```
 
@@ -162,6 +168,7 @@ let themes = [
     "Crimson & Slate",
     "Modern Teal & Cyan",
     "Modern Violet & Slate", // Preset 4
+    "Report Navy & Orange",  // Preset 5: the palette of the Modern Horizon reference
     "Custom",
 ];
 
@@ -171,6 +178,7 @@ let themes = [
     st.cover_color_accent = "#a29bfe".into();
     st.cover_color_dark = "#1e293b".into();
 }
+6 => apply_report_palette(st), // navy #082641 + orange #f5871f
 ```
 
 #### 3. Thumbnail Texture Loader & Tooltip Description
@@ -184,6 +192,8 @@ fn style_thumbnail_texture(ctx: &egui::Context, style_idx: usize) -> Option<egui
         3 => ("chevron_medallion.png", "karawang_timur_chevron_cover.png"),
         4 => ("karawang_timur_hexagon_cover.png", "honeycomb_hexagon.png"),
         5 => ("corporate_headline.png", "karawang_timur_corporate_cover.png"),
+        6 => ("diagonal_arrow.png", "karawang_timur_diagonal_cover.png"),
+        7 => ("modern_horizon.png", "karawang_timur_modern_horizon_cover.png"),
         _ => return None,
     };
     // ...
@@ -310,7 +320,7 @@ Update [`crates/ui-egui/src/panels/pubgen.rs`](file:///f:/GitHub/designcraft/cra
 ```rust
 #[test]
 fn test_execute_generate_cover_text_formatting() {
-    for style in 0..=5 { // Include new style
+    for style in 0..=7 { // Include new style
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
         let mut st = PubgenState::default();

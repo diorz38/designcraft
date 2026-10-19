@@ -125,6 +125,7 @@ pub(super) const TABLE: &[(&str, &str)] = &[
     ("Snap to Zone", "მიბმის ზონა"),
     ("Properties", "თვისებები"),
     ("Layers", "შრეები"),
+    ("Pubgen", "პაბგენი"),
     ("Links", "ბმულები"),
     ("Swatches", "ფერის ნიმუშები"),
     ("Color", "ფერი"),

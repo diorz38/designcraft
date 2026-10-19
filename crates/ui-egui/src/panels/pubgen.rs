@@ -18,6 +18,22 @@ pub mod excel;
 
 const PANEL_ID: &str = "pubgen_panel_state";
 
+/// Index of the "Modern Horizon" cover style — the one traced from the reference annual-report
+/// design, whose palette is navy + orange rather than the amber of the other presets.
+const HORIZON_STYLE: usize = 7;
+
+/// Theme preset index and colours of the reference annual-report cover (navy + orange).
+const REPORT_THEME: usize = 6;
+
+/// Select the palette the reference design uses, so a freshly picked Modern Horizon cover already
+/// looks like the reference instead of the amber default.
+fn apply_report_palette(st: &mut PubgenState) {
+    st.cover_theme_preset = REPORT_THEME;
+    st.cover_color_primary = "#082641".into();
+    st.cover_color_accent = "#f5871f".into();
+    st.cover_color_dark = "#082641".into();
+}
+
 fn default_true() -> bool {
     true
 }
@@ -270,8 +286,8 @@ impl Default for PubgenState {
             card2_sheet_tables: Vec::new(),
             card2_sheet_idx: 0,
             card2_first_row_header: true,
-            card2_col_numbers: false,
-            card2_table_footer: false,
+            card2_col_numbers: true,
+            card2_table_footer: true,
             card2_row_conditions: true,
             card2_style: 0,
             card2_placement: 2, // At page
@@ -642,6 +658,8 @@ fn style_thumbnail_texture(ctx: &egui::Context, style_idx: usize) -> Option<egui
         3 => ("chevron_medallion.png", "karawang_timur_chevron_cover.png"),
         4 => ("karawang_timur_hexagon_cover.png", "honeycomb_hexagon.png"),
         5 => ("corporate_headline.png", "karawang_timur_corporate_cover.png"),
+        6 => ("diagonal_arrow.png", "karawang_timur_diagonal_cover.png"),
+        7 => ("modern_horizon.png", "karawang_timur_modern_horizon_cover.png"),
         _ => return None,
     };
     let candidates = [
@@ -743,15 +761,23 @@ fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: 
             p.circle_filled(c, w * 0.21, Color32::from_rgb(30, 41, 59));
             p.circle_stroke(c, w * 0.22, egui::Stroke::new(1.5, Color32::from_rgb(245, 171, 25)));
         }
-        _ => {
+        5 => {
             // Style 5 (Corporate Headline): White base + top bar + top-right metadata + photo vertical frame + rounded headline block + bottom-right block + bottom-left logo (position lock)
             p.rect_filled(rect, 4.0, Color32::WHITE);
             // Top bar
             let top_bar = egui::Rect::from_min_max(rect.min, rect.min + vec2(w * 0.90, h * 0.025));
             p.rect_filled(top_bar, 0.0, Color32::from_rgb(108, 92, 231));
             // Top-right metadata lines (position lock)
-            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.62, h * 0.035), rect.min + vec2(w * 0.94, h * 0.048)), 1.0, Color32::from_rgb(100, 116, 139));
-            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.70, h * 0.055), rect.min + vec2(w * 0.94, h * 0.068)), 1.0, Color32::from_rgb(100, 116, 139));
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.62, h * 0.035), rect.min + vec2(w * 0.94, h * 0.048)),
+                1.0,
+                Color32::from_rgb(100, 116, 139),
+            );
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.70, h * 0.055), rect.min + vec2(w * 0.94, h * 0.068)),
+                1.0,
+                Color32::from_rgb(100, 116, 139),
+            );
             // Bottom-right block
             let br_block = egui::Rect::from_min_max(rect.min + vec2(w * 0.72, h * 0.92), rect.max);
             p.rect_filled(br_block, egui::CornerRadius { nw: 0, ne: 0, sw: 0, se: 4 }, Color32::from_rgb(108, 92, 231));
@@ -767,15 +793,153 @@ fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: 
             let corp_box = egui::Rect::from_min_max(rect.min + vec2(w * 0.58, h * 0.13), rect.min + vec2(w, h * 0.28));
             p.rect_filled(corp_box, 0.0, Color32::from_rgb(108, 92, 231));
             // Middle-left year & volume line
-            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.31), rect.min + vec2(w * 0.34, h * 0.39)), 2.0, Color32::from_rgb(30, 41, 59));
-            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.41), rect.min + vec2(w * 0.32, h * 0.43)), 1.0, Color32::from_rgb(108, 92, 231));
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.31), rect.min + vec2(w * 0.34, h * 0.39)),
+                2.0,
+                Color32::from_rgb(30, 41, 59),
+            );
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.41), rect.min + vec2(w * 0.32, h * 0.43)),
+                1.0,
+                Color32::from_rgb(108, 92, 231),
+            );
             // Headline block with rounded top-right (semi-transparent)
             let hl_block = egui::Rect::from_min_max(rect.min + vec2(0.0, h * 0.54), rect.min + vec2(w * 0.58, h * 0.81));
             p.rect_filled(hl_block, egui::CornerRadius { nw: 0, ne: 8, sw: 0, se: 0 }, Color32::from_rgba_unmultiplied(108, 92, 231, 218));
             // Bottom-left logo & agency text (position lock)
-            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.87), rect.min + vec2(w * 0.14, h * 0.94)), 2.0, Color32::from_rgb(108, 92, 231));
-            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.16, h * 0.88), rect.min + vec2(w * 0.52, h * 0.90)), 1.0, Color32::from_rgb(30, 41, 59));
-            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.16, h * 0.91), rect.min + vec2(w * 0.46, h * 0.93)), 1.0, Color32::from_rgb(30, 41, 59));
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.87), rect.min + vec2(w * 0.14, h * 0.94)),
+                2.0,
+                Color32::from_rgb(108, 92, 231),
+            );
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.16, h * 0.88), rect.min + vec2(w * 0.52, h * 0.90)),
+                1.0,
+                Color32::from_rgb(30, 41, 59),
+            );
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.16, h * 0.91), rect.min + vec2(w * 0.46, h * 0.93)),
+                1.0,
+                Color32::from_rgb(30, 41, 59),
+            );
+        }
+        6 => {
+            // Style 6 (Diagonal Arrow): white base + right photo panel + navy top banner +
+            // amber corner wedge + navy forward wedge carrying the year + mid-left headline
+            p.rect_filled(rect, 4.0, Color32::WHITE);
+
+            // Right-hand photo panel
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.48, 0.0), rect.max), 0.0, Color32::from_rgb(146, 172, 198));
+
+            let navy = Color32::from_rgb(18, 38, 71);
+
+            // Navy diagonal banner across the top
+            let band = vec![
+                rect.min + vec2(w * 0.19, 0.0),
+                rect.min + vec2(w * 0.672, 0.0),
+                rect.min + vec2(w * 0.481, h * 0.304),
+                rect.min + vec2(0.0, h * 0.304),
+            ];
+            p.add(egui::Shape::convex_polygon(band, navy, egui::Stroke::NONE));
+
+            // Amber corner wedge (top-left)
+            let wedge = vec![rect.min, rect.min + vec2(w * 0.146, 0.0), rect.min + vec2(0.0, h * 0.233)];
+            p.add(egui::Shape::convex_polygon(wedge, Color32::from_rgb(245, 171, 25), egui::Stroke::NONE));
+
+            // Top-right metadata lines (position lock, over the photo)
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.56, h * 0.020), rect.min + vec2(w * 0.94, h * 0.032)),
+                1.0,
+                Color32::from_rgb(226, 232, 240),
+            );
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.60, h * 0.040), rect.min + vec2(w * 0.94, h * 0.052)),
+                1.0,
+                Color32::from_rgb(226, 232, 240),
+            );
+
+            // Navy forward wedge carrying the year and volume
+            let wedge2 = vec![rect.min + vec2(0.0, h * 0.617), rect.min + vec2(w * 0.591, h * 0.702), rect.min + vec2(0.0, h * 0.788)];
+            p.add(egui::Shape::convex_polygon(wedge2, navy, egui::Stroke::NONE));
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.03, h * 0.672), rect.min + vec2(w * 0.27, h * 0.726)), 2.0, Color32::WHITE);
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.03, h * 0.735), rect.min + vec2(w * 0.26, h * 0.751)),
+                1.0,
+                Color32::from_rgb(226, 232, 240),
+            );
+
+            // Middle-left headline: level (navy) / title (amber) / DALAM ANGKA (navy)
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.425), rect.min + vec2(w * 0.42, h * 0.465)), 2.0, navy);
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.468), rect.min + vec2(w * 0.62, h * 0.508)),
+                2.0,
+                Color32::from_rgb(245, 171, 25),
+            );
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.512), rect.min + vec2(w * 0.45, h * 0.552)), 2.0, navy);
+
+            // Bottom-left logo & agency text (position lock)
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.885), rect.min + vec2(w * 0.13, h * 0.935)),
+                2.0,
+                Color32::from_rgb(0, 160, 220),
+            );
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.15, h * 0.892), rect.min + vec2(w * 0.47, h * 0.905)), 1.0, navy);
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.15, h * 0.915), rect.min + vec2(w * 0.42, h * 0.928)), 1.0, navy);
+        }
+        _ => {
+            // Style 7 (Modern Horizon): full-bleed photo under a sweeping arc + orange swoosh +
+            // navy bottom block with the rounded top-left corner carrying the headline
+            p.rect_filled(rect, 4.0, Color32::WHITE);
+            let navy = Color32::from_rgb(8, 38, 65);
+            let orange = Color32::from_rgb(245, 135, 31);
+
+            // Photograph fills the top arc: an approximation of the traced sweep.
+            let arc = vec![rect.min, rect.min + vec2(w, 0.0), rect.min + vec2(w, h * 0.557), rect.min + vec2(0.0, h * 0.204)];
+            p.add(egui::Shape::convex_polygon(arc, Color32::from_rgb(150, 172, 196), egui::Stroke::NONE));
+
+            // Navy block: rounded top-left corner, flat lower half.
+            let navy_pts = vec![
+                rect.min + vec2(0.0, h * 0.627),
+                rect.min + vec2(w * 0.326, h * 0.499),
+                rect.min + vec2(w * 0.625, h * 0.549),
+                rect.min + vec2(w, h * 0.549),
+                rect.max,
+                rect.min + vec2(0.0, h),
+            ];
+            p.add(egui::Shape::convex_polygon(navy_pts, navy, egui::Stroke::NONE));
+
+            // Orange wedge following the arc (left) and the accent block (right).
+            let orange_pts = vec![
+                rect.min + vec2(0.0, h * 0.208),
+                rect.min + vec2(w, h * 0.561),
+                rect.min + vec2(w, h * 0.855),
+                rect.min + vec2(w * 0.625, h * 0.855),
+                rect.min + vec2(w * 0.625, h * 0.544),
+                rect.min + vec2(0.0, h * 0.622),
+            ];
+            p.add(egui::Shape::convex_polygon(orange_pts, orange, egui::Stroke::NONE));
+
+            // Top-right metadata (position lock)
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.56, h * 0.020), rect.min + vec2(w * 0.94, h * 0.032)), 1.0, navy);
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.60, h * 0.040), rect.min + vec2(w * 0.94, h * 0.052)), 1.0, navy);
+
+            // Headline: level (white) / title (orange) / DALAM ANGKA (white) inside the navy block
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.662), rect.min + vec2(w * 0.50, h * 0.706)), 2.0, Color32::WHITE);
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.716), rect.min + vec2(w * 0.72, h * 0.766)), 2.0, orange);
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.776), rect.min + vec2(w * 0.50, h * 0.820)), 2.0, Color32::WHITE);
+
+            // Year & volume centred in the accent block
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.68, h * 0.645), rect.min + vec2(w * 0.92, h * 0.712)), 2.0, Color32::WHITE);
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.72, h * 0.734), rect.min + vec2(w * 0.88, h * 0.748)), 1.0, Color32::WHITE);
+
+            // Bottom-left logo & agency text (position lock)
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.885), rect.min + vec2(w * 0.14, h * 0.945)),
+                2.0,
+                Color32::from_rgb(0, 160, 220),
+            );
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.16, h * 0.892), rect.min + vec2(w * 0.52, h * 0.905)), 1.0, Color32::WHITE);
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.16, h * 0.915), rect.min + vec2(w * 0.46, h * 0.928)), 1.0, Color32::WHITE);
         }
     }
 }
@@ -805,6 +969,8 @@ fn show_style_thumbnail_tooltip(ui: &mut Ui, style_idx: usize, name: &str, t: &T
             3 => "Executive downward chevron crest with golden horseshoe medallion cradle.",
             4 => "Architectural tri-hexagon honeycomb cluster with corporate chevron banner and racing stripes.",
             5 => "Modern corporate architecture layout with top framing, headline focal block, and position-locked institutional metadata.",
+            6 => "Navy diagonal banner and amber corner wedge over a half-bleed cityscape, with a forward navy wedge carrying the year and volume, and a position-locked agency footer.",
+            7 => "Full-bleed cityscape under a sweeping arc with an accent wedge that follows it, a dark institutional block carrying the headline, and a position-locked agency footer.",
             _ => "",
         };
         ui.add_space(3.0);
@@ -818,9 +984,21 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
     // 1. Template Style with Hover Thumbnail Preview
     ui.horizontal(|ui| {
         ui.label(RichText::new("Style:").size(11.0).color(t.text));
-        let styles = ["Wave Curves", "Geometric & Medallion", "Folded Origami", "Chevron & Medallion", "Honeycomb Hexagon", "Corporate Headline"];
+        let styles = [
+            "Wave Curves",
+            "Geometric & Medallion",
+            "Folded Origami",
+            "Chevron & Medallion",
+            "Honeycomb Hexagon",
+            "Corporate Headline",
+            "Diagonal Arrow",
+            "Modern Horizon",
+        ];
         let cur_style = styles.get(st.cover_style).copied().unwrap_or("Wave Curves");
-        let combo = egui::ComboBox::from_id_salt("pubgen_cover_style").selected_text(cur_style).width(160.0).show_ui(ui, |ui| {
+        // The dock can be as narrow as 220 pt: the dropdown takes what the row has left.
+        let combo_w = (ui.available_width() - 80.0).clamp(110.0, 200.0);
+        let prev_style = st.cover_style;
+        let combo = egui::ComboBox::from_id_salt("pubgen_cover_style").selected_text(cur_style).width(combo_w).show_ui(ui, |ui| {
             for (idx, s) in styles.iter().enumerate() {
                 let resp = ui.selectable_value(&mut st.cover_style, idx, *s);
                 resp.on_hover_ui(|ui| {
@@ -828,6 +1006,9 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                 });
             }
         });
+        if st.cover_style != prev_style && st.cover_style == HORIZON_STYLE {
+            apply_report_palette(st);
+        }
         combo.response.on_hover_ui(|ui| {
             show_style_thumbnail_tooltip(ui, st.cover_style, cur_style, t);
         });
@@ -849,8 +1030,8 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
         });
     });
 
-    // Quick style pill switcher with hover thumbnail preview
-    ui.horizontal(|ui| {
+    // Quick style pill switcher with hover thumbnail preview; wraps so a narrow dock never clips it
+    ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new("Preview:").size(10.0).color(t.text_dim));
         let style_pills = [
             ("🌊 Wave", 0, "Wave Curves"),
@@ -859,12 +1040,17 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
             ("🔰 Chevron", 3, "Chevron & Medallion"),
             ("⬡ Hexagon", 4, "Honeycomb Hexagon"),
             ("🏢 Corporate", 5, "Corporate Headline"),
+            ("↗ Arrow", 6, "Diagonal Arrow"),
+            ("🌇 Horizon", 7, "Modern Horizon"),
         ];
         for (label, idx, full_name) in style_pills {
             let is_sel = st.cover_style == idx;
             let btn = ui.selectable_label(is_sel, label);
             if btn.clicked() {
                 st.cover_style = idx;
+                if idx == HORIZON_STYLE {
+                    apply_report_palette(st);
+                }
             }
             btn.on_hover_ui(|ui| {
                 show_style_thumbnail_tooltip(ui, idx, full_name, t);
@@ -882,11 +1068,13 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
             "Crimson & Slate",
             "Modern Teal & Cyan",
             "Modern Violet & Slate",
+            "Report Navy & Orange",
             "Custom",
         ];
         let cur_theme = themes.get(st.cover_theme_preset).copied().unwrap_or("Classic BPS (Blue/Gold)");
         let prev_theme = st.cover_theme_preset;
-        egui::ComboBox::from_id_salt("pubgen_cover_theme").selected_text(cur_theme).width(180.0).show_ui(ui, |ui| {
+        let combo_w = (ui.available_width() - 56.0).clamp(110.0, 220.0);
+        egui::ComboBox::from_id_salt("pubgen_cover_theme").selected_text(cur_theme).width(combo_w).show_ui(ui, |ui| {
             for (idx, th) in themes.iter().enumerate() {
                 ui.selectable_value(&mut st.cover_theme_preset, idx, *th);
             }
@@ -923,6 +1111,7 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                     st.cover_color_accent = "#a29bfe".into();
                     st.cover_color_dark = "#1e293b".into();
                 }
+                6 => apply_report_palette(st),
                 _ => {}
             }
         }
@@ -931,11 +1120,12 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
     // Custom color hex inputs
     ui.horizontal(|ui| {
         ui.label(RichText::new("Colors:").size(10.5).color(t.text_dim));
-        ui.add_sized([60.0, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_color_primary))
+        let field_w = ((ui.available_width() - 56.0) / 3.0 - 6.0).clamp(44.0, 72.0);
+        ui.add_sized([field_w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_color_primary))
             .on_hover_text("Primary Color (e.g. #0072bc)");
-        ui.add_sized([60.0, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_color_accent))
+        ui.add_sized([field_w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_color_accent))
             .on_hover_text("Accent Color (e.g. #f5ab19)");
-        ui.add_sized([60.0, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_color_dark))
+        ui.add_sized([field_w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_color_dark))
             .on_hover_text("Dark / Secondary Color (e.g. #122647)");
     });
 
@@ -1093,7 +1283,7 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                 }
             });
         }
-        _ => {
+        5 => {
             // Style 5 (Corporate Headline): 1 image (Vertical architectural photo)
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Photo:").size(10.5).color(t.text));
@@ -1103,6 +1293,40 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
                 .on_hover_text("Vertical architecture or city skyline photo");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
+                        st.cover_image_skyline = path;
+                    }
+                }
+            });
+        }
+        6 => {
+            // Style 6 (Diagonal Arrow): 1 image (Full-height cityscape panel on the right)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Photo:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
+                )
+                .on_hover_text("Full-height cityscape panel behind the diagonal band and arrow");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
+                        st.cover_image_skyline = path;
+                    }
+                }
+            });
+        }
+        _ => {
+            // Style 7 (Modern Horizon): 1 image (Hero photograph clipped by the arc)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Photo:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
+                )
+                .on_hover_text("Hero photograph clipped by the sweeping arc across the upper page");
                 if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
                     if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place")) {
                         st.cover_image_skyline = path;
@@ -2113,7 +2337,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 
             "Honeycomb Hexagon"
         }
-        _ => {
+        5 => {
             // Style 5: Corporate Headline (from design-3.designcraft)
             let sx = pw / 595.275591;
             let sy = ph / 841.889764;
@@ -2362,6 +2586,387 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             )?;
 
             "Corporate Headline"
+        }
+        6 => {
+            // Style 6: Diagonal Arrow (from design-4.designcraft)
+            let sx = pw / 595.275591;
+            let sy = ph / 841.889764;
+            let s_avg = (sx + sy) / 2.0;
+
+            // 1. Base white background
+            app.run("frame.create", json!({"spread": 0, "rect": [0, 0, pw, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 2. Full-height cityscape panel on the right (half-bleed)
+            let photo_res = app.run(
+                "frame.create",
+                json!({
+                    "spread": 0,
+                    "rect": [286.0 * sx, 0.0, pw, ph],
+                    "content": "graphic",
+                    "shape": "rectangle"
+                }),
+            )?;
+            let photo_id = photo_res.get("id").and_then(Value::as_u64);
+            let _ = app.run("file.place", json!({"path": skyline, "frame": photo_id}));
+            let _ = app.run("object.fit", json!({"mode": "fillProportionally", "ids": [photo_id]}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent", "ids": [photo_id]}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]", "ids": [photo_id]}));
+
+            // 3. Dark diagonal banner across the top, leaning over the photo
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [113.20 * sx, 0.0]},
+                    {"p": [399.74 * sx, 0.0]},
+                    {"p": [286.54 * sx, 256.0 * sy]},
+                    {"p": [0.0, 256.0 * sy]}
+                ]}),
+            )?;
+            let _ = app.run("object.color", json!({"color": dark, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 4. Accent corner wedge in the top-left, off the banner's leading edge
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.0, 0.0]},
+                    {"p": [86.87 * sx, 0.0]},
+                    {"p": [0.0, 196.46 * sy]}
+                ]}),
+            )?;
+            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 5. Top-right metadata over the photograph (Position Lock: Catalogue, then ISSN/ISBN)
+            add_cover_text_frame(
+                app,
+                0,
+                [330.0 * sx, 17.0 * sy, 560.0 * sx, 35.0 * sy],
+                &cat_text,
+                "#e2e8f0",
+                "Arial",
+                "Bold",
+                8.5 * s_avg,
+                None,
+                None,
+                "right",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [330.0 * sx, 35.0 * sy, 560.0 * sx, 53.0 * sy],
+                &code_text,
+                "#e2e8f0",
+                "Arial",
+                "Bold",
+                8.5 * s_avg,
+                None,
+                None,
+                "right",
+            )?;
+
+            // 6. Forward wedge crossing from the white field into the photo
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.0, 519.0 * sy]},
+                    {"p": [352.0 * sx, 591.0 * sy]},
+                    {"p": [0.0, 663.0 * sy]}
+                ]}),
+            )?;
+            let _ = app.run("object.color", json!({"color": dark, "target": "fill"}));
+            let _ = app.run("object.dropShadow", json!({"on": true, "distance": 6, "size": 14, "opacity": 0.18}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 7. Year and Volume, centred inside the wedge
+            add_cover_text_frame(
+                app,
+                0,
+                [6.15 * sx, 569.0 * sy, 196.15 * sx, 639.0 * sy],
+                year_text,
+                "#ffffff",
+                "Arial Black",
+                "Regular",
+                44.0 * s_avg,
+                None,
+                Some(20.0),
+                "center",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [0.0, 610.0 * sy, 172.30 * sx, 632.0 * sy],
+                volume_text,
+                "#e2e8f0",
+                "Arial",
+                "Bold",
+                11.0 * s_avg,
+                None,
+                Some(40.0),
+                "center",
+            )?;
+
+            // 8. Middle-left headline: level, title (accent), then the standard publication suffix
+            add_cover_text_frame(
+                app,
+                0,
+                [36.0 * sx, 358.0 * sy, 384.0 * sx, 392.0 * sy],
+                &level_text.to_uppercase(),
+                dark,
+                "Arial Black",
+                "Regular",
+                28.0 * s_avg,
+                None,
+                Some(30.0),
+                "left",
+            )?;
+            // One full-width line: the frame is as wide as the page, so a title never hyphenates here.
+            add_cover_text_frame(
+                app,
+                0,
+                [36.0 * sx, 394.0 * sy, 559.28 * sx, 428.0 * sy],
+                title_text,
+                accent,
+                "Arial Black",
+                "Regular",
+                30.0 * s_avg,
+                Some(34.0 * s_avg),
+                Some(10.0),
+                "left",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [36.0 * sx, 431.0 * sy, 384.0 * sx, 465.0 * sy],
+                "DALAM ANGKA",
+                dark,
+                "Arial Black",
+                "Regular",
+                28.0 * s_avg,
+                None,
+                Some(20.0),
+                "left",
+            )?;
+
+            // 9. Bottom-Left Logo & Agency Text (Position Lock)
+            app.run(
+                "frame.create",
+                json!({
+                    "spread": 0,
+                    "rect": [36.0 * sx, 742.0 * sy, 76.0 * sx, 786.0 * sy],
+                    "content": "graphic",
+                    "shape": "rectangle"
+                }),
+            )?;
+            let _ = app.run("file.place", json!({"path": logo}));
+            let _ = app.run("object.fit", json!({"mode": "fitProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            add_cover_text_frame(
+                app,
+                0,
+                [84.0 * sx, 744.0 * sy, 340.0 * sx, 786.0 * sy],
+                agency_text,
+                dark,
+                "Arial",
+                "Bold Italic",
+                10.0 * s_avg,
+                Some(13.5 * s_avg),
+                None,
+                "left",
+            )?;
+
+            "Diagonal Arrow"
+        }
+        _ => {
+            // Style 7: Modern Horizon (from design-5.designcraft)
+            // A full-bleed photograph under a sweeping arc, an accent wedge that follows the arc and
+            // turns into the accent block on the right, and a dark block across the lower page whose
+            // rounded top-left corner carries the headline.
+            let sx = pw / 595.275591;
+            let sy = ph / 841.889764;
+            let s_avg = (sx + sy) / 2.0;
+            let x = |v: f64| v * sx;
+            let y = |v: f64| v * sy;
+
+            // 1. Base white background
+            app.run("frame.create", json!({"spread": 0, "rect": [0, 0, pw, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 2. Hero photograph, clipped by the arc that sweeps across the upper page (the traced
+            //    geometry of design-5.designcraft, which runs from the left edge into the right edge).
+            let photo_res = app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.0, 0.0]},
+                    {"p": [x(595.776), 0.0]},
+                    {"p": [x(595.776), y(469.637)], "out": [x(284.631), y(445.387)]},
+                    {"p": [0.0, y(172.068)], "in": [x(40.517), y(324.164)]}
+                ]}),
+            )?;
+            let photo_id = photo_res.get("id").and_then(Value::as_u64);
+            let _ = app.run("file.place", json!({"path": skyline, "frame": photo_id}));
+            let _ = app.run("object.fit", json!({"mode": "fillProportionally", "ids": [photo_id]}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent", "ids": [photo_id]}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]", "ids": [photo_id]}));
+
+            // 3. Dark block across the lower page, with the traced rounded top-left corner.
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.0, y(528.159)], "in": [0.0, y(567.917)], "out": [x(29.018), y(465.043)]},
+                    {"p": [x(194.405), y(420.0)], "in": [x(105.107), y(419.999)], "out": [x(215.156), y(419.999)]},
+                    {"p": [x(254.093), y(426.959)], "in": [x(235.193), y(422.433)], "out": [x(300.0), y(440.0)]},
+                    {"p": [x(372.305), y(462.0)], "in": [x(330.0), y(450.0)]},
+                    {"p": [x(595.276), y(462.0)]},
+                    {"p": [x(595.276), y(841.890)]},
+                    {"p": [0.0, y(841.890)]}
+                ]}),
+            )?;
+            let _ = app.run("object.color", json!({"color": dark, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 4. Accent wedge following the arc, opening into the accent block on the right. One path:
+            //    its lower boundary tracks the dark block's top edge, leaving a hairline of white.
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [0.0, y(175.068)], "in": [0.0, y(300.0)], "out": [x(40.517), y(327.164)]},
+                    {"p": [x(595.776), y(472.637)], "in": [x(284.631), y(448.387)]},
+                    {"p": [x(595.776), y(720.0)]},
+                    {"p": [x(372.305), y(720.0)]},
+                    {"p": [x(372.305), y(458.0)], "out": [x(330.0), y(446.0)]},
+                    {"p": [x(254.093), y(422.959)], "in": [x(300.0), y(436.0)], "out": [x(235.193), y(418.433)]},
+                    {"p": [x(194.405), y(415.999)], "in": [x(215.156), y(415.999)], "out": [x(105.107), y(415.999)]},
+                    {"p": [0.0, y(524.159)], "in": [x(29.018), y(461.043)], "out": [0.0, y(300.0)]}
+                ]}),
+            )?;
+            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 5. Top-right metadata over the photograph (Position Lock: catalogue, then ISSN/ISBN)
+            add_cover_text_frame(app, 0, [x(330.0), y(17.0), x(560.0), y(35.0)], &cat_text, dark, "Arial", "Bold", 8.5 * s_avg, None, None, "right")?;
+            add_cover_text_frame(
+                app,
+                0,
+                [x(330.0), y(35.0), x(560.0), y(53.0)],
+                &code_text,
+                dark,
+                "Arial",
+                "Bold",
+                8.5 * s_avg,
+                None,
+                None,
+                "right",
+            )?;
+
+            // 6. Headline inside the dark block: level, title (accent), then the standard suffix.
+            //    The frames stop short of the accent block, whose left edge cuts into the dark block,
+            //    so an accent-coloured title never runs out over accent-coloured paper. One word per
+            //    line in the title, as on the reference cover, so a long title never hyphenates.
+            let formatted_title = if title_text.contains(' ') { title_text.replace(' ', "\n") } else { title_text.to_string() };
+            add_cover_text_frame(
+                app,
+                0,
+                [x(36.0), y(534.0), x(380.0), y(574.0)],
+                &level_text.to_uppercase(),
+                "#ffffff",
+                "Arial Black",
+                "Regular",
+                26.0 * s_avg,
+                None,
+                Some(40.0),
+                "left",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [x(36.0), y(578.0), x(368.0), y(686.0)],
+                &formatted_title,
+                accent,
+                "Arial Black",
+                "Regular",
+                34.0 * s_avg,
+                Some(39.0 * s_avg),
+                Some(10.0),
+                "left",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [x(36.0), y(690.0), x(380.0), y(730.0)],
+                "DALAM ANGKA",
+                "#ffffff",
+                "Arial Black",
+                "Regular",
+                26.0 * s_avg,
+                None,
+                Some(20.0),
+                "left",
+            )?;
+
+            // 7. Year with its volume directly underneath, centred in the accent block
+            add_cover_text_frame(
+                app,
+                0,
+                [x(390.0), y(540.0), x(580.0), y(620.0)],
+                year_text,
+                "#ffffff",
+                "Arial Black",
+                "Regular",
+                56.0 * s_avg,
+                None,
+                Some(20.0),
+                "center",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [x(390.0), y(624.0), x(580.0), y(648.0)],
+                volume_text,
+                "#ffffff",
+                "Arial",
+                "Bold",
+                11.0 * s_avg,
+                None,
+                Some(40.0),
+                "center",
+            )?;
+
+            // 8. Bottom-Left Logo & Agency Text (Position Lock)
+            app.run(
+                "frame.create",
+                json!({
+                    "spread": 0,
+                    "rect": [x(36.0), y(752.0), x(84.0), y(804.0)],
+                    "content": "graphic",
+                    "shape": "rectangle"
+                }),
+            )?;
+            let _ = app.run("file.place", json!({"path": logo}));
+            let _ = app.run("object.fit", json!({"mode": "fitProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            add_cover_text_frame(
+                app,
+                0,
+                [x(92.0), y(754.0), x(380.0), y(806.0)],
+                agency_text,
+                "#ffffff",
+                "Arial",
+                "Bold Italic",
+                10.0 * s_avg,
+                Some(13.5 * s_avg),
+                None,
+                "left",
+            )?;
+
+            "Modern Horizon"
         }
     };
 
@@ -5440,6 +6045,14 @@ mod tests {
     }
 
     #[test]
+    fn test_table_from_csv_defaults_tick_column_numbers_and_footer() {
+        let st = PubgenState::default();
+        assert!(st.card2_first_row_header, "First row is header is on by default");
+        assert!(st.card2_col_numbers, "Add column numbers is on by default");
+        assert!(st.card2_table_footer, "Table footer is on by default");
+    }
+
+    #[test]
     fn test_execute_insert_table() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
@@ -5578,8 +6191,9 @@ mod tests {
             ],
             card2_first_row_header: true,
             card2_col_numbers: true,
-            card2_placement: 1, // New frame
-            card2_style: 3,     // Horizontal Rules
+            card2_table_footer: false, // pin it off: this test wants plain interior data rows
+            card2_placement: 1,        // New frame
+            card2_style: 3,            // Horizontal Rules
             ..Default::default()
         };
 
@@ -5652,8 +6266,9 @@ mod tests {
             ],
             card2_first_row_header: true,
             card2_col_numbers: false,
-            card2_placement: 1, // New frame
-            card2_style: 3,     // Horizontal Rules
+            card2_table_footer: false, // pin it off: this test wants plain interior data rows
+            card2_placement: 1,        // New frame
+            card2_style: 3,            // Horizontal Rules
             ..Default::default()
         };
 
@@ -6083,8 +6698,9 @@ mod tests {
             ],
             card2_first_row_header: true,
             card2_table_footer: true,
-            card2_placement: 1, // New frame
-            card2_style: 3,     // Horizontal Rules
+            card2_col_numbers: false, // pin it off: the row indices below count from the header only
+            card2_placement: 1,       // New frame
+            card2_style: 3,           // Horizontal Rules
             ..Default::default()
         };
 
@@ -7655,7 +8271,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
     #[test]
     fn test_execute_generate_cover_text_formatting() {
-        for style in 0..=5 {
+        for style in 0..=7 {
             let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
             app.run("file.new", json!({})).unwrap();
             let mut st = PubgenState::default();
@@ -7694,11 +8310,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     fn test_export_design_3_sample() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
         let mut st = PubgenState::default();
         st.cover_style = 5;
         st.cover_color_primary = "#6c5ce7".into();
@@ -7708,14 +8320,172 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         st.cover_image_logo = root.join("outputs").join("bps_logo.png").to_string_lossy().to_string();
         execute_generate_cover(&mut app, &st).unwrap();
         let _ = app.run("layout.pages.delete", json!({"page": 1}));
-        let path = root
-            .join("plan")
-            .join("pubgen")
-            .join("samples")
-            .join("style")
-            .join("design-3.designcraft");
+        let path = root.join("plan").join("pubgen").join("samples").join("style").join("design-3.designcraft");
         let res = app.run("file.saveAs", json!({"path": path.to_string_lossy()}));
         assert!(res.is_ok(), "Failed to save: {res:?}");
+    }
+
+    #[test]
+    fn test_export_design_4_sample() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
+        let mut st = PubgenState::default();
+        st.cover_style = 6;
+        st.cover_image_skyline = root.join("outputs").join("city_skyline.jpg").to_string_lossy().to_string();
+        st.cover_image_logo = root.join("outputs").join("bps_logo.png").to_string_lossy().to_string();
+        execute_generate_cover(&mut app, &st).unwrap();
+        let _ = app.run("layout.pages.delete", json!({"page": 1}));
+        // A scratch file, never `design-4.designcraft`: that one is the hand-authored reference this
+        // style was derived from, so the export must not overwrite it.
+        let path = std::env::temp_dir().join(format!("designcraft-cover-style-6-{}.designcraft", std::process::id()));
+        let res = app.run("file.saveAs", json!({"path": path.to_string_lossy()}));
+        assert!(res.is_ok(), "Failed to save: {res:?}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_export_design_5_sample() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        // A4: the size the cover designs are drawn for.
+        app.run("file.new", json!({"width": 595.275591, "height": 841.889764})).unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
+        let mut st = PubgenState::default();
+        st.cover_style = HORIZON_STYLE;
+        apply_report_palette(&mut st);
+        st.cover_image_skyline = root.join("outputs").join("city_skyline.jpg").to_string_lossy().to_string();
+        st.cover_image_logo = root.join("outputs").join("bps_logo.png").to_string_lossy().to_string();
+        execute_generate_cover(&mut app, &st).unwrap();
+        let _ = app.run("layout.pages.delete", json!({"page": 1}));
+        // A scratch file, never `design-5.designcraft`: that one is the traced reference this style
+        // was derived from, so the export must not overwrite it.
+        let path = std::env::temp_dir().join(format!("designcraft-cover-style-7-{}.designcraft", std::process::id()));
+        let res = app.run("file.saveAs", json!({"path": path.to_string_lossy()}));
+        assert!(res.is_ok(), "Failed to save: {res:?}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_cover_style_6_text_is_options_only() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let mut st = PubgenState::default();
+        st.cover_style = 6;
+        execute_generate_cover(&mut app, &st).unwrap();
+
+        let active = app.session.active().unwrap();
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        // The only sources of cover text: the Publication Cover options and the fixed suffix.
+        let allowed = [
+            "KECAMATAN",
+            "KABUPATEN",
+            "KARAWANG TIMUR",
+            "KARAWANG\nTIMUR",
+            "2026",
+            "VOLUME 23",
+            "KATALOG BPS",
+            "ISSN",
+            "ISBN",
+            "BADAN PUSAT STATISTIK",
+            "DALAM ANGKA",
+        ];
+        for text in &texts {
+            // Nothing from the reference template survives: no brand, no lorem, no subtitle.
+            for banned in ["COMPANY NAME", "YOUR HEADLINE HERE", "LOREM IPSUM", "BUSINESS REPORT"] {
+                assert!(!text.contains(banned), "template text '{banned}' must not reach the cover: {text}");
+            }
+            let upper = text.to_uppercase();
+            assert!(allowed.iter().any(|a| upper.contains(a)), "text must come from the cover options: {text}");
+        }
+
+        // The year sits upright and centred in the forward wedge, and the title runs on one line.
+        let year = active.doc.stories.values().find(|s| s.text == "2026").expect("the year story");
+        assert_eq!(year.paras[0].para.align, Some(designcraft_doc::Align::Center), "the year is centred in the wedge");
+        let title = active.doc.stories.values().find(|s| s.text.contains("KARAWANG")).expect("the title story");
+        assert!(!title.text.contains('\n'), "the headline title stays on one line: {}", title.text);
+
+        let turned =
+            active.doc.spreads.iter().flat_map(|s| s.items.iter()).any(|it| designcraft_geom::decompose::decompose(it.xf).rotation.abs() > 1.0);
+        assert!(!turned, "every object on the Diagonal Arrow cover is upright");
+    }
+
+    #[test]
+    fn test_cover_style_7_text_is_options_only_and_position_locked() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let mut st = PubgenState::default();
+        st.cover_style = HORIZON_STYLE;
+        execute_generate_cover(&mut app, &st).unwrap();
+
+        let active = app.session.active().unwrap();
+        let (si, pi) = active.doc.page_loc(0).unwrap();
+        let page = active.doc.spreads[si].pages[pi].bounds();
+
+        // Nothing but the cover options and the fixed suffix reaches the page.
+        let allowed = [
+            "KECAMATAN",
+            "KABUPATEN",
+            "KARAWANG TIMUR",
+            "KARAWANG\nTIMUR",
+            "2026",
+            "VOLUME 23",
+            "KATALOG BPS",
+            "ISSN",
+            "ISBN",
+            "BADAN PUSAT STATISTIK",
+            "DALAM ANGKA",
+        ];
+        for story in active.doc.stories.values() {
+            for banned in ["COMPANY NAME", "YOUR HEADLINE HERE", "LOREM IPSUM", "BUSINESS REPORT"] {
+                assert!(!story.text.contains(banned), "template text '{banned}' must not reach the cover: {}", story.text);
+            }
+            let upper = story.text.to_uppercase();
+            assert!(allowed.iter().any(|a| upper.contains(a)), "text must come from the cover options: {}", story.text);
+        }
+
+        // Bounds of every text frame, keyed by the story it flows.
+        let placed: Vec<(String, designcraft_geom::Rect)> = active.doc.spreads[si]
+            .items
+            .iter()
+            .filter_map(|it| match &it.content {
+                designcraft_doc::Content::Text(tf) => active.doc.story(tf.story).map(|s| (s.text.clone(), it.bounds())),
+                _ => None,
+            })
+            .collect();
+        let frame = |needle: &str| {
+            placed.iter().find(|(text, _)| text.contains(needle)).map(|(_, r)| *r).unwrap_or_else(|| panic!("no frame holds '{needle}'"))
+        };
+        let frame_exact = |text_wanted: &str| {
+            placed.iter().find(|(text, _)| text == text_wanted).map(|(_, r)| *r).unwrap_or_else(|| panic!("no frame holds exactly '{text_wanted}'"))
+        };
+
+        // Position lock: catalogue, then ISSN/ISBN, in the top-right corner over the photograph.
+        let cat = frame("Katalog BPS");
+        let code = frame("ISSN");
+        assert!(cat.y1 < page.y0 + 60.0 && cat.x0 > page.center().x, "the catalogue sits in the top-right: {cat:?}");
+        assert!(code.y0 >= cat.y1 - 1.0 && code.y1 < page.y0 + 70.0, "ISSN/ISBN sit under the catalogue: {code:?}");
+
+        // Headline: level, title, suffix down the left of the dark block.
+        let level = frame("KECAMATAN");
+        let title = frame("KARAWANG");
+        let suffix = frame("DALAM ANGKA");
+        assert!(level.y0 < title.y0 && title.y1 <= suffix.y0 + 1.0, "headline order: {level:?} {title:?} {suffix:?}");
+        assert!(suffix.y1 < page.y0 + 740.0, "the headline sits inside the dark block: {suffix:?}");
+
+        // Year in the accent block, with the volume directly underneath it.
+        let year = frame_exact("2026");
+        let volume = frame("Volume");
+        assert!(year.x0 > page.center().x, "the year sits in the accent block: {year:?}");
+        assert!(volume.y0 >= year.y1 - 1.0, "the volume sits directly under the year: {year:?} {volume:?}");
+
+        // Position lock: agency logo text in the bottom-left corner.
+        let agency = frame("BADAN PUSAT STATISTIK");
+        assert!(agency.y0 > page.y0 + 700.0 && agency.x0 < page.center().x, "the agency sits in the bottom-left: {agency:?}");
+
+        // Every object is upright: nothing on this cover is rotated.
+        let turned =
+            active.doc.spreads.iter().flat_map(|s| s.items.iter()).any(|it| designcraft_geom::decompose::decompose(it.xf).rotation.abs() > 1.0);
+        assert!(!turned, "every object on the Modern Horizon cover is upright");
     }
 
     #[test]

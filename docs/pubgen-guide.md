@@ -9,7 +9,7 @@
 2. [Finding the Pubgen Panel in DesignCraft](#2-finding-the-pubgen-panel-in-designcraft)
 3. [Card 1: Publication Cover (Cover Page Generator)](#3-card-1-publication-cover-cover-page-generator)
    - [Overview & Position](#overview--position)
-   - [The 5 Executive Cover Styles](#the-5-executive-cover-styles)
+   - [The 8 Executive Cover Styles](#the-8-executive-cover-styles)
    - [Hover Thumbnail Previews](#hover-thumbnail-previews)
    - [Theme Colors & Color Customization](#theme-colors--color-customization)
    - [Metadata & Content Fields](#metadata--content-fields)
@@ -121,9 +121,9 @@ The **Publication Cover** section allows you to synthesize a complete, professio
 
 ---
 
-### The 6 Executive Cover Styles
+### The 8 Executive Cover Styles
 
-Pubgen provides 6 corporate design styles:
+Pubgen provides 8 corporate design styles:
 
 #### 1. Wave Curves (`🌊 Wave`)
 - **Visual Personality**: Organic, modern, flowing.
@@ -184,10 +184,36 @@ Pubgen provides 6 corporate design styles:
   - Bottom-right grounding purple corner block and mid-right edge accent tab.
 - **Best For**: Annual business reports, urban economic reviews, municipal profiles, modern regional digests.
 
+#### 7. Diagonal Arrow (`↗ Arrow`)
+- **Visual Personality**: Directional, architectural, modern corporate.
+- **Design Elements**:
+  - Crisp white canvas with a full-height cityscape photo panel bleeding off the right edge (`[286, 0, 595, 842]`).
+  - A bold navy diagonal banner leaning across the top (`[113, 0, 400, 0, 287, 256, 0, 256]`), its lower edge cutting into the photograph.
+  - An amber corner wedge in the top-left (`[0, 0, 87, 0, 0, 196]`), separated from the banner by a thin white channel.
+  - **Position Lock**: publication metadata (Line #1: `Katalog BPS: <number>`, Line #2: `ISSN/ISBN <number>` in crisp **Arial Bold**) sits top-right, over the photograph.
+  - A navy forward wedge crossing out of the white field into the photo (`[0, 519, 352, 591, 0, 663]`), with a soft drop shadow.
+  - The publication year set in giant 44pt **Arial Black**, centred in that wedge, with the **Volume** line (`Volume 23 2026`) directly beneath it.
+  - Middle-left headline stack in **Arial Black**: the region level, the publication title in the accent colour on one full-width line, and `DALAM ANGKA` beneath it.
+  - **Position Lock**: bottom-left official agency logo paired with multi-line institutional branding (**Arial Bold Italic**).
+- **Best For**: Corporate annual reports, business reviews, city profiles, investment and industry publications.
+
+#### 8. Modern Horizon (`🌇 Horizon`)
+- **Visual Personality**: Editorial, institutional, modern annual-report cover.
+- **Design Elements**:
+  - A **full-bleed cityscape photograph** across the top, clipped by a sweeping arc that runs from the lower half of the left edge to the middle of the right edge (the traced geometry of `design-5.designcraft`).
+  - A **bold orange wedge** that follows the underside of that arc: fat along the left edge, tapering out where the right-hand accent block begins, so the two read as one continuous accent.
+  - A **dark institutional block** filling the lower page, with a large rounded top-left corner; thin white seams separate the photo, the wedge and the block.
+  - A **right-hand accent block** carrying the publication year in giant **Arial Black** with the **Volume** line directly beneath it.
+  - **Position Lock**: publication metadata (Line #1: `Katalog BPS: <number>`, Line #2: `ISSN/ISBN <number>` in crisp **Arial Bold**) sits top-right over the photograph.
+  - Middle-left headline stack in **Arial Black** inside the dark block: the region level, the publication title in the accent colour, one word per line, and `DALAM ANGKA` beneath it.
+  - **Position Lock**: bottom-left official agency logo paired with multi-line institutional branding (**Arial Bold Italic**).
+  - Its own palette (**Report Navy & Orange**, `#082641` + `#f5871f`) matches the reference cover; picking the style selects that theme automatically, and any other theme still works.
+- **Best For**: Annual statistical yearbooks, regional profiles in numbers, institutional reports, government publications.
+
 ---
 
 ### Hover Thumbnail Previews
-- **Quick Preview Pills**: Under the style dropdown, you will see 6 quick-switch pills (`🌊 Wave`, `❖ Medallion`, `◈ Origami`, `◆ Chevron`, `⬡ Hexagon`, `🏢 Corporate`).
+- **Quick Preview Pills**: Under the style dropdown, you will see 8 quick-switch pills (`🌊 Wave`, `❖ Medallion`, `◈ Origami`, `◆ Chevron`, `⬡ Hexagon`, `🏢 Corporate`, `↗ Arrow`, `🌇 Horizon`).
 - **Hover to Preview**: Simply move your mouse over any pill (or click the small eye icon `👁` next to the dropdown). A floating tooltip instantly displays the actual rendered cover thumbnail so you can choose your favorite look before generating.
 
 ---
@@ -217,7 +243,7 @@ Pubgen dynamically displays the image pickers required for the selected style:
 - **Skyline Image**: Used in *Wave Curves* and *Chevron & Medallion*. Click **Browse...** to pick any high-resolution skyline or landmark image (`.jpg`, `.png`, `.webp`).
 - **Landscape Image**: Used in *Folded Origami* and *Geometric Medallion*.
 - **Honeycomb Image**: Used in *Honeycomb Hexagon*. Automatically clips your photo into the interlocking 12-sided honeycomb frame.
-- **Photo**: Used in *Corporate Headline*. Vertical architectural, city skyline, or landmark photograph.
+- **Photo**: Used in *Corporate Headline*, *Diagonal Arrow* and *Modern Horizon*. Vertical architectural, city skyline, or landmark photograph. In *Diagonal Arrow* it fills the full-height panel on the right, behind the diagonal banner and the arrow. In *Modern Horizon* it is clipped by the sweeping arc across the upper page, so choose a wide cityscape with interest along the horizon.
 - **Logo**: Click **Browse...** to choose your institution's logo file (e.g., BPS emblem, city coat of arms). It automatically fits proportionally into the branding frame without distortion.
 
 ---
