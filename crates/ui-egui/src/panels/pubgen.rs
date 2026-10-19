@@ -225,6 +225,10 @@ pub struct PubgenState {
     #[serde(skip)]
     pub generated_zip_bytes: Vec<u8>,
 
+    /// Automatically run "Page from CSV" and insert tables after Excel conversion
+    #[serde(default = "default_true")]
+    pub excel_auto_generate: bool,
+
     // Card: Publication Cover (before Quick Actions)
     #[serde(default)]
     pub cover_style: usize,
@@ -289,7 +293,7 @@ impl Default for PubgenState {
             card2_col_numbers: true,
             card2_table_footer: true,
             card2_row_conditions: true,
-            card2_style: 0,
+            card2_style: 3,     // Horizontal Rules
             card2_placement: 2, // At page
             card2_status: None,
             card2_delim: None,
@@ -324,6 +328,7 @@ impl Default for PubgenState {
             cover_image_logo: default_cover_logo(),
             cover_agency_text: default_cover_agency_text(),
             cover_status: None,
+            excel_auto_generate: true,
         }
     }
 }
@@ -3187,10 +3192,12 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
     divider(ui);
     let tip_excel =
         "Convert a multi-sheet Excel file (.xlsx) into 1 catalog CSV for Page from CSV + individual table CSVs (with auto-merged headers)";
+    ui.checkbox(&mut st.excel_auto_generate, "Auto-generate pages & tables from sheets")
+        .on_hover_text("When checked, picking an Excel file automatically runs 'Page from CSV' and inserts each sheet's table with default options");
     let resp_excel = outline_button(ui, "Excel to CSV Data…", full_width(ui)).on_hover_text(tip_excel);
     if resp_excel.clicked() {
         if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge")) {
-            let res = execute_excel_to_csvs(st, &path);
+            let res = execute_excel_and_generate(app, st, &path);
             st.card3_status = Some(match res {
                 Ok(msg) => (msg, true),
                 Err(e) => (e, false),
@@ -5793,6 +5800,42 @@ pub fn execute_excel_to_csvs(st: &mut PubgenState, path: &str) -> Result<String,
     Ok(format!("Converted {count} sheets → catalog CSV + {count} table CSVs + {zip_name} in {folder_name} (loaded in Page & Table from CSV)"))
 }
 
+/// Convert multi-sheet Excel workbook and, if `st.excel_auto_generate` is enabled,
+/// automatically run "Page from CSV" with default options and auto-insert each sheet's table.
+pub fn execute_excel_and_generate(app: &mut DesignApp, st: &mut PubgenState, path: &str) -> Result<String, String> {
+    let conv_msg = execute_excel_to_csvs(st, path)?;
+    if !st.excel_auto_generate || st.card1_records.is_empty() {
+        return Ok(conv_msg);
+    }
+
+    // Ensure an active document exists
+    if app.session.active().is_none() {
+        let _ = app.run("file.new", json!({}));
+    }
+
+    // Apply default options for automatic page and table generation
+    st.card1_auto_insert_tables = true;
+    st.card1_range_all = true;
+    st.card2_first_row_header = true;
+    st.card2_col_numbers = true;
+    st.card2_table_footer = true;
+    st.card2_row_conditions = true;
+
+    // Run Page from CSV (which auto-inserts the table for each sheet on its corresponding page)
+    let gen_res = execute_generate_pages(app, st);
+    match gen_res {
+        Ok(gen_msg) => {
+            st.card1_status = Some((gen_msg.clone(), true));
+            let count = st.card2_sheet_tables.len();
+            Ok(format!("Converted {count} sheets & auto-generated pages ({gen_msg})!"))
+        }
+        Err(e) => {
+            st.card1_status = Some((e.clone(), false));
+            Err(format!("{conv_msg}, but page generation failed: {e}"))
+        }
+    }
+}
+
 pub fn execute_download_csv_zip(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, String> {
     // Ensure we have zip bytes in memory
     if st.generated_zip_bytes.is_empty() {
@@ -6065,12 +6108,12 @@ mod tests {
             ],
             card2_first_row_header: true,
             card2_placement: 1, // New frame
-            card2_style: 0,
+            card2_style: 3,     // Horizontal Rules
             ..Default::default()
         };
 
         let res = execute_insert_table(&mut app, &st);
-        assert!(res.is_ok(), "insert_table should succeed: {:?}", res);
+        assert!(res.is_ok(), "insert_table with Horizontal Rules should succeed: {:?}", res);
     }
 
     #[test]
@@ -6100,7 +6143,7 @@ mod tests {
             card2_matrix: vec![vec!["Item".into(), "Price".into()], vec!["Widget A".into(), "$10".into()], vec!["Widget B".into(), "$20".into()]],
             card2_first_row_header: true,
             card2_placement: 2, // At page
-            card2_style: 0,
+            card2_style: 3,     // Horizontal Rules
             ..Default::default()
         };
         let res2 = execute_insert_table(&mut app, &st_card2);
@@ -6140,7 +6183,7 @@ mod tests {
             card2_first_row_header: true,
             card2_col_numbers: true,
             card2_placement: 1, // New frame
-            card2_style: 0,
+            card2_style: 3,     // Horizontal Rules
             ..Default::default()
         };
 
@@ -6327,7 +6370,7 @@ mod tests {
             card2_first_row_header: true,
             card2_col_numbers: false,
             card2_placement: 1, // New frame
-            card2_style: 0,     // Basic Grid
+            card2_style: 3,     // Horizontal Rules
             ..Default::default()
         };
 
@@ -6492,7 +6535,7 @@ mod tests {
             card2_first_row_header: true,
             card2_col_numbers: false,
             card2_placement: 1, // New frame
-            card2_style: 0,     // Basic Grid
+            card2_style: 3,     // Horizontal Rules
             ..Default::default()
         };
 
@@ -7565,8 +7608,16 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             return;
         }
 
+        // The converter writes its CSVs beside the workbook, so convert a copy in a scratch folder:
+        // the sample folder holds tracked CSVs that a test run must not rewrite.
+        let dir = std::env::temp_dir().join(format!("dc-pubgen-excel-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let workbook = dir.join("BAB_02_2025.xlsx");
+        std::fs::copy(&sample_xlsx, &workbook).unwrap();
+
         let mut st = PubgenState::default();
-        let res = execute_excel_to_csvs(&mut st, sample_xlsx.to_str().unwrap());
+        let res = execute_excel_to_csvs(&mut st, workbook.to_str().unwrap());
         assert!(res.is_ok(), "Conversion should succeed: {res:?}");
 
         // Card 1 must have catalog loaded
@@ -7584,6 +7635,77 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(!st.generated_zip_bytes.is_empty(), "ZIP archive bytes should be cached in state");
         assert!(st.generated_zip_name.ends_with(".zip"), "ZIP archive name should end with .zip");
         assert_eq!(st.generated_csv_files.len(), 4, "Catalog + 3 tables in generated_csv_files");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_execute_excel_and_generate_auto_runs_pages_and_tables() {
+        let sample_xlsx = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("plan").join("pubgen").join("samples").join("BAB_02_2025.xlsx"))
+            .unwrap_or_default();
+        if !sample_xlsx.exists() {
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("dc-pubgen-excel-autogen-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let workbook = dir.join("BAB_02_2025.xlsx");
+        std::fs::copy(&sample_xlsx, &workbook).unwrap();
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState::default();
+        assert!(st.excel_auto_generate, "excel_auto_generate should be true by default");
+
+        let res = execute_excel_and_generate(&mut app, &mut st, workbook.to_str().unwrap());
+        assert!(res.is_ok(), "execute_excel_and_generate should succeed: {res:?}");
+        let msg = res.unwrap();
+        assert!(msg.contains("auto-generated pages"), "Status should confirm auto-generated pages: {msg}");
+        assert!(msg.contains("3 tables auto-inserted"), "Status should confirm 3 tables auto-inserted: {msg}");
+
+        // Initial doc has 1 page + 3 generated pages = 4 pages
+        let page_count = app.session.active().unwrap().doc.page_count();
+        assert_eq!(page_count, 4, "Expected 4 pages after generating 3 sheet pages into 1 blank page doc");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_execute_excel_and_generate_when_disabled_only_converts() {
+        let sample_xlsx = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("plan").join("pubgen").join("samples").join("BAB_02_2025.xlsx"))
+            .unwrap_or_default();
+        if !sample_xlsx.exists() {
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("dc-pubgen-excel-noautogen-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let workbook = dir.join("BAB_02_2025.xlsx");
+        std::fs::copy(&sample_xlsx, &workbook).unwrap();
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState { excel_auto_generate: false, ..Default::default() };
+
+        let res = execute_excel_and_generate(&mut app, &mut st, workbook.to_str().unwrap());
+        assert!(res.is_ok(), "Conversion should succeed: {res:?}");
+        let msg = res.unwrap();
+        assert!(msg.contains("Converted 3 sheets"), "Message should mention converted sheets: {msg}");
+
+        // Page count should remain 1 because auto-generate was false
+        let page_count = app.session.active().unwrap().doc.page_count();
+        assert_eq!(page_count, 1, "Page count should remain 1 when excel_auto_generate is false");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -8320,9 +8442,13 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         st.cover_image_logo = root.join("outputs").join("bps_logo.png").to_string_lossy().to_string();
         execute_generate_cover(&mut app, &st).unwrap();
         let _ = app.run("layout.pages.delete", json!({"page": 1}));
-        let path = root.join("plan").join("pubgen").join("samples").join("style").join("design-3.designcraft");
+        // A scratch file, never `design-3.designcraft`: running the tests used to overwrite that
+        // tracked sample with every run (the scratch document is the default page size, not the
+        // size the sample was drawn at), so the export must not touch it.
+        let path = std::env::temp_dir().join(format!("designcraft-cover-style-5-{}.designcraft", std::process::id()));
         let res = app.run("file.saveAs", json!({"path": path.to_string_lossy()}));
         assert!(res.is_ok(), "Failed to save: {res:?}");
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
