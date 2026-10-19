@@ -26,6 +26,10 @@ const HORIZON_STYLE: usize = 7;
 /// business-report reference image, sharing the Horizon palette.
 const BUSINESS_STYLE: usize = 8;
 
+/// Index of the "Urban Angle" cover style — the diagonal-wedge cityscape cover derived from
+/// `design-6.designcraft`, sharing the Report palette.
+const URBAN_STYLE: usize = 9;
+
 /// Theme preset index and colours of the reference annual-report cover (navy + orange).
 const REPORT_THEME: usize = 6;
 
@@ -36,6 +40,14 @@ fn apply_report_palette(st: &mut PubgenState) {
     st.cover_color_primary = "#082641".into();
     st.cover_color_accent = "#f5871f".into();
     st.cover_color_dark = "#082641".into();
+}
+
+/// The traced design-6 palette: deep petrol navy and warm marigold.
+fn apply_urban_palette(st: &mut PubgenState) {
+    st.cover_theme_preset = REPORT_THEME;
+    st.cover_color_primary = "#034460".into();
+    st.cover_color_accent = "#fcb91e".into();
+    st.cover_color_dark = "#034460".into();
 }
 
 fn default_true() -> bool {
@@ -726,6 +738,8 @@ fn style_thumbnail_texture(ctx: &egui::Context, style_idx: usize) -> Option<egui
         6 => ("diagonal_arrow.png", "karawang_timur_diagonal_cover.png"),
         7 => ("modern_horizon.png", "karawang_timur_modern_horizon_cover.png"),
         8 => ("business_report.png", "karawang_timur_business_cover.png"),
+        9 => ("urban_angle.png", "karawang_timur_urban_cover.png"),
+        // Style 9 has no rendered PNG thumbnail yet; the vector fallback paints it.
         _ => return None,
     };
     let candidates = [
@@ -1007,6 +1021,44 @@ fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: 
             p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.16, h * 0.892), rect.min + vec2(w * 0.52, h * 0.905)), 1.0, Color32::WHITE);
             p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.16, h * 0.915), rect.min + vec2(w * 0.46, h * 0.928)), 1.0, Color32::WHITE);
         }
+        9 => {
+            // Style 9 (Urban Angle): orange top-left wedge, navy diagonal band, cityscape photo on
+            // the right, white negative-X, navy bottom wedge.
+            let accent = Color32::from_rgb(252, 185, 30);
+            let navy = Color32::from_rgb(3, 68, 96);
+            // Photo region on the right.
+            p.add(egui::Shape::convex_polygon(
+                vec![rect.min + vec2(w * 0.39, h * 0.43), rect.min + vec2(w, 0.0), rect.min + vec2(w, h * 0.99)],
+                Color32::from_rgb(120, 150, 170),
+                egui::Stroke::NONE,
+            ));
+            // Orange top-left wedge.
+            p.add(egui::Shape::convex_polygon(
+                vec![rect.min, rect.min + vec2(w * 0.86, 0.0), rect.min + vec2(0.0, h * 0.43)],
+                accent,
+                egui::Stroke::NONE,
+            ));
+            // Navy diagonal band.
+            p.add(egui::Shape::convex_polygon(
+                vec![rect.min + vec2(w * 0.50, 0.0), rect.min + vec2(w * 0.90, 0.0), rect.min + vec2(w * 0.44, h * 0.45)],
+                navy,
+                egui::Stroke::NONE,
+            ));
+            // Navy bottom wedge.
+            p.add(egui::Shape::convex_polygon(
+                vec![rect.min + vec2(w * 0.39, h * 0.78), rect.min + vec2(w * 0.82, h), rect.min + vec2(w * 0.35, h)],
+                navy,
+                egui::Stroke::NONE,
+            ));
+            // Headline stack on the white left panel.
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.68), rect.min + vec2(w * 0.50, h * 0.72)), 2.0, navy);
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.75), rect.min + vec2(w * 0.60, h * 0.80)), 2.0, accent);
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.83), rect.min + vec2(w * 0.45, h * 0.87)), 2.0, navy);
+            // Top-left company mark.
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.05, h * 0.02), rect.min + vec2(w * 0.12, h * 0.06)), 1.0, navy);
+            // Rotated year in the band.
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.55, h * 0.10), rect.min + vec2(w * 0.78, h * 0.20)), 2.0, Color32::WHITE);
+        }
         _ => {
             // Style 8 (Business Report): white base, crossed navy/orange diagonal bands with the
             // photograph in the middle, headline upper-right, year lower-right.
@@ -1091,6 +1143,7 @@ fn show_style_thumbnail_tooltip(ui: &mut Ui, style_idx: usize, name: &str, t: &T
             6 => "Navy diagonal banner and amber corner wedge over a half-bleed cityscape, with a forward navy wedge carrying the year and volume, and a position-locked agency footer.",
             7 => "Full-bleed cityscape under a sweeping arc with an accent wedge that follows it, a dark institutional block carrying the headline, and a position-locked agency footer.",
             8 => "Crossed navy and orange diagonal bands framing a skyscraper photograph, headline upper-right and a two-tone year lower-right.",
+            9 => "Orange corner wedge and a navy diagonal band carrying the rotated year over a right-hand cityscape, with a white negative-space headline panel and a navy bottom wedge.",
             _ => "",
         };
         ui.add_space(3.0);
@@ -1114,6 +1167,7 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
             "Diagonal Arrow",
             "Modern Horizon",
             "Business Report",
+            "Urban Angle",
         ];
         let cur_style = styles.get(st.cover_style).copied().unwrap_or("Wave Curves");
         // The dock can be as narrow as 220 pt: the dropdown takes what the row has left.
@@ -1127,8 +1181,12 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                 });
             }
         });
-        if st.cover_style != prev_style && (st.cover_style == HORIZON_STYLE || st.cover_style == BUSINESS_STYLE) {
-            apply_report_palette(st);
+        if st.cover_style != prev_style {
+            match st.cover_style {
+                URBAN_STYLE => apply_urban_palette(st),
+                HORIZON_STYLE | BUSINESS_STYLE => apply_report_palette(st),
+                _ => {}
+            }
         }
         combo.response.on_hover_ui(|ui| {
             show_style_thumbnail_tooltip(ui, st.cover_style, cur_style, t);
@@ -1164,14 +1222,17 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
             ("↗ Arrow", 6, "Diagonal Arrow"),
             ("🌇 Horizon", 7, "Modern Horizon"),
             ("📊 Report", 8, "Business Report"),
+            ("🌆 Urban", 9, "Urban Angle"),
         ];
         for (label, idx, full_name) in style_pills {
             let is_sel = st.cover_style == idx;
             let btn = ui.selectable_label(is_sel, label);
             if btn.clicked() {
                 st.cover_style = idx;
-                if idx == HORIZON_STYLE || idx == BUSINESS_STYLE {
-                    apply_report_palette(st);
+                match idx {
+                    URBAN_STYLE => apply_urban_palette(st),
+                    HORIZON_STYLE | BUSINESS_STYLE => apply_report_palette(st),
+                    _ => {}
                 }
             }
             btn.on_hover_ui(|ui| {
@@ -1444,10 +1505,10 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Photo:").size(10.5).color(t.text));
                 let w = (ui.available_width() - 65.0).max(80.0);
-                let hover = if st.cover_style == BUSINESS_STYLE {
-                    "Skyscraper photograph filling the crossed diagonal bands"
-                } else {
-                    "Hero photograph clipped by the sweeping arc across the upper page"
+                let hover = match st.cover_style {
+                    URBAN_STYLE => "Cityscape photograph filling the right-hand diagonal panels",
+                    BUSINESS_STYLE => "Skyscraper photograph filling the crossed diagonal bands",
+                    _ => "Hero photograph clipped by the sweeping arc across the upper page",
                 };
                 ui.add_sized(
                     [w, crate::widgets::FIELD_H],
@@ -3286,6 +3347,229 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             )?;
 
             "Business Report"
+        }
+        9 => {
+            // Style 9: Urban Angle (from design-6.designcraft). Percentage-based geometry so the
+            // traced shapes scale with the page: orange top-left wedge, navy diagonal band behind a
+            // right-hand cityscape panel, white negative-X, navy bottom wedge.
+            let sx = pw / 595.275591;
+            let sy = ph / 841.889764;
+            let s_avg = (sx + sy) / 2.0;
+            let x = |v: f64| v * sx;
+            let y = |v: f64| v * sy;
+
+            // 1. Base white background.
+            app.run("frame.create", json!({"spread": 0, "rect": [0, 0, pw, ph], "content": "unassigned", "shape": "rectangle"}))?;
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 2. Navy bottom wedge.
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [x(521.13), y(564.5)]},
+                    {"p": [x(595.28), y(631.26)], "in": [x(552.24), y(592.51)], "out": [x(595.28), y(701.88)]},
+                    {"p": [x(595.28), y(841.89)], "in": [x(595.28), y(780.19)], "out": [x(482.55), y(841.89)]},
+                    {"p": [x(271.37), y(841.89)], "in": [x(364.38), y(841.89)], "out": [x(333.69), y(772.67)]}
+                ]}),
+            )?;
+            let _ = app.run("object.color", json!({"color": dark, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 3. Navy diagonal band behind the cityscape.
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [x(71.61), y(75.34)]},
+                    {"p": [x(162.59), y(-1.0)], "in": [x(108.52), y(44.36)], "out": [x(292.29), y(-1.0)]},
+                    {"p": [x(595.28), y(-1.0)], "in": [x(444.42), y(-1.0)], "out": [x(595.28), y(152.97)]},
+                    {"p": [x(595.28), y(699.43)], "in": [x(595.28), y(525.07)], "out": [x(503.88), y(590.51)]}
+                ]}),
+            )?;
+            let _ = app.run("object.color", json!({"color": dark, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 4. Cityscape photograph across the right-hand panels (two traced subpaths).
+            let photo_res = app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [x(231.97), y(363.57)]},
+                    {"p": [x(537.04), y(0.0)], "in": [x(382.64), y(184.0)], "out": [x(556.2), y(0.0)]},
+                    {"p": [x(594.78), y(0.0)], "in": [x(575.46), y(0.0)], "out": [x(594.78), y(57.76)]},
+                    {"p": [x(594.78), y(340.84)], "in": [x(594.78), y(192.02)], "out": [x(487.89), y(468.21)]},
+                    {"p": [x(403.84), y(568.39)]}
+                ]}),
+            )?;
+            let photo_id = photo_res.get("id").and_then(Value::as_u64);
+            let _ = app.run("object.content", json!({"type": "graphic", "ids": [photo_id]}));
+            let _ = app.run("file.place", json!({"path": skyline, "frame": photo_id}));
+            let _ = app.run("object.fit", json!({"mode": "fillProportionally", "ids": [photo_id]}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent", "ids": [photo_id]}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]", "ids": [photo_id]}));
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [x(344.83), y(652.62)]},
+                    {"p": [x(594.78), y(373.1)], "in": [x(456.73), y(527.48)], "out": [x(594.78), y(544.64)]},
+                    {"p": [x(594.78), y(835.54)], "in": [x(594.78), y(729.3)], "out": [x(567.52), y(866.02)]},
+                    {"p": [x(551.59), y(883.83)]}
+                ]}),
+            )?;
+            let _ = app.run("object.content", json!({"type": "graphic"}));
+            let _ = app.run("file.place", json!({"path": skyline}));
+            let _ = app.run("object.fit", json!({"mode": "fillProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 5. Orange top-left wedge, drawn last so it cuts cleanly over the band.
+            app.run(
+                "path.create",
+                json!({"spread": 0, "closed": true, "anchors": [
+                    {"p": [x(299.84), y(-0.5)], "in": [x(203.05), y(-0.5)], "out": [x(208.94), y(107.83)]},
+                    {"p": [x(0.0), y(356.84)], "in": [x(64.17), y(280.36)], "out": [x(0.0), y(243.84)]},
+                    {"p": [x(0.0), y(-0.5)], "in": [x(0.0), y(96.13)], "out": [x(99.02), y(-0.5)]}
+                ]}),
+            )?;
+            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            // 6. Rotated year in the navy band, split into two tones like the reference.
+            let (y1, y2) = if year_text.len() >= 4 { (&year_text[..2], &year_text[2..]) } else { (year_text, "") };
+            let year1 = add_cover_text_frame(
+                app,
+                0,
+                [x(150.0), y(73.0), x(232.0), y(153.0)],
+                y1,
+                "#ffffff",
+                "Arial Black",
+                "Regular",
+                44.0 * s_avg,
+                None,
+                Some(10.0),
+                "center",
+            )?;
+            let year2 = add_cover_text_frame(
+                app,
+                0,
+                [x(205.0), y(61.0), x(290.0), y(141.0)],
+                y2,
+                accent,
+                "Arial Black",
+                "Regular",
+                44.0 * s_avg,
+                None,
+                Some(10.0),
+                "center",
+            )?;
+            let _ = app.run("transform.rotate", json!({"ids": [year1, year2], "angle": -50.0}));
+
+            // 7. Volume caption along the band, under the year.
+            let vol_id = add_cover_text_frame(
+                app,
+                0,
+                [x(252.0), y(151.0), x(356.0), y(185.0)],
+                volume_text,
+                "#ffffff",
+                "Arial",
+                "Bold",
+                8.0 * s_avg,
+                None,
+                Some(20.0),
+                "left",
+            )?;
+            let _ = app.run("transform.rotate", json!({"ids": [vol_id], "angle": -50.0}));
+
+            // 8. Headline stack on the white left panel (level, title in accent, DALAM ANGKA).
+            add_cover_text_frame(
+                app,
+                0,
+                [x(36.0), y(600.0), x(330.0), y(648.0)],
+                &level_text.to_uppercase(),
+                dark,
+                "Arial Black",
+                "Regular",
+                22.0 * s_avg,
+                None,
+                Some(15.0),
+                "left",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [x(36.0), y(650.0), x(340.0), y(724.0)],
+                &title_text.replace(' ', "\n"),
+                accent,
+                "Arial Black",
+                "Regular",
+                30.0 * s_avg,
+                Some(34.0 * s_avg),
+                Some(8.0),
+                "left",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [x(36.0), y(728.0), x(330.0), y(776.0)],
+                "DALAM ANGKA",
+                dark,
+                "Arial Black",
+                "Regular",
+                22.0 * s_avg,
+                None,
+                Some(15.0),
+                "left",
+            )?;
+
+            // 9. Top-left agency logo & text over the orange wedge (Position Lock).
+            app.run("frame.create", json!({"spread": 0, "rect": [x(36.0), y(24.0), x(74.0), y(64.0)], "content": "graphic", "shape": "rectangle"}))?;
+            let _ = app.run("file.place", json!({"path": logo}));
+            let _ = app.run("object.fit", json!({"mode": "fitProportionally"}));
+            let _ = app.run("object.fit", json!({"mode": "centerContent"}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            add_cover_text_frame(
+                app,
+                0,
+                [x(82.0), y(26.0), x(300.0), y(68.0)],
+                agency_text,
+                dark,
+                "Arial",
+                "Bold Italic",
+                10.0 * s_avg,
+                Some(13.5 * s_avg),
+                None,
+                "left",
+            )?;
+
+            // 10. Top-right publication metadata over the photograph (Position Lock).
+            add_cover_text_frame(
+                app,
+                0,
+                [x(330.0), y(17.0), x(560.0), y(35.0)],
+                &cat_text,
+                "#ffffff",
+                "Arial",
+                "Bold",
+                8.5 * s_avg,
+                None,
+                None,
+                "right",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [x(330.0), y(35.0), x(560.0), y(53.0)],
+                &code_text,
+                "#ffffff",
+                "Arial",
+                "Bold",
+                8.5 * s_avg,
+                None,
+                None,
+                "right",
+            )?;
+
+            "Urban Angle"
         }
         _ => return Err(format!("Unsupported cover style: {}", st.cover_style)),
     };
@@ -8981,7 +9265,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
     #[test]
     fn test_execute_generate_cover_text_formatting() {
-        for style in 0..=8 {
+        for style in 0..=9 {
             let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
             app.run("file.new", json!({})).unwrap();
             let st = PubgenState { cover_style: style, ..PubgenState::default() };
@@ -9112,6 +9396,21 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let res = app.run("file.saveAs", json!({"path": path.to_string_lossy()}));
         assert!(res.is_ok(), "Failed to save: {res:?}");
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_cover_style_9_text_is_options_only() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let st = PubgenState { cover_style: URBAN_STYLE, ..PubgenState::default() };
+        execute_generate_cover(&mut app, &st).unwrap();
+
+        let active = app.session.active().unwrap();
+        let allowed = ["KECAMATAN", "KARAWANG", "2026", "20", "26", "VOLUME", "KATALOG", "ISSN", "ISBN", "BADAN PUSAT", "DALAM ANGKA"];
+        for story in active.doc.stories.values() {
+            let upper = story.text.to_uppercase();
+            assert!(allowed.iter().any(|a| upper.contains(a)), "text must come from the cover options: {}", story.text);
+        }
     }
 
     #[test]
@@ -9541,9 +9840,24 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let expected_outside = 15.0 * PT_PER_MM;
 
         assert!((page.margins.top - expected_top).abs() < 1e-6, "Top margin mismatch: got {}, expected {}", page.margins.top, expected_top);
-        assert!((page.margins.bottom - expected_bottom).abs() < 1e-6, "Bottom margin mismatch: got {}, expected {}", page.margins.bottom, expected_bottom);
-        assert!((page.margins.inside - expected_inside).abs() < 1e-6, "Inside margin mismatch: got {}, expected {}", page.margins.inside, expected_inside);
-        assert!((page.margins.outside - expected_outside).abs() < 1e-6, "Outside margin mismatch: got {}, expected {}", page.margins.outside, expected_outside);
+        assert!(
+            (page.margins.bottom - expected_bottom).abs() < 1e-6,
+            "Bottom margin mismatch: got {}, expected {}",
+            page.margins.bottom,
+            expected_bottom
+        );
+        assert!(
+            (page.margins.inside - expected_inside).abs() < 1e-6,
+            "Inside margin mismatch: got {}, expected {}",
+            page.margins.inside,
+            expected_inside
+        );
+        assert!(
+            (page.margins.outside - expected_outside).abs() < 1e-6,
+            "Outside margin mismatch: got {}, expected {}",
+            page.margins.outside,
+            expected_outside
+        );
 
         // Also verify parent pages
         for sp in &active.doc.parents {

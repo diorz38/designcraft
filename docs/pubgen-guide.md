@@ -9,7 +9,7 @@
 2. [Finding the Pubgen Panel in DesignCraft](#2-finding-the-pubgen-panel-in-designcraft)
 3. [Card 1: Publication Cover (Cover Page Generator)](#3-card-1-publication-cover-cover-page-generator)
    - [Overview & Position](#overview--position)
-   - [The 9 Executive Cover Styles](#the-9-executive-cover-styles)
+   - [The 10 Executive Cover Styles](#the-10-executive-cover-styles)
    - [Hover Thumbnail Previews](#hover-thumbnail-previews)
    - [Theme Colors & Color Customization](#theme-colors--color-customization)
    - [Metadata & Content Fields](#metadata--content-fields)
@@ -96,7 +96,7 @@ The **Publication Cover** section allows you to synthesize a complete, professio
 | Publication Cover                                                 |
 | Style: [ Folded Origami        ▼ ]  [👁 Preview]                   |
 | Preview: [🌊 Wave] [🔷 Geometric] [📐 Origami] [🔰 Chevron] [⬡ Hexagon]|
-|          [🏢 Corporate] [↗ Arrow] [🌇 Horizon] [📊 Report]         |
+|          [🏢 Corporate] [↗ Arrow] [🌇 Horizon] [📊 Report] [🌆 Urban] |
 |                                                                   |
 | Theme:  [ Corporate Sapphire ▼ ]                                  |
 | Colors: [ Primary: #0072bc ] [ Accent: #f5ab19 ] [ Dark: #111827 ]|
@@ -122,9 +122,9 @@ The **Publication Cover** section allows you to synthesize a complete, professio
 
 ---
 
-### The 9 Executive Cover Styles
+### The 10 Executive Cover Styles
 
-Pubgen provides 9 corporate design styles:
+Pubgen provides 10 corporate design styles:
 
 #### 1. Wave Curves (`🌊 Wave`)
 - **Visual Personality**: Organic, modern, flowing.
@@ -223,10 +223,24 @@ Pubgen provides 9 corporate design styles:
   - Its own palette (**Report Navy & Orange**, `#082641` + `#f5871f`); picking the style selects that theme automatically, and any other theme still works.
 - **Best For**: Business reports, corporate annual reviews, investment and industry publications, city profiles.
 
+#### 10. Urban Angle (`🌆 Urban`)
+- **Visual Personality**: Angular, urban and editorial — a diagonal grid of flat colour planes.
+- **Design Elements**:
+  - An **orange corner wedge** filling the top-left and cutting diagonally down to the left edge.
+  - A **navy diagonal band** running from the top edge into the left margin, carrying the year.
+  - A **cityscape photograph** filling the right-hand panels, clipped by the band and the bottom wedge.
+  - A **navy bottom wedge** rising from the lower-right corner.
+  - The **year in giant Arial Black**, split into two tones (white + orange) and **rotated** to run along the band, with the **Volume** line beside it.
+  - Headline stack on the white negative-space panel: region level, publication title in the accent colour (one word per line), and `DALAM ANGKA`.
+  - **Position Lock**: publication metadata (Line #1: `Katalog BPS: <number>`, Line #2: `ISSN/ISBN <number>`) sits top-right over the photograph.
+  - **Position Lock**: top-left official agency logo paired with multi-line institutional branding (**Arial Bold Italic**) over the orange wedge.
+  - Its own palette (deep petrol navy + marigold, `#034460` + `#fcb91e`); picking the style selects that theme automatically, and any other theme still works.
+- **Best For**: City and regional profiles, urban development reports, modern corporate covers.
+
 ---
 
 ### Hover Thumbnail Previews
-- **Quick Preview Pills**: Under the style dropdown, you will see 9 quick-switch pills (`🌊 Wave`, `🔷 Geometric`, `📐 Origami`, `🔰 Chevron`, `⬡ Hexagon`, `🏢 Corporate`, `↗ Arrow`, `🌇 Horizon`, `📊 Report`).
+- **Quick Preview Pills**: Under the style dropdown, you will see 10 quick-switch pills (`🌊 Wave`, `🔷 Geometric`, `📐 Origami`, `🔰 Chevron`, `⬡ Hexagon`, `🏢 Corporate`, `↗ Arrow`, `🌇 Horizon`, `📊 Report`, `🌆 Urban`).
 - **Hover to Preview**: Simply move your mouse over any pill (or click the small eye icon `👁` next to the dropdown). A floating tooltip instantly displays the actual rendered cover thumbnail so you can choose your favorite look before generating.
 
 ---

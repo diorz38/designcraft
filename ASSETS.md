@@ -93,6 +93,7 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `plan/pubgen/samples/style/design-3.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/design-4.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/design-5.designcraft` | DesignCraft contributor (traced) | traced cover geometry for Cover Style 7 (Modern Horizon), drawn over the Pubgen reference template | CC0-1.0 | Test document |
+| `plan/pubgen/samples/style/design-6.designcraft` | DesignCraft contributor (traced) | traced cover geometry for Cover Style 9 (Urban Angle), drawn over the Pubgen reference template | CC0-1.0 | Test document |
 | `plan/pubgen/samples/thumb/chevron_medallion.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 3 (Chevron Medallion) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/corporate_headline.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 5 (Corporate Headline) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/diagonal_arrow.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 6 (Diagonal Arrow) | CC0-1.0 | Test thumbnail |
@@ -101,6 +102,7 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `plan/pubgen/samples/thumb/honeycomb_hexagon.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 4 (Honeycomb Hexagon) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/karawang_timur_hexagon_cover.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 4 (Honeycomb Hexagon) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/modern_horizon.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 7 (Modern Horizon) | CC0-1.0 | Test thumbnail |
+| `plan/pubgen/samples/thumb/urban_angle.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 9 (Urban Angle) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/wave_curves.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 0 (Wave Curves) | CC0-1.0 | Test thumbnail |
 | `docs/images/thumb01.png` | DesignCraft contributors | screenshot of Pubgen dock panel in DesignCraft | MIT OR Apache-2.0 | Original UI screenshot |
 | `docs/images/thumb02.png` | DesignCraft contributors | screenshot of Publication Cover card in DesignCraft | MIT OR Apache-2.0 | Original UI screenshot |
