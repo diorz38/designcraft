@@ -493,6 +493,9 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
             if let Some(f_hdr) = st.card1_headers.get(3) {
                 badge(ui, t, "file", f_hdr);
             }
+            if let Some(tpl_hdr) = st.card1_headers.get(4) {
+                badge(ui, t, "template", tpl_hdr);
+            }
         });
     }
 
@@ -4385,6 +4388,102 @@ fn estimate_text_width(text: &str, is_uppercase_kicker: bool) -> f64 {
     (w + buffer).max(20.0)
 }
 
+/// Resolve a template path or template ID from a catalog specification.
+///
+/// Supports:
+/// - Direct file path (as-is or with `.designcraft`)
+/// - Path relative to the catalog file's directory
+/// - Path relative to `assets/templates/` or any of its subfolders (`dividers/`, `covers/`, etc.)
+/// - Template ID match from scanned template catalog (e.g. `001_ulasan_chapter` or fuzzy stem)
+pub fn resolve_template_path_spec(catalog_path: &str, spec: &str) -> Option<String> {
+    let clean = spec.trim().trim_matches('"').trim();
+    if clean.is_empty() {
+        return None;
+    }
+
+    // 1. Direct path check as-is or with .designcraft
+    let direct_p = std::path::Path::new(clean);
+    if direct_p.is_file() {
+        return Some(clean.to_string());
+    }
+    let direct_ext = format!("{clean}.designcraft");
+    if std::path::Path::new(&direct_ext).is_file() {
+        return Some(direct_ext);
+    }
+
+    // 2. Relative to catalog file directory
+    if !catalog_path.is_empty() {
+        let cat_p = std::path::Path::new(catalog_path);
+        let base_dir = if cat_p.is_file() { cat_p.parent() } else { Some(cat_p) };
+        if let Some(dir) = base_dir {
+            let rel = dir.join(clean);
+            if rel.is_file() {
+                return Some(rel.to_string_lossy().to_string());
+            }
+            let rel_ext = dir.join(&direct_ext);
+            if rel_ext.is_file() {
+                return Some(rel_ext.to_string_lossy().to_string());
+            }
+            let rel_tpl = dir.join("templates").join(clean);
+            if rel_tpl.is_file() {
+                return Some(rel_tpl.to_string_lossy().to_string());
+            }
+            let rel_tpl_ext = dir.join("templates").join(&direct_ext);
+            if rel_tpl_ext.is_file() {
+                return Some(rel_tpl_ext.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // 3. Search in standard assets/templates root
+    let root_candidates = [
+        std::path::PathBuf::from("assets/templates"),
+        std::path::PathBuf::from("../../assets/templates"),
+        std::path::PathBuf::from("../assets/templates"),
+    ];
+    if let Some(root) = root_candidates.into_iter().find(|p| p.is_dir()) {
+        // Direct under assets/templates
+        let p1 = root.join(clean);
+        if p1.is_file() {
+            return Some(p1.to_string_lossy().to_string());
+        }
+        let p1_ext = root.join(&direct_ext);
+        if p1_ext.is_file() {
+            return Some(p1_ext.to_string_lossy().to_string());
+        }
+
+        // Try under subcategories (dividers, covers, front_matter, data_tables, infographics, articles)
+        let subcats = ["dividers", "data_tables", "front_matter", "covers", "infographics", "articles"];
+        for sub in subcats {
+            let sub_p = root.join(sub).join(clean);
+            if sub_p.is_file() {
+                return Some(sub_p.to_string_lossy().to_string());
+            }
+            let sub_p_ext = root.join(sub).join(&direct_ext);
+            if sub_p_ext.is_file() {
+                return Some(sub_p_ext.to_string_lossy().to_string());
+            }
+        }
+
+        // Match against template catalogue IDs (e.g. "001_ulasan_chapter" or fuzzy matching stem)
+        let scanned = designcraft_engine::cmd::template::scan_template_catalog(&root);
+        let clean_lower = clean.to_lowercase();
+        // Exact ID match
+        if let Some(found) = scanned.iter().find(|t| t.id.to_lowercase() == clean_lower) {
+            return Some(found.path.to_string_lossy().to_string());
+        }
+        // Substring / suffix / prefix match on ID
+        if let Some(found) = scanned.iter().find(|t| {
+            let id_l = t.id.to_lowercase();
+            id_l.contains(&clean_lower) || clean_lower.contains(&id_l)
+        }) {
+            return Some(found.path.to_string_lossy().to_string());
+        }
+    }
+
+    None
+}
+
 fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
     if st.card1_records.is_empty() {
         return Err("No records to generate".into());
@@ -4414,9 +4513,14 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         let num_val = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
         let title_val = row.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("").trim();
 
-        if st.card1_preset == 6 {
+        let row_tpl_spec = row.get(4).map(String::as_str).unwrap_or("").trim();
+        let explicit_tpl_path = if !row_tpl_spec.is_empty() { resolve_template_path_spec(&st.card1_path, row_tpl_spec) } else { None };
+
+        if explicit_tpl_path.is_some() || st.card1_preset == 6 {
             // Modular Template Mode: delegate to template engine
-            let tpl_path = if !st.card1_template_path.trim().is_empty() {
+            let raw_tpl = if let Some(ref ep) = explicit_tpl_path {
+                ep.clone()
+            } else if !st.card1_template_path.trim().is_empty() {
                 st.card1_template_path.trim().to_string()
             } else if type_val.eq_ignore_ascii_case("Ulasan") {
                 "assets/templates/dividers/001_ulasan_chapter.designcraft".to_string()
@@ -4426,15 +4530,19 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 "assets/templates/data_tables/001_single_table_standard.designcraft".to_string()
             };
 
+            let tpl_path = resolve_template_path_spec(&st.card1_path, &raw_tpl).unwrap_or(raw_tpl);
+
             if std::path::Path::new(&tpl_path).exists() {
                 let mut text_slots = serde_json::Map::new();
                 let mut story_slots = serde_json::Map::new();
-                let image_slots = serde_json::Map::new();
+                let mut image_slots = serde_json::Map::new();
 
                 if type_val.eq_ignore_ascii_case("Ulasan") {
                     let (ch_line, title_line) = split_chapter_title(title_val, num_val);
                     text_slots.insert("chapter_num".into(), json!(ch_line));
                     text_slots.insert("chapter_title".into(), json!(title_line));
+                    text_slots.insert("title".into(), json!(title_line));
+                    text_slots.insert("number".into(), json!(ch_line));
                     if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
                         && let Some(rtf_file) = resolve_catalog_related_file(&st.card1_path, file_str, "rtf")
                     {
@@ -4444,15 +4552,33 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 } else if type_val.eq_ignore_ascii_case("Note") {
                     let note_title = if title_val.is_empty() { "Keterangan Publikasi" } else { title_val };
                     text_slots.insert("title".into(), json!(note_title));
+                    text_slots.insert("note_title".into(), json!(note_title));
                     if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
                         && let Some(rtf_file) = resolve_catalog_related_file(&st.card1_path, file_str, "rtf")
                     {
                         story_slots.insert("note_body".into(), json!(rtf_file.to_string_lossy()));
                         inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
                     }
+                } else if is_chart_type(type_val) {
+                    let (ch_line, title_line) = split_chart_title(title_val, num_val, type_val);
+                    text_slots.insert("chart_num".into(), json!(ch_line));
+                    text_slots.insert("chart_title".into(), json!(title_line));
+                    text_slots.insert("title".into(), json!(title_line));
+                    text_slots.insert("number".into(), json!(ch_line));
+                    if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
+                        && let Some(img_file) = resolve_catalog_related_file(&st.card1_path, file_str, "png")
+                            .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str, "jpg"))
+                            .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str, "jpeg"))
+                    {
+                        image_slots.insert("chart_image".into(), json!(img_file.to_string_lossy()));
+                        image_slots.insert("image".into(), json!(img_file.to_string_lossy()));
+                        inserted_images_count = inserted_images_count.saturating_add(1);
+                    }
                 } else {
                     text_slots.insert("table_num".into(), json!(num_val));
                     text_slots.insert("table_title".into(), json!(title_val));
+                    text_slots.insert("title".into(), json!(title_val));
+                    text_slots.insert("number".into(), json!(num_val));
                 }
 
                 let apply_res = app.run(
@@ -4485,7 +4611,9 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                                         && let Some(spread) = active.doc.spreads.get(si)
                                         && let Some(item) = spread.items.iter().find(|i| i.id == item_id)
                                     {
-                                        if item.label.contains("table") {
+                                        if item.label.starts_with("#slot:table")
+                                            || (item.label.contains("table") && !matches!(item.content, designcraft_doc::Content::Text(_)))
+                                        {
                                             table_placeholder_id = Some(it_id);
                                         } else if (item.label.contains("title") || item.label.contains("chapter_title"))
                                             && let Some(tf) = item.text_frame()
@@ -10326,10 +10454,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         for (style, filename) in cover_configs {
             let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
             app.run("file.new", json!({"width": 420.0, "height": 595.0, "pages": 1, "facingPages": false})).unwrap();
-            let st = PubgenState {
-                cover_style: style,
-                ..PubgenState::default()
-            };
+            let st = PubgenState { cover_style: style, ..PubgenState::default() };
             execute_generate_cover(&mut app, &st).unwrap();
             let _ = app.run("layout.pages.delete", json!({"page": 1}));
 
@@ -10397,7 +10522,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             let _ = app.run("object.color", json!({"color": "#122647", "target": "fill"}));
             let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 60, 348, 40], "content": "text", "text": "BAB 1"}));
             let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 110, 348, 60], "content": "text", "text": "GEOGRAFI DAN IKLIM"}));
-            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 230, 348, 320], "content": "text", "text": "Deskripsi pengantar bab..."}));
+            let _ =
+                app.run("frame.create", json!({"spread": 0, "rect": [36, 230, 348, 320], "content": "text", "text": "Deskripsi pengantar bab..."}));
 
             let active = app.session.active_mut().unwrap();
             let doc = std::sync::Arc::make_mut(&mut active.doc);
@@ -10427,9 +10553,13 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
             app.run("file.new", json!({"width": 420.0, "height": 595.0, "pages": 1, "facingPages": false})).unwrap();
             let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 36, 348, 20], "content": "text", "text": "Tabel 1.1"}));
-            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 60, 348, 30], "content": "text", "text": "Luas Wilayah Menurut Desa/Kelurahan"}));
+            let _ = app.run(
+                "frame.create",
+                json!({"spread": 0, "rect": [36, 60, 348, 30], "content": "text", "text": "Luas Wilayah Menurut Desa/Kelurahan"}),
+            );
             let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 100, 348, 420], "content": "unassigned", "shape": "rectangle"}));
-            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 530, 348, 25], "content": "text", "text": "Sumber: BPS Kabupaten Karawang"}));
+            let _ = app
+                .run("frame.create", json!({"spread": 0, "rect": [36, 530, 348, 25], "content": "text", "text": "Sumber: BPS Kabupaten Karawang"}));
 
             let active = app.session.active_mut().unwrap();
             let doc = std::sync::Arc::make_mut(&mut active.doc);
@@ -10589,5 +10719,65 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let has_table = active.doc.stories.values().any(|s| !s.tables.is_empty());
         assert!(has_table, "Document should contain an inserted table");
     }
-}
 
+    #[test]
+    fn test_resolve_template_path_spec() {
+        // Direct template ID resolution from assets/templates/
+        let r1 = resolve_template_path_spec("", "001_ulasan_chapter");
+        assert!(r1.is_some(), "Should resolve 001_ulasan_chapter: {r1:?}");
+        assert!(r1.unwrap().contains("001_ulasan_chapter.designcraft"));
+
+        // Subcategory path resolution
+        let r2 = resolve_template_path_spec("", "dividers/001_ulasan_chapter");
+        assert!(r2.is_some(), "Should resolve dividers/001_ulasan_chapter: {r2:?}");
+
+        // Table template resolution
+        let r3 = resolve_template_path_spec("", "001_single_table_standard");
+        assert!(r3.is_some(), "Should resolve 001_single_table_standard: {r3:?}");
+
+        // Non-existent template returns None
+        let r_none = resolve_template_path_spec("", "completely_fake_template_9999");
+        assert!(r_none.is_none());
+    }
+
+    #[test]
+    fn test_execute_generate_pages_with_explicit_template_column() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("ch2.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Ulasan sosial Bab 2.}"#).unwrap();
+
+        // Note: card1_preset is set to 0 (procedural preset), but column 4 explicitly
+        // specifies a template. It MUST use the modular template!
+        let st = PubgenState {
+            card1_preset: 0,
+            card1_records: vec![vec![
+                "Ulasan".into(),
+                "02".into(),
+                "BAB 02 Sosial".into(),
+                rtf_path.to_string_lossy().to_string(),
+                "dividers/001_ulasan_chapter".into(),
+            ]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages with explicit template column should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2);
+
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("BAB 02")), "Stories should contain BAB 02: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Sosial")), "Stories should contain Sosial: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Ulasan sosial Bab 2")), "Stories should contain RTF text: {texts:?}");
+    }
+}

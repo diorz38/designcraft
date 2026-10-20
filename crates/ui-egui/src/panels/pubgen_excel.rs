@@ -169,38 +169,94 @@ pub fn extract_first_two_digit_number(text: &str) -> Option<String> {
     }
 }
 
-/// Parse an RXX RTF review sheet with 2 rows:
-/// Row 1: title;"BAB 01 Pemerintahan"
-/// Row 2: file;[path to file RTF]
-pub fn parse_rtf_review_sheet(sheet: &ExcelSheetData) -> Option<(String, String, String, String)> {
-    let row1 = sheet.grid.first()?;
-    let row2 = sheet.grid.get(1);
+/// Keys recognized for custom page template or divider selection in Excel sheets.
+pub const TEMPLATE_KEYS: &[&str] =
+    &["divider", "dividers", "diivider", "diividers", "diivder", "template", "templates", "tpl", "pembatas", "layout", "style"];
 
-    let extract_field = |row: &[String], expected_key: &str| -> String {
-        for cell in row {
-            let t = cell.trim();
-            for sep in [';', ':', '='] {
-                if let Some((k, v)) = t.split_once(sep)
-                    && k.trim().eq_ignore_ascii_case(expected_key)
-                {
-                    return v.trim().trim_matches('"').trim().to_string();
+/// Extract the value for any of the given expected keys from a row of cells.
+pub fn extract_field_for_keys(row: &[String], expected_keys: &[&str]) -> Option<String> {
+    for cell in row {
+        let t = cell.trim();
+        for sep in [';', ':', '='] {
+            if let Some((k, v)) = t.split_once(sep) {
+                let k_trim = k.trim();
+                if expected_keys.iter().any(|key| k_trim.eq_ignore_ascii_case(key)) {
+                    let val = v.trim().trim_matches('"').trim().to_string();
+                    if !val.is_empty() {
+                        return Some(val);
+                    }
                 }
             }
         }
-        let non_empty: Vec<&str> = row.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-        if non_empty.len() >= 2 && non_empty[0].eq_ignore_ascii_case(expected_key) {
-            return non_empty[1].trim_matches('"').trim().to_string();
-        }
-        for &c in &non_empty {
-            if !c.eq_ignore_ascii_case(expected_key) {
-                return c.trim_matches('"').trim().to_string();
+    }
+    let non_empty: Vec<&str> = row.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    if non_empty.len() >= 2 {
+        let first = non_empty[0];
+        if expected_keys.iter().any(|key| first.eq_ignore_ascii_case(key)) {
+            let val = non_empty[1].trim_matches('"').trim().to_string();
+            if !val.is_empty() {
+                return Some(val);
             }
         }
-        String::new()
-    };
+    }
+    if non_empty.len() == 1 {
+        let cell = non_empty[0];
+        if let Some((k, v)) = cell.split_once(|c: char| c.is_whitespace())
+            && expected_keys.iter().any(|key| k.trim().eq_ignore_ascii_case(key))
+        {
+            let val = v.trim().trim_matches('"').trim().to_string();
+            if !val.is_empty() {
+                return Some(val);
+            }
+        }
+    }
+    None
+}
 
-    let title_val = extract_field(row1, "title");
-    let file_val = row2.map(|r| extract_field(r, "file")).unwrap_or_default();
+/// Search for an optional template / divider specifier across any row in the sheet grid.
+pub fn extract_template_from_sheet(sheet: &ExcelSheetData) -> Option<String> {
+    for row in &sheet.grid {
+        if let Some(tpl) = extract_field_for_keys(row, TEMPLATE_KEYS) {
+            return Some(tpl);
+        }
+    }
+    None
+}
+
+/// Lenient field extraction for title/file rows with fallback.
+pub fn extract_field_lenient(row: &[String], expected_key: &str) -> String {
+    for cell in row {
+        let t = cell.trim();
+        for sep in [';', ':', '='] {
+            if let Some((k, v)) = t.split_once(sep)
+                && k.trim().eq_ignore_ascii_case(expected_key)
+            {
+                return v.trim().trim_matches('"').trim().to_string();
+            }
+        }
+    }
+    let non_empty: Vec<&str> = row.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    if non_empty.len() >= 2 && non_empty[0].eq_ignore_ascii_case(expected_key) {
+        return non_empty[1].trim_matches('"').trim().to_string();
+    }
+    for &c in &non_empty {
+        if !c.eq_ignore_ascii_case(expected_key) {
+            return c.trim_matches('"').trim().to_string();
+        }
+    }
+    String::new()
+}
+
+/// Parse an RXX RTF review sheet with 2 or more rows:
+/// Row 1: title;"BAB 01 Pemerintahan"
+/// Row 2: file;[path to file RTF]
+/// Row 3 (optional): divider;[template path or ID] (or diivider, template, etc.)
+pub fn parse_rtf_review_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>)> {
+    let row1 = sheet.grid.first()?;
+    let row2 = sheet.grid.get(1);
+
+    let title_val = extract_field_lenient(row1, "title");
+    let file_val = row2.map(|r| extract_field_lenient(r, "file")).unwrap_or_default();
 
     let num_val = extract_first_two_digit_number(&title_val).unwrap_or_else(|| {
         let digits: String = sheet.name.chars().filter(|c| c.is_ascii_digit()).collect();
@@ -213,7 +269,15 @@ pub fn parse_rtf_review_sheet(sheet: &ExcelSheetData) -> Option<(String, String,
         }
     });
 
-    Some(("Ulasan".to_string(), num_val, title_val, file_val))
+    let template_val = extract_template_from_sheet(sheet);
+
+    Some(("Ulasan".to_string(), num_val, title_val, file_val, template_val))
+}
+
+/// Backward-compatible wrapper for `parse_rtf_review_sheet_with_template` returning 4-tuple.
+pub fn parse_rtf_review_sheet(sheet: &ExcelSheetData) -> Option<(String, String, String, String)> {
+    let (t, n, title, file, _) = parse_rtf_review_sheet_with_template(sheet)?;
+    Some((t, n, title, file))
 }
 
 /// Check if a sheet is a chart / graphic sheet (named CXX_XX or CXX where XX is digits, e.g. C02_01).
@@ -232,40 +296,18 @@ pub fn is_note_sheet(sheet_name: &str) -> bool {
     sheet_name.trim().eq_ignore_ascii_case("A02")
 }
 
-/// Parse the `A02` note sheet with 2 rows:
+/// Parse the `A02` note sheet with 2 or more rows:
 /// Row 1: title;"Keterangan Publikasi" (or col 0: title, col 1: text)
 /// Row 2: file;[path of RTF file] (or col 0: file, col 1: path)
+/// Row 3 (optional): template;[template path or ID]
 ///
-/// Catalog entry: type `Note`, number from the sheet name (A02 -> 02), title, RTF path.
-pub fn parse_note_sheet(sheet: &ExcelSheetData) -> Option<(String, String, String, String)> {
+/// Catalog entry: type `Note`, number from the sheet name (A02 -> 02), title, RTF path, template.
+pub fn parse_note_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>)> {
     let row1 = sheet.grid.first()?;
     let row2 = sheet.grid.get(1);
 
-    let extract_field = |row: &[String], expected_key: &str| -> String {
-        for cell in row {
-            let t = cell.trim();
-            for sep in [';', ':', '='] {
-                if let Some((k, v)) = t.split_once(sep)
-                    && k.trim().eq_ignore_ascii_case(expected_key)
-                {
-                    return v.trim().trim_matches('"').trim().to_string();
-                }
-            }
-        }
-        let non_empty: Vec<&str> = row.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-        if non_empty.len() >= 2 && non_empty[0].eq_ignore_ascii_case(expected_key) {
-            return non_empty[1].trim_matches('"').trim().to_string();
-        }
-        for &c in &non_empty {
-            if !c.eq_ignore_ascii_case(expected_key) {
-                return c.trim_matches('"').trim().to_string();
-            }
-        }
-        String::new()
-    };
-
-    let title_val = extract_field(row1, "title");
-    let file_val = row2.map(|r| extract_field(r, "file")).unwrap_or_default();
+    let title_val = extract_field_lenient(row1, "title");
+    let file_val = row2.map(|r| extract_field_lenient(r, "file")).unwrap_or_default();
     let digits: String = sheet.name.trim().chars().skip(1).collect();
     let num_val = match digits.len() {
         0 => "01".to_string(),
@@ -273,7 +315,15 @@ pub fn parse_note_sheet(sheet: &ExcelSheetData) -> Option<(String, String, Strin
         _ => digits,
     };
 
-    Some(("Note".to_string(), num_val, title_val, file_val))
+    let template_val = extract_template_from_sheet(sheet);
+
+    Some(("Note".to_string(), num_val, title_val, file_val, template_val))
+}
+
+/// Backward-compatible wrapper for `parse_note_sheet_with_template` returning 4-tuple.
+pub fn parse_note_sheet(sheet: &ExcelSheetData) -> Option<(String, String, String, String)> {
+    let (t, n, title, file, _) = parse_note_sheet_with_template(sheet)?;
+    Some((t, n, title, file))
 }
 
 /// Extract the first dotted number from a string, e.g. "Grafik 02.01 Panjang..." -> "02.01".
@@ -290,38 +340,16 @@ pub fn extract_dotted_number(text: &str) -> Option<String> {
     None
 }
 
-/// Parse a CXX_XX chart/figure sheet with 2 rows:
+/// Parse a CXX_XX chart/figure sheet with 2 or more rows:
 /// Row 1: title;"Grafik 02.01 Panjang Jalan..." (or col 0: title, col 1: text)
 /// Row 2: file;[path of image file] (or col 0: file, col 1: path)
-pub fn parse_chart_sheet(sheet: &ExcelSheetData) -> Option<(String, String, String, String)> {
+/// Row 3 (optional): template;[template path or ID]
+pub fn parse_chart_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>)> {
     let row1 = sheet.grid.first()?;
     let row2 = sheet.grid.get(1);
 
-    let extract_field = |row: &[String], expected_key: &str| -> String {
-        for cell in row {
-            let t = cell.trim();
-            for sep in [';', ':', '='] {
-                if let Some((k, v)) = t.split_once(sep)
-                    && k.trim().eq_ignore_ascii_case(expected_key)
-                {
-                    return v.trim().trim_matches('"').trim().to_string();
-                }
-            }
-        }
-        let non_empty: Vec<&str> = row.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-        if non_empty.len() >= 2 && non_empty[0].eq_ignore_ascii_case(expected_key) {
-            return non_empty[1].trim_matches('"').trim().to_string();
-        }
-        for &c in &non_empty {
-            if !c.eq_ignore_ascii_case(expected_key) {
-                return c.trim_matches('"').trim().to_string();
-            }
-        }
-        String::new()
-    };
-
-    let title_val = extract_field(row1, "title");
-    let file_val = row2.map(|r| extract_field(r, "file")).unwrap_or_default();
+    let title_val = extract_field_lenient(row1, "title");
+    let file_val = row2.map(|r| extract_field_lenient(r, "file")).unwrap_or_default();
 
     let first_word = title_val.split_whitespace().next().unwrap_or("Grafik");
     let type_val = if ["grafik", "graph", "chart", "bagan", "diagram", "peta", "map"].iter().any(|k| first_word.eq_ignore_ascii_case(k)) {
@@ -336,7 +364,15 @@ pub fn parse_chart_sheet(sheet: &ExcelSheetData) -> Option<(String, String, Stri
         stripped.replace('_', ".")
     });
 
-    Some((type_val, num_val, title_val, file_val))
+    let template_val = extract_template_from_sheet(sheet);
+
+    Some((type_val, num_val, title_val, file_val, template_val))
+}
+
+/// Backward-compatible wrapper for `parse_chart_sheet_with_template` returning 4-tuple.
+pub fn parse_chart_sheet(sheet: &ExcelSheetData) -> Option<(String, String, String, String)> {
+    let (t, n, title, file, _) = parse_chart_sheet_with_template(sheet)?;
+    Some((t, n, title, file))
 }
 
 /// Automatically reconstruct table column headers by propagating horizontal & vertical
@@ -495,11 +531,19 @@ pub fn worksheet_to_csv(sheet: &ExcelSheetData) -> Option<String> {
     Some(csv_lines.join("\n"))
 }
 
-/// Convert multiple Excel sheets into 1 catalog CSV and individual table CSVs.
-pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> ExcelConversionResult {
-    let mut catalog_rows = Vec::new();
-    catalog_rows.push("type,number,title,file".to_string());
+struct CatalogEntryItem {
+    entry_type: String,
+    number: String,
+    title: String,
+    file: String,
+    template: Option<String>,
+}
 
+/// Convert multiple Excel sheets into 1 catalog CSV and individual table CSVs.
+/// If any sheet defines a template/divider (e.g. in Row 3), the catalog emits a 5th `template` column.
+/// If no sheet defines a template, the catalog preserves the standard 4-column format `type,number,title,file`.
+pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> ExcelConversionResult {
+    let mut entries = Vec::new();
     let mut table_csvs = Vec::new();
 
     for sheet in sheets {
@@ -508,45 +552,27 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
 
         // Check if sheet is an RXX RTF chapter review sheet
         if is_rtf_review_sheet(sheet_name)
-            && let Some((t_val, n_val, title_val, f_val)) = parse_rtf_review_sheet(sheet)
+            && let Some((t_val, n_val, title_val, f_val, tpl_val)) = parse_rtf_review_sheet_with_template(sheet)
         {
-            catalog_rows.push(format!(
-                "{},{},{},{}",
-                escape_csv_field(&t_val),
-                escape_csv_field(&n_val),
-                escape_csv_field(&title_val),
-                escape_csv_field(&f_val)
-            ));
+            entries.push(CatalogEntryItem { entry_type: t_val, number: n_val, title: title_val, file: f_val, template: tpl_val });
             // RXX sheets are narrative review chapters (RTF), not tabular data
             continue;
         }
 
         // Check if sheet is a CXX_XX chart / figure sheet
         if is_chart_sheet(sheet_name)
-            && let Some((t_val, n_val, title_val, f_val)) = parse_chart_sheet(sheet)
+            && let Some((t_val, n_val, title_val, f_val, tpl_val)) = parse_chart_sheet_with_template(sheet)
         {
-            catalog_rows.push(format!(
-                "{},{},{},{}",
-                escape_csv_field(&t_val),
-                escape_csv_field(&n_val),
-                escape_csv_field(&title_val),
-                escape_csv_field(&f_val)
-            ));
+            entries.push(CatalogEntryItem { entry_type: t_val, number: n_val, title: title_val, file: f_val, template: tpl_val });
             // CXX sheets are graphic chart figures, not tabular data
             continue;
         }
 
         // Check if sheet is the A02 publication-note sheet (title + RTF path)
         if is_note_sheet(sheet_name)
-            && let Some((t_val, n_val, title_val, f_val)) = parse_note_sheet(sheet)
+            && let Some((t_val, n_val, title_val, f_val, tpl_val)) = parse_note_sheet_with_template(sheet)
         {
-            catalog_rows.push(format!(
-                "{},{},{},{}",
-                escape_csv_field(&t_val),
-                escape_csv_field(&n_val),
-                escape_csv_field(&title_val),
-                escape_csv_field(&f_val)
-            ));
+            entries.push(CatalogEntryItem { entry_type: t_val, number: n_val, title: title_val, file: f_val, template: tpl_val });
             // The A02 sheet carries a narrative RTF note, not tabular data
             continue;
         }
@@ -554,17 +580,40 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         // 1. Process first row for catalog
         let first_row = sheet.grid.first().cloned().unwrap_or_default();
         let (t_val, n_val, title_val, f_val) = parse_catalog_entry(&first_row, &safe_name);
-        catalog_rows.push(format!(
-            "{},{},{},{}",
-            escape_csv_field(&t_val),
-            escape_csv_field(&n_val),
-            escape_csv_field(&title_val),
-            escape_csv_field(&f_val)
-        ));
+        let tpl_val = extract_template_from_sheet(sheet);
+        entries.push(CatalogEntryItem { entry_type: t_val, number: n_val, title: title_val, file: f_val, template: tpl_val });
 
         // 2. Process table data for individual CSV
         if let Some(table_csv) = worksheet_to_csv(sheet) {
             table_csvs.push((format!("{safe_name}.csv"), table_csv));
+        }
+    }
+
+    let has_any_template = entries.iter().any(|e| e.template.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false));
+
+    let mut catalog_rows = Vec::new();
+    if has_any_template {
+        catalog_rows.push("type,number,title,file,template".to_string());
+        for e in &entries {
+            catalog_rows.push(format!(
+                "{},{},{},{},{}",
+                escape_csv_field(&e.entry_type),
+                escape_csv_field(&e.number),
+                escape_csv_field(&e.title),
+                escape_csv_field(&e.file),
+                escape_csv_field(e.template.as_deref().unwrap_or("")),
+            ));
+        }
+    } else {
+        catalog_rows.push("type,number,title,file".to_string());
+        for e in &entries {
+            catalog_rows.push(format!(
+                "{},{},{},{}",
+                escape_csv_field(&e.entry_type),
+                escape_csv_field(&e.number),
+                escape_csv_field(&e.title),
+                escape_csv_field(&e.file),
+            ));
         }
     }
 
@@ -1315,5 +1364,81 @@ mod tests {
         assert!(converted.catalog_csv_content.contains("Ulasan,02,Bab 02  Pemerintahan,"));
         assert!(converted.catalog_csv_content.contains("Grafik,02.01,Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026,"));
         assert!(converted.catalog_csv_content.contains("Tabel,02.01,"));
+    }
+
+    #[test]
+    fn test_parse_rtf_with_row3_divider_and_typos() {
+        // Standard syntax: divider;dividers/special_infographic_divider
+        let sheet1 = ExcelSheetData {
+            name: "R01".into(),
+            grid: vec![
+                vec!["title;BAB 01 Pemerintahan".into()],
+                vec!["file;ulasan_bab_1.rtf".into()],
+                vec!["divider;dividers/special_infographic_divider".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let (t1, n1, title1, f1, tpl1) = parse_rtf_review_sheet_with_template(&sheet1).unwrap();
+        assert_eq!(t1, "Ulasan");
+        assert_eq!(n1, "01");
+        assert_eq!(title1, "BAB 01 Pemerintahan");
+        assert_eq!(f1, "ulasan_bab_1.rtf");
+        assert_eq!(tpl1, Some("dividers/special_infographic_divider".into()));
+
+        // Typo syntax with two i's (diivider) and multi-column layout
+        let sheet2 = ExcelSheetData {
+            name: "R02".into(),
+            grid: vec![
+                vec!["title".into(), "BAB 02 Sosial".into()],
+                vec!["file".into(), "E:\\path\\to\\ulasan_2.rtf".into()],
+                vec!["diivider".into(), "dividers/001_ulasan_chapter".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let (t2, n2, title2, f2, tpl2) = parse_rtf_review_sheet_with_template(&sheet2).unwrap();
+        assert_eq!(t2, "Ulasan");
+        assert_eq!(n2, "02");
+        assert_eq!(title2, "BAB 02 Sosial");
+        assert_eq!(f2, "E:\\path\\to\\ulasan_2.rtf");
+        assert_eq!(tpl2, Some("dividers/001_ulasan_chapter".into()));
+
+        // Check backward compatibility wrapper parse_rtf_review_sheet
+        let (bt, bn, btitle, bf) = parse_rtf_review_sheet(&sheet2).unwrap();
+        assert_eq!(bt, "Ulasan");
+        assert_eq!(bn, "02");
+        assert_eq!(btitle, "BAB 02 Sosial");
+        assert_eq!(bf, "E:\\path\\to\\ulasan_2.rtf");
+    }
+
+    #[test]
+    fn test_convert_excel_to_csv_data_with_row3_template() {
+        let sheet_r01 = ExcelSheetData {
+            name: "R01".into(),
+            grid: vec![
+                vec!["title".into(), "BAB 01 Pemerintahan".into()],
+                vec!["file".into(), "ulasan_bab_1.rtf".into()],
+                vec!["diivider".into(), "dividers/special_infographic_divider".into()],
+            ],
+            merges: Vec::new(),
+        };
+
+        let sheet_tbl = ExcelSheetData {
+            name: "01_01".into(),
+            grid: vec![
+                vec!["Tabel 01.01 Luas Wilayah Menurut Kecamatan, 2026".into()],
+                vec!["Kecamatan".into(), "Luas".into()],
+                vec!["Karawang".into(), "100".into()],
+            ],
+            merges: Vec::new(),
+        };
+
+        let res = convert_excel_to_csv_data(&[sheet_r01, sheet_tbl], "TEST_CONVERT");
+        let lines: Vec<&str> = res.catalog_csv_content.lines().collect();
+
+        // Must output 5-column header because sheet_r01 specified a template!
+        assert_eq!(lines[0], "type,number,title,file,template");
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[1], "Ulasan,01,BAB 01 Pemerintahan,ulasan_bab_1.rtf,dividers/special_infographic_divider");
+        assert_eq!(lines[2], "Tabel,01.01,\"Luas Wilayah Menurut Kecamatan, 2026\",01_01,");
     }
 }

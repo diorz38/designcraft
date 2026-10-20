@@ -57,7 +57,7 @@ mod strokes;
 mod style;
 pub mod table;
 pub mod tabs;
-pub(crate) mod template;
+pub mod template;
 pub mod text;
 mod thread;
 mod toc;

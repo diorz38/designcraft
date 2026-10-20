@@ -23,11 +23,7 @@ fn humanize_name(id: &str) -> String {
     // Strip leading numeric ordering prefixes like "000_", "01_", etc.
     let stripped = if let Some(pos) = id.find('_') {
         let prefix = &id[..pos];
-        if prefix.chars().all(|c| c.is_ascii_digit()) {
-            &id[pos + 1..]
-        } else {
-            id
-        }
+        if prefix.chars().all(|c| c.is_ascii_digit()) { &id[pos + 1..] } else { id }
     } else {
         id
     };
@@ -44,11 +40,7 @@ fn humanize_name(id: &str) -> String {
         }
     }
 
-    if words.is_empty() {
-        id.to_string()
-    } else {
-        words.join(" ")
-    }
+    if words.is_empty() { id.to_string() } else { words.join(" ") }
 }
 
 /// Recursively scans a root directory for all `*.designcraft` templates.
@@ -74,24 +66,11 @@ fn scan_dir_recursive(root: &Path, current: &Path, results: &mut Vec<TemplateInf
                 continue;
             }
 
-            let category = path
-                .parent()
-                .and_then(|p| p.strip_prefix(root).ok())
-                .map(|p| p.to_string_lossy().replace('\\', "/"))
-                .unwrap_or_default();
+            let category = path.parent().and_then(|p| p.strip_prefix(root).ok()).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
 
-            let has_preview = File::open(&path)
-                .ok()
-                .and_then(designcraft_format::read_preview)
-                .is_some();
+            let has_preview = File::open(&path).ok().and_then(designcraft_format::read_preview).is_some();
 
-            results.push(TemplateInfo {
-                name: humanize_name(&id),
-                id,
-                category,
-                path,
-                has_preview,
-            });
+            results.push(TemplateInfo { name: humanize_name(&id), id, category, path, has_preview });
         }
     }
 }

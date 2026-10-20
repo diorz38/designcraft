@@ -57,16 +57,8 @@ fn list_template_catalog(_s: &mut Session, p: &Value) -> Result<Value> {
     let category_filter = p.get("category").and_then(Value::as_str);
 
     let templates = scan_template_catalog(Path::new(dir_path));
-    let filtered: Vec<_> = templates
-        .into_iter()
-        .filter(|t| {
-            if let Some(cat) = category_filter {
-                t.category.eq_ignore_ascii_case(cat)
-            } else {
-                true
-            }
-        })
-        .collect();
+    let filtered: Vec<_> =
+        templates.into_iter().filter(|t| if let Some(cat) = category_filter { t.category.eq_ignore_ascii_case(cat) } else { true }).collect();
 
     serde_json::to_value(&filtered).map_err(|e| bad("template.catalog.list", e.to_string()))
 }
@@ -269,14 +261,7 @@ fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
             }
         }
 
-        Ok(InsertedInfo {
-            page_idx,
-            spread_idx,
-            new_items,
-            image_tasks,
-            story_tasks,
-            slots_bound,
-        })
+        Ok(InsertedInfo { page_idx, spread_idx, new_items, image_tasks, story_tasks, slots_bound })
     })?;
 
     // 6. Execute external file placing tasks (Images and RTF Stories) via session commands

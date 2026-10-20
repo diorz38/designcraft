@@ -55,9 +55,6 @@ pub fn parse_slot_tag(label: &str) -> Option<SlotTag<'_>> {
         };
         Some(SlotTag { kind, key })
     } else {
-        Some(SlotTag {
-            kind: SlotType::Text,
-            key: rest.trim(),
-        })
+        Some(SlotTag { kind: SlotType::Text, key: rest.trim() })
     }
 }
