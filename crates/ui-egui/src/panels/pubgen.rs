@@ -178,6 +178,9 @@ pub struct PubgenState {
     pub card1_status: Option<(String, bool)>,
     #[serde(default)]
     pub card1_delim: Option<char>,
+    /// Optional template path for Card 1 (used when preset == 6 "Modular Template", or leave blank for canonical auto-dispatch)
+    #[serde(default)]
+    pub card1_template_path: String,
 
     // Card 2: Table from CSV
     pub card2_path: String,
@@ -305,6 +308,7 @@ impl Default for PubgenState {
             toc_hanging_indent: true,
             card1_status: None,
             card1_delim: None,
+            card1_template_path: String::new(),
             card2_path: String::new(),
             card2_matrix: Vec::new(),
             card2_sheet_tables: Vec::new(),
@@ -506,6 +510,7 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
             "Technical Spec Card",
             "Minimal Zine",
             "TOC Line (1 paragraph/record)",
+            "Modular Template",
         ];
         let cur = presets.get(st.card1_preset).copied().unwrap_or("1 Row · 3 Columns");
         let combo_w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
@@ -515,6 +520,15 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
             }
         });
     });
+
+    if st.card1_preset == 6 {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Template:").size(11.0).color(t.text));
+            let w = (ui.available_width() - 4.0).clamp(80.0, 240.0);
+            ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.card1_template_path))
+                .on_hover_text("Path to .designcraft template file (leave blank for canonical auto-dispatch)");
+        });
+    }
 
     // Every preset tags its title paragraph with this paragraph style; a TOC entry's text is the
     // paragraph's text, so "prefix" makes the entry read "Tabel 01.01. Jarak …".
@@ -4428,6 +4442,132 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     ensure_para_style(app, &st.toc_style);
 
     for row in slice {
+        let type_val = row.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("").trim();
+        let num_val = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
+        let title_val = row.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("").trim();
+
+        if st.card1_preset == 6 {
+            // Modular Template Mode: delegate to template engine
+            let tpl_path = if !st.card1_template_path.trim().is_empty() {
+                st.card1_template_path.trim().to_string()
+            } else if type_val.eq_ignore_ascii_case("Ulasan") {
+                "assets/templates/dividers/001_ulasan_chapter.designcraft".to_string()
+            } else if type_val.eq_ignore_ascii_case("Note") {
+                "assets/templates/front_matter/001_publication_note.designcraft".to_string()
+            } else {
+                "assets/templates/data_tables/001_single_table_standard.designcraft".to_string()
+            };
+
+            if std::path::Path::new(&tpl_path).exists() {
+                let mut text_slots = serde_json::Map::new();
+                let mut story_slots = serde_json::Map::new();
+                let image_slots = serde_json::Map::new();
+
+                if type_val.eq_ignore_ascii_case("Ulasan") {
+                    let (ch_line, title_line) = split_chapter_title(title_val, num_val);
+                    text_slots.insert("chapter_num".into(), json!(ch_line));
+                    text_slots.insert("chapter_title".into(), json!(title_line));
+                    if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
+                        && let Some(rtf_file) = resolve_catalog_related_file(&st.card1_path, file_str, "rtf")
+                    {
+                        story_slots.insert("narrative_body".into(), json!(rtf_file.to_string_lossy()));
+                        inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
+                    }
+                } else if type_val.eq_ignore_ascii_case("Note") {
+                    let note_title = if title_val.is_empty() { "Keterangan Publikasi" } else { title_val };
+                    text_slots.insert("title".into(), json!(note_title));
+                    if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
+                        && let Some(rtf_file) = resolve_catalog_related_file(&st.card1_path, file_str, "rtf")
+                    {
+                        story_slots.insert("note_body".into(), json!(rtf_file.to_string_lossy()));
+                        inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
+                    }
+                } else {
+                    text_slots.insert("table_num".into(), json!(num_val));
+                    text_slots.insert("table_title".into(), json!(title_val));
+                }
+
+                let apply_res = app.run(
+                    "template.page.apply",
+                    json!({
+                        "path": tpl_path,
+                        "slots": {
+                            "text": text_slots,
+                            "story": story_slots,
+                            "image": image_slots,
+                        },
+                        "palette": {
+                            "Primary": st.cover_color_primary.trim(),
+                            "Accent": st.cover_color_accent.trim(),
+                            "Dark": st.cover_color_dark.trim(),
+                        }
+                    }),
+                );
+
+                if let Ok(applied_info) = apply_res {
+                    let mut table_placeholder_id = None;
+                    let mut story_ids_to_tag = Vec::new();
+                    if let Some(items) = applied_info.get("items").and_then(Value::as_array) {
+                        if let Some(active) = app.session.active() {
+                            for it_id_val in items {
+                                if let Some(it_id) = it_id_val.as_u64() {
+                                    let item_id = designcraft_doc::ItemId(it_id);
+                                    if let Some(loc) = active.doc.find(item_id)
+                                        && let designcraft_doc::SpreadRef::Doc(si) = loc.spread
+                                        && let Some(spread) = active.doc.spreads.get(si)
+                                        && let Some(item) = spread.items.iter().find(|i| i.id == item_id)
+                                    {
+                                        if item.label.contains("table") {
+                                            table_placeholder_id = Some(it_id);
+                                        } else if (item.label.contains("title") || item.label.contains("chapter_title"))
+                                            && let Some(tf) = item.text_frame()
+                                        {
+                                            story_ids_to_tag.push(tf.story);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if !story_ids_to_tag.is_empty()
+                            && let Some(active) = app.session.active_mut()
+                        {
+                            let doc = std::sync::Arc::make_mut(&mut active.doc);
+                            for sid in story_ids_to_tag {
+                                if let Some(story) = doc.story_mut(sid) {
+                                    for p in &mut story.paras {
+                                        p.style = st.toc_style.clone();
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Auto-insert table from CSV if enabled and present
+                    if st.card1_auto_insert_tables
+                        && let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
+                        && let Some(tbl_file) = resolve_catalog_related_file(&st.card1_path, file_str, "csv")
+                        && let Ok(content) = std::fs::read_to_string(&tbl_file)
+                    {
+                        if let Some(tbl_slot_id) = table_placeholder_id {
+                            let _ = app.run("edit.clear", json!({"ids": [tbl_slot_id]}));
+                        }
+                        let delim = detect_delimiter(&content);
+                        let tbl_matrix = parse_csv_content_with_delim(&content, delim);
+                        if !tbl_matrix.is_empty() {
+                            let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
+                            if execute_insert_table_matrix(app, st, Some(&tbl_matrix), Some(cur_page_idx)).is_ok() {
+                                inserted_tables_count = inserted_tables_count.saturating_add(1);
+                            }
+                        }
+                    }
+
+                    generated_count = generated_count.saturating_add(1);
+                    continue;
+                }
+            }
+        }
+
         // 1. Insert Page
         app.run("layout.pages.insert", json!({"count": 1}))?;
 
@@ -4440,10 +4580,6 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let page = spread.pages.last().ok_or("Page missing")?;
             (page.margin_rect(), sp_idx)
         };
-
-        let type_val = row.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("").trim();
-        let num_val = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
-        let title_val = row.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("").trim();
 
         if st.card1_preset == 5 {
             // TOC Line: one combined paragraph per record (type + number + title), so each record
@@ -10384,4 +10520,106 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             app.run("file.saveAs", json!({"path": target.to_string_lossy()})).unwrap();
         }
     }
+
+    #[test]
+    fn test_execute_generate_pages_modular_template_divider() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("ch1.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Ulasan wilayah terinci.}"#).unwrap();
+
+        let st = PubgenState {
+            card1_preset: 6,
+            card1_records: vec![vec!["Ulasan".into(), "01".into(), "BAB 01 Geografi".into(), rtf_path.to_string_lossy().to_string()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for modular template divider should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2);
+
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("BAB 01")), "Stories should contain BAB 01: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Geografi")), "Stories should contain Geografi: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Ulasan wilayah terinci")), "Stories should contain RTF text: {texts:?}");
+    }
+
+    #[test]
+    fn test_execute_generate_pages_modular_template_note() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("note.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Penjelasan teknis publikasi.}"#).unwrap();
+
+        let st = PubgenState {
+            card1_preset: 6,
+            card1_records: vec![vec!["Note".into(), "".into(), "Keterangan Publikasi".into(), rtf_path.to_string_lossy().to_string()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for modular template note should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2);
+
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("Keterangan Publikasi")), "Stories should contain note title: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Penjelasan teknis publikasi")), "Stories should contain RTF note body: {texts:?}");
+    }
+
+    #[test]
+    fn test_execute_generate_pages_modular_template_table() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let csv_path = temp_dir.path().join("table_1_1.csv");
+        std::fs::write(&csv_path, "Kecamatan,Luas\nKarawang Barat,30.5\nKarawang Timur,25.2\nTotal,55.7\n").unwrap();
+
+        let st = PubgenState {
+            card1_preset: 6,
+            card1_records: vec![vec!["Tabel".into(), "1.1".into(), "Luas Wilayah Menurut Kecamatan".into(), csv_path.to_string_lossy().to_string()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            card1_auto_insert_tables: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for modular template table should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2);
+
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("1.1")), "Stories should contain table number: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Luas Wilayah")), "Stories should contain table title: {texts:?}");
+
+        let has_table = active.doc.stories.values().any(|s| !s.tables.is_empty());
+        assert!(has_table, "Document should contain an inserted table");
+    }
 }
+
