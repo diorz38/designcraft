@@ -103,6 +103,10 @@ pub fn toc_kind_of_words(words: &[String]) -> usize {
     }
 }
 
+fn default_cover_level() -> String {
+    "Kecamatan".into()
+}
+
 fn default_cover_title() -> String {
     "KARAWANG TIMUR".into()
 }
@@ -256,7 +260,8 @@ pub struct PubgenState {
     #[serde(default)]
     pub cover_style: usize,
     #[serde(default)]
-    pub cover_level: usize,
+    #[serde(default = "default_cover_level")]
+    pub cover_level: String,
     #[serde(default = "default_cover_title")]
     pub cover_title: String,
     #[serde(default = "default_cover_year")]
@@ -336,7 +341,7 @@ impl Default for PubgenState {
             generated_zip_name: String::new(),
             generated_zip_bytes: Vec::new(),
             cover_style: 2,
-            cover_level: 0,
+            cover_level: default_cover_level(),
             cover_title: default_cover_title(),
             cover_year: default_cover_year(),
             cover_volume: default_cover_volume(),
@@ -1292,21 +1297,16 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
     });
 
     // 3. Form fields
-    // #1 Level: KECAMATAN / KABUPATEN
+    // #1 Title 1: default "KECAMATAN"
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Level:").size(11.0).color(t.text));
-        let levels = ["KECAMATAN", "KABUPATEN"];
-        let cur_lvl = levels.get(st.cover_level).copied().unwrap_or("KECAMATAN");
-        egui::ComboBox::from_id_salt("pubgen_cover_level").selected_text(cur_lvl).width(130.0).show_ui(ui, |ui| {
-            for (idx, l) in levels.iter().enumerate() {
-                ui.selectable_value(&mut st.cover_level, idx, *l);
-            }
-        });
+        ui.label(RichText::new("Title 1:").size(11.0).color(t.text));
+        let avail = (ui.available_width() - 4.0).max(100.0);
+        ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_level));
     });
 
-    // #2 Title: default "KARAWANG TIMUR"
+    // #2 Title 2: default "KARAWANG TIMUR"
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Title:").size(11.0).color(t.text));
+        ui.label(RichText::new("Title 2:").size(11.0).color(t.text));
         let avail = (ui.available_width() - 4.0).max(100.0);
         ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_title));
     });
@@ -1656,7 +1656,7 @@ fn resolve_cover_image(path: &str) -> String {
 }
 
 fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
-    let level_text = if st.cover_level == 0 { "Kecamatan" } else { "Kabupaten" };
+    let level_text = if st.cover_level.trim().is_empty() { "Kecamatan" } else { st.cover_level.trim() };
     let title_text = if st.cover_title.trim().is_empty() { "KARAWANG TIMUR" } else { st.cover_title.trim() };
     let year_text = if st.cover_year.trim().is_empty() { "2026" } else { st.cover_year.trim() };
     let volume_text = if st.cover_volume.trim().is_empty() { "Volume 23 2026" } else { st.cover_volume.trim() };
