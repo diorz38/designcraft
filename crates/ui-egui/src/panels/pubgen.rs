@@ -1253,38 +1253,6 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
         });
     });
 
-    // Quick style pill switcher with hover thumbnail preview; wraps so a narrow dock never clips it
-    ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new("Preview:").size(10.0).color(t.text_dim));
-        let style_pills = [
-            ("🌊 Wave", 0, "Wave Curves"),
-            ("🔷 Geometric", 1, "Geometric & Medallion"),
-            ("📐 Origami", 2, "Folded Origami"),
-            ("🔰 Chevron", 3, "Chevron & Medallion"),
-            ("⬡ Hexagon", 4, "Honeycomb Hexagon"),
-            ("🏢 Corporate", 5, "Corporate Headline"),
-            ("↗ Arrow", 6, "Diagonal Arrow"),
-            ("🌇 Horizon", 7, "Modern Horizon"),
-            ("📊 Report", 8, "Business Report"),
-            ("🌆 Urban", 9, "Urban Angle"),
-        ];
-        for (label, idx, full_name) in style_pills {
-            let is_sel = st.cover_style == idx;
-            let btn = ui.selectable_label(is_sel, label);
-            if btn.clicked() {
-                st.cover_style = idx;
-                match idx {
-                    URBAN_STYLE => apply_urban_palette(st),
-                    HORIZON_STYLE | BUSINESS_STYLE => apply_report_palette(st),
-                    _ => {}
-                }
-            }
-            btn.on_hover_ui(|ui| {
-                show_style_thumbnail_tooltip(ui, idx, full_name, t);
-            });
-        }
-    });
-
     // 2. Color Theme Preset
     ui.horizontal(|ui| {
         ui.label(RichText::new("Theme:").size(11.0).color(t.text));
