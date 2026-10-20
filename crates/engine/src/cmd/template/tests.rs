@@ -257,3 +257,19 @@ fn test_template_catalog_discovery() {
     assert_eq!(list_arr.len(), 1);
     assert_eq!(list_arr[0]["id"], "000_wave_curves");
 }
+
+#[test]
+fn test_canonical_assets_catalog_discovery() {
+    use super::catalog::scan_template_catalog;
+
+    let path = std::path::Path::new("assets/templates");
+    if !path.exists() {
+        return;
+    }
+    let catalog = scan_template_catalog(path);
+    assert!(!catalog.is_empty(), "Canonical templates should be discovered in assets/templates");
+    let covers: Vec<_> = catalog.iter().filter(|t| t.category == "covers").collect();
+    assert_eq!(covers.len(), 10, "Should discover 10 canonical cover templates");
+}
+
+

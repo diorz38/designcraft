@@ -1707,17 +1707,6 @@ fn resolve_cover_image(path: &str) -> String {
 }
 
 fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
-    // 1. Automatically insert a new page before the first page (Page 1)
-    app.run("layout.pages.insert", json!({"before": 0, "count": 1})).map_err(|e| format!("Failed to insert cover page: {e}"))?;
-    crate::canvas::go_to_page(app, 0);
-
-    let (pw, ph) = {
-        let active = app.session.active().ok_or("No active document")?;
-        let spread = active.doc.spreads.first().ok_or("Spread missing")?;
-        let page = spread.pages.first().ok_or("Page missing")?;
-        (page.width, page.height)
-    };
-
     let level_text = if st.cover_level == 0 { "Kecamatan" } else { "Kabupaten" };
     let title_text = if st.cover_title.trim().is_empty() { "KARAWANG TIMUR" } else { st.cover_title.trim() };
     let year_text = if st.cover_year.trim().is_empty() { "2026" } else { st.cover_year.trim() };
@@ -1741,6 +1730,80 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     let logo = resolve_cover_image(if st.cover_image_logo.trim().is_empty() { "outputs/bps_logo.png" } else { st.cover_image_logo.trim() });
 
     let agency_text = if st.cover_agency_text.trim().is_empty() { "BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG" } else { st.cover_agency_text.trim() };
+
+    let canonical_templates = [
+        "assets/templates/covers/000_wave_curves.designcraft",
+        "assets/templates/covers/001_geometric_medallion.designcraft",
+        "assets/templates/covers/002_folded_origami.designcraft",
+        "assets/templates/covers/003_chevron_medallion.designcraft",
+        "assets/templates/covers/004_honeycomb_hexagon.designcraft",
+        "assets/templates/covers/005_corporate_headline.designcraft",
+        "assets/templates/covers/006_diagonal_arrow.designcraft",
+        "assets/templates/covers/007_modern_horizon.designcraft",
+        "assets/templates/covers/008_business_report.designcraft",
+        "assets/templates/covers/009_urban_angle.designcraft",
+    ];
+
+    if let Some(&tpl_path) = canonical_templates.get(st.cover_style)
+        && std::path::Path::new(tpl_path).exists()
+    {
+        let res = app.run(
+            "template.page.apply",
+            json!({
+                "path": tpl_path,
+                "before": 0,
+                "slots": {
+                    "text": {
+                        "title": title_text,
+                        "level": level_text,
+                        "year": year_text,
+                        "volume": volume_text,
+                        "catalogue": cat_text,
+                        "code": code_text,
+                        "agency": agency_text,
+                    },
+                    "image": {
+                        "hero": skyline,
+                        "landscape": landscape,
+                        "logo": logo,
+                    }
+                },
+                "palette": {
+                    "Primary": primary,
+                    "Accent": accent,
+                    "Dark": dark,
+                }
+            }),
+        );
+        if res.is_ok() {
+            crate::canvas::go_to_page(app, 0);
+            let style_names = [
+                "Wave Curves",
+                "Geometric Medallion",
+                "Folded Origami",
+                "Chevron & Medallion",
+                "Honeycomb Hexagon",
+                "Corporate Headline",
+                "Diagonal Arrow",
+                "Modern Horizon",
+                "Business Report",
+                "Urban Angle",
+            ];
+            let sname = style_names.get(st.cover_style).copied().unwrap_or("Template Cover");
+            return Ok(format!("Cover page generated successfully ({sname})"));
+        }
+    }
+
+    // 1. Automatically insert a new page before the first page (Page 1)
+    app.run("layout.pages.insert", json!({"before": 0, "count": 1})).map_err(|e| format!("Failed to insert cover page: {e}"))?;
+    crate::canvas::go_to_page(app, 0);
+
+    let (pw, ph) = {
+        let active = app.session.active().ok_or("No active document")?;
+        let spread = active.doc.spreads.first().ok_or("Spread missing")?;
+        let page = spread.pages.first().ok_or("Page missing")?;
+        (page.width, page.height)
+    };
 
     let style_name = match st.cover_style {
         0 => {
@@ -10126,6 +10189,199 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
                 assert!((pg.margins.inside - expected_inside).abs() < 1e-6);
                 assert!((pg.margins.outside - expected_outside).abs() < 1e-6);
             }
+        }
+    }
+
+    #[test]
+    fn test_generate_all_canonical_templates() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
+        let templates_dir = root.join("assets").join("templates");
+        let covers_dir = templates_dir.join("covers");
+        let dividers_dir = templates_dir.join("dividers");
+        let tables_dir = templates_dir.join("data_tables");
+        let front_matter_dir = templates_dir.join("front_matter");
+
+        std::fs::create_dir_all(&covers_dir).unwrap();
+        std::fs::create_dir_all(&dividers_dir).unwrap();
+        std::fs::create_dir_all(&tables_dir).unwrap();
+        std::fs::create_dir_all(&front_matter_dir).unwrap();
+
+        let cover_configs = [
+            (0, "000_wave_curves.designcraft"),
+            (1, "001_geometric_medallion.designcraft"),
+            (2, "002_folded_origami.designcraft"),
+            (3, "003_chevron_medallion.designcraft"),
+            (4, "004_honeycomb_hexagon.designcraft"),
+            (5, "005_corporate_headline.designcraft"),
+            (6, "006_diagonal_arrow.designcraft"),
+            (7, "007_modern_horizon.designcraft"),
+            (8, "008_business_report.designcraft"),
+            (9, "009_urban_angle.designcraft"),
+        ];
+
+        for (style, filename) in cover_configs {
+            let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({"width": 420.0, "height": 595.0, "pages": 1, "facingPages": false})).unwrap();
+            let st = PubgenState {
+                cover_style: style,
+                ..PubgenState::default()
+            };
+            execute_generate_cover(&mut app, &st).unwrap();
+            let _ = app.run("layout.pages.delete", json!({"page": 1}));
+
+            let active = app.session.active_mut().unwrap();
+            let doc = std::sync::Arc::make_mut(&mut active.doc);
+
+            // Auto-tag slots on items
+            for spread in &mut doc.spreads {
+                let sp = std::sync::Arc::make_mut(spread);
+                for it in &mut sp.items {
+                    let it = std::sync::Arc::make_mut(it);
+                    match &it.content {
+                        designcraft_doc::Content::Text(tf) => {
+                            if let Some(story) = doc.stories.get(&tf.story) {
+                                let t = story.text.trim();
+                                if t.contains("KARAWANG TIMUR") || t.contains("KARAWANG\nTIMUR") {
+                                    it.label = "#slot:text:title".to_string();
+                                } else if t.contains("Kecamatan") || t.contains("Kabupaten") || t.contains("KECAMATAN") {
+                                    it.label = "#slot:text:level".to_string();
+                                } else if t == "2026" || t == "20" || t == "26" {
+                                    it.label = "#slot:text:year".to_string();
+                                } else if t.contains("Volume") || t.contains("VOLUME") {
+                                    it.label = "#slot:text:volume".to_string();
+                                } else if t.contains("Katalog") || t.contains("1102001") {
+                                    it.label = "#slot:text:catalogue".to_string();
+                                } else if t.contains("ISSN") || t.contains("ISBN") {
+                                    it.label = "#slot:text:code".to_string();
+                                } else if t.contains("BADAN PUSAT STATISTIK") {
+                                    it.label = "#slot:text:agency".to_string();
+                                }
+                            }
+                        }
+                        designcraft_doc::Content::Graphic(_) | designcraft_doc::Content::Unassigned => {
+                            if it.name.to_lowercase().contains("logo") || it.label.to_lowercase().contains("logo") {
+                                it.label = "#slot:image:logo".to_string();
+                            } else if it.path.bounds().map_or(false, |b| b.width() > 100.0 && b.height() > 100.0) {
+                                it.label = "#slot:image:hero".to_string();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            // Ensure canonical swatches exist
+            if !doc.swatches.iter().any(|s| s.name == "Primary") {
+                doc.swatches.push(designcraft_color::Swatch::color("Primary", designcraft_color::Color::from_hex("#0072bc").unwrap()));
+            }
+            if !doc.swatches.iter().any(|s| s.name == "Accent") {
+                doc.swatches.push(designcraft_color::Swatch::color("Accent", designcraft_color::Color::from_hex("#f5ab19").unwrap()));
+            }
+            if !doc.swatches.iter().any(|s| s.name == "Dark") {
+                doc.swatches.push(designcraft_color::Swatch::color("Dark", designcraft_color::Color::from_hex("#122647").unwrap()));
+            }
+
+            let target_path = covers_dir.join(filename);
+            app.run("file.saveAs", json!({"path": target_path.to_string_lossy()})).unwrap();
+        }
+
+        // 1. Divider
+        {
+            let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({"width": 420.0, "height": 595.0, "pages": 1, "facingPages": false})).unwrap();
+            app.run("frame.create", json!({"spread": 0, "rect": [0, 0, 420, 200], "content": "unassigned", "shape": "rectangle"})).unwrap();
+            let _ = app.run("object.color", json!({"color": "#122647", "target": "fill"}));
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 60, 348, 40], "content": "text", "text": "BAB 1"}));
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 110, 348, 60], "content": "text", "text": "GEOGRAFI DAN IKLIM"}));
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 230, 348, 320], "content": "text", "text": "Deskripsi pengantar bab..."}));
+
+            let active = app.session.active_mut().unwrap();
+            let doc = std::sync::Arc::make_mut(&mut active.doc);
+            for sp in &mut doc.spreads {
+                let sp = std::sync::Arc::make_mut(sp);
+                for it in &mut sp.items {
+                    let it = std::sync::Arc::make_mut(it);
+                    if let designcraft_doc::Content::Text(tf) = &it.content {
+                        if let Some(story) = doc.stories.get(&tf.story) {
+                            if story.text.contains("BAB 1") {
+                                it.label = "#slot:text:chapter_num".to_string();
+                            } else if story.text.contains("GEOGRAFI") {
+                                it.label = "#slot:text:chapter_title".to_string();
+                            } else {
+                                it.label = "#slot:story:narrative_body".to_string();
+                            }
+                        }
+                    }
+                }
+            }
+            let target = dividers_dir.join("001_ulasan_chapter.designcraft");
+            app.run("file.saveAs", json!({"path": target.to_string_lossy()})).unwrap();
+        }
+
+        // 2. Data Table
+        {
+            let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({"width": 420.0, "height": 595.0, "pages": 1, "facingPages": false})).unwrap();
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 36, 348, 20], "content": "text", "text": "Tabel 1.1"}));
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 60, 348, 30], "content": "text", "text": "Luas Wilayah Menurut Desa/Kelurahan"}));
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 100, 348, 420], "content": "unassigned", "shape": "rectangle"}));
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 530, 348, 25], "content": "text", "text": "Sumber: BPS Kabupaten Karawang"}));
+
+            let active = app.session.active_mut().unwrap();
+            let doc = std::sync::Arc::make_mut(&mut active.doc);
+            for sp in &mut doc.spreads {
+                let sp = std::sync::Arc::make_mut(sp);
+                for it in &mut sp.items {
+                    let it = std::sync::Arc::make_mut(it);
+                    match &it.content {
+                        designcraft_doc::Content::Text(tf) => {
+                            if let Some(story) = doc.stories.get(&tf.story) {
+                                if story.text.contains("Tabel") {
+                                    it.label = "#slot:text:table_num".to_string();
+                                } else if story.text.contains("Luas") {
+                                    it.label = "#slot:text:table_title".to_string();
+                                } else {
+                                    it.label = "#slot:text:source".to_string();
+                                }
+                            }
+                        }
+                        designcraft_doc::Content::Unassigned | designcraft_doc::Content::Graphic(_) => {
+                            it.label = "#slot:table:main".to_string();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            let target = tables_dir.join("001_single_table_standard.designcraft");
+            app.run("file.saveAs", json!({"path": target.to_string_lossy()})).unwrap();
+        }
+
+        // 3. Publication Note
+        {
+            let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({"width": 420.0, "height": 595.0, "pages": 1, "facingPages": false})).unwrap();
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 50, 348, 40], "content": "text", "text": "KATA PENGANTAR"}));
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 110, 348, 440], "content": "text", "text": "Publikasi Kecamatan Karawang Timur Dalam Angka 2026..."}));
+
+            let active = app.session.active_mut().unwrap();
+            let doc = std::sync::Arc::make_mut(&mut active.doc);
+            for sp in &mut doc.spreads {
+                let sp = std::sync::Arc::make_mut(sp);
+                for it in &mut sp.items {
+                    let it = std::sync::Arc::make_mut(it);
+                    if let designcraft_doc::Content::Text(tf) = &it.content {
+                        if let Some(story) = doc.stories.get(&tf.story) {
+                            if story.text.contains("KATA PENGANTAR") {
+                                it.label = "#slot:text:title".to_string();
+                            } else {
+                                it.label = "#slot:story:note_body".to_string();
+                            }
+                        }
+                    }
+                }
+            }
+            let target = front_matter_dir.join("001_publication_note.designcraft");
+            app.run("file.saveAs", json!({"path": target.to_string_lossy()})).unwrap();
         }
     }
 }

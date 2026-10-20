@@ -109,6 +109,19 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `plan/pubgen/samples/thumb/modern_horizon.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 7 (Modern Horizon) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/urban_angle.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 9 (Urban Angle) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/wave_curves.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 0 (Wave Curves) | CC0-1.0 | Test thumbnail |
+| `assets/templates/covers/000_wave_curves.designcraft` | DesignCraft contributors (generated) | canonical template for Cover Style 0 (Wave Curves) with slot tags and embedded preview | CC0-1.0 | Built in code |
+| `assets/templates/covers/001_geometric_medallion.designcraft` | DesignCraft contributors (generated) | canonical template for Cover Style 1 (Geometric Medallion) with slot tags and embedded preview | CC0-1.0 | Built in code |
+| `assets/templates/covers/002_folded_origami.designcraft` | DesignCraft contributors (generated) | canonical template for Cover Style 2 (Folded Origami) with slot tags and embedded preview | CC0-1.0 | Built in code |
+| `assets/templates/covers/003_chevron_medallion.designcraft` | DesignCraft contributors (generated) | canonical template for Cover Style 3 (Chevron Medallion) with slot tags and embedded preview | CC0-1.0 | Built in code |
+| `assets/templates/covers/004_honeycomb_hexagon.designcraft` | DesignCraft contributors (generated) | canonical template for Cover Style 4 (Honeycomb Hexagon) with slot tags and embedded preview | CC0-1.0 | Built in code |
+| `assets/templates/covers/005_corporate_headline.designcraft` | DesignCraft contributors (generated) | canonical template for Cover Style 5 (Corporate Headline) with slot tags and embedded preview | CC0-1.0 | Built in code |
+| `assets/templates/covers/006_diagonal_arrow.designcraft` | DesignCraft contributors (generated) | canonical template for Cover Style 6 (Diagonal Arrow) with slot tags and embedded preview | CC0-1.0 | Built in code |
+| `assets/templates/covers/007_modern_horizon.designcraft` | DesignCraft contributors (generated) | canonical template for Cover Style 7 (Modern Horizon) with slot tags and embedded preview | CC0-1.0 | Built in code |
+| `assets/templates/covers/008_business_report.designcraft` | DesignCraft contributors (generated) | canonical template for Cover Style 8 (Business Report) with slot tags and embedded preview | CC0-1.0 | Built in code |
+| `assets/templates/covers/009_urban_angle.designcraft` | DesignCraft contributors (generated) | canonical template for Cover Style 9 (Urban Angle) with slot tags and embedded preview | CC0-1.0 | Built in code |
+| `assets/templates/dividers/001_ulasan_chapter.designcraft` | DesignCraft contributors (generated) | canonical interior template for narrative chapter dividers with slot tags | CC0-1.0 | Built in code |
+| `assets/templates/data_tables/001_single_table_standard.designcraft` | DesignCraft contributors (generated) | canonical interior template for statistical data tables with slot tags | CC0-1.0 | Built in code |
+| `assets/templates/front_matter/001_publication_note.designcraft` | DesignCraft contributors (generated) | canonical interior template for front-matter publication notes with slot tags | CC0-1.0 | Built in code |
 | `docs/images/thumb01.png` | DesignCraft contributors | screenshot of Pubgen dock panel in DesignCraft | MIT OR Apache-2.0 | Original UI screenshot |
 | `docs/images/thumb02.png` | DesignCraft contributors | screenshot of Publication Cover card in DesignCraft | MIT OR Apache-2.0 | Original UI screenshot |
 | `docs/images/thumb03.png` | DesignCraft contributors | screenshot of Page from CSV card in DesignCraft | MIT OR Apache-2.0 | Original UI screenshot |
