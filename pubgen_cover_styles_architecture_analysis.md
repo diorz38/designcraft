@@ -276,30 +276,144 @@ app.run("template.apply", json!({
 
 ---
 
-## 6. Architectural Comparison
+## 6. Cloud Template Distribution & GitHub Sync Architecture
 
-| Dimension | Current Approach (Monolith) | Solution 1: Modular Rust | Solution 2: Universal Template System |
-|---|---|---|---|
-| **Cover Styles Supported** | 10 styles | 50+ (each in its own `.rs` file) | **Unlimited (0 lines of code)** |
-| **Interior Page Styles** | 6 hardcoded presets | 10–15 hardcoded presets | **Unlimited (Covers, Dividers, Tables, Articles)** |
-| **Total Lines of Code** | ~10,132 lines (and growing) | ~8,000 lines (modularized) | **~4,000 lines (50% reduction)** |
-| **Adding a New Style** | Write 300+ lines of Rust math | Write 200+ lines of Rust math | **Save `.designcraft` file in UI (0 lines Rust)** |
-| **Compile Time Impact** | Heavy full-file recompile | Isolated incremental compiles | **Zero recompile needed** |
-| **Designer Accessibility** | None (Programmers only) | None (Programmers only) | **Full visual design in app** |
-| **Custom User Templates** | Impossible | Impossible | **Fully supported (drop-in files)** |
-| **Maintenance Risk** | Fragile coordinate dependencies | Contained per-module | Decoupled Data from Presentation |
+### 6.1 Motivation & Principles
+
+As the template library scales beyond 50+ covers, dividers, tables, and editorial layouts, storing all template files directly inside the core application git repository becomes counterproductive:
+1. **Lightweight Core Repository**: Binary `.designcraft` files (ZIP containers with vector definitions, text styles, and embedded PNG thumbnails) cause unnecessary repository bloat if hundreds of templates are tracked directly in git history.
+2. **Continuous Releases Without Binary Recompilation**: The design team or community can publish new templates weekly without requiring end-users to download a new application installer.
+3. **Decoupled Asset Governance**: Follows DesignCraft’s sister asset patterns—such as [`storytold/craft-fonts`](https://github.com/storytold/craft-fonts) for typefaces and [`storytold/photocraft-corpus`](https://github.com/storytold/photocraft-corpus) for real-world test fixtures.
+
+### 6.2 Companion Repository Structure (`storytold/designcraft-templates`)
+
+A dedicated GitHub repository maintains the full collection:
+
+```text
+designcraft-templates/
+├── templates.json                  # Manifest index with versioning, tags, and SHA256 checksums
+├── covers/
+│   ├── 000_wave_curves.designcraft
+│   ├── 001_geometric_medallion.designcraft
+│   ├── ...
+│   └── 050_executive_annual.designcraft
+├── dividers/
+│   ├── 001_ulasan_chapter.designcraft
+│   └── ...
+├── data_tables/
+│   ├── 001_single_table_standard.designcraft
+│   └── ...
+└── front_matter/
+    ├── 001_publication_note.designcraft
+    └── ...
+```
+
+#### Manifest Index (`templates.json`)
+The remote repository publishes a machine-readable index:
+```json
+{
+  "version": 1,
+  "updated_at": "2026-10-20T12:00:00Z",
+  "templates": [
+    {
+      "id": "050_executive_annual",
+      "name": "Executive Annual Report",
+      "category": "covers",
+      "version": "1.0.0",
+      "author": "DesignCraft Team",
+      "license": "CC0-1.0",
+      "path": "covers/050_executive_annual.designcraft",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tags": ["corporate", "annual-report", "formal"]
+    }
+  ]
+}
+```
+
+### 6.3 Dual-Root Catalog Discovery
+
+The engine’s catalog discovery (`template.catalog.list`) checks two storage layers:
+
+```text
+┌────────────────────────────────────────────────────────┐
+│             DesignCraft Desktop App                    │
+│                                                        │
+│  ┌──────────────────────┐    ┌──────────────────────┐  │
+│  │   Bundled Defaults   │    │    Synced Cache      │  │
+│  │  (assets/templates/) │    │ (~/.designcraft/tpl) │  │
+│  │     5–10 core styles │    │    50+ cloud styles  │  │
+│  └──────────┬───────────┘    └──────────┬───────────┘  │
+│             │                           │              │
+│             └─────────────┬─────────────┘              │
+│                           ▼                            │
+│           Catalog Engine (template.catalog.list)       │
+│                           │                            │
+│                  PubGen & UI Panels                    │
+└───────────────────────────┼────────────────────────────┘
+                            │ (On "Sync" button click)
+                            ▼
+          GitHub: storytold/designcraft-templates
+          ├── covers/
+          ├── dividers/
+          ├── data_tables/
+          └── templates.json (Catalog index with shas)
+```
+
+1. **Bundled Core (`assets/templates/`)**:
+   - Ships inside the application package (or embedded).
+   - Contains a minimal set of 5–10 curated defaults (1–2 per category).
+   - Guaranteed to work offline out-of-the-box with zero internet access.
+2. **User Cache / Synced Directory**:
+   - Platform-specific user data directory:
+     - **Windows**: `%APPDATA%\DesignCraft\templates`
+     - **macOS**: `~/Library/Application Support/DesignCraft/templates`
+     - **Linux**: `~/.local/share/designcraft/templates`
+   - Files downloaded from the GitHub repository are cached here.
+   - User-authored custom `.designcraft` templates can also be dropped directly into this folder.
+
+### 6.4 Sync & Update Mechanisms
+
+1. **In-App GUI ("Sync Cloud Templates")**:
+   - A single-click sync button in the Template Gallery / PubGen panel: `[🔄 Check for New Templates]`.
+   - Fetches `templates.json` over HTTPS, compares local SHA256 hashes against remote checksums, and downloads only new or updated `.designcraft` files.
+   - Instantly refreshes the in-app template list without restarting.
+2. **CLI & Developer Tooling**:
+   - `cargo xtask templates --sync` downloads the latest community pack for offline development.
+   - `designcraft-cli template sync --repo <custom_or_official_url>` allows automated CI/CD and deployment environments to hydrate template caches.
+3. **Private & Enterprise Repository Support**:
+   - Organizations (such as government statistical agencies or corporate marketing departments) can point the sync URL to an internal private Git repository or intranet server to distribute proprietary brand templates across their organization.
 
 ---
 
-## 7. Phased Implementation Roadmap
+## 7. Architectural Comparison
 
-1. **Phase 1: Immediate Monolith Cleanup**
-   - Split `crates/ui-egui/src/panels/pubgen.rs` into a module directory (`crates/ui-egui/src/panels/pubgen/`).
-   - Move the 10 existing cover styles to `pubgen/covers/` using the `CoverStyle` trait.
-2. **Phase 2: Slot Tagging Specification**
-   - Standardize frame slot naming in the DesignCraft engine (`#slot:text:name`, `#slot:image:name`, `#slot:table:name`).
-   - Add a lightweight frame inspector property to tag frames directly in the UI.
-3. **Phase 3: Engine Template Binder (`template.apply`)**
-   - Implement the engine command that loads a `.designcraft` page, finds tagged frames, binds variables, and inserts it into the active publication.
-4. **Phase 4: Unified Template Gallery UI**
-   - Replace the hardcoded Cover and Layout Preset dropdowns with an extensible visual Template Gallery supporting Covers, Dividers, Editorial Pages, and Statistical Tables.
+| Dimension | Current Approach (Monolith) | Solution 1: Modular Rust | Solution 2: Universal Template System | Solution 2 + GitHub Cloud Sync |
+|---|---|---|---|---|
+| **Cover Styles Supported** | 10 styles | 50+ (each in its own `.rs` file) | **Unlimited (0 lines of code)** | **Unlimited (Live Growing Library)** |
+| **Interior Page Styles** | 6 hardcoded presets | 10–15 hardcoded presets | **Unlimited (Covers, Dividers, Tables)** | **Unlimited (Community Distributed)** |
+| **Total Lines of Code** | ~10,132 lines (and growing) | ~8,000 lines (modularized) | **~4,000 lines (50% reduction)** | **~4,000 lines (50% reduction)** |
+| **Adding a New Style** | Write 300+ lines of Rust math | Write 200+ lines of Rust math | **Save `.designcraft` file in UI** | **PR to GitHub Template Repo (0 app changes)** |
+| **Compile Time Impact** | Heavy full-file recompile | Isolated incremental compiles | **Zero recompile needed** | **Zero recompile needed** |
+| **Binary / Git Repo Bloat** | Low (code only) | Low (code only) | Moderate (assets in repo) | **Zero (assets stored in companion repo)** |
+| **Designer Accessibility** | None (Programmers only) | None (Programmers only) | **Full visual design in app** | **Community contribution via GitHub PR** |
+| **Custom / Agency Templates** | Impossible | Impossible | **Drop-in local files** | **Private Git or Intranet repo sync** |
+| **Offline Operation** | Full | Full | **Full** | **Full (Bundled defaults + cached)** |
+
+---
+
+## 8. Phased Implementation Roadmap
+
+1. **Phase 1: Engine Slot Contract & Apply Pipeline**
+   - Implement `SlotType` and `parse_slot_tag` in `crates/engine/src/cmd/template/types.rs`.
+   - Implement `template.page.apply` command with slot injection (`#slot:text:*`, `#slot:image:*`, `#slot:story:*`, `#slot:table:*`) and dynamic palette re-tinting.
+2. **Phase 2: Local Catalog Discovery & Canonical Templates**
+   - Implement `template.catalog.list` and `template.preview.get` in `crates/engine/src/cmd/template/catalog.rs`.
+   - Package canonical starter templates under `assets/templates/` (`covers/`, `dividers/`, `data_tables/`, `front_matter/`).
+3. **Phase 3: PubGen UI Integration**
+   - Connect Cover Generation to `template.page.apply`.
+   - Connect Card 1 Interior Page Generation to `template.page.apply` with "Modular Template" layout preset.
+4. **Phase 4: Remote GitHub Template Repository & Sync**
+   - Create `storytold/designcraft-templates` with `templates.json` index.
+   - Add multi-root catalog scanning (`scan_template_catalogs`) supporting `assets/templates/` + user AppData.
+   - Implement `template.sync` engine command and in-app "Sync Cloud Templates" button.
+
