@@ -7132,12 +7132,14 @@ fn apply_excel_cover(st: &mut PubgenState, cover: &excel::ExcelCoverData, base_d
         st.cover_style = idx;
     }
 
-    let title = [cover.title1.trim(), cover.title2.trim()].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n");
-    if !title.is_empty() {
-        st.cover_title = title;
+    // The card's "Title 1" is `cover_level` and "Title 2" is `cover_title`
+    // (see the frame slots `#slot:text:level` / `#slot:text:title`).
+    let level = if !cover.level.trim().is_empty() { cover.level.trim() } else { cover.title1.trim() };
+    if !level.is_empty() {
+        st.cover_level = level.to_string();
     }
-    if !cover.level.trim().is_empty() {
-        st.cover_level = cover.level.trim().to_string();
+    if !cover.title2.trim().is_empty() {
+        st.cover_title = cover.title2.trim().to_string();
     }
     if !cover.year.trim().is_empty() {
         st.cover_year = cover.year.trim().to_string();
@@ -9053,6 +9055,14 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(!st.generated_zip_bytes.is_empty(), "ZIP archive bytes should be cached in state");
         assert!(st.generated_zip_name.ends_with(".zip"), "ZIP archive name should end with .zip");
         assert_eq!(st.generated_csv_files.len(), 4, "Catalog + 3 tables in generated_csv_files");
+
+        // The COVER sheet fills the card: Title 1 is `cover_level`, Title 2 is `cover_title`.
+        assert_eq!(st.cover_level, "PRODUK DOMESTIK REGIONAL BRUTO", "title1 must not leave the default \"Kecamatan\"");
+        assert_eq!(st.cover_title, "KABUPATEN KARAWANG");
+        assert_eq!(st.cover_year, "2026");
+        assert_eq!(st.cover_volume, "Volume 13 2026");
+        assert_eq!(st.cover_agency_text, "BADAN PUSAT STATISTIK KABUPATEN KARAWANG");
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

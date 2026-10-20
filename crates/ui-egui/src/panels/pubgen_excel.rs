@@ -1478,7 +1478,7 @@ mod tests {
         assert_eq!(s_list.len(), 8, "BAB_02_2025.xlsx has 8 sheets: COVER, A02, R02, C02_01, 02_01, 02_02, 02_03, note");
 
         let converted = convert_excel_to_csv_data(&s_list, "BAB_02_2025");
-        assert_eq!(converted.cover.as_ref().map(|c| c.style.as_str()), Some("CHEVRON MEDALLION"));
+        assert_eq!(converted.cover.as_ref().map(|c| c.style.as_str()), Some("MODERN HORIZON"));
         // A02 (Note), R02 (Ulasan) and C02_01 (Grafik) are not tables, and COVER / note are not pages,
         // so only the 3 tabular sheets produce table CSVs
         assert_eq!(converted.table_csvs.len(), 3);
