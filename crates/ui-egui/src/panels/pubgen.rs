@@ -5,6 +5,8 @@
 //!    multi-page layouts using geometric templates.
 //! 2. "Table from CSV": Ingests tabular CSV matrix data and constructs native styled tables.
 
+use std::path::Path;
+
 use egui::{Color32, RichText, Sense, Ui, pos2, vec2};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -251,6 +253,9 @@ pub struct PubgenState {
     /// Automatically run "Page from CSV" and insert tables after Excel conversion
     #[serde(default = "default_true")]
     pub excel_auto_generate: bool,
+    /// Whether the last converted workbook had a `COVER` sheet
+    #[serde(skip)]
+    pub excel_had_cover: bool,
 
     /// Status message for header actions (e.g. Set Page Margin)
     #[serde(default)]
@@ -259,7 +264,6 @@ pub struct PubgenState {
     // Card: Publication Cover (before Quick Actions)
     #[serde(default)]
     pub cover_style: usize,
-    #[serde(default)]
     #[serde(default = "default_cover_level")]
     pub cover_level: String,
     #[serde(default = "default_cover_title")]
@@ -358,6 +362,7 @@ impl Default for PubgenState {
             cover_agency_text: default_cover_agency_text(),
             cover_status: None,
             excel_auto_generate: true,
+            excel_had_cover: false,
             header_status: None,
         }
     }
@@ -3957,10 +3962,10 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
 
     // Helper: Excel (.xlsx) to CSV Data
     divider(ui);
-    let tip_excel =
-        "Convert a multi-sheet Excel file (.xlsx) into 1 catalog CSV for Page from CSV + individual table CSVs (with auto-merged headers)";
-    ui.checkbox(&mut st.excel_auto_generate, "Auto-generate pages & tables from sheets")
-        .on_hover_text("When checked, picking an Excel file automatically runs 'Page from CSV' and inserts each sheet's table with default options");
+    let tip_excel = "Convert a multi-sheet Excel file (.xlsx) into 1 catalog CSV for Page from CSV + individual table CSVs (with auto-merged headers). \
+        A sheet named COVER supplies the Publication Cover values (style, title1, title2, year, volume, no_catalogue, ISSN, office_name, image_1, image_lanscape, office_logo)";
+    ui.checkbox(&mut st.excel_auto_generate, "Auto-generate pages, tables & cover from sheets")
+        .on_hover_text("When checked, picking an Excel file automatically runs 'Page from CSV', inserts each sheet's table with default options, and generates the cover page before Page 1 from the COVER sheet");
     let resp_excel = outline_button(ui, "Excel to CSV Data…", full_width(ui)).on_hover_text(tip_excel);
     if resp_excel.clicked()
         && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
@@ -7096,8 +7101,86 @@ pub fn execute_page_from_image(app: &mut DesignApp, st: &mut PubgenState, path: 
     Ok(format!("Placed '{filename}' as {mode_desc} on Page {cur_label}"))
 }
 
+/// Map a `COVER` sheet style name (e.g. `CHEVRON MEDALLION`) to the Publication Cover style index.
+fn cover_style_index(spec: &str) -> Option<usize> {
+    let norm = |s: &str| -> String { s.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect() };
+    const NAMES: [&str; 10] = [
+        "Wave Curves",
+        "Geometric Medallion",
+        "Folded Origami",
+        "Chevron Medallion",
+        "Honeycomb Hexagon",
+        "Corporate Headline",
+        "Diagonal Arrow",
+        "Modern Horizon",
+        "Business Report",
+        "Urban Angle",
+    ];
+    let want = norm(spec);
+    if want.is_empty() {
+        return None;
+    }
+    NAMES.iter().position(|n| {
+        let n = norm(n);
+        n.contains(&want) || want.contains(&n)
+    })
+}
+
+/// Copy the `COVER` sheet values into the Publication Cover card.
+fn apply_excel_cover(st: &mut PubgenState, cover: &excel::ExcelCoverData, base_dir: Option<&Path>) {
+    if let Some(idx) = cover_style_index(&cover.style) {
+        st.cover_style = idx;
+    }
+
+    let title = [cover.title1.trim(), cover.title2.trim()].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n");
+    if !title.is_empty() {
+        st.cover_title = title;
+    }
+    if !cover.level.trim().is_empty() {
+        st.cover_level = cover.level.trim().to_string();
+    }
+    if !cover.year.trim().is_empty() {
+        st.cover_year = cover.year.trim().to_string();
+    }
+    if !cover.volume.trim().is_empty() {
+        let vol = cover.volume.trim();
+        st.cover_volume = if vol.to_lowercase().starts_with("vol") { vol.to_string() } else { format!("Volume {vol}") };
+    }
+    if !cover.catalogue.trim().is_empty() {
+        st.cover_catalogue = cover.catalogue.trim().to_string();
+    }
+    if !cover.code.trim().is_empty() {
+        st.cover_code_num = cover.code.trim().to_string();
+    }
+    if !cover.agency.trim().is_empty() {
+        st.cover_agency_text = cover.agency.trim().to_string();
+    }
+
+    // Relative image paths in the sheet are relative to the workbook.
+    let resolve = |p: &str| -> String {
+        let p = p.trim();
+        if p.is_empty() || Path::new(p).is_file() {
+            return p.to_string();
+        }
+        base_dir.map(|d| d.join(p)).filter(|j| j.is_file()).map(|j| j.to_string_lossy().to_string()).unwrap_or_else(|| p.to_string())
+    };
+    if !cover.image_hero.trim().is_empty() {
+        st.cover_image_skyline = resolve(&cover.image_hero);
+    }
+    if !cover.image_landscape.trim().is_empty() {
+        st.cover_image_landscape = resolve(&cover.image_landscape);
+    }
+    if !cover.logo.trim().is_empty() {
+        st.cover_image_logo = resolve(&cover.logo);
+    }
+}
+
 pub fn execute_excel_to_csvs(st: &mut PubgenState, path: &str) -> Result<String, String> {
     let pkg = excel::execute_convert_excel(path)?;
+    st.excel_had_cover = pkg.cover.is_some();
+    if let Some(cover) = &pkg.cover {
+        apply_excel_cover(st, cover, Path::new(path).parent());
+    }
     // 1. Auto-load generated catalog into Card 1 (Page from CSV)
     st.card1_path = pkg.catalog_path.clone();
     load_card1_csv(st, &pkg.catalog_path);
@@ -7148,6 +7231,19 @@ pub fn execute_excel_and_generate(app: &mut DesignApp, st: &mut PubgenState, pat
         Ok(gen_msg) => {
             st.card1_status = Some((gen_msg.clone(), true));
             let count = st.card2_sheet_tables.len();
+            if st.excel_had_cover {
+                // The cover page goes before Page 1, so it is generated after the body pages.
+                match execute_generate_cover(app, st) {
+                    Ok(cover_msg) => {
+                        st.cover_status = Some((cover_msg.clone(), true));
+                        return Ok(format!("Converted {count} sheets & auto-generated pages + cover ({gen_msg}; {cover_msg})!"));
+                    }
+                    Err(e) => {
+                        st.cover_status = Some((e.clone(), false));
+                        return Ok(format!("Converted {count} sheets & generated pages, but cover failed: {e}"));
+                    }
+                }
+            }
             Ok(format!("Converted {count} sheets & auto-generated pages ({gen_msg})!"))
         }
         Err(e) => {
@@ -8999,10 +9095,12 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(msg.contains("2 RTF chapter(s) placed"), "Status should confirm 2 RTFs placed (R02 ulasan + A02 note): {msg}");
         assert!(msg.contains("1 chart image(s) placed"), "Status should confirm 1 chart placed: {msg}");
 
+        assert!(msg.contains("cover"), "Sample workbook has a COVER sheet, so a cover page is generated: {msg}");
+
         // Initial doc has 1 page + 7 generated pages (6 records; the R02 ulasan RTF adds one
-        // overflow page) = 8 pages
+        // overflow page) + 1 cover page before Page 1 = 9 pages
         let page_count = app.session.active().unwrap().doc.page_count();
-        assert_eq!(page_count, 8, "Expected 8 pages after generating 6 sheet records");
+        assert_eq!(page_count, 9, "Expected 9 pages after generating 6 sheet records and the cover");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

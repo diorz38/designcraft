@@ -21,6 +21,23 @@ pub struct ExcelSheetData {
     pub merges: Vec<((usize, usize), (usize, usize))>,
 }
 
+/// Cover values read from the `COVER` sheet (key/value rows, e.g. `title1 | PRODUK ...`).
+#[derive(Debug, Clone, Default)]
+pub struct ExcelCoverData {
+    pub style: String,
+    pub level: String,
+    pub title1: String,
+    pub title2: String,
+    pub year: String,
+    pub volume: String,
+    pub catalogue: String,
+    pub code: String,
+    pub agency: String,
+    pub image_hero: String,
+    pub image_landscape: String,
+    pub logo: String,
+}
+
 /// Generated CSV data from conversion.
 #[derive(Debug, Clone, Default)]
 pub struct ExcelConversionResult {
@@ -28,6 +45,8 @@ pub struct ExcelConversionResult {
     pub catalog_csv_content: String,
     /// (filename, csv_content)
     pub table_csvs: Vec<(String, String)>,
+    /// Values for the Publication Cover card, taken from the `COVER` sheet if present.
+    pub cover: Option<ExcelCoverData>,
 }
 
 /// Parse Excel cell coordinate (e.g. "A1" -> (0, 0), "B2" -> (1, 1), "AA1" -> (26, 0)).
@@ -167,6 +186,49 @@ pub fn extract_first_two_digit_number(text: &str) -> Option<String> {
     } else {
         Some(num_str)
     }
+}
+
+/// Check if a sheet carries Publication Cover values (named `COVER`).
+pub fn is_cover_sheet(sheet_name: &str) -> bool {
+    sheet_name.trim().eq_ignore_ascii_case("cover")
+}
+
+/// Sheets that are lookup/legend lists (e.g. dropdown sources), never publication pages.
+pub fn is_ignored_sheet(sheet_name: &str) -> bool {
+    sheet_name.trim().eq_ignore_ascii_case("note")
+}
+
+/// Parse the `COVER` sheet: one `key | value` row per field (see `ExcelCoverData`).
+pub fn parse_cover_sheet(sheet: &ExcelSheetData) -> ExcelCoverData {
+    let mut cover = ExcelCoverData::default();
+    for row in &sheet.grid {
+        let Some(key) = row.first().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        // A value may span several columns (e.g. volume = 13, year = 2026).
+        let value = row[1..].iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
+        if value.is_empty() {
+            continue;
+        }
+        let norm: String = key.chars().filter(|c| !matches!(c, '_' | ' ' | '-')).collect();
+        let slot = match norm.as_str() {
+            "style" => &mut cover.style,
+            "level" => &mut cover.level,
+            "title1" | "title" => &mut cover.title1,
+            "title2" => &mut cover.title2,
+            "year" => &mut cover.year,
+            "volume" => &mut cover.volume,
+            "nocatalogue" | "catalogue" | "catalog" | "katalog" => &mut cover.catalogue,
+            "issn" | "isbn" | "code" => &mut cover.code,
+            "officename" | "agency" | "lembaga" => &mut cover.agency,
+            "image1" | "imagehero" | "image" => &mut cover.image_hero,
+            "imagelanscape" | "imagelandscape" | "landscape" => &mut cover.image_landscape,
+            "officelogo" | "logo" => &mut cover.logo,
+            _ => continue,
+        };
+        *slot = value;
+    }
+    cover
 }
 
 /// Keys recognized for custom page template or divider selection in Excel sheets.
@@ -545,10 +607,20 @@ struct CatalogEntryItem {
 pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> ExcelConversionResult {
     let mut entries = Vec::new();
     let mut table_csvs = Vec::new();
+    let mut cover = None;
 
     for sheet in sheets {
         let sheet_name = sheet.name.trim();
         let safe_name = sanitize_filename(sheet_name);
+
+        // The COVER sheet supplies Publication Cover values, not a catalog page or table.
+        if is_cover_sheet(sheet_name) {
+            cover = Some(parse_cover_sheet(sheet));
+            continue;
+        }
+        if is_ignored_sheet(sheet_name) {
+            continue;
+        }
 
         // Check if sheet is an RXX RTF chapter review sheet
         if is_rtf_review_sheet(sheet_name)
@@ -617,7 +689,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         }
     }
 
-    ExcelConversionResult { catalog_csv_name: format!("{base_stem}_catalog.csv"), catalog_csv_content: catalog_rows.join("\n"), table_csvs }
+    ExcelConversionResult { catalog_csv_name: format!("{base_stem}_catalog.csv"), catalog_csv_content: catalog_rows.join("\n"), table_csvs, cover }
 }
 
 /// Parse all worksheets from an `.xlsx` file using `zip` and `quick-xml`.
@@ -878,6 +950,7 @@ pub struct ConvertedExcelPackage {
     pub zip_name: String,
     pub zip_bytes: Vec<u8>,
     pub csv_files: Vec<(String, String)>,
+    pub cover: Option<ExcelCoverData>,
 }
 
 /// Create a ZIP archive from a slice of (filename, file_content) entries.
@@ -952,6 +1025,7 @@ pub fn execute_convert_excel(path: &str) -> Result<ConvertedExcelPackage, String
         zip_name,
         zip_bytes,
         csv_files,
+        cover: converted.cover,
     })
 }
 
@@ -993,6 +1067,61 @@ mod tests {
         assert_eq!(n2, "01.01.");
         assert_eq!(title2, "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006");
         assert_eq!(file2, "01_01");
+    }
+
+    #[test]
+    fn test_cover_sheet_feeds_cover_values_and_is_not_a_page() {
+        let cover = ExcelSheetData {
+            name: "COVER".into(),
+            grid: vec![
+                vec!["style".into(), "CHEVRON MEDALLION".into()],
+                vec!["title1".into(), "PRODUK DOMESTIK REGIONAL BRUTO".into()],
+                vec!["title2".into(), "KABUPATEN KARAWANG".into()],
+                vec!["year".into(), "".into(), "2026".into()],
+                vec!["volume".into(), "13".into(), "2026".into()],
+                vec!["no_catalogue".into(), "1102001.3215113".into()],
+                vec!["ISSN".into(), "2828-7436".into()],
+                vec!["office_name".into(), "BADAN PUSAT STATISTIK".into()],
+                vec!["image_1".into(), "F:\\samples\\images\\city_skyline.jpg".into()],
+                vec!["image_lanscape".into(), "F:\\samples\\images\\city_landscape.jpg".into()],
+                vec!["office_logo".into(), "F:\\samples\\images\\bps_logo.png".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let table = ExcelSheetData {
+            name: "02_01".into(),
+            grid: vec![vec!["Tabel 02.01 Luas Wilayah".into()], vec!["Kecamatan".into(), "Luas".into()], vec!["Karawang".into(), "100".into()]],
+            merges: Vec::new(),
+        };
+
+        assert!(is_cover_sheet("cover"));
+        assert!(is_cover_sheet(" COVER "));
+        assert!(!is_cover_sheet("Covers"));
+        assert!(is_ignored_sheet("note"));
+        assert!(is_ignored_sheet(" NOTE "));
+        // The publication-note page sheet is A02, not `note`.
+        assert!(!is_ignored_sheet("A02"));
+
+        let res = convert_excel_to_csv_data(&[cover, table], "BAB");
+        let c = res.cover.as_ref().expect("COVER sheet should yield cover values");
+        assert_eq!(c.style, "CHEVRON MEDALLION");
+        assert_eq!(c.title1, "PRODUK DOMESTIK REGIONAL BRUTO");
+        assert_eq!(c.title2, "KABUPATEN KARAWANG");
+        assert_eq!(c.year, "2026");
+        assert_eq!(c.volume, "13 2026");
+        assert_eq!(c.catalogue, "1102001.3215113");
+        assert_eq!(c.code, "2828-7436");
+        assert_eq!(c.agency, "BADAN PUSAT STATISTIK");
+        assert_eq!(c.image_hero, "F:\\samples\\images\\city_skyline.jpg");
+        assert_eq!(c.image_landscape, "F:\\samples\\images\\city_landscape.jpg");
+        assert_eq!(c.logo, "F:\\samples\\images\\bps_logo.png");
+
+        // COVER must not become a catalog entry or a table CSV.
+        assert_eq!(res.catalog_csv_content.lines().count(), 2);
+        assert!(res.catalog_csv_content.contains("Tabel,02.01,"));
+        assert!(!res.catalog_csv_content.contains("COVER"));
+        assert_eq!(res.table_csvs.len(), 1);
+        assert_eq!(res.table_csvs[0].0, "02_01.csv");
     }
 
     #[test]
@@ -1346,10 +1475,12 @@ mod tests {
         let sheets = parse_xlsx_sheets(path.to_str().unwrap());
         assert!(sheets.is_ok(), "Should parse sheets from BAB_02_2025.xlsx: {:?}", sheets);
         let s_list = sheets.unwrap();
-        assert_eq!(s_list.len(), 6, "BAB_02_2025.xlsx has 6 sheets: A02, R02, C02_01, 02_01, 02_02, 02_03");
+        assert_eq!(s_list.len(), 8, "BAB_02_2025.xlsx has 8 sheets: COVER, A02, R02, C02_01, 02_01, 02_02, 02_03, note");
 
         let converted = convert_excel_to_csv_data(&s_list, "BAB_02_2025");
-        // A02 (Note), R02 (Ulasan) and C02_01 (Grafik) are not tables, so only the 3 tabular sheets produce table CSVs
+        assert_eq!(converted.cover.as_ref().map(|c| c.style.as_str()), Some("CHEVRON MEDALLION"));
+        // A02 (Note), R02 (Ulasan) and C02_01 (Grafik) are not tables, and COVER / note are not pages,
+        // so only the 3 tabular sheets produce table CSVs
         assert_eq!(converted.table_csvs.len(), 3);
         assert_eq!(converted.table_csvs[0].0, "02_01.csv");
         assert_eq!(converted.table_csvs[1].0, "02_02.csv");
