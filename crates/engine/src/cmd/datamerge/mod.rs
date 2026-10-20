@@ -3,7 +3,7 @@
 //! `data.merge` used to duplicate pages inside the template. It now leaves the template and its
 //! undo stack alone and appends a new document.
 
-mod fill;
+pub(crate) mod fill;
 mod parse;
 
 use std::path::{Path, PathBuf};
