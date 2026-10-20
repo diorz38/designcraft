@@ -1,5 +1,4 @@
-//! Template engine commands and slot binding logic.
-
+pub mod catalog;
 pub mod types;
 
 #[cfg(test)]
@@ -18,18 +17,75 @@ use super::{CommandSpec, bad, cmd, has_doc};
 use crate::cmd::datamerge::fill::copy_item;
 use crate::{Result, Session};
 
+pub use catalog::{read_template_preview, scan_template_catalog};
 pub use types::{SlotType, parse_slot_tag};
 
 pub fn specs() -> Vec<CommandSpec> {
-    vec![cmd!(
-        "template.page.apply",
-        "Apply Template Page…",
-        ["Layout", "Templates"],
-        None,
-        "{path?: string, bytes?: [u8], base64?: string, before?: usize, after?: usize, target_page?: usize, position?: before|after, slots?: {text?: {...}, image?: {...}, story?: {...}}, palette?: {...}} → {page, spread, items: [id], slots_bound: count}",
-        has_doc,
-        apply_template_page
-    )]
+    vec![
+        cmd!(
+            "template.page.apply",
+            "Apply Template Page…",
+            ["Layout", "Templates"],
+            None,
+            "{path?: string, bytes?: [u8], base64?: string, before?: usize, after?: usize, target_page?: usize, position?: before|after, slots?: {text?: {...}, image?: {...}, story?: {...}}, palette?: {...}} → {page, spread, items: [id], slots_bound: count}",
+            has_doc,
+            apply_template_page
+        ),
+        cmd!(
+            "template.catalog.list",
+            "List Available Templates",
+            ["Layout", "Templates"],
+            None,
+            "{dir?: string, category?: string} → [{id, name, category, path, has_preview}]",
+            crate::cmd::always,
+            list_template_catalog
+        ),
+        cmd!(
+            "template.preview.get",
+            "Get Template Preview PNG",
+            ["Layout", "Templates"],
+            None,
+            "{path: string} → {has_preview: bool, bytes?: [u8], base64?: string}",
+            crate::cmd::always,
+            get_template_preview
+        ),
+    ]
+}
+
+fn list_template_catalog(_s: &mut Session, p: &Value) -> Result<Value> {
+    let dir_path = p.get("dir").and_then(Value::as_str).unwrap_or("assets/templates");
+    let category_filter = p.get("category").and_then(Value::as_str);
+
+    let templates = scan_template_catalog(Path::new(dir_path));
+    let filtered: Vec<_> = templates
+        .into_iter()
+        .filter(|t| {
+            if let Some(cat) = category_filter {
+                t.category.eq_ignore_ascii_case(cat)
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    serde_json::to_value(&filtered).map_err(|e| bad("template.catalog.list", e.to_string()))
+}
+
+fn get_template_preview(_s: &mut Session, p: &Value) -> Result<Value> {
+    let path_str = p.get("path").and_then(Value::as_str).ok_or_else(|| bad("template.preview.get", "`path` parameter required"))?;
+    let preview_bytes = read_template_preview(Path::new(path_str));
+    if let Some(bytes) = preview_bytes {
+        let b64 = super::file::base64_encode(&bytes);
+        Ok(json!({
+            "has_preview": true,
+            "bytes": bytes,
+            "base64": b64,
+        }))
+    } else {
+        Ok(json!({
+            "has_preview": false,
+        }))
+    }
 }
 
 fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {

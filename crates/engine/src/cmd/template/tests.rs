@@ -167,3 +167,93 @@ fn test_template_page_apply_inserts_spread_and_binds_slots() {
         panic!("Item should be text frame");
     }
 }
+
+#[test]
+fn test_template_palette_override_multiple_swatches() {
+    let mut tpl_doc = Document::new(&NewDocument {
+        pages: 1,
+        facing_pages: false,
+        width: 420.0,
+        height: 595.0,
+        ..Default::default()
+    });
+    tpl_doc.swatches.push(Swatch::color("Primary", Color::from_hex("#0072bc").unwrap()));
+    tpl_doc.swatches.push(Swatch::color("Accent", Color::from_hex("#f5ab19").unwrap()));
+
+    let tpl_bytes = designcraft_format::save(&tpl_doc).unwrap();
+
+    let mut s = Session::new();
+    s.execute("file.new", &json!({"width": 420.0, "height": 595.0})).unwrap();
+
+    let res = s.execute(
+        "template.page.apply",
+        &json!({
+            "bytes": tpl_bytes,
+            "palette": {
+                "Primary": "#082641",
+                "Accent": "#f5871f"
+            }
+        }),
+    );
+    assert!(res.is_ok());
+
+    let active = s.active().unwrap();
+    let prim = active.doc.swatches.iter().find(|sw| sw.name == "Primary").unwrap();
+    if let designcraft_color::SwatchValue::Color { color, .. } = &prim.value {
+        assert_eq!(color.to_hex(), "#082641");
+    } else {
+        panic!("Primary swatch should be color");
+    }
+
+    let acc = active.doc.swatches.iter().find(|sw| sw.name == "Accent").unwrap();
+    if let designcraft_color::SwatchValue::Color { color, .. } = &acc.value {
+        assert_eq!(color.to_hex(), "#f5871f");
+    } else {
+        panic!("Accent swatch should be color");
+    }
+}
+
+#[test]
+fn test_template_catalog_discovery() {
+    use super::catalog::{read_template_preview, scan_template_catalog};
+
+    let dir = tempfile::tempdir().unwrap();
+    let covers_dir = dir.path().join("covers");
+    let dividers_dir = dir.path().join("dividers");
+    std::fs::create_dir_all(&covers_dir).unwrap();
+    std::fs::create_dir_all(&dividers_dir).unwrap();
+
+    let doc = Document::new(&NewDocument::default());
+    let dummy_png = b"\x89PNG\r\n\x1a\nfake_preview".to_vec();
+    let bytes_with_preview = designcraft_format::save_with_preview(&doc, Some(&dummy_png)).unwrap();
+    let bytes_no_preview = designcraft_format::save(&doc).unwrap();
+
+    std::fs::write(covers_dir.join("000_wave_curves.designcraft"), &bytes_with_preview).unwrap();
+    std::fs::write(dividers_dir.join("001_minimal_divider.designcraft"), &bytes_no_preview).unwrap();
+
+    let catalog = scan_template_catalog(dir.path());
+    assert_eq!(catalog.len(), 2);
+
+    let wave = &catalog[0];
+    assert_eq!(wave.id, "000_wave_curves");
+    assert_eq!(wave.name, "Wave Curves");
+    assert_eq!(wave.category, "covers");
+    assert!(wave.has_preview);
+
+    let preview_read = read_template_preview(&wave.path);
+    assert_eq!(preview_read, Some(dummy_png));
+
+    let divider = &catalog[1];
+    assert_eq!(divider.id, "001_minimal_divider");
+    assert_eq!(divider.name, "Minimal Divider");
+    assert_eq!(divider.category, "dividers");
+    assert!(!divider.has_preview);
+
+    // Test template.catalog.list command via session
+    let mut s = Session::new();
+    let dir_str = dir.path().to_str().unwrap();
+    let list_res = s.execute("template.catalog.list", &json!({"dir": dir_str, "category": "covers"})).unwrap();
+    let list_arr = list_res.as_array().unwrap();
+    assert_eq!(list_arr.len(), 1);
+    assert_eq!(list_arr[0]["id"], "000_wave_curves");
+}
