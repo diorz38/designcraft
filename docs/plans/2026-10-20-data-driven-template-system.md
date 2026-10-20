@@ -1,6 +1,13 @@
 # Data-Driven Page Template System Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Status: COMPLETED (Tasks 1-10 Done)**
+> **Branch:** `feature/pubgen-modular-templates`
+> **Commits:**
+> - `8ac23808`: Task 1 - Slot contract parsing for template system
+> - `55c1aacd`: Tasks 2 & 3 - `template.page.apply` command with slot injection
+> - `c0cae904`: Tasks 4 & 5 - Dynamic palette re-tinting, catalog discovery, fast preview extraction
+> - `7379f3b5`: Tasks 6, 7 & 8 - 13 canonical template assets, ASSETS.md attribution, cover generation wireup
+> - `5ddaa192`: Task 9 - Modular template layout mode for interior pages (dividers, notes, tables)
 
 **Goal:** Build a data-driven, universal page template engine in DesignCraft that instantiates native `.designcraft` template files and populates tagged placeholder slots (`#slot:text:*`, `#slot:image:*`, `#slot:table:*`, `#slot:story:*`, `#swatch:*`), enabling unlimited cover styles (50+) and interior publication page styles with zero new Rust code required per style.
 
