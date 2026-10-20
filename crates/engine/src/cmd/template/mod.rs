@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use designcraft_color::{Color, Swatch, SwatchValue};
-use designcraft_doc::{Content, ItemId, SpreadRef};
+use designcraft_doc::{Content, ItemId, SpreadRef, StoryId};
 use designcraft_geom::Vec2;
 use serde_json::{Value, json};
 
@@ -18,7 +18,7 @@ use crate::cmd::datamerge::fill::copy_item;
 use crate::{Result, Session};
 
 pub use catalog::{read_template_preview, scan_template_catalog};
-pub use types::{SlotType, parse_slot_tag};
+pub use types::{SlotType, parse_slot_tag, split_slot_value};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
@@ -27,7 +27,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Apply Template Page…",
             ["Layout", "Templates"],
             None,
-            "{path?: string, bytes?: [u8], base64?: string, before?: usize, after?: usize, target_page?: usize, position?: before|after, slots?: {text?: {...}, image?: {...}, story?: {...}}, palette?: {...}} → {page, spread, items: [id], slots_bound: count}",
+            "{path?: string, bytes?: [u8], base64?: string, before?: usize, after?: usize, target_page?: usize, position?: before|after, slots?: {text?: {...}, image?: {...}, story?: {...}}, palette?: {...}} → {page, spread, items: [id], slots_bound: count} — a text slot split over several frames labels them `#slot:text:<key>`, `#slot:text:<key>#2`, … and the value is divided between them (lines, else words, else characters: `2026` → `20`, `26`)",
             has_doc,
             apply_template_page
         ),
@@ -219,44 +219,69 @@ fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
         let mut slots_bound = 0usize;
         let mut new_items = Vec::new();
 
-        // Process slots on newly created items
+        // Read every tagged item first: how many parts a text slot is divided into is the highest
+        // `#n` suffix any frame of that key carries.
+        struct Tagged {
+            id: ItemId,
+            kind: SlotType,
+            key: String,
+            part: u32,
+            story: Option<StoryId>,
+        }
+        let mut tagged = Vec::new();
         for (&_old_id, &new_id) in &maps.items {
             new_items.push(new_id);
-            let item_info = d.item(new_id).and_then(|it| {
-                let tag = parse_slot_tag(&it.label).or_else(|| parse_slot_tag(&it.name))?;
-                let story_id = match &it.content {
-                    Content::Text(tf) => Some(tf.story),
-                    _ => None,
-                };
-                Some((tag.kind, tag.key.to_string(), story_id))
-            });
+            let Some(it) = d.item(new_id) else { continue };
+            let Some(tag) = parse_slot_tag(&it.label).or_else(|| parse_slot_tag(&it.name)) else { continue };
+            let story = match &it.content {
+                Content::Text(tf) => Some(tf.story),
+                _ => None,
+            };
+            tagged.push(Tagged { id: new_id, kind: tag.kind, key: tag.key.to_string(), part: tag.part, story });
+        }
+        let mut parts = HashMap::<String, u32>::new();
+        for t in &tagged {
+            if t.kind == SlotType::Text {
+                let e = parts.entry(t.key.clone()).or_insert(1);
+                *e = (*e).max(t.part);
+            }
+        }
 
-            if let Some((kind, key, story_id)) = item_info {
-                match kind {
-                    SlotType::Text => {
-                        if let (Some(text_val), Some(sid)) = (text_slots.get(&key), story_id)
-                            && let Some(story) = d.story_mut(sid)
-                        {
-                            let len = story.len();
-                            story.replace(0..len, text_val);
-                            slots_bound = slots_bound.saturating_add(1);
-                        }
+        // Bind the slots on the new items.
+        for t in tagged {
+            match t.kind {
+                SlotType::Text => {
+                    let Some(raw) = text_slots.get(&t.key) else { continue };
+                    let count = parts.get(&t.key).copied().unwrap_or(1);
+                    // One frame takes the value whole; several take one part each (see
+                    // `split_slot_value`).
+                    let piece = if count <= 1 {
+                        Some(raw.clone())
+                    } else {
+                        split_slot_value(raw, count as usize).into_iter().nth(t.part.saturating_sub(1) as usize)
+                    };
+                    if let (Some(text_val), Some(sid)) = (piece, t.story)
+                        && let Some(story) = d.story_mut(sid)
+                    {
+                        let len = story.len();
+                        story.replace(0..len, &text_val);
+                        slots_bound = slots_bound.saturating_add(1);
                     }
-                    SlotType::Image => {
-                        if let Some(img_path) = image_slots.get(&key) {
-                            image_tasks.push((new_id, img_path.clone()));
-                            slots_bound = slots_bound.saturating_add(1);
-                        }
+                }
+                SlotType::Image => {
+                    if let Some(img_path) = image_slots.get(&t.key) {
+                        image_tasks.push((t.id, img_path.clone()));
+                        slots_bound = slots_bound.saturating_add(1);
                     }
-                    SlotType::Story => {
-                        if let Some(story_path) = story_slots.get(&key) {
-                            story_tasks.push((new_id, story_path.clone()));
-                            slots_bound = slots_bound.saturating_add(1);
-                        }
+                }
+                SlotType::Story => {
+                    if let Some(story_path) = story_slots.get(&t.key) {
+                        story_tasks.push((t.id, story_path.clone()));
+                        slots_bound = slots_bound.saturating_add(1);
                     }
-                    SlotType::Table => {
-                        // Table slot handled in subsequent task
-                    }
+                }
+                SlotType::Table => {
+                    // Table slot handled in subsequent task
                 }
             }
         }
@@ -268,7 +293,9 @@ fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
     for (fid, img_path) in inserted.image_tasks {
         if Path::new(&img_path).exists() {
             let _ = s.execute("file.place", &json!({"frame": fid.0, "path": img_path}));
-            let _ = s.execute("object.fit", &json!({"mode": "fitProportionally", "ids": [fid.0]}));
+            // Cover the frame, as the template's artwork does: a photo frame is designed to be
+            // filled edge to edge, and fitting the whole image inside would leave bands of paper.
+            let _ = s.execute("object.fit", &json!({"mode": "fillProportionally", "ids": [fid.0]}));
             let _ = s.execute("object.fit", &json!({"mode": "centerContent", "ids": [fid.0]}));
         }
     }

@@ -3,25 +3,100 @@ use designcraft_doc::{Content, Document, ParaFormat, SpreadRef, build::NewDocume
 use designcraft_geom::Rect;
 use serde_json::json;
 
-use super::types::{SlotTag, SlotType, parse_slot_tag};
+use super::types::{SlotTag, SlotType, parse_slot_tag, split_slot_value};
 use crate::Session;
 
 #[test]
 fn test_parse_slot_tag_explicit_types() {
-    assert_eq!(parse_slot_tag("#slot:text:title"), Some(SlotTag { kind: SlotType::Text, key: "title" }));
-    assert_eq!(parse_slot_tag("#slot:image:hero"), Some(SlotTag { kind: SlotType::Image, key: "hero" }));
-    assert_eq!(parse_slot_tag("#slot:graphic:logo"), Some(SlotTag { kind: SlotType::Image, key: "logo" }));
-    assert_eq!(parse_slot_tag("#slot:photo:medallion"), Some(SlotTag { kind: SlotType::Image, key: "medallion" }));
-    assert_eq!(parse_slot_tag("#slot:table:main"), Some(SlotTag { kind: SlotType::Table, key: "main" }));
-    assert_eq!(parse_slot_tag("#slot:story:notes"), Some(SlotTag { kind: SlotType::Story, key: "notes" }));
-    assert_eq!(parse_slot_tag("#slot:rtf:chapter_body"), Some(SlotTag { kind: SlotType::Story, key: "chapter_body" }));
+    assert_eq!(parse_slot_tag("#slot:text:title"), Some(SlotTag { kind: SlotType::Text, key: "title", part: 1 }));
+    assert_eq!(parse_slot_tag("#slot:image:hero"), Some(SlotTag { kind: SlotType::Image, key: "hero", part: 1 }));
+    assert_eq!(parse_slot_tag("#slot:graphic:logo"), Some(SlotTag { kind: SlotType::Image, key: "logo", part: 1 }));
+    assert_eq!(parse_slot_tag("#slot:photo:medallion"), Some(SlotTag { kind: SlotType::Image, key: "medallion", part: 1 }));
+    assert_eq!(parse_slot_tag("#slot:table:main"), Some(SlotTag { kind: SlotType::Table, key: "main", part: 1 }));
+    assert_eq!(parse_slot_tag("#slot:story:notes"), Some(SlotTag { kind: SlotType::Story, key: "notes", part: 1 }));
+    assert_eq!(parse_slot_tag("#slot:rtf:chapter_body"), Some(SlotTag { kind: SlotType::Story, key: "chapter_body", part: 1 }));
 }
 
 #[test]
 fn test_parse_slot_tag_untyped_fallback() {
     // When kind is omitted, defaults to Text
-    assert_eq!(parse_slot_tag("#slot:year"), Some(SlotTag { kind: SlotType::Text, key: "year" }));
-    assert_eq!(parse_slot_tag("  #slot:agency  "), Some(SlotTag { kind: SlotType::Text, key: "agency" }));
+    assert_eq!(parse_slot_tag("#slot:year"), Some(SlotTag { kind: SlotType::Text, key: "year", part: 1 }));
+    assert_eq!(parse_slot_tag("  #slot:agency  "), Some(SlotTag { kind: SlotType::Text, key: "agency", part: 1 }));
+}
+
+#[test]
+fn test_parse_slot_tag_part_suffix() {
+    // A headline split over frames: `title` and `title#2`.
+    assert_eq!(parse_slot_tag("#slot:text:title#2"), Some(SlotTag { kind: SlotType::Text, key: "title", part: 2 }));
+    assert_eq!(parse_slot_tag("#slot:text:year#3"), Some(SlotTag { kind: SlotType::Text, key: "year", part: 3 }));
+    assert_eq!(parse_slot_tag("#slot:title#2"), Some(SlotTag { kind: SlotType::Text, key: "title", part: 2 }));
+    // `#1` and a `#` without a number are part of the key, not a suffix.
+    assert_eq!(parse_slot_tag("#slot:text:title#1"), Some(SlotTag { kind: SlotType::Text, key: "title#1", part: 1 }));
+    assert_eq!(parse_slot_tag("#slot:text:title#x"), Some(SlotTag { kind: SlotType::Text, key: "title#x", part: 1 }));
+    assert_eq!(parse_slot_tag("#slot:text:#2"), None);
+}
+
+#[test]
+fn test_split_slot_value() {
+    // One part is the value untouched, line break and all.
+    assert_eq!(split_slot_value("KARAWANG TIMUR\nDALAM ANGKA", 1), vec!["KARAWANG TIMUR\nDALAM ANGKA"]);
+    // Written lines win.
+    assert_eq!(split_slot_value("KARAWANG TIMUR\nDALAM ANGKA", 2), vec!["KARAWANG TIMUR", "DALAM ANGKA"]);
+    // Three lines over two frames: only the grouping is even, no line is lost.
+    assert_eq!(split_slot_value("A\nB\nC", 2), vec!["A", "B\nC"]);
+    // No line break: whole words, so one line still lands on a word boundary.
+    assert_eq!(split_slot_value("KARAWANG TIMUR DALAM ANGKA", 2), vec!["KARAWANG TIMUR", "DALAM ANGKA"]);
+    // A single word is cut at character boundaries: the two-tone year.
+    assert_eq!(split_slot_value("2026", 2), vec!["20", "26"]);
+    // More parts than the value can divide into: character grouping stays even, nothing repeats.
+    assert_eq!(split_slot_value("2026", 3), vec!["2", "0", "26"]);
+}
+
+#[test]
+fn test_template_page_apply_binds_text_parts() {
+    // A headline and a year each split over two frames, as the cover styles design them.
+    let mut tpl_doc = Document::new(&NewDocument { pages: 1, facing_pages: false, width: 420.0, height: 595.0, ..Default::default() });
+    let layer = tpl_doc.default_layer();
+    let mut frame = |y: f64, label: &str| {
+        let rect = Rect::new(36.0, y, 384.0, 40.0);
+        let (id, _) = tpl_doc.add_text_frame(SpreadRef::Doc(0), rect, layer, "demo", ParaFormat::default()).unwrap();
+        if let Some(it) = tpl_doc.item_mut(id) {
+            it.label = label.to_string();
+        }
+    };
+    frame(36.0, "#slot:text:title");
+    frame(80.0, "#slot:text:title#2");
+    frame(124.0, "#slot:text:year");
+    frame(168.0, "#slot:text:year#2");
+
+    let tpl_bytes = designcraft_format::save(&tpl_doc).unwrap();
+
+    let mut s = Session::new();
+    s.execute("file.new", &json!({"pages": 1})).unwrap();
+    let res = s
+        .execute(
+            "template.page.apply",
+            &json!({
+                "bytes": tpl_bytes,
+                "slots": {"text": {"title": "KARAWANG TIMUR\nDALAM ANGKA", "year": "2026"}}
+            }),
+        )
+        .expect("apply should succeed");
+    assert_eq!(res["slots_bound"], 4, "both parts of both slots bind: {res}");
+
+    let active = s.active().unwrap();
+    let mut texts: Vec<String> = active
+        .doc
+        .spreads
+        .iter()
+        .flat_map(|sp| sp.items.iter())
+        .filter_map(|it| match &it.content {
+            Content::Text(tf) => active.doc.story(tf.story).map(|st| st.text.clone()),
+            _ => None,
+        })
+        .collect();
+    texts.sort();
+    assert_eq!(texts, vec!["20", "26", "DALAM ANGKA", "KARAWANG TIMUR"]);
 }
 
 #[test]
@@ -189,12 +264,66 @@ fn test_template_catalog_discovery() {
 fn test_canonical_assets_catalog_discovery() {
     use super::catalog::scan_template_catalog;
 
-    let path = std::path::Path::new("assets/templates");
-    if !path.exists() {
-        return;
-    }
-    let catalog = scan_template_catalog(path);
-    assert!(!catalog.is_empty(), "Canonical templates should be discovered in assets/templates");
+    let path = assets_dir().join("templates");
+    let catalog = scan_template_catalog(&path);
+    assert!(!catalog.is_empty(), "Canonical templates should be discovered in {path:?}");
     let covers: Vec<_> = catalog.iter().filter(|t| t.category == "covers").collect();
     assert_eq!(covers.len(), 10, "Should discover 10 canonical cover templates");
+}
+
+/// The repository root, from the crate directory a test runs in.
+fn assets_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("assets")
+}
+
+#[test]
+fn test_canonical_cover_templates_carry_their_slots() {
+    // What the Pubgen cover card fills: every cover must offer all of these, or a silently
+    // unfilled cover ships (the panel reports success whatever comes back).
+    const TEXT_KEYS: [&str; 7] = ["title", "level", "year", "volume", "catalogue", "code", "agency"];
+
+    let dir = assets_dir().join("templates").join("covers_original");
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cover templates at {dir:?}: {e}"))
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "designcraft"))
+        .collect();
+    files.sort();
+    assert_eq!(files.len(), 10, "ten canonical covers: {files:?}");
+
+    for path in &files {
+        let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
+        let doc = designcraft_format::load(&bytes).unwrap_or_else(|e| panic!("{path:?}: {e}"));
+        let page = doc.spreads.first().and_then(|s| s.pages.first()).unwrap_or_else(|| panic!("{path:?}: no page"));
+        assert!(
+            (page.width - 595.2755905511812).abs() < 0.5 && (page.height - 841.8897637795277).abs() < 0.5,
+            "{path:?}: an A4 artboard, got {}x{}",
+            page.width,
+            page.height
+        );
+
+        // Tags may sit on items nested in a group (008 puts its photographs there).
+        fn tags(items: &[std::sync::Arc<designcraft_doc::Item>], out: &mut Vec<String>) {
+            for it in items {
+                out.push(it.label.clone());
+                if let Content::Group { items } = &it.content {
+                    tags(items, out);
+                }
+            }
+        }
+        let mut labels = Vec::new();
+        for spread in &doc.spreads {
+            tags(&spread.items, &mut labels);
+        }
+        let keys: Vec<(SlotType, String)> = labels.iter().filter_map(|l| parse_slot_tag(l)).map(|t| (t.kind, t.key.to_string())).collect();
+
+        for key in TEXT_KEYS {
+            assert!(keys.iter().any(|(k, s)| *k == SlotType::Text && s == key), "{path:?}: no `#slot:text:{key}` frame (tags: {labels:?})");
+        }
+        assert!(
+            keys.iter().any(|(k, s)| *k == SlotType::Image && (s == "hero" || s == "landscape")),
+            "{path:?}: no `#slot:image:hero` (or landscape) frame (tags: {labels:?})"
+        );
+        assert!(keys.iter().any(|(k, s)| *k == SlotType::Image && s == "logo"), "{path:?}: no `#slot:image:logo` frame (tags: {labels:?})");
+    }
 }

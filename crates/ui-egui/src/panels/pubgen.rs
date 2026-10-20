@@ -453,32 +453,14 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
 fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     section(ui, crate::i18n::tr(&app.ui.language, "Page from CSV"), true);
 
-    // File picker row
-    ui.horizontal(|ui| {
-        if outline_button(ui, crate::i18n::tr(&app.ui.language, "Browse…"), 68.0).clicked()
-            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
-        {
-            load_card1_csv(st, &path);
-        }
-        let (file_label, color) = if st.card1_path.is_empty() {
-            (crate::i18n::tr(&app.ui.language, "No file selected").to_string(), t.text_dim)
-        } else {
-            let name =
-                std::path::Path::new(&st.card1_path).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| st.card1_path.clone());
-            (format!("{name} ({} records)", st.card1_records.len()), t.text)
-        };
-        ui.add(egui::Label::new(RichText::new(file_label).size(11.0).color(color)).truncate());
-    });
-
-    // Fallback path text input
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("Path:").size(10.5).color(t.text_dim));
-        let avail = (ui.available_width() - 4.0).max(60.0);
-        let resp = ui.add(egui::TextEdit::singleline(&mut st.card1_path).hint_text("C:\\path\\to\\data.csv").desired_width(avail));
-        if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !st.card1_path.is_empty() {
-            load_card1_csv(st, &st.card1_path.clone());
-        }
-    });
+    // Active catalog indicator (populated from Excel conversion)
+    let (file_label, color) = if st.card1_path.is_empty() {
+        (crate::i18n::tr(&app.ui.language, "No file selected").to_string(), t.text_dim)
+    } else {
+        let name = std::path::Path::new(&st.card1_path).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| st.card1_path.clone());
+        (format!("{name} ({} records)", st.card1_records.len()), t.text)
+    };
+    ui.add(egui::Label::new(RichText::new(file_label).size(11.0).color(color)).truncate());
 
     // Column detection badges
     if !st.card1_headers.is_empty() {
@@ -607,34 +589,16 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
         }
     }
 
-    // File picker row
-    ui.horizontal(|ui| {
-        if outline_button(ui, crate::i18n::tr(&app.ui.language, "Browse…"), 68.0).clicked()
-            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
-        {
-            load_card2_csv(st, &path);
-        }
-        let (file_label, color) = if st.card2_path.is_empty() {
-            (crate::i18n::tr(&app.ui.language, "No file selected").to_string(), t.text_dim)
-        } else {
-            let name =
-                std::path::Path::new(&st.card2_path).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| st.card2_path.clone());
-            let rows = st.card2_matrix.len();
-            let cols = st.card2_matrix.first().map(Vec::len).unwrap_or(0);
-            (format!("{name} ({}×{} grid)", rows, cols), t.text)
-        };
-        ui.add(egui::Label::new(RichText::new(file_label).size(11.0).color(color)).truncate());
-    });
-
-    // Fallback path text input
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("Path:").size(10.5).color(t.text_dim));
-        let avail = (ui.available_width() - 4.0).max(60.0);
-        let resp = ui.add(egui::TextEdit::singleline(&mut st.card2_path).hint_text("C:\\path\\to\\table.csv").desired_width(avail));
-        if resp.lost_focus() && !st.card2_path.is_empty() {
-            load_card2_csv(st, &st.card2_path.clone());
-        }
-    });
+    // Active table indicator (populated from Excel conversion)
+    let (file_label, color) = if st.card2_path.is_empty() {
+        (crate::i18n::tr(&app.ui.language, "No file selected").to_string(), t.text_dim)
+    } else {
+        let name = std::path::Path::new(&st.card2_path).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| st.card2_path.clone());
+        let rows = st.card2_matrix.len();
+        let cols = st.card2_matrix.first().map(Vec::len).unwrap_or(0);
+        (format!("{name} ({}×{} grid)", rows, cols), t.text)
+    };
+    ui.add(egui::Label::new(RichText::new(file_label).size(11.0).color(color)).truncate());
 
     ui.checkbox(&mut st.card2_first_row_header, "First row is header");
     ui.checkbox(&mut st.card2_col_numbers, "Add column numbers (1), (2)…");
@@ -1716,17 +1680,21 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 
     let agency_text = if st.cover_agency_text.trim().is_empty() { "BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG" } else { st.cover_agency_text.trim() };
 
+    // The hand-designed covers in `covers_original/`: A4 artboards with the artwork's
+    // transforms intact and every text/photo frame carrying a `#slot:` tag (a headline split
+    // over two frames uses `title` and `title#2`). `covers/` holds the older procedurally
+    // generated A5 artboards, which clip their own text and tag every shape as the hero photo.
     let canonical_templates = [
-        "assets/templates/covers/000_wave_curves.designcraft",
-        "assets/templates/covers/001_geometric_medallion.designcraft",
-        "assets/templates/covers/002_folded_origami.designcraft",
-        "assets/templates/covers/003_chevron_medallion.designcraft",
-        "assets/templates/covers/004_honeycomb_hexagon.designcraft",
-        "assets/templates/covers/005_corporate_headline.designcraft",
-        "assets/templates/covers/006_diagonal_arrow.designcraft",
-        "assets/templates/covers/007_modern_horizon.designcraft",
-        "assets/templates/covers/008_business_report.designcraft",
-        "assets/templates/covers/009_urban_angle.designcraft",
+        "assets/templates/covers_original/000_wave_curves.designcraft",
+        "assets/templates/covers_original/001_geometric_medallion.designcraft",
+        "assets/templates/covers_original/002_folded_origami.designcraft",
+        "assets/templates/covers_original/003_chevron_medallion.designcraft",
+        "assets/templates/covers_original/004_honeycomb_hexagon.designcraft",
+        "assets/templates/covers_original/005_corporate_headline.designcraft",
+        "assets/templates/covers_original/006_diagonal_arrow.designcraft",
+        "assets/templates/covers_original/007_modern_horizon.designcraft",
+        "assets/templates/covers_original/008_business_report.designcraft",
+        "assets/templates/covers_original/009_urban_angle.designcraft",
     ];
 
     if let Some(&tpl_path) = canonical_templates.get(st.cover_style)
@@ -4719,20 +4687,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 
             // Place RTF narrative body into a frame below the headers
             if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty()) {
-                let catalog_p = std::path::Path::new(&st.card1_path);
-                let dir = catalog_p.parent().unwrap_or(std::path::Path::new("."));
-                let candidate1 = dir.join(file_str);
-                let candidate2 = std::path::PathBuf::from(file_str);
-                let candidate3 = dir.join(format!("{file_str}.rtf"));
-                let resolved_rtf = if candidate1.exists() && candidate1.is_file() {
-                    Some(candidate1)
-                } else if candidate2.exists() && candidate2.is_file() {
-                    Some(candidate2)
-                } else if candidate3.exists() && candidate3.is_file() {
-                    Some(candidate3)
-                } else {
-                    None
-                };
+                let resolved_rtf = resolve_catalog_related_file(&st.card1_path, file_str, "rtf");
 
                 if let Some(rtf_file) = resolved_rtf {
                     let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);

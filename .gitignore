@@ -6,6 +6,7 @@
 /outputs/
 .DS_Store
 /.claude/
+/.freebuff/
 /target-*/
 /craft-fonts/
 /scratch/
