@@ -738,8 +738,7 @@ fn style_thumbnail_texture(ctx: &egui::Context, style_idx: usize) -> Option<egui
         6 => ("diagonal_arrow.png", "karawang_timur_diagonal_cover.png"),
         7 => ("modern_horizon.png", "karawang_timur_modern_horizon_cover.png"),
         8 => ("business_report.png", "karawang_timur_business_cover.png"),
-        9 => ("urban_angle.png", "karawang_timur_urban_cover.png"),
-        // Style 9 has no rendered PNG thumbnail yet; the vector fallback paints it.
+        9 => ("urban_angle.png", "urban_angle.png"),
         _ => return None,
     };
     let candidates = [
@@ -1060,57 +1059,88 @@ fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: 
             p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.55, h * 0.10), rect.min + vec2(w * 0.78, h * 0.20)), 2.0, Color32::WHITE);
         }
         _ => {
-            // Style 8 (Business Report): white base, crossed navy/orange diagonal bands with the
-            // photograph in the middle, headline upper-right, year lower-right.
+            // Style 8 (Business Report, traced from design-10): white base, orange top band and
+            // bottom-right corner, arrow-shaped photograph with its chevron sliver across a thin
+            // white gap, navy plane crossing from the left with a white year circle, headline
+            // top-left, agency block bottom-left.
             p.rect_filled(rect, 4.0, Color32::WHITE);
             let navy = Color32::from_rgb(30, 58, 95);
             let orange = Color32::from_rgb(240, 130, 35);
 
-            // Navy wedge from top-left down into the middle.
+            // Orange bottom-right corner, then the navy plane crossing from the left.
             p.add(egui::Shape::convex_polygon(
-                vec![rect.min, rect.min + vec2(w * 0.62, 0.0), rect.min + vec2(0.0, h * 0.42)],
+                vec![rect.min + vec2(w * 0.712, h * 0.877), rect.max, rect.min + vec2(w * 0.903, h)],
+                orange,
+                egui::Stroke::NONE,
+            ));
+            p.add(egui::Shape::convex_polygon(
+                vec![
+                    rect.min + vec2(0.0, h * 0.351),
+                    rect.min + vec2(w * 0.364, h * 0.497),
+                    rect.min + vec2(w * 0.364, h * 0.738),
+                    rect.min + vec2(w, h * 0.993),
+                    rect.min,
+                ],
                 navy,
                 egui::Stroke::NONE,
             ));
-            // Orange wedge in the middle-right edge.
+
+            // Orange band along the top edge.
             p.add(egui::Shape::convex_polygon(
-                vec![rect.min + vec2(w, h * 0.30), rect.min + vec2(w, h * 0.50), rect.min + vec2(w * 0.66, h * 0.40)],
-                orange,
-                egui::Stroke::NONE,
-            ));
-            // Photograph band crossing the middle.
-            p.add(egui::Shape::convex_polygon(
-                vec![rect.min + vec2(w * 0.30, h * 0.34), rect.min + vec2(w, h * 0.30), rect.min + vec2(w, h * 0.74), rect.min + vec2(0.0, h * 0.66)],
-                Color32::from_rgb(150, 172, 196),
-                egui::Stroke::NONE,
-            ));
-            // Orange bottom wedge under the photo.
-            p.add(egui::Shape::convex_polygon(
-                vec![rect.min + vec2(w * 0.30, h * 0.66), rect.min + vec2(w, h * 0.70), rect.min + vec2(w, h), rect.min + vec2(w * 0.44, h)],
+                vec![rect.min + vec2(w * 0.416, 0.0), rect.min + vec2(w, 0.0), rect.min + vec2(w, h * 0.096), rect.min + vec2(w * 0.824, h * 0.17)],
                 orange,
                 egui::Stroke::NONE,
             ));
 
-            // Top-left logo mark + company line.
-            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.030), rect.min + vec2(w * 0.13, h * 0.072)), 1.0, navy);
-            p.rect_filled(
-                egui::Rect::from_min_max(rect.min + vec2(w * 0.15, h * 0.038), rect.min + vec2(w * 0.40, h * 0.050)),
-                1.0,
-                Color32::from_gray(70),
-            );
-            p.rect_filled(
-                egui::Rect::from_min_max(rect.min + vec2(w * 0.15, h * 0.056), rect.min + vec2(w * 0.34, h * 0.066)),
-                1.0,
-                Color32::from_gray(70),
-            );
+            // Arrow-shaped photograph, the white gap across it, then the chevron sliver.
+            let arrow = [
+                rect.min + vec2(w * 0.34, h * 0.376),
+                rect.min + vec2(w, h * 0.108),
+                rect.min + vec2(w, h * 0.745),
+                rect.min + vec2(w * 0.34, h * 0.48),
+            ];
+            p.add(egui::Shape::convex_polygon(arrow.to_vec(), Color32::from_rgb(150, 172, 196), egui::Stroke::NONE));
+            p.add(egui::Shape::convex_polygon(
+                vec![
+                    rect.min + vec2(w * 0.34, h * 0.48),
+                    rect.min + vec2(w, h * 0.745),
+                    rect.min + vec2(w * 0.99, h * 0.751),
+                    rect.min + vec2(w * 0.371, h * 0.503),
+                ],
+                Color32::WHITE,
+                egui::Stroke::NONE,
+            ));
+            p.add(egui::Shape::convex_polygon(
+                vec![
+                    rect.min + vec2(w * 0.371, h * 0.503),
+                    rect.min + vec2(w * 0.99, h * 0.751),
+                    rect.min + vec2(w * 0.711, h * 0.866),
+                    rect.min + vec2(w * 0.371, h * 0.73),
+                ],
+                Color32::from_rgb(108, 124, 140),
+                egui::Stroke::NONE,
+            ));
 
-            // Top-right headline: navy line over an orange line.
-            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.50, h * 0.045), rect.min + vec2(w * 0.94, h * 0.075)), 2.0, navy);
-            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.46, h * 0.085), rect.min + vec2(w * 0.94, h * 0.115)), 2.0, orange);
+            // White year circle on the navy plane.
+            p.circle_filled(rect.min + vec2(w * 0.252, h * 0.631), w * 0.16, Color32::WHITE);
 
-            // Lower-right year & caption over the orange wedge.
-            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.56, h * 0.752), rect.min + vec2(w * 0.84, h * 0.812)), 2.0, navy);
-            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.59, h * 0.822), rect.min + vec2(w * 0.95, h * 0.840)), 1.0, Color32::WHITE);
+            // Headline stack: level (navy), title (orange), DALAM ANGKA (navy).
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.114), rect.min + vec2(w * 0.6, h * 0.15)), 2.0, navy);
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.152), rect.min + vec2(w * 0.62, h * 0.207)), 2.0, orange);
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.06, h * 0.209), rect.min + vec2(w * 0.6, h * 0.245)), 2.0, navy);
+
+            // Two-tone year and the volume line inside the circle.
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.135, h * 0.608), rect.min + vec2(w * 0.25, h * 0.663)), 2.0, navy);
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.255, h * 0.608), rect.min + vec2(w * 0.365, h * 0.663)), 2.0, orange);
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.135, h * 0.687), rect.min + vec2(w * 0.405, h * 0.717)), 2.0, navy);
+
+            // Agency block bottom-left: logo mark + white agency lines on the navy plane.
+            p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.077, h * 0.917), rect.min + vec2(w * 0.145, h * 0.965)), 1.0, orange);
+            p.rect_filled(
+                egui::Rect::from_min_max(rect.min + vec2(w * 0.158, h * 0.919), rect.min + vec2(w * 0.521, h * 0.969)),
+                1.0,
+                Color32::from_gray(235),
+            );
         }
     }
 }
@@ -1142,7 +1172,7 @@ fn show_style_thumbnail_tooltip(ui: &mut Ui, style_idx: usize, name: &str, t: &T
             5 => "Modern corporate architecture layout with top framing, headline focal block, and position-locked institutional metadata.",
             6 => "Navy diagonal banner and amber corner wedge over a half-bleed cityscape, with a forward navy wedge carrying the year and volume, and a position-locked agency footer.",
             7 => "Full-bleed cityscape under a sweeping arc with an accent wedge that follows it, a dark institutional block carrying the headline, and a position-locked agency footer.",
-            8 => "Crossed navy and orange diagonal bands framing a skyscraper photograph, headline upper-right and a two-tone year lower-right.",
+            8 => "Arrow-shaped skyline photograph with a chevron sliver across a white gap, an orange top band and corner, a navy plane carrying the white year circle, the headline top-left and the agency block bottom-left.",
             9 => "Orange corner wedge and a navy diagonal band carrying the rotated year over a right-hand cityscape, with a white negative-space headline panel and a navy bottom wedge.",
             _ => "",
         };
@@ -1624,6 +1654,58 @@ fn add_cover_text_frame(
     Ok(id)
 }
 
+/// The world bounds of one item, read back through `document.inspect`.
+fn item_bounds(app: &mut DesignApp, id: u64) -> Option<[f64; 4]> {
+    fn scan(v: &Value, id: u64) -> Option<[f64; 4]> {
+        let b = v.get("bounds").and_then(Value::as_array)?;
+        if v.get("id").and_then(Value::as_u64) != Some(id) || b.len() != 4 {
+            return None;
+        }
+        Some([b[0].as_f64()?, b[1].as_f64()?, b[2].as_f64()?, b[3].as_f64()?])
+    }
+
+    fn walk(v: &Value, id: u64) -> Option<[f64; 4]> {
+        if let Some(b) = scan(v, id) {
+            return Some(b);
+        }
+        match v {
+            Value::Array(items) => items.iter().find_map(|it| walk(it, id)),
+            Value::Object(obj) => obj.values().find_map(|it| walk(it, id)),
+            _ => None,
+        }
+    }
+
+    walk(&app.run("document.inspect", json!({})).ok()?, id)
+}
+
+/// The Pubgen sample-image folder, found from the working directory or the crate location
+/// (tests run with the crate dir as the working directory, the app from the repo root).
+fn sample_images_dir() -> Option<std::path::PathBuf> {
+    let rel = std::path::Path::new("plan").join("pubgen").join("samples").join("images");
+    if rel.is_dir() {
+        return Some(rel);
+    }
+    let from_manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join(&rel);
+    if from_manifest.is_dir() { Some(from_manifest) } else { None }
+}
+
+/// Resolve a cover image path: as given, or the same file name in the Pubgen sample images
+/// (so the default `outputs/...` paths also resolve when the app runs from another directory).
+fn resolve_cover_image(path: &str) -> String {
+    if std::path::Path::new(path).is_file() {
+        return path.to_string();
+    }
+    if let Some(name) = std::path::Path::new(path).file_name()
+        && let Some(dir) = sample_images_dir()
+    {
+        let sample = dir.join(name);
+        if sample.is_file() {
+            return sample.to_string_lossy().to_string();
+        }
+    }
+    path.to_string()
+}
+
 fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
     // 1. Automatically insert a new page before the first page (Page 1)
     app.run("layout.pages.insert", json!({"before": 0, "count": 1})).map_err(|e| format!("Failed to insert cover page: {e}"))?;
@@ -1652,9 +1734,11 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     let accent = if st.cover_color_accent.trim().is_empty() { "#f5ab19" } else { st.cover_color_accent.trim() };
     let dark = if st.cover_color_dark.trim().is_empty() { "#122647" } else { st.cover_color_dark.trim() };
 
-    let skyline = if st.cover_image_skyline.trim().is_empty() { "outputs/city_skyline.jpg" } else { st.cover_image_skyline.trim() };
-    let landscape = if st.cover_image_landscape.trim().is_empty() { "outputs/city_landscape.jpg" } else { st.cover_image_landscape.trim() };
-    let logo = if st.cover_image_logo.trim().is_empty() { "outputs/bps_logo.png" } else { st.cover_image_logo.trim() };
+    let skyline =
+        resolve_cover_image(if st.cover_image_skyline.trim().is_empty() { "outputs/city_skyline.jpg" } else { st.cover_image_skyline.trim() });
+    let landscape =
+        resolve_cover_image(if st.cover_image_landscape.trim().is_empty() { "outputs/city_landscape.jpg" } else { st.cover_image_landscape.trim() });
+    let logo = resolve_cover_image(if st.cover_image_logo.trim().is_empty() { "outputs/bps_logo.png" } else { st.cover_image_logo.trim() });
 
     let agency_text = if st.cover_agency_text.trim().is_empty() { "BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG" } else { st.cover_agency_text.trim() };
 
@@ -3157,10 +3241,12 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             "Modern Horizon"
         }
         8 => {
-            // Style 8: Business Report (from the business-report reference image)
-            // Crossed navy diagonals framing a skyscraper photograph, an orange accent wedge, the
-            // headline stack top-right (navy / orange / navy), and a two-tone year over the orange
-            // wedge bottom-right. Every text frame maps to a Publication Cover option.
+            // Style 8: Business Report — traced from design-10.designcraft (the navy/orange
+            // business-report cover). White base; an orange corner tucked behind the navy plane in
+            // the bottom-right; an orange band along the top; the metadata, the headline stack and
+            // the agency block on the navy plane; then the arrow-shaped skyline photograph with
+            // its chevron sliver across a thin white gap, and the white circle carrying the
+            // two-tone year on top. Every text frame maps to a Publication Cover option.
             let sx = pw / 595.275591;
             let sy = ph / 841.889764;
             let s_avg = (sx + sy) / 2.0;
@@ -3172,81 +3258,67 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            // 2. Navy upper-left wedge (leaves the company corner white)
+            // 2. Orange corner tucked into the bottom-right, behind the navy plane (traced item 15).
             app.run(
                 "path.create",
                 json!({"spread": 0, "closed": true, "anchors": [
-                    {"p": [0.0, y(101.0)]},
-                    {"p": [x(369.0), 0.0]},
-                    {"p": [0.0, y(387.0)]}
+                    {"p": [x(423.8), y(738.4)], "in": [x(479.5), y(770.8)], "out": [x(448.2), y(724.1)]},
+                    {"p": [pw, y(637.6)], "in": [x(563.4), y(656.3)], "out": [pw, y(702.0)]},
+                    {"p": [pw, y(838.1)], "in": [pw, y(772.9)], "out": [x(537.9), y(804.7)]}
                 ]}),
             )?;
-            let _ = app.run("object.color", json!({"color": dark, "target": "fill"}));
+            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            // 3. Navy lower-left wedge
+            // 3. Navy plane crossing in front of the photograph from the left (traced item 16).
             app.run(
                 "path.create",
                 json!({"spread": 0, "closed": true, "anchors": [
-                    {"p": [0.0, y(421.0)]},
-                    {"p": [x(179.0), y(555.0)]},
-                    {"p": [x(238.0), ph]},
+                    {"p": [0.0, y(295.6)], "in": [0.0, y(455.1)], "out": [x(71.4), y(336.0)]},
+                    {"p": [x(216.5), y(418.3)], "in": [x(144.6), y(377.5)], "out": [x(216.5), y(519.3)]},
+                    {"p": [x(216.5), y(621.2)]},
+                    {"p": [pw, y(835.8)], "in": [x(409.3), y(730.4)], "out": [pw, y(839.8)]},
+                    {"p": [pw, ph]},
                     {"p": [0.0, ph]}
                 ]}),
             )?;
             let _ = app.run("object.color", json!({"color": dark, "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            // 4. Skyscraper photograph across the middle diagonal band
-            let photo_res = app.run(
-                "path.create",
-                json!({"spread": 0, "closed": true, "anchors": [
-                    {"p": [x(179.0), y(286.0)]},
-                    {"p": [pw, y(236.0)]},
-                    {"p": [pw, y(606.0)]},
-                    {"p": [x(179.0), y(555.0)]}
-                ]}),
-            )?;
-            let photo_id = photo_res.get("id").and_then(Value::as_u64);
-            let _ = app.run("object.content", json!({"type": "graphic", "ids": [photo_id]}));
-            let _ = app.run("file.place", json!({"path": skyline, "frame": photo_id}));
-            let _ = app.run("object.fit", json!({"mode": "fillProportionally", "ids": [photo_id]}));
-            let _ = app.run("object.fit", json!({"mode": "centerContent", "ids": [photo_id]}));
-            let _ = app.run("object.stroke", json!({"swatch": "[None]", "ids": [photo_id]}));
-
-            // 5. Orange accent wedge on the right edge
+            // 4. Orange band along the top edge (traced item 17), behind the metadata corner.
             app.run(
                 "path.create",
                 json!({"spread": 0, "closed": true, "anchors": [
-                    {"p": [pw, y(236.0)]},
-                    {"p": [pw, y(421.0)]},
-                    {"p": [x(381.0), y(337.0)]}
+                    {"p": [x(247.4), 0.0], "in": [x(304.8), y(33.9)], "out": [x(344.1), 0.0]},
+                    {"p": [pw, 0.0]},
+                    {"p": [pw, y(81.1)], "in": [pw, y(55.6)], "out": [x(539.9), y(114.1)]},
+                    {"p": [x(490.3), y(143.4)]}
                 ]}),
             )?;
             let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
             let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
 
-            // 6. Orange lower-right wedge carrying the year
-            app.run(
-                "path.create",
-                json!({"spread": 0, "closed": true, "anchors": [
-                    {"p": [x(238.0), y(589.0)]},
-                    {"p": [pw, y(555.0)]},
-                    {"p": [pw, ph]},
-                    {"p": [x(238.0), ph]}
-                ]}),
-            )?;
-            let _ = app.run("object.color", json!({"color": accent, "target": "fill"}));
-            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
-
-            // 7. Top-right publication metadata (Position Lock: catalogue, then ISSN/ISBN)
-            add_cover_text_frame(app, 0, [x(320.0), y(24.0), x(560.0), y(42.0)], &cat_text, dark, "Arial", "Bold", 8.5 * s_avg, None, None, "right")?;
+            // 5. Top-right publication metadata over the orange band (Position Lock: catalogue,
+            //    then ISSN/ISBN).
             add_cover_text_frame(
                 app,
                 0,
-                [x(320.0), y(42.0), x(560.0), y(60.0)],
+                [x(320.0), y(14.0), x(580.0), y(32.0)],
+                &cat_text,
+                "#ffffff",
+                "Arial",
+                "Bold",
+                8.5 * s_avg,
+                None,
+                None,
+                "right",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [x(320.0), y(32.0), x(580.0), y(50.0)],
                 &code_text,
-                dark,
+                "#ffffff",
                 "Arial",
                 "Bold",
                 8.5 * s_avg,
@@ -3255,78 +3327,53 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 "right",
             )?;
 
-            // 8. Top-right headline stack: level (navy), title (orange), DALAM ANGKA (navy) — the
-            //    navy / orange / navy rhythm of the reference.
+            // 6. Headline stack top-left: level (navy), title (orange, one line), DALAM ANGKA
+            //    (navy) — the navy / orange / navy rhythm of the reference.
             add_cover_text_frame(
                 app,
                 0,
-                [x(300.0), y(78.0), x(560.0), y(112.0)],
+                [x(36.0), y(96.0), x(360.0), y(126.0)],
                 &level_text.to_uppercase(),
                 dark,
                 "Arial Black",
                 "Regular",
-                24.0 * s_avg,
+                20.0 * s_avg,
                 None,
-                Some(30.0),
-                "right",
+                Some(26.0),
+                "left",
             )?;
             add_cover_text_frame(
                 app,
                 0,
-                [x(280.0), y(114.0), x(566.0), y(186.0)],
+                [x(36.0), y(128.0), x(370.0), y(174.0)],
                 title_text,
                 accent,
                 "Arial Black",
                 "Regular",
-                34.0 * s_avg,
-                Some(38.0 * s_avg),
+                26.0 * s_avg,
+                Some(30.0 * s_avg),
                 Some(10.0),
-                "right",
+                "left",
             )?;
             add_cover_text_frame(
                 app,
                 0,
-                [x(300.0), y(190.0), x(560.0), y(224.0)],
+                [x(36.0), y(176.0), x(360.0), y(206.0)],
                 "DALAM ANGKA",
                 dark,
                 "Arial Black",
                 "Regular",
-                24.0 * s_avg,
+                20.0 * s_avg,
                 None,
-                Some(25.0),
-                "right",
+                Some(26.0),
+                "left",
             )?;
 
-            // 9. Year over the orange wedge, volume directly beneath (Position Lock)
-            add_cover_text_frame(
-                app,
-                0,
-                [x(330.0), y(690.0), x(560.0), y(775.0)],
-                year_text,
-                "#ffffff",
-                "Arial Black",
-                "Regular",
-                58.0 * s_avg,
-                None,
-                Some(15.0),
-                "center",
+            // 7. Agency logo & name on the navy plane, bottom-left (Position Lock).
+            app.run(
+                "frame.create",
+                json!({"spread": 0, "rect": [x(46.0), y(772.0), x(86.0), y(812.0)], "content": "graphic", "shape": "rectangle"}),
             )?;
-            add_cover_text_frame(
-                app,
-                0,
-                [x(330.0), y(778.0), x(560.0), y(802.0)],
-                volume_text,
-                "#ffffff",
-                "Arial",
-                "Bold",
-                11.0 * s_avg,
-                None,
-                Some(40.0),
-                "center",
-            )?;
-
-            // 10. Top-left company logo & agency text (Position Lock)
-            app.run("frame.create", json!({"spread": 0, "rect": [x(40.0), y(28.0), x(80.0), y(68.0)], "content": "graphic", "shape": "rectangle"}))?;
             let _ = app.run("file.place", json!({"path": logo}));
             let _ = app.run("object.fit", json!({"mode": "fitProportionally"}));
             let _ = app.run("object.fit", json!({"mode": "centerContent"}));
@@ -3335,14 +3382,120 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             add_cover_text_frame(
                 app,
                 0,
-                [x(88.0), y(30.0), x(300.0), y(72.0)],
+                [x(94.0), y(774.0), x(310.0), y(816.0)],
                 agency_text,
-                dark,
+                "#ffffff",
                 "Arial",
                 "Bold Italic",
                 10.0 * s_avg,
                 Some(13.5 * s_avg),
                 None,
+                "left",
+            )?;
+
+            // 8. The photograph fills both traced subpaths of design-10's photo frame: the arrow
+            //    itself, and — across a thin white gap — the chevron sliver below it. One placed
+            //    image goes into both frames at the same world position, so the buildings continue
+            //    across the gap.
+            let arrow_id = app
+                .run(
+                    "path.create",
+                    json!({"spread": 0, "closed": true, "anchors": [
+                        {"p": [x(202.3), y(316.7)], "in": [x(202.3), y(345.5)], "out": [x(324.4), y(246.6)]},
+                        {"p": [x(594.8), y(91.2)], "in": [x(469.1), y(163.4)], "out": [x(594.8), y(189.2)]},
+                        {"p": [x(594.8), y(627.1)], "in": [x(594.8), y(491.9)], "out": [x(483.5), y(564.0)]},
+                        {"p": [x(202.3), y(404.3)], "in": [x(317.5), y(469.7)], "out": [x(202.3), y(375.1)]}
+                    ]}),
+                )?
+                .get("id")
+                .and_then(Value::as_u64);
+            let chev_id = app
+                .run(
+                    "path.create",
+                    json!({"spread": 0, "closed": true, "anchors": [
+                        {"p": [x(220.8), y(423.2)], "in": [x(220.8), y(487.8)], "out": [x(343.5), y(492.7)]},
+                        {"p": [x(590.0), y(632.4)], "in": [x(477.8), y(568.9)], "out": [x(535.4), y(664.1)]},
+                        {"p": [x(423.3), y(729.1)], "in": [x(479.3), y(696.6)], "out": [x(355.0), y(690.4)]},
+                        {"p": [x(220.8), y(614.3)], "in": [x(286.2), y(651.3)], "out": [x(220.8), y(553.3)]}
+                    ]}),
+                )?
+                .get("id")
+                .and_then(Value::as_u64);
+            if let (Some(arrow_id), Some(chev_id)) = (arrow_id, chev_id) {
+                if let Some(img_id) = app.run("file.place", json!({"path": skyline, "x": x(130.6), "y": y(91.2)}))?.get("id").and_then(Value::as_u64)
+                {
+                    // Stretch the placed image over the cover box both shapes sit on, then paste
+                    // copies into each frame — the world position carries over, so the two read
+                    // as one photograph.
+                    if let Some(from) = item_bounds(app, img_id) {
+                        let _ = app.run(
+                            "transform.resize",
+                            json!({"from": from, "to": [x(130.6), y(91.2), x(809.7), y(742.4)], "content": true, "ids": [img_id]}),
+                        );
+                    }
+                    let _ = app.run("edit.copy", json!({}));
+                    let _ = app.run("edit.pasteInto", json!({"id": arrow_id}));
+                    let _ = app.run("edit.pasteInto", json!({"id": chev_id}));
+                    let _ = app.run("edit.clear", json!({"ids": [img_id]}));
+                }
+                let _ = app.run("object.dropShadow", json!({"on": true, "distance": 7.0, "size": 5.0, "opacity": 0.3, "ids": [arrow_id, chev_id]}));
+                let _ = app.run("object.stroke", json!({"swatch": "[None]", "ids": [arrow_id, chev_id]}));
+            }
+
+            // 9. White circle on the navy plane carrying the two-tone year — the medallion of the
+            //    reference.
+            app.run(
+                "frame.create",
+                json!({"spread": 0, "rect": [x(55.0), y(436.0), x(245.0), y(626.0)], "content": "unassigned", "shape": "ellipse"}),
+            )?;
+            let _ = app.run("object.color", json!({"color": "#ffffff", "target": "fill"}));
+            let _ = app.run("object.dropShadow", json!({"on": true, "distance": 6.0, "size": 12.0, "opacity": 0.25}));
+            let _ = app.run("object.stroke", json!({"swatch": "[None]"}));
+
+            let year_chars: Vec<char> = year_text.chars().collect();
+            let (year_first, year_second) = if year_chars.len() >= 2 {
+                let mid = year_chars.len().div_ceil(2);
+                (year_chars[..mid].iter().collect::<String>(), year_chars[mid..].iter().collect::<String>())
+            } else {
+                (year_text.to_string(), String::new())
+            };
+            add_cover_text_frame(
+                app,
+                0,
+                [x(78.0), y(512.0), x(160.0), y(558.0)],
+                &year_first,
+                dark,
+                "Arial Black",
+                "Regular",
+                54.0 * s_avg,
+                None,
+                Some(10.0),
+                "left",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [x(140.0), y(512.0), x(222.0), y(558.0)],
+                &year_second,
+                accent,
+                "Arial Black",
+                "Regular",
+                54.0 * s_avg,
+                None,
+                Some(10.0),
+                "left",
+            )?;
+            add_cover_text_frame(
+                app,
+                0,
+                [x(78.0), y(578.0), x(242.0), y(604.0)],
+                volume_text,
+                dark,
+                "Arial",
+                "Bold",
+                10.0 * s_avg,
+                None,
+                Some(30.0),
                 "left",
             )?;
 
@@ -4325,23 +4478,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 
             // 2. Place image from 'file' column inside margins below the title
             if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty()) {
-                let catalog_p = std::path::Path::new(&st.card1_path);
-                let dir = catalog_p.parent().unwrap_or(std::path::Path::new("."));
-                let candidate1 = dir.join(file_str);
-                let candidate2 = std::path::PathBuf::from(file_str);
-                let candidate3 = dir.join(format!("{file_str}.png"));
-                let candidate4 = dir.join(format!("{file_str}.jpg"));
-                let resolved_img = if candidate1.exists() && candidate1.is_file() {
-                    Some(candidate1)
-                } else if candidate2.exists() && candidate2.is_file() {
-                    Some(candidate2)
-                } else if candidate3.exists() && candidate3.is_file() {
-                    Some(candidate3)
-                } else if candidate4.exists() && candidate4.is_file() {
-                    Some(candidate4)
-                } else {
-                    None
-                };
+                let resolved_img = resolve_catalog_related_file(&st.card1_path, file_str, "png")
+                    .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str, "jpg"));
 
                 if let Some(img_file) = resolved_img {
                     let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
@@ -4369,6 +4507,40 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         let _ = app.run("object.fit", json!({"mode": "fitFrameToContent", "ids": [fid]}));
                         let _ = app.run("selection.set", json!({"ids": [fid]}));
                         inserted_images_count = inserted_images_count.saturating_add(1);
+                    }
+                }
+            }
+        } else if type_val.eq_ignore_ascii_case("Note") {
+            // Publication note (A02): centred, 100% transparent Arial title, then the RTF note.
+            let note_title = if title_val.is_empty() { "Keterangan Publikasi" } else { title_val };
+            let title_rect = [margin.x0, margin.y0 + 20.0, margin.x1, margin.y0 + 56.0];
+            frame_with_centered_arial(app, spread_idx, title_rect, note_title);
+
+            if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
+                && let Some(rtf_file) = resolve_catalog_related_file(&st.card1_path, file_str, "rtf")
+            {
+                let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
+                crate::canvas::go_to_page(app, cur_page_idx);
+                let rtf_rect = [margin.x0, margin.y0 + 64.0, margin.x1, margin.y1];
+                let created_fid = app
+                    .run(
+                        "frame.create",
+                        json!({
+                            "spread": spread_idx,
+                            "rect": rtf_rect,
+                            "content": "text",
+                            "caret": false
+                        }),
+                    )
+                    .ok()
+                    .and_then(|res| res.get("id").and_then(Value::as_u64));
+
+                if let Some(fid) = created_fid {
+                    let _ = app.run("selection.set", json!({"ids": [fid]}));
+                    let mut st_copy = st.clone();
+                    let rtf_path_str = rtf_file.to_string_lossy().to_string();
+                    if execute_page_from_rtf(app, &mut st_copy, &rtf_path_str).is_ok() {
+                        inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
                     }
                 }
             }
@@ -4748,6 +4920,33 @@ fn frame_with_centered_bold_title(app: &mut DesignApp, spread_idx: usize, rect: 
     let _ = app.run("selection.set", json!({"ids": [fid]}));
     let _ = app.run("type.alignCenter", json!({}));
     Some(story)
+}
+
+/// Centred Arial title in a 100 % transparent text box (no fill, no stroke).
+fn frame_with_centered_arial(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], text: &str) -> Option<u64> {
+    let res = app.run("frame.create", json!({"spread": spread_idx, "rect": rect, "content": "text", "text": text, "caret": false})).ok()?;
+    let fid = res.get("id").and_then(Value::as_u64)?;
+    let story = res.get("story").and_then(Value::as_u64)?;
+    let end = text.chars().count().max(1) as u64;
+    let _ = app.run("text.select", json!({"story": story, "anchor": 0, "focus": end}));
+    let _ = app.run("type.char", json!({"fontFamily": "Arial", "size": 11.0}));
+    let _ = app.run("selection.set", json!({"ids": [fid]}));
+    let _ = app.run("type.alignCenter", json!({}));
+    let _ = app.run("object.fill", json!({"ids": [fid], "swatch": "[None]"}));
+    let _ = app.run("object.stroke", json!({"ids": [fid], "swatch": "[None]"}));
+    Some(fid)
+}
+
+/// Resolve a catalog `file` value beside the catalog CSV: as written, relative to the CSV's
+/// folder, the same name with `extension` appended, or just the file name beside the catalog
+/// (so paths copied from another machine still resolve).
+fn resolve_catalog_related_file(catalog_path: &str, file_str: &str, extension: &str) -> Option<std::path::PathBuf> {
+    let dir = std::path::Path::new(catalog_path).parent().unwrap_or_else(|| std::path::Path::new("."));
+    let mut candidates = vec![dir.join(file_str), std::path::PathBuf::from(file_str), dir.join(format!("{file_str}.{extension}"))];
+    if let Some(name) = std::path::Path::new(file_str).file_name() {
+        candidates.push(dir.join(name));
+    }
+    candidates.into_iter().find(|p| p.is_file())
 }
 
 /// Split chart title like "Grafik 02.01 Panjang Jalan..." into ("Grafik 02.01", "Panjang Jalan...")
@@ -8495,7 +8694,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         // Card 1 must have catalog loaded
         assert!(st.card1_path.ends_with("BAB_02_2025_catalog.csv"));
-        assert_eq!(st.card1_records.len(), 5, "5 sheets in BAB_02_2025.xlsx: R02, C02_01, 02_01, 02_02, 02_03");
+        assert_eq!(st.card1_records.len(), 6, "6 sheets in BAB_02_2025.xlsx: A02, R02, C02_01, 02_01, 02_02, 02_03");
+        assert_eq!(st.card1_records.first().and_then(|r| r.first()), Some(&"Note".to_string()), "the A02 sheet becomes the first catalog row (Note)");
         assert!(st.card1_headers.contains(&"file".to_string()));
 
         // Card 2 must have first table loaded and sheet table list populated
@@ -8527,6 +8727,14 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         std::fs::create_dir_all(&dir).unwrap();
         let workbook = dir.join("BAB_02_2025.xlsx");
         std::fs::copy(&sample_xlsx, &workbook).unwrap();
+        // The workbook's `file` cells carry paths from the machine that authored it; copy the
+        // sidecar assets beside it so the file-name fallback resolves them here too.
+        for sidecar in ["C02_01.png", "ulasan_bab_1.rtf", "A02.rtf"] {
+            let src = sample_xlsx.parent().unwrap().join(sidecar);
+            if src.is_file() {
+                std::fs::copy(&src, dir.join(sidecar)).unwrap();
+            }
+        }
 
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
@@ -8539,12 +8747,13 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let msg = res.unwrap();
         assert!(msg.contains("auto-generated pages"), "Status should confirm auto-generated pages: {msg}");
         assert!(msg.contains("3 tables auto-inserted"), "Status should confirm 3 tables auto-inserted: {msg}");
-        assert!(msg.contains("1 RTF chapter(s) placed"), "Status should confirm 1 RTF placed: {msg}");
+        assert!(msg.contains("2 RTF chapter(s) placed"), "Status should confirm 2 RTFs placed (R02 ulasan + A02 note): {msg}");
         assert!(msg.contains("1 chart image(s) placed"), "Status should confirm 1 chart placed: {msg}");
 
-        // Initial doc has 1 page + 2 RTF chapter pages + 1 Grafik page + 3 table pages = 7 pages
+        // Initial doc has 1 page + 7 generated pages (6 records; the R02 ulasan RTF adds one
+        // overflow page) = 8 pages
         let page_count = app.session.active().unwrap().doc.page_count();
-        assert_eq!(page_count, 7, "Expected 7 pages after generating 5 sheet records (RTF flows to 2 pages)");
+        assert_eq!(page_count, 8, "Expected 8 pages after generating 6 sheet records");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -9126,6 +9335,45 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     }
 
     #[test]
+    fn test_execute_generate_pages_note_sheet_title_and_rtf() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("A02.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Hello DesignCraft Note!}"#).unwrap();
+        let catalog_path = temp_dir.path().join("A02_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nNote,02,Keterangan Publikasi,\"{escaped}\"\n")).unwrap();
+
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "generate pages should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert!(active.doc.page_count() >= 2, "the note gets its own page");
+
+        // The title is a centred Arial text box with a 100 % transparent background.
+        let title_story =
+            active.doc.stories.values().find(|s| s.text.trim() == "Keterangan Publikasi").unwrap_or_else(|| panic!("note title story should exist"));
+        assert_eq!(title_story.paras[0].para.align, Some(designcraft_doc::Align::Center));
+        assert!(title_story.chars.iter().all(|run| run.format.over.font_family.as_deref() == Some("Arial")), "title runs should all be Arial");
+        let title_item = active
+            .doc
+            .spreads
+            .iter()
+            .flat_map(|sp| &sp.items)
+            .find(|it| it.text_frame().is_some_and(|tf| tf.story == title_story.id))
+            .unwrap_or_else(|| panic!("title frame should exist"));
+        assert_eq!(title_item.fill.swatch, "[None]", "title box has no fill");
+        assert!(title_item.stroke.is_none(), "title box has no stroke");
+
+        // The RTF note is placed on the same page below the title.
+        assert!(active.doc.stories.values().any(|s| s.text.contains("Hello DesignCraft Note!")), "RTF text should be placed on the generated page");
+    }
+
+    #[test]
     fn test_execute_page_from_rtf_error_handling() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
@@ -9365,6 +9613,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             "ISBN",
             "BADAN PUSAT STATISTIK",
             "DALAM ANGKA",
+            "20",
+            "26",
         ];
         for story in active.doc.stories.values() {
             for banned in ["COMPANY NAME", "YOUR HEADLINE HERE", "LOREM IPSUM", "BUSINESS REPORT 2050"] {
@@ -9373,6 +9623,15 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             let upper = story.text.to_uppercase();
             assert!(allowed.iter().any(|a| upper.contains(a)), "text must come from the cover options: {}", story.text);
         }
+
+        // The headline title stays on one full-width line (it used to hyphenate across two).
+        let title = active.doc.stories.values().find(|s| s.text.contains("KARAWANG")).expect("the title story");
+        assert!(!title.text.contains('\n'), "the headline title stays on one line: {}", title.text);
+
+        // Every object on the cover is upright: the wedges carry the angles, not the type.
+        let turned =
+            active.doc.spreads.iter().flat_map(|s| s.items.iter()).any(|it| designcraft_geom::decompose::decompose(it.xf).rotation.abs() > 1.0);
+        assert!(!turned, "every object on the Business Report cover is upright");
     }
 
     #[test]

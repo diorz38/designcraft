@@ -227,6 +227,55 @@ pub fn is_chart_sheet(sheet_name: &str) -> bool {
     }
 }
 
+/// Check if a sheet is the publication-note sheet: exactly `A02` (case-insensitive).
+pub fn is_note_sheet(sheet_name: &str) -> bool {
+    sheet_name.trim().eq_ignore_ascii_case("A02")
+}
+
+/// Parse the `A02` note sheet with 2 rows:
+/// Row 1: title;"Keterangan Publikasi" (or col 0: title, col 1: text)
+/// Row 2: file;[path of RTF file] (or col 0: file, col 1: path)
+///
+/// Catalog entry: type `Note`, number from the sheet name (A02 -> 02), title, RTF path.
+pub fn parse_note_sheet(sheet: &ExcelSheetData) -> Option<(String, String, String, String)> {
+    let row1 = sheet.grid.first()?;
+    let row2 = sheet.grid.get(1);
+
+    let extract_field = |row: &[String], expected_key: &str| -> String {
+        for cell in row {
+            let t = cell.trim();
+            for sep in [';', ':', '='] {
+                if let Some((k, v)) = t.split_once(sep)
+                    && k.trim().eq_ignore_ascii_case(expected_key)
+                {
+                    return v.trim().trim_matches('"').trim().to_string();
+                }
+            }
+        }
+        let non_empty: Vec<&str> = row.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        if non_empty.len() >= 2 && non_empty[0].eq_ignore_ascii_case(expected_key) {
+            return non_empty[1].trim_matches('"').trim().to_string();
+        }
+        for &c in &non_empty {
+            if !c.eq_ignore_ascii_case(expected_key) {
+                return c.trim_matches('"').trim().to_string();
+            }
+        }
+        String::new()
+    };
+
+    let title_val = extract_field(row1, "title");
+    let file_val = row2.map(|r| extract_field(r, "file")).unwrap_or_default();
+    let digits: String = sheet.name.trim().chars().skip(1).collect();
+    let num_val = match digits.len() {
+        0 => "01".to_string(),
+        1 => format!("0{digits}"),
+        _ => digits,
+    };
+
+    Some(("Note".to_string(), num_val, title_val, file_val))
+}
+
 /// Extract the first dotted number from a string, e.g. "Grafik 02.01 Panjang..." -> "02.01".
 pub fn extract_dotted_number(text: &str) -> Option<String> {
     for word in text.split_whitespace() {
@@ -484,6 +533,21 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
                 escape_csv_field(&f_val)
             ));
             // CXX sheets are graphic chart figures, not tabular data
+            continue;
+        }
+
+        // Check if sheet is the A02 publication-note sheet (title + RTF path)
+        if is_note_sheet(sheet_name)
+            && let Some((t_val, n_val, title_val, f_val)) = parse_note_sheet(sheet)
+        {
+            catalog_rows.push(format!(
+                "{},{},{},{}",
+                escape_csv_field(&t_val),
+                escape_csv_field(&n_val),
+                escape_csv_field(&title_val),
+                escape_csv_field(&f_val)
+            ));
+            // The A02 sheet carries a narrative RTF note, not tabular data
             continue;
         }
 
@@ -968,6 +1032,40 @@ mod tests {
     }
 
     #[test]
+    fn test_is_note_sheet_and_parse_a02() {
+        assert!(is_note_sheet("A02"));
+        assert!(is_note_sheet("a02"));
+        assert!(is_note_sheet(" A02 "));
+        // Only the exact `A02` sheet is a note sheet; other A## names are ordinary sheets.
+        assert!(!is_note_sheet("A03"));
+        assert!(!is_note_sheet("A2"));
+        assert!(!is_note_sheet("A3"));
+        assert!(!is_note_sheet("A"));
+        assert!(!is_note_sheet("AB02"));
+        assert!(!is_note_sheet("R02"));
+        assert!(!is_note_sheet("02_01"));
+
+        // Row 1: title | Keterangan Publikasi, Row 2: file | RTF path
+        let sheet = ExcelSheetData {
+            name: "A02".into(),
+            grid: vec![vec!["title".into(), "Keterangan Publikasi".into()], vec!["file".into(), "plan/pubgen/samples/notes/A02.rtf".into()]],
+            merges: Vec::new(),
+        };
+        let (t, n, title, file) = parse_note_sheet(&sheet).unwrap();
+        assert_eq!(t, "Note");
+        assert_eq!(n, "02");
+        assert_eq!(title, "Keterangan Publikasi");
+        assert_eq!(file, "plan/pubgen/samples/notes/A02.rtf");
+
+        // Semicolon syntax inside one cell still parses; number comes from the sheet name.
+        let sheet =
+            ExcelSheetData { name: "A02".into(), grid: vec![vec!["title;Catatan Penting".into()], vec!["file;A02.rtf".into()]], merges: Vec::new() };
+        let (t, n, title, file) = parse_note_sheet(&sheet).unwrap();
+        assert_eq!((t.as_str(), n.as_str()), ("Note", "02"));
+        assert_eq!((title.as_str(), file.as_str()), ("Catatan Penting", "A02.rtf"));
+    }
+
+    #[test]
     fn test_build_merged_table_headers_with_double_dash() {
         // Reconstruct user's exact spreadsheet from attached image:
         // Row 1: Tingkat Pendidikan | Jenis Kelamin (merged B2:C2) | Jumlah
@@ -1021,18 +1119,25 @@ mod tests {
             merges: Vec::new(),
         };
 
-        let res = convert_excel_to_csv_data(&[sheet1, sheet2], "KBDA_2026");
+        let sheet3 = ExcelSheetData {
+            name: "A02".into(),
+            grid: vec![vec!["title".into(), "Keterangan Publikasi".into()], vec!["file".into(), "notes/A02.rtf".into()]],
+            merges: Vec::new(),
+        };
+
+        let res = convert_excel_to_csv_data(&[sheet1, sheet2, sheet3], "KBDA_2026");
         assert_eq!(res.catalog_csv_name, "KBDA_2026_catalog.csv");
 
         // Verify catalog content (1 catalog row per sheet)
         let cat_lines: Vec<&str> = res.catalog_csv_content.lines().collect();
-        assert_eq!(cat_lines.len(), 3); // Header + 2 sheets
+        assert_eq!(cat_lines.len(), 4); // Header + 3 sheets
         assert_eq!(cat_lines[0], "type,number,title,file");
         assert_eq!(
             cat_lines[1],
             "Tabel,02.03,\"Jumlah Pegawai Negeri Sipil Pemerintah Kecamatan Karawang Timur Menurut Tingkat Pendidikan dan Jenis Kelamin, 2025\",02_03"
         );
         assert_eq!(cat_lines[2], "Tabel,02.04,\"Nama dan Luas Desa Per Kecamatan di Kabupaten Karawang, 2026\",02_04");
+        assert_eq!(cat_lines[3], "Note,02,Keterangan Publikasi,notes/A02.rtf");
 
         // Verify 2 table CSVs generated
         assert_eq!(res.table_csvs.len(), 2);
@@ -1192,10 +1297,10 @@ mod tests {
         let sheets = parse_xlsx_sheets(path.to_str().unwrap());
         assert!(sheets.is_ok(), "Should parse sheets from BAB_02_2025.xlsx: {:?}", sheets);
         let s_list = sheets.unwrap();
-        assert_eq!(s_list.len(), 5, "BAB_02_2025.xlsx has 5 sheets: R02, C02_01, 02_01, 02_02, 02_03");
+        assert_eq!(s_list.len(), 6, "BAB_02_2025.xlsx has 6 sheets: A02, R02, C02_01, 02_01, 02_02, 02_03");
 
         let converted = convert_excel_to_csv_data(&s_list, "BAB_02_2025");
-        // R02 (Ulasan) and C02_01 (Grafik) are not tables, so only the 3 tabular sheets produce table CSVs
+        // A02 (Note), R02 (Ulasan) and C02_01 (Grafik) are not tables, so only the 3 tabular sheets produce table CSVs
         assert_eq!(converted.table_csvs.len(), 3);
         assert_eq!(converted.table_csvs[0].0, "02_01.csv");
         assert_eq!(converted.table_csvs[1].0, "02_02.csv");
@@ -1205,7 +1310,8 @@ mod tests {
             assert!(!tbl_csv.is_empty());
         }
 
-        // Verify catalog content includes both Ulasan and Grafik
+        // Verify catalog content includes the Note, Ulasan and Grafik rows
+        assert!(converted.catalog_csv_content.contains("Note,02,Keterangan Publikasi,"));
         assert!(converted.catalog_csv_content.contains("Ulasan,02,Bab 02  Pemerintahan,"));
         assert!(converted.catalog_csv_content.contains("Grafik,02.01,Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026,"));
         assert!(converted.catalog_csv_content.contains("Tabel,02.01,"));

@@ -180,12 +180,13 @@ Pubgen menyediakan 10 pilihan desain sampul siap pakai:
 #### 9. Business Report (`📊 Report`)
 - **Karakter Visual**: Tegas, korporat, dan kontras tinggi bergaya bisnis-ke-bisnis.
 - **Elemen Desain**:
-  - Kanvas putih bersih yang dilintasi **baji diagonal navy** (baji lebar kiri-atas dan baji kiri-bawah) yang membingkai pita foto di bagian tengah.
-  - **Foto gedung pencakar langit** pada pita diagonal tengah, dengan **baji aksen jingga** tebal di tepi kanan dan **baji jingga kanan-bawah** memenuhi bagian dasar.
-  - Tumpukan judul kanan-atas dengan **Arial Black**: jenjang wilayah (navy), judul publikasi (jingga), dan `DALAM ANGKA` (navy) — mengikuti irama navy/jingga/navy pada gambar referensi.
-  - **Position Lock**: metadata publikasi (Baris 1: `Katalog BPS: <nomor>`, Baris 2: `ISSN/ISBN <nomor>` dengan font **Arial Bold**) berada di kanan atas.
-  - Angka tahun dwi-warna raksasa dengan **Arial Black** di atas baji jingga, dengan baris **Volume** tepat di bawahnya.
-  - **Position Lock**: logo instansi resmi di kiri atas bersanding dengan teks nama instansi resmi (**Arial Bold Italic**).
+  - Kanvas putih bersih; **foto pencakar langit berbentuk panah** (ditelusuri dari `design-10.designcraft`) dengan bayangan lembut — ditambah **serpihan chevron**-nya, dipisahkan celah putih tipis namun membawa gambar yang sama, sehingga bangunan berlanjut melintasi celah.
+  - **Pita jingga di sepanjang tepi atas** dan **sudut jingga** di kanan bawah membingkai komposisi.
+  - **Bidang navy memotong di kiri bawah, terselip di belakang foto**, dengan **medali lingkaran putih** berisi tahun dwi-warna (setengah pertama gelap, setengah kedua aksen) dalam **Arial Black** raksasa dan baris **Volume** tepat di bawahnya.
+  - Tumpukan judul kiri-atas dengan **Arial Black**: jenjang wilayah (navy), judul publikasi (jingga) dalam satu baris penuh, dan `DALAM ANGKA` (navy).
+  - **Position Lock**: metadata publikasi (Baris 1: `Katalog BPS: <nomor>`, Baris 2: `ISSN/ISBN <nomor>` dengan font **Arial Bold**, putih) berada di kanan atas, di atas pita jingga.
+  - Angka tahun dwi-warna dalam **Arial Black** di dalam medali, dengan baris **Volume** tepat di bawahnya.
+  - **Position Lock**: logo instansi resmi bersanding dengan teks nama instansi resmi (**Arial Bold Italic**, putih) pada bidang navy di kiri bawah.
   - Palet bawaannya (**Report Navy & Orange**, `#082641` + `#f5871f`); memilih gaya ini otomatis memilih tema tersebut, dan tema lain tetap dapat dipakai.
 - **Paling Cocok Untuk**: Laporan bisnis, tinjauan tahunan korporat, publikasi investasi dan industri, serta profil kota.
 
@@ -295,6 +296,13 @@ Tentukan bagaimana bagian kepala (*header*) halaman disusun:
 Jika berkas katalog CSV Anda memiliki kolom ke-4 bernama `file` yang berisi nama berkas tabel (contoh: `01_01.csv`, `01_02.csv`), centang opsi:
 `[x] Auto-insert table from 'file' col`
 Maka Pubgen akan **sekaligus membuat halamannya DAN memasang tabel data statistik yang terformat rapi persis di bawah judul halaman** dalam satu proses!
+
+### Halaman Catatan Publikasi (`Note`)
+Baris katalog ber-type `Note` memakai tata letak khusus, bukan preset: kotak judul Arial di tengah yang sepenuhnya
+transparan (`Keterangan Publikasi`, atau judul baris tersebut bila ada) dan berkas RTF dari kolom `file` ditempatkan
+di bawahnya. Konverter Excel → CSV Data membuat baris ini secara otomatis untuk sheet bernama tepat `A02`
+(baris 1: `title;Keterangan Publikasi`, baris 2: `file;notes/A02.rtf`), sehingga sheet tersebut tidak menghasilkan
+CSV tabel — hanya baris katalognya. Nama sheet `A##` lainnya tetap diperlakukan sebagai sheet biasa.
 
 ---
 

@@ -214,12 +214,12 @@ Pubgen provides 10 corporate design styles:
 #### 9. Business Report (`📊 Report`)
 - **Visual Personality**: Bold, corporate, high-contrast business-to-business.
 - **Design Elements**:
-  - Crisp white canvas crossed by **navy diagonal wedges** (a broad upper-left wedge and a lower-left wedge) that frame a central photograph band.
-  - A **skyscraper photograph** in the middle diagonal band, with a bold **orange accent wedge** on the right edge and an **orange lower-right wedge** filling the base.
-  - Top-right headline stack in **Arial Black**: the region level (navy), the publication title (orange), and `DALAM ANGKA` (navy) — echoing the navy/orange/navy rhythm of the reference image.
-  - **Position Lock**: publication metadata (Line #1: `Katalog BPS: <number>`, Line #2: `ISSN/ISBN <number>` in crisp **Arial Bold**) sits top-right.
-  - A two-tone year in giant **Arial Black** over the orange wedge, with the **Volume** line directly beneath it.
-  - **Position Lock**: top-left official agency logo paired with multi-line institutional branding (**Arial Bold Italic**).
+  - Crisp white canvas; an **arrow-shaped skyscraper photograph** (traced from `design-10.designcraft`) with a soft drop shadow — plus its **chevron sliver**, separated by a thin white gap yet carrying the same image, so the buildings continue across the gap.
+  - An **orange band along the top edge** and an **orange corner** in the bottom-right, framing the composition.
+  - A **navy plane crossing the lower left, tucked behind the photograph**, with a **white circle medallion** carrying the two-tone year (first half dark, second half accent) in giant **Arial Black** and the **Volume** line directly beneath.
+  - Headline stack top-left in **Arial Black**: the region level (navy), the publication title in the accent colour on one full-width line, and `DALAM ANGKA` (navy).
+  - **Position Lock**: publication metadata (Line #1: `Katalog BPS: <number>`, Line #2: `ISSN/ISBN <number>` in crisp **Arial Bold**, white) sits top-right, over the orange band.
+  - **Position Lock**: official agency logo paired with multi-line institutional branding (**Arial Bold Italic**, white) on the navy plane, bottom-left.
   - Its own palette (**Report Navy & Orange**, `#082641` + `#f5871f`); picking the style selects that theme automatically, and any other theme still works.
 - **Best For**: Business reports, corporate annual reviews, investment and industry publications, city profiles.
 
@@ -349,6 +349,13 @@ Choose how the top header of each generated page should look:
 If your catalog CSV contains a 4th column called `file` pointing to table CSV files (e.g., `01_01.csv`, `01_02.csv`), checking:
 `[x] Auto-insert table from 'file' col`
 will **both create the page AND automatically place the corresponding styled table** directly under the page title!
+
+### Publication Note Pages (`Note`)
+Catalog rows typed `Note` get a dedicated layout instead of the preset header: a centred, fully transparent
+Arial title box (`Keterangan Publikasi`, or the row's own title when present) and the RTF file from the `file`
+column placed below it. The Excel → CSV Data converter emits this row automatically for the workbook sheet named
+exactly `A02` (row 1: `title;Keterangan Publikasi`, row 2: `file;notes/A02.rtf`), so that sheet produces no
+table CSV — only the catalog entry. Other `A##` sheet names stay ordinary sheets.
 
 ---
 

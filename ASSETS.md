@@ -69,6 +69,7 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `docs/brand/LICENSE-brand.txt` | (licence text) | ArtCraft Team | — | Terms for the ArtCraft Marks in `docs/brand/` |
 | `packaging/macos/dmg/background.svg` | @XusBadia | original work for this repository, derived from the DesignCraft app icon (`assets/app-icon/designcraft.svg`, referenced via `<image>`, not copied); text is outlined Inter / JetBrains Mono glyph paths | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | DesignCraft macOS DMG window background for the Finder window; `packaging/macos/dmg/generate.py` renders it to `background.tiff` (2026-10-08) |
 | `packaging/macos/dmg/background.tiff` | @XusBadia | Rendered from `packaging/macos/dmg/background.svg` by `packaging/macos/dmg/generate.py` | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | 1x + 2x HiDPI TIFF for the macOS DMG window; includes the app icon (see its row) and LittleCMS's built-in sRGB profile ("No copyright, use freely") |
+| `plan/pubgen/samples/book_cover/busines_report.png` | DesignCraft contributor / Pubgen reference | user reference image for Pubgen Cover Style 8 (Business Report) | CC0-1.0 | Reference image |
 | `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222013.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
 | `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222115.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
 | `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222232.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
@@ -87,6 +88,8 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `plan/pubgen/samples/Untitled-1.designcraft` | DesignCraft contributor (generated) | test sample document for Pubgen | CC0-1.0 | Test document |
 | `plan/pubgen/samples/Untitled-1.pdf` | DesignCraft contributor (generated) | test sample PDF export for Pubgen | CC0-1.0 | Test export |
 | `plan/pubgen/samples/Untitled-2.pdf` | DesignCraft contributor (generated) | test sample PDF export for Pubgen | CC0-1.0 | Test export |
+| `plan/pubgen/samples/C02_01.png` | DesignCraft contributor (generated) | synthetic chart-sheet test asset for Pubgen table-from-CSV | CC0-1.0 | Test sample |
+| `plan/pubgen/samples/A02.rtf` | DesignCraft contributor / Pubgen sample | synthetic publication-note text asset for Pubgen Page from RTF | CC0-1.0 | Test sample |
 | `plan/pubgen/samples/pembatas_bab.jpg` | DesignCraft contributor / Pubgen sample | synthetic chapter divider test asset for Pubgen Page from Image | CC0-1.0 | Test sample |
 | `plan/pubgen/samples/style/design-1.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/design-2.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
@@ -94,6 +97,8 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `plan/pubgen/samples/style/design-4.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/design-5.designcraft` | DesignCraft contributor (traced) | traced cover geometry for Cover Style 7 (Modern Horizon), drawn over the Pubgen reference template | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/design-6.designcraft` | DesignCraft contributor (traced) | traced cover geometry for Cover Style 9 (Urban Angle), drawn over the Pubgen reference template | CC0-1.0 | Test document |
+| `plan/pubgen/samples/style/design-10.designcraft` | DesignCraft contributor (traced) | traced cover geometry for Cover Style 8 (Business Report), drawn over the Pubgen reference template | CC0-1.0 | Test document |
+| `plan/pubgen/samples/thumb/business_report.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 8 (Business Report) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/chevron_medallion.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 3 (Chevron Medallion) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/corporate_headline.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 5 (Corporate Headline) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/diagonal_arrow.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 6 (Diagonal Arrow) | CC0-1.0 | Test thumbnail |
