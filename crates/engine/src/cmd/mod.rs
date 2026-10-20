@@ -57,6 +57,7 @@ mod strokes;
 mod style;
 pub mod table;
 pub mod tabs;
+pub(crate) mod template;
 pub mod text;
 mod thread;
 mod toc;
@@ -228,6 +229,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(datamerge::specs());
         v.extend(interactive::specs());
         v.extend(preflight::specs());
+        v.extend(template::specs());
         v
     })
 }
