@@ -1680,21 +1680,20 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 
     let agency_text = if st.cover_agency_text.trim().is_empty() { "BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG" } else { st.cover_agency_text.trim() };
 
-    // The hand-designed covers in `covers_original/`: A4 artboards with the artwork's
-    // transforms intact and every text/photo frame carrying a `#slot:` tag (a headline split
-    // over two frames uses `title` and `title#2`). `covers/` holds the older procedurally
-    // generated A5 artboards, which clip their own text and tag every shape as the hero photo.
+    // The hand-designed covers in `covers/`: A4 artboards with the artwork's transforms intact
+    // and every text/photo frame carrying a `#slot:` tag (a headline split over two frames uses
+    // `title` and `title#2`). `covers_original/` keeps the untouched sources.
     let canonical_templates = [
-        "assets/templates/covers_original/000_wave_curves.designcraft",
-        "assets/templates/covers_original/001_geometric_medallion.designcraft",
-        "assets/templates/covers_original/002_folded_origami.designcraft",
-        "assets/templates/covers_original/003_chevron_medallion.designcraft",
-        "assets/templates/covers_original/004_honeycomb_hexagon.designcraft",
-        "assets/templates/covers_original/005_corporate_headline.designcraft",
-        "assets/templates/covers_original/006_diagonal_arrow.designcraft",
-        "assets/templates/covers_original/007_modern_horizon.designcraft",
-        "assets/templates/covers_original/008_business_report.designcraft",
-        "assets/templates/covers_original/009_urban_angle.designcraft",
+        "assets/templates/covers/000_wave_curves.designcraft",
+        "assets/templates/covers/001_geometric_medallion.designcraft",
+        "assets/templates/covers/002_folded_origami.designcraft",
+        "assets/templates/covers/003_chevron_medallion.designcraft",
+        "assets/templates/covers/004_honeycomb_hexagon.designcraft",
+        "assets/templates/covers/005_corporate_headline.designcraft",
+        "assets/templates/covers/006_diagonal_arrow.designcraft",
+        "assets/templates/covers/007_modern_horizon.designcraft",
+        "assets/templates/covers/008_business_report.designcraft",
+        "assets/templates/covers/009_urban_angle.designcraft",
     ];
 
     if let Some(&tpl_path) = canonical_templates.get(st.cover_style)
@@ -10383,91 +10382,15 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     fn test_generate_all_canonical_templates() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
         let templates_dir = root.join("assets").join("templates");
-        let covers_dir = templates_dir.join("covers");
         let dividers_dir = templates_dir.join("dividers");
         let tables_dir = templates_dir.join("data_tables");
         let front_matter_dir = templates_dir.join("front_matter");
 
-        std::fs::create_dir_all(&covers_dir).unwrap();
+        // Covers are hand-designed in `covers/` (copied from `covers_original/`), so this test
+        // only generates the interior templates and never writes over them.
         std::fs::create_dir_all(&dividers_dir).unwrap();
         std::fs::create_dir_all(&tables_dir).unwrap();
         std::fs::create_dir_all(&front_matter_dir).unwrap();
-
-        let cover_configs = [
-            (0, "000_wave_curves.designcraft"),
-            (1, "001_geometric_medallion.designcraft"),
-            (2, "002_folded_origami.designcraft"),
-            (3, "003_chevron_medallion.designcraft"),
-            (4, "004_honeycomb_hexagon.designcraft"),
-            (5, "005_corporate_headline.designcraft"),
-            (6, "006_diagonal_arrow.designcraft"),
-            (7, "007_modern_horizon.designcraft"),
-            (8, "008_business_report.designcraft"),
-            (9, "009_urban_angle.designcraft"),
-        ];
-
-        for (style, filename) in cover_configs {
-            let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
-            app.run("file.new", json!({"width": 420.0, "height": 595.0, "pages": 1, "facingPages": false})).unwrap();
-            let st = PubgenState { cover_style: style, ..PubgenState::default() };
-            execute_generate_cover(&mut app, &st).unwrap();
-            let _ = app.run("layout.pages.delete", json!({"page": 1}));
-
-            let active = app.session.active_mut().unwrap();
-            let doc = std::sync::Arc::make_mut(&mut active.doc);
-
-            // Auto-tag slots on items
-            for spread in &mut doc.spreads {
-                let sp = std::sync::Arc::make_mut(spread);
-                for it in &mut sp.items {
-                    let it = std::sync::Arc::make_mut(it);
-                    match &it.content {
-                        designcraft_doc::Content::Text(tf) => {
-                            if let Some(story) = doc.stories.get(&tf.story) {
-                                let t = story.text.trim();
-                                if t.contains("KARAWANG TIMUR") || t.contains("KARAWANG\nTIMUR") {
-                                    it.label = "#slot:text:title".to_string();
-                                } else if t.contains("Kecamatan") || t.contains("Kabupaten") || t.contains("KECAMATAN") {
-                                    it.label = "#slot:text:level".to_string();
-                                } else if t == "2026" || t == "20" || t == "26" {
-                                    it.label = "#slot:text:year".to_string();
-                                } else if t.contains("Volume") || t.contains("VOLUME") {
-                                    it.label = "#slot:text:volume".to_string();
-                                } else if t.contains("Katalog") || t.contains("1102001") {
-                                    it.label = "#slot:text:catalogue".to_string();
-                                } else if t.contains("ISSN") || t.contains("ISBN") {
-                                    it.label = "#slot:text:code".to_string();
-                                } else if t.contains("BADAN PUSAT STATISTIK") {
-                                    it.label = "#slot:text:agency".to_string();
-                                }
-                            }
-                        }
-                        designcraft_doc::Content::Graphic(_) | designcraft_doc::Content::Unassigned => {
-                            if it.name.to_lowercase().contains("logo") || it.label.to_lowercase().contains("logo") {
-                                it.label = "#slot:image:logo".to_string();
-                            } else if it.path.bounds().map_or(false, |b| b.width() > 100.0 && b.height() > 100.0) {
-                                it.label = "#slot:image:hero".to_string();
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-
-            // Ensure canonical swatches exist
-            if !doc.swatches.iter().any(|s| s.name == "Primary") {
-                doc.swatches.push(designcraft_color::Swatch::color("Primary", designcraft_color::Color::from_hex("#0072bc").unwrap()));
-            }
-            if !doc.swatches.iter().any(|s| s.name == "Accent") {
-                doc.swatches.push(designcraft_color::Swatch::color("Accent", designcraft_color::Color::from_hex("#f5ab19").unwrap()));
-            }
-            if !doc.swatches.iter().any(|s| s.name == "Dark") {
-                doc.swatches.push(designcraft_color::Swatch::color("Dark", designcraft_color::Color::from_hex("#122647").unwrap()));
-            }
-
-            let target_path = covers_dir.join(filename);
-            app.run("file.saveAs", json!({"path": target_path.to_string_lossy()})).unwrap();
-        }
 
         // 1. Divider
         {

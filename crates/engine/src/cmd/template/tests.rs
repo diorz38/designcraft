@@ -282,7 +282,7 @@ fn test_canonical_cover_templates_carry_their_slots() {
     // unfilled cover ships (the panel reports success whatever comes back).
     const TEXT_KEYS: [&str; 7] = ["title", "level", "year", "volume", "catalogue", "code", "agency"];
 
-    let dir = assets_dir().join("templates").join("covers_original");
+    let dir = assets_dir().join("templates").join("covers");
     let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("cover templates at {dir:?}: {e}"))
         .filter_map(|entry| entry.ok().map(|e| e.path()))
