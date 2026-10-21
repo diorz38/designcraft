@@ -1,198 +1,273 @@
-# RTF Stylesheet Maintenance and Multi-Level "TOC Paragraph" Implementation Plan
+# RTF Stylesheet Import + Multi-Level "TOC Paragraph" — Implementation Plan
 
-> **Status:** PROPOSED  
-> **Date:** 2026-10-21  
-> **Target Branch:** `feature/pubgen-modular-templates`  
-> **Area:** `crates/textimport`, `crates/engine/src/cmd/toc.rs`, `crates/ui-egui/src/panels/pubgen.rs`
-
----
-
-## 1. Goal & Context
-
-When generating publication pages from Excel sheets named `RXX` (e.g. `R01`, `R02` for narrative chapter reviews), the placed `.rtf` files currently lose their semantic paragraph styles (`Title`, `Heading 1`, `Heading 2`) because `crates/textimport/src/rtf.rs` skips the `\stylesheet` destination and returns an empty `para_styles` list.
-
-This plan delivers:
-1. **Full RTF Stylesheet Maintenance:** Parsing RTF `\stylesheet` tables and mapping `\sN` style tags to named DesignCraft paragraph styles (`Heading 1`, `Heading 2`, `Title`, etc.).
-2. **Multi-Level TOC Heading Declarations:** Allowing Table of Contents generation to include multiple hierarchical heading levels (e.g. Level 1: `Page Title` / `Title`, Level 2: `Heading 1`, Level 3: `Heading 2`).
-3. **"TOC Paragraph" Style / Preset in PubGen:**
-   - Default TOC Title: `"Daftar Isi"`.
-   - Dedicated TOC Preset named `"TOC Paragraph"` alongside `"TOC Entry"`, `"TOC Table"`, and `"TOC Chart"`.
-   - Scoped filtering that processes **only pages generated from sheet name `RXX`** (and other declared patterns such as `GXX` / narrative notes `A02`).
+> **Status:** READY
+> **Date:** 2026-10-21
+> **Target Branch:** `feature/pubgen-modular-templates`
+> **Area:** `crates/textimport/src/rtf.rs`, `crates/ui-egui/src/panels/pubgen.rs`
 
 ---
 
-## 2. Architecture & Data Flow
+## 0. Verified current state (do not re-derive)
 
-```
-+-------------------------------------------------------------------------+
-| Excel Workbook (Sheets: COVER, DIV, R01, R02, 01_01, G01...)           |
-+-------------------------------------------------------------------------+
-                                    |
-                  [parse_rtf_review_sheet_with_template]
-                                    v
-+-------------------------------------------------------------------------+
-| PubGen Catalog & Page Generation (pubgen.rs / pubgen_excel.rs)          |
-| - Identifies RXX sheets as type "Ulasan"                                 |
-| - Places header text boxes ("BAB 01", chapter title)                    |
-| - Invokes execute_page_from_rtf / file.place                            |
-+-------------------------------------------------------------------------+
-                                    |
-                                    v
-+-------------------------------------------------------------------------+
-| RTF Parser (crates/textimport/src/rtf.rs)                               |
-| 1. Parses {\stylesheet{\s1\sbasedon0 \b Heading 1;}...}                 |
-| 2. Tracks \sN tags on paragraphs -> sets ParaFormat.style               |
-| 3. Returns Imported { story, para_styles: [Heading 1, Heading 2...], .. }|
-+-------------------------------------------------------------------------+
-                                    |
-                      [file.place / add_styles]
-                                    v
-+-------------------------------------------------------------------------+
-| DesignCraft Document (doc.styles.para & story.paras)                    |
-| - Paragraph styles registered in document                               |
-| - Story paragraphs bound to "Title", "Heading 1", "Heading 2"           |
-+-------------------------------------------------------------------------+
-                                    |
-                                    v
-+-------------------------------------------------------------------------+
-| TOC Engine & PubGen "TOC Paragraph" (pubgen.rs / cmd/toc.rs)            |
-| - TOC Title: "Daftar Isi"                                               |
-| - Filters pages to only those generated from RXX / declared patterns    |
-| - Multi-level entries: Title (L1), Heading 1 (L2), Heading 2 (L3)       |
-| - Emits nested, hierarchical Table of Contents with page references     |
-+-------------------------------------------------------------------------+
+| Claim | Reality | Anchor |
+|---|---|---|
+| RTF drops paragraph styles | `"stylesheet"` is in `SKIP`; importer returns `para_styles: vec![]` | `rtf.rs:48`, `rtf.rs:334` |
+| Body paragraphs carry `\sN` | Yes: `\pard\plain \ltrpar\s2 …` | samples |
+| `toc.generate` supports levels | Already: `entries[].level` 1–9, `TOC Level n` styles, indent `(n-1)*12` | `engine/src/cmd/toc.rs:95`, `:286` |
+| PubGen emits multi-level TOC | No: one entry, and post-process flattens every line to `TOC Level 1` | `pubgen.rs:7371`, `pubgen.rs:7120-7123` |
+| PubGen can scope to RXX pages | Partly: `pageTitle` word-prefix filter on the page's first text box already exists | `toc.rs:233`, `page_first_text` `toc.rs:254` |
+| `TOC_KINDS` | `[&str; 3]` | `pubgen.rs:76` |
+
+Sample evidence (gitignored `plan/pubgen/samples/`, verified):
+
+- `R01..R06.rtf`: stylesheet defines `heading 1` (`\s1`, `\fs40`), `heading 2` (`\s2`, `\fs32`), `heading 3` (`\s3`). Body tags **only** `\s2`.
+- `ulasan_bab_1.rtf`: body tags `\s1` and `\s2`.
+- `A02..A04`, `G00..G02`: no body `\sN` tags (only `\s35` once). Contribution to a paragraph TOC is zero — scoping is effectively "RXX only".
+- No `\csN` (character style) tags in any sample → character styles out of scope.
+
+### Three traps the original plan got wrong
+
+1. **`"stylesheet"` must stay in `SKIP`.** Removing it would emit the whole stylesheet table as body text. Parse the destination separately, keep skipping it in the main loop.
+2. **Stylesheet names are lowercase.** Word writes `heading 1;`. `Styles::para` is exact-match (`crates/doc/src/styles.rs:752`), so the imported style would be `"heading 1"` while the TOC plan asks for `"Heading 1"`. **Must normalize names.**
+3. **`\pard` resets paragraph style.** RTF `\pard` resets to the default paragraph style; body paragraphs are `\pard\plain …\s2 …`. If `\sN` is never cleared, every following paragraph inherits the last heading style.
+
+Additionally: on `\par` the existing code writes `p.para = cur_para` (`rtf.rs:207-212`). The new `p.style` write goes beside it.
+
+---
+
+## 1. Task A — RTF stylesheet parsing (`crates/textimport/src/rtf.rs`)
+
+### A1. Add a standalone stylesheet parser
+
+Keep `SKIP` untouched. Before the main loop, add:
+
+```rust
+/// `\sN` index → the style it names. Parsed from the `\stylesheet` destination, which the body
+/// loop keeps skipping.
+fn parse_stylesheet(chars: &[char]) -> Vec<(u32, ImportedStyle)>
 ```
 
----
+Steps:
 
-## 3. Tasks Breakdown
-
-### Task 1: RTF Stylesheet Parser (`crates/textimport/src/rtf.rs`)
-
-**Objective:** Parse `\stylesheet` destination and tag body paragraphs with named styles.
-
-1. **Remove `"stylesheet"` from `const SKIP: &[&str]`**.
-2. **Implement Stylesheet Table Parsing:**
-   - In `run_import(bytes: &[u8])`:
-     - Maintain `styles_map: HashMap<usize, ImportedStyle>` mapping `\sN` (or `\csN`) index to style metadata.
-     - Parse style definition groups `{\s<idx> ... <StyleName>;}`:
-       - Extract style index `\sN`.
-       - Extract base style `\sbasedonN` if present.
-       - Extract formatting overrides (`\b`, `\i`, `\fsN`, `\ql`, `\qc`, `\qr`, `\qj`).
-       - Extract style name ending with semicolon `;` (e.g. `Heading 1`, `Heading 2`, `Title`).
-3. **Bind Body Paragraphs:**
-   - Track `cur_para_style: String` (defaults to `BASIC_PARAGRAPH`).
-   - On `\sN`, look up style name from `styles_map` and set `cur_para_style`.
-   - When creating or flushing paragraphs (`\par`), apply `p.style = cur_para_style.clone()`.
-4. **Populate `Imported`:**
-   - Return `Imported { story, para_styles, char_styles, warnings }`.
-5. **Unit Tests:**
-   - Add tests verifying RTF with `{\stylesheet{\s1 Heading 1;}{\s2 Heading 2;}}` produces `para_styles` with names `"Heading 1"`, `"Heading 2"`, and paragraphs tagged accordingly.
-
----
-
-### Task 2: Multi-Level Heading TOC Declaration (`crates/engine/src/cmd/toc.rs`)
-
-**Objective:** Support multi-level heading hierarchies in Table of Contents generation.
-
-1. **Hierarchy in `entries`:**
-   - Verify `toc.generate` correctly accepts multiple style entries:
-     ```json
-     "entries": [
-       { "style": "Title", "level": 1, "pageNumber": "after", "separator": "\t" },
-       { "style": "Heading 1", "level": 2, "pageNumber": "after", "separator": "\t" },
-       { "style": "Heading 2", "level": 3, "pageNumber": "after", "separator": "\t" }
-     ]
-     ```
-2. **Formatting & Indents for Levels 1–9:**
-   - In `ensure_toc_entry_style` (or dynamic level styles `TOC Entry L1`, `TOC Entry L2`, `TOC Entry L3`):
-     - Level 1: Left indent = 0 pt.
-     - Level 2: Left indent = 14 pt (or configurable).
-     - Level 3: Left indent = 28 pt.
-3. **Preserve Reading Order:**
-   - Ensure `collect` in `crates/engine/src/cmd/toc.rs` sorts entries primarily by page location and baseline `(page, y, x)`, preserving the sequential flow of headings within chapters.
-
----
-
-### Task 3: PubGen "TOC Paragraph" Kind & Sheet Scoping (`crates/ui-egui/src/panels/pubgen.rs`)
-
-**Objective:** Add the `"TOC Paragraph"` preset and constrain processing to `RXX` pages.
-
-1. **Extend `TOC_KINDS`:**
+1. Find the `\stylesheet` control word (word chars only, as the main loop does).
+2. Walk forward with `depth = 1` (already inside the destination group) until `depth == 0`. Inside, a `{` raises depth, `}` lowers it. Escaped `\{`, `\}` and `\\` do not count — check for a preceding `\`.
+3. At `depth == 1`, a `{` whose next control word is `s` (`{\s1 …}`) opens a style definition. Capture that inner group's chars (same brace matching, one level deeper).
+4. From the definition, extract:
+   - `\sN` → index (`None` → not a paragraph style, skip; `\csN` groups are ignored — they start with `c`, not `s`).
+   - `\sbasedonN` → base index, resolved to a name after the loop.
+   - `\b` / `\i` (honour `\b0` / `\i0`) → char style name via `"Bold" | "Italic" | "Bold Italic"`, mirroring `State::format` (`rtf.rs:25-33`). Store in `chars.font_style`.
+   - `\fsN` → `chars.size = Some(N / 2.0)`, same 0.1–1296 clamp as the body (`rtf.rs:305-307`).
+   - `\ql/\qr/\qc/\qj/\qd` → `para.align`.
+   - `\li/\ri/\fi/\sb/\sa` → twips → pt (`param as f64 / 20.0`) with the same clamps as body (`rtf.rs:222-235`).
+   - Style **name**: the plain-text segment preceding the terminating `;` (e.g. `…\styrsid4067997 heading 1;` → `heading 1`). Decode `\'hh` through the existing `cp1252` (`rtf.rs:337`). Ignore `\snextN`, `\slinkN`, `\spriorityN`, `\sqformat`, `\sautoupd`, `\sunhideused`, `\styrsidN`, `{\*\…}` groups.
+5. Resolve `based_on` indices to names after the loop.
+6. Normalize names — `fn normalize_style_name(raw: &str) -> String`:
+   - `eq_ignore_ascii_case("heading N")` → `"Heading N"`
+   - `"title"` → `"Title"`, `"subtitle"` → `"Subtitle"`, `"normal"` → `"[Basic Paragraph]"` (`story::BASIC_PARAGRAPH`)
+   - otherwise capitalize the first letter, leave the rest.
    ```rust
-   pub const TOC_KINDS: [&str; 4] = [
-       "TOC Entry",
-       "TOC Table",
-       "TOC Chart",
-       "TOC Paragraph",
-   ];
+   // ponytail: only the names the TOC plan asks for are canonicalized. Bodies with other named
+   // styles keep Word's casing until a user maps them.
    ```
-2. **Default Title for `TOC Paragraph`:**
-   ```rust
-   pub fn toc_kind_title(kind: usize) -> Option<&'static str> {
-       match kind {
-           1 => Some("Daftar Tabel"),
-           2 => Some("Daftar Grafik"),
-           3 => Some("Daftar Isi"),
-           _ => None,
-       }
-   }
-   ```
-3. **Page Scoping / Filtering Mechanism:**
-   - During publication generation (`generate_all_pages_from_catalog`):
-     - Record page indices generated from `RXX` review sheets (and declared patterns like `GXX`, `A02`).
-     - Tag chapter frames / stories with a distinct marker or metadata, or maintain `rxx_pages: Vec<usize>` in document / session state.
-   - In `TocPlan`:
-     - When `toc_kind == 3` (`"TOC Paragraph"`):
-       - Only process pages belonging to `RXX` (or matching declared patterns `R*`, `G*`).
-       - Exclude pages generated from data tables (`02_01.csv`, etc.).
-       - Use multi-level entries: `[Title/Chapter Title (L1), Heading 1 (L2), Heading 2 (L3)]`.
-4. **Configurable Heading Styles in PubGen State:**
-   - Add fields in `PubgenState` for customizing which paragraph styles map to which TOC levels:
-     - `toc_para_l1_style: String` (default: `"Title"` or `"Page Title"`).
-     - `toc_para_l2_style: String` (default: `"Heading 1"`).
-     - `toc_para_l3_style: String` (default: `"Heading 2"`).
+
+### A2. Bind paragraphs to styles in the main loop
+
+New state next to `cur_para` (`rtf.rs:73`):
+
+```rust
+let styles = parse_stylesheet(&chars);          // index → name
+let mut cur_style_idx: Option<u32> = None;
+```
+
+- control word `"pard"` (`rtf.rs:216`): also `cur_style_idx = None;` — but only outside `\listtext`, same guard as `cur_para`.
+- control word `"s"` with `param` (`Some(n)` where `n >= 0`): `cur_style_idx = Some(n as u32)`. `\s0` means the default style → `None`.
+- `"par" | "sect"` (`rtf.rs:207`) and the raw newline branch (`rtf.rs:144-152`): after `p.para = cur_para.clone()`, add `p.style = style_name(cur_style_idx)`, where the helper returns the mapped name or `BASIC_PARAGRAPH`.
+- final paragraph write at `rtf.rs:326-330`: set `p.style` too.
+
+`\sN` must be handled **after** the `skip` early-return so stylesheet-internal `\sN` never leaks (it already can't: the whole destination is skipped).
+
+### A3. Return used styles only
+
+At `rtf.rs:334`, replace the empty vectors:
+
+```rust
+let used: HashSet<String> = st.paras.iter().map(|p| p.style.clone()).collect();
+let para_styles = keep_used(styles, &used);   // style + its based_on chain, as docx.rs:561-573
+Ok(Imported { story: st, para_styles, char_styles: vec![], warnings })
+```
+
+`keep_used` is the same closure shape as `docx.rs:561`; copy it locally (4 lines) rather than exporting.
+
+Style attributes stay on the style; run-level `\b`/`\fs` are **not** merged into runs (they are already present in typical Word output, and merging would duplicate the style's formatting).
+
+### A4. Tests (`rtf.rs` `#[cfg(test)]`)
+
+Use inline synthetic RTF strings — `plan/` is gitignored, so never depend on `plan/pubgen/samples/`.
+
+1. `stylesheet_names_reach_paragraphs` — `{\stylesheet{\s1\b\fs40 heading 1;}{\s2\fs32 heading 2;}}` plus two body paragraphs tagged `\s1` / `\s2`. Assert `para_styles` names are `["Heading 1", "Heading 2"]`, `chars.font_style == Some("Bold")`, `chars.size == Some(20.0)` / `Some(16.0)`, and `story.paras[i].style` matches.
+2. `pard_resets_paragraph_style` — paragraph with `\s1` then `\pard` paragraph → second paragraph style is `BASIC_PARAGRAPH`.
+3. `stylesheet_text_never_becomes_body_text` — assert story text does not contain `"heading 1"` or `"sbasedon"`.
+4. `only_used_styles_are_returned` — stylesheet with 3 styles, body uses 1 → `para_styles.len() == 1`.
+5. `based_on_chain_is_kept` — `\s2\sbasedon1` where style 1 is used only as a base → both returned.
+
+Existing `rtf` tests must keep passing (no style tags → `para_styles` empty, all paragraphs `BASIC_PARAGRAPH`).
 
 ---
 
-### Task 4: UI Wireup in PubGen Panel
+## 2. Task B — "TOC Paragraph" kind + RXX scoping (`crates/ui-egui/src/panels/pubgen.rs`)
 
-1. **Card 3 "TOC style" dropdown:**
-   - Shows: `TOC Entry`, `TOC Table`, `TOC Chart`, `TOC Paragraph`.
-   - Selecting `TOC Paragraph`:
-     - Sets TOC title to `"Daftar Isi"`.
-     - Displays level selector / heading preview.
-2. **"Add TOC" / "Rebuild TOC" execution:**
-   - Generates the `"Daftar Isi"` TOC using the multi-level plan.
-   - Continuation pages and headers apply automatically via existing `sync_toc_continuation_headers`.
+No engine changes. No new `PubgenState` fields — the level styles come from constants.
+
+### B1. Kind tables (`pubgen.rs:76-104`)
+
+```rust
+pub const TOC_KINDS: [&str; 4] = ["TOC Entry", "TOC Table", "TOC Chart", "TOC Paragraph"];
+```
+
+- `toc_kind_words(3)` → `&["BAB"]` — scoping primitive. Verified: RXX pages' first text box is the `BAB 01` chapter line (`pubgen.rs:4930`), DIV pages' first box is the `BAB` prefix (`pubgen.rs:5040`), while table/chart pages start with `Tabel`/`Grafik`. So `pageTitle: ["BAB"]` excludes table and chart pages with zero new engine code.
+- `toc_kind_title(3)` → `Some("Daftar Isi")`.
+- `toc_kind_of_words` → add the `3` arm: `words` contains `bab` → `3`. Check it **before** the table/chart arms.
+- `default_toc_title()` (`pubgen.rs:67`) unchanged.
+
+The ComboBox at `pubgen.rs:3915-3921` iterates `TOC_KINDS`, so the new item appears with no UI edit. The title auto-fill at `pubgen.rs:3926-3927` already reacts to `toc_kind_title`.
+
+### B2. Multi-level plan (`pubgen.rs:6573-6645`)
+
+Replace the single `style` field with an ordered list:
+
+```rust
+struct TocLevel {
+    style: String,
+    level: u8,
+    words: Vec<String>,
+}
+
+pub struct TocPlan {
+    levels: Vec<TocLevel>,   // was: style: String
+    title: String,
+    words: Vec<String>,      // pageTitle filter of level 1 (kept for kind detection)
+    layout: usize,
+    hanging: bool,
+    include_self: bool,
+}
+```
+
+`from_state`:
+
+```rust
+let levels = if st.toc_kind == 3 {
+    vec![
+        TocLevel { style: st.toc_style.clone(), level: 1, words: vec!["BAB".into()] },
+        TocLevel { style: "Heading 1".into(),     level: 2, words: vec![] },
+        TocLevel { style: "Heading 2".into(),     level: 3, words: vec![] },
+    ]
+} else {
+    vec![TocLevel { style: st.toc_style.clone(), level: 1, words: toc_kind_words(st.toc_kind).iter().map(|w| w.to_string()).collect() }]
+};
+```
+
+`from_toc` (rebuild path): `toc.entries.len() > 1` → rebuild `levels` from the stored entries (style, level, `page_title`); otherwise the single-entry path as today.
+
+`entry_json` → `entries_json` returning a `Value::Array`, one object per level:
+
+```rust
+{"style": l.style, "level": l.level, "pageNumber": "after", "separator": "\t"}
+```
+plus `"pageTitle": l.words` when non-empty. Call site: `pubgen.rs:7371` `"entries": [plan.entry_json()]` → `"entries": plan.entries_json()`.
+
+Add `fn is_paragraph_toc(&self) -> bool { self.levels.len() > 1 }` for the branches below.
+
+### B3. Preserve levels through post-processing
+
+`ensure_styles` in the engine (`toc.rs:286`) already creates `TOC Level 1..3` and `fill` already tags each paragraph with the level's style (`toc.rs:373`). The flattening happens **only** in PubGen's post-process. Two edits:
+
+1. `enrich_toc_story` (`pubgen.rs:6647`): early-return when `plan.is_paragraph_toc()`. Its catalog-record coalescing/prefixing is for the table/chart lists; for a paragraph TOC the engine output is already correct, and rewriting the text would desynchronize styles from paragraphs.
+2. `apply_toc_post_process` (`pubgen.rs:7099-7137`): in the `layout != 1` branch, stop forcing `"TOC Level 1"`. Wrap the existing rewrite loop:
+
+```rust
+let style_name = if pi == 0 { "TOC Title" } else { "TOC Level 1" };
+// The engine tags each entry with its own "TOC Level n": for a paragraph TOC leave the
+// entries' styles alone; the single-level lists keep the historical flattening.
+if plan.is_paragraph_toc() && pi > 0 {
+    continue;
+}
+```
+
+`pi == 0` (the title line) is still rewritten to `TOC Title` in both cases.
+
+`ensure_toc_entry_style` (`pubgen.rs:6909`) needs no change: its non-TablePage branch already walks every style `starts_with("TOC Level")` and applies `indent = (n-1)*12 + hanging`, which is the requested L1=0 / L2=12 / L3=24 behaviour. Do **not** add the plan's 14/28 pt numbers.
+
+Continuation headers (`sync_toc_continuation_headers`, `pubgen.rs:7203`) use `plan.title_or_contents()`; nothing to change.
+
+### B4. Title/header text
+
+`toc_header_line` / `is_toc_header_line` (`pubgen.rs:6532-6548`) only run for TablePage layout. Nothing to change.
 
 ---
 
-### Task 5: Testing & Quality Gates
+## 3. Task C — Tests & gates (Task A + B)
 
-1. **`crates/textimport` Tests:**
-   - Test RTF with multi-level stylesheet (`\stylesheet{\s1 Heading 1;}{\s2 Heading 2;}`).
-   - Verify style names, sizes, bold/italic, and story paragraph assignments.
-2. **`crates/engine` TOC Tests:**
-   - Test multi-level TOC generation with nested headings across spreads.
-3. **`crates/ui-egui` PubGen Tests:**
-   - Test `parse_rtf_review_sheet_with_template` and page generation from `R01`.
-   - Test `execute_add_toc` with `TOC Paragraph` producing title `"Daftar Isi"`.
-   - Test that table pages (`02_01.csv`) are ignored by `TOC Paragraph`, while `RXX` pages are correctly indexed.
-4. **Quality Gates:**
-   - `cargo fmt`
-   - `cargo clippy -D warnings`
-   - `cargo test -p designcraft-textimport`
-   - `cargo test -p designcraft-engine`
-   - `cargo test -p designcraft-ui-egui`
-   - `cargo xtask layers` & `cargo xtask wasm`
+### PubGen tests (`pubgen.rs` `#[cfg(test)]`)
+
+1. `toc_paragraph_kind_tables` — `toc_kind_words(3) == ["BAB"]`, `toc_kind_title(3) == Some("Daftar Isi")`, `toc_kind_of_words(&["BAB".into()]) == 3`, and the existing kind 0/1/2 detection still holds.
+2. `toc_paragraph_plan_has_three_levels` — `TocPlan::from_state` with `toc_kind: 3`, `toc_style: "TOC Entry"` → `levels` = `[("TOC Entry",1,["BAB"]), ("Heading 1",2,[]), ("Heading 2",3,[])]`; `entries_json()` round-trips them.
+3. `toc_paragraph_scan_finds_styled_paragraphs` — build a doc: a chapter page with a `BAB 01` frame tagged `TOC Entry`, an RTF-placed story with paragraphs styled `Heading 1` / `Heading 2` (apply styles via `style.paragraph.apply` after `file.place`), and a table page whose first box starts `Tabel`. Run `toc.entries` with the 3-entry plan. Assert: chapter page listed at level 1, the heading paragraphs at levels 2/3, table page absent.
+4. `toc_paragraph_keeps_toc_level_styles` — `execute_add_toc` with kind 3; assert the generated story's paragraphs use `TOC Title`, `TOC Level 1`, `TOC Level 2`, `TOC Level 3` in document order (and not all `TOC Level 1`).
+5. `toc_paragraph_title_is_daftar_isi` — the frame's first line is `Daftar Isi`.
+
+Reuse the existing synthetic-RTF pattern from `test_execute_generate_pages_ulasan_rtf_layout` (`pubgen.rs:11087`) — do not read `plan/pubgen/samples/`.
+
+### textimport tests
+
+Task A4 list. Add `#[cfg(test)] mod tests` cases only; no new fixtures on disk.
+
+Regression to watch: `test_execute_page_from_rtf_sample_file` (`pubgen.rs:10190`) depends on gitignored samples — pre-existing, leave it alone.
+
+### Gates
+
+```
+cargo fmt
+cargo clippy -D warnings
+cargo test -p designcraft-textimport
+cargo test -p designcraft-engine
+cargo test -p designcraft-ui-egui
+cargo xtask layers
+cargo xtask wasm
+```
+
+`never-crash` check for Task A: the stylesheet parser indexes input-derived chars. Every access uses `chars.get(i)`, brace depth is `saturating_sub`/bounded, style indices are `u32` from parsed params, and a malformed/unterminated stylesheet yields an empty map (warnings-free) rather than a panic. No `unwrap`/`expect` in the new code.
 
 ---
 
-## 4. User Review & Acceptance Criteria
+## 4. Order of work
 
-- [x] RTF importer preserves named paragraph styles (`Heading 1`, `Heading 2`, `Title`) from `\stylesheet`.
-- [x] Placed RTF in `RXX` pages maintains paragraph styles in DesignCraft's stylesheet.
-- [x] PubGen Card 3 offers `"TOC Paragraph"` with default title `"Daftar Isi"`.
-- [x] Generated TOC includes declared stylesheet levels (Level 1, Level 2, Level 3).
-- [x] Only pages generated from `RXX` (and declared patterns) are processed for `"TOC Paragraph"`.
+1. **Task A** (RTF stylesheet) first — without it, level 2/3 entries cannot exist.
+2. **Task B** (kind + plan + post-process) second.
+3. **Task C** tests land with their task, not at the end.
+
+One commit per task id, e.g.:
+
+- `M?: rtf import stylesheet paragraph styles`
+- `M?: pubgen TOC Paragraph multi-level kind`
+
+---
+
+## 5. Acceptance criteria
+
+- [ ] RTF with `{\stylesheet{\s1 heading 1;}{\s2 heading 2;}}` imports styles named exactly `Heading 1` / `Heading 2`, and body paragraphs carry them.
+- [ ] `\pard` resets the paragraph style; stylesheet text never reaches the story.
+- [ ] Placing `R01.rtf` yields `Heading 2` paragraphs in the DesignCraft document.
+- [ ] PubGen Card 3 offers `TOC Paragraph`, which fills the title with `Daftar Isi`.
+- [ ] A `TOC Paragraph` TOC lists chapter titles at level 1, `Heading 1` at level 2, `Heading 2` at level 3, with indents 0 / 12 / 24 pt.
+- [ ] Table and chart pages are absent from a `TOC Paragraph` (via `pageTitle: ["BAB"]`).
+- [ ] Existing TOC Entry / TOC Table / TOC Chart behaviour is unchanged.
+- [ ] `cargo xtask ci` green.
+
+---
+
+## 6. Deliberately out of scope
+
+- Character-style (`\csN`) import and stylesheet character styles.
+- Configurable L1/L2/L3 style pickers in `PubgenState` (constants suffice; add when a publication needs different style names).
+- Any `rxx_pages` session tag / engine-side page scoping — `pageTitle` already covers it.
+- Level detection from `\outlinelevel` (the samples tag `\sN` directly; add only for producers that omit style tags).
