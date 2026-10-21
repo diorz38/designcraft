@@ -11,4 +11,5 @@
 /craft-fonts/
 /scratch/
 /plan/pubgen/samples/**/*.csv
+/plan/pubgen/samples/*.csv
 ~$*
