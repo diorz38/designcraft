@@ -368,6 +368,43 @@ impl Default for PubgenState {
     }
 }
 
+/// Returns the custom document margins:
+/// 1. From existing document pages with local or custom (non-36pt, non-0) margins
+/// 2. From parent pages with custom (non-36pt, non-0) margins
+/// 3. From any spread page with non-zero margins
+/// 4. From any parent page with non-zero margins
+/// 5. Fallback: Standard BPS custom margins (Top 20.20 mm, Bottom 20 mm, Inside 19 mm, Outside 15 mm)
+pub fn detect_document_margins(doc: &designcraft_doc::Document) -> designcraft_doc::Margins {
+    const PT_PER_MM: f64 = 72.0 / 25.4;
+    let bps_margins =
+        designcraft_doc::Margins { top: 20.20 * PT_PER_MM, bottom: 20.0 * PT_PER_MM, inside: 19.0 * PT_PER_MM, outside: 15.0 * PT_PER_MM };
+
+    // 1. Look for existing document pages with local margins or non-default margins (excluding COVER/DIV with 0 margins)
+    if let Some(m) = doc
+        .spreads
+        .iter()
+        .flat_map(|sp| &sp.pages)
+        .find(|pg| pg.margins.top > 0.0 && pg.margins.bottom > 0.0 && (pg.local_margins || pg.margins != designcraft_doc::Margins::uniform(36.0)))
+        .map(|pg| pg.margins)
+    {
+        return m;
+    }
+
+    // 2. Look for parents with non-default margins
+    if let Some(m) = doc
+        .parents
+        .iter()
+        .flat_map(|sp| &sp.pages)
+        .find(|pg| pg.margins.top > 0.0 && pg.margins.bottom > 0.0 && pg.margins != designcraft_doc::Margins::uniform(36.0))
+        .map(|pg| pg.margins)
+    {
+        return m;
+    }
+
+    // 3. Fallback: Standard BPS custom margins (Top 20.20 mm, Bottom 20 mm, Inside 19 mm, Outside 15 mm)
+    bps_margins
+}
+
 /// Sets document margins across all spreads and parents:
 /// - Top: 20.20 mm
 /// - Bottom: 20.00 mm
@@ -380,6 +417,24 @@ pub fn execute_set_page_margins(app: &mut DesignApp) -> Result<String, String> {
     let inside_pt = 19.0 * PT_PER_MM;
     let outside_pt = 15.0 * PT_PER_MM;
 
+    // Record which pages are COVER or DIV (already 0 margins) before layout.documentSetup
+    let zero_margin_pages: Vec<usize> = app
+        .session
+        .active()
+        .map(|s| {
+            (0..s.doc.page_count())
+                .filter(|&p| {
+                    if let Some((si, pi)) = s.doc.page_loc(p)
+                        && let Some(pg) = s.doc.spreads.get(si).and_then(|sp| sp.pages.get(pi))
+                    {
+                        return pg.margins.top == 0.0 && pg.margins.bottom == 0.0;
+                    }
+                    false
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     app.run(
         "layout.documentSetup",
         json!({
@@ -388,9 +443,40 @@ pub fn execute_set_page_margins(app: &mut DesignApp) -> Result<String, String> {
                 "bottom": bottom_pt,
                 "inside": inside_pt,
                 "outside": outside_pt
-            }
+            },
+            "adjustLayout": true
         }),
     )?;
+
+    // Keep COVER and DIV pages adjusted to Page Size (margins = 0)
+    let _ = app.session.edit(|doc, _| {
+        let mut abs_p = 0usize;
+        for sp in &mut doc.spreads {
+            let sp = std::sync::Arc::make_mut(sp);
+            for pg in &mut sp.pages {
+                let pb = pg.bounds();
+                let is_cover_or_div = zero_margin_pages.contains(&abs_p)
+                    || sp.items.iter().any(|it| {
+                        let ib = it.bounds();
+                        ib.x0 < pb.x1
+                            && ib.x1 > pb.x0
+                            && (it.label.contains("cover")
+                                || it.label.contains("divider")
+                                || it.label.starts_with("#slot:text:level")
+                                || it.label.starts_with("#slot:text:chapter_prefix")
+                                || it.label.starts_with("#slot:chapter_prefix")
+                                || it.label.starts_with("#slot:text:first_word"))
+                    });
+                if is_cover_or_div {
+                    pg.margins = designcraft_doc::Margins::uniform(0.0);
+                    pg.local_margins = true;
+                }
+                abs_p += 1;
+            }
+            sp.relayout();
+        }
+        Ok(serde_json::Value::Null)
+    });
 
     Ok("Page margins set: Top 20.20 mm, Bottom 20 mm, Inside 19 mm, Outside 15 mm".to_string())
 }
@@ -1734,6 +1820,17 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         );
         if res.is_ok() {
             crate::canvas::go_to_page(app, 0);
+            let _ = app.session.edit(|doc, _| {
+                if let Some(sp) = doc.spreads.first_mut() {
+                    let sp = std::sync::Arc::make_mut(sp);
+                    if let Some(pg) = sp.pages.first_mut() {
+                        pg.margins = designcraft_doc::Margins::uniform(0.0);
+                        pg.local_margins = true;
+                    }
+                    sp.relayout();
+                }
+                Ok(serde_json::Value::Null)
+            });
             let style_names = [
                 "Wave Curves",
                 "Geometric Medallion",
@@ -1754,6 +1851,17 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     // 1. Automatically insert a new page before the first page (Page 1)
     app.run("layout.pages.insert", json!({"before": 0, "count": 1})).map_err(|e| format!("Failed to insert cover page: {e}"))?;
     crate::canvas::go_to_page(app, 0);
+    let _ = app.session.edit(|doc, _| {
+        if let Some(sp) = doc.spreads.first_mut() {
+            let sp = std::sync::Arc::make_mut(sp);
+            if let Some(pg) = sp.pages.first_mut() {
+                pg.margins = designcraft_doc::Margins::uniform(0.0);
+                pg.local_margins = true;
+            }
+            sp.relayout();
+        }
+        Ok(serde_json::Value::Null)
+    });
 
     let (pw, ph) = {
         let active = app.session.active().ok_or("No active document")?;
@@ -4490,15 +4598,22 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     // Quick Actions "Add TOC" lists one entry per generated page.
     ensure_para_style(app, &st.toc_style);
 
+    let doc_margins = {
+        let active = app.session.active().ok_or("No active document")?;
+        detect_document_margins(&active.doc)
+    };
+
     for row in slice {
         let type_val = row.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("").trim();
         let num_val = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
         let title_val = row.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("").trim();
+        let is_div = is_divider_type(type_val);
+        let is_cover_or_div = is_div || type_val.eq_ignore_ascii_case("COVER");
 
         let row_tpl_spec = row.get(4).map(String::as_str).unwrap_or("").trim();
         let explicit_tpl_path = if !row_tpl_spec.is_empty() { resolve_template_path_spec(&st.card1_path, row_tpl_spec) } else { None };
 
-        if explicit_tpl_path.is_some() || st.card1_preset == 6 || is_divider_type(type_val) {
+        if explicit_tpl_path.is_some() || st.card1_preset == 6 || is_div {
             // Modular Template Mode: delegate to template engine
             let raw_tpl = if let Some(ref ep) = explicit_tpl_path {
                 ep.clone()
@@ -4508,7 +4623,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 "assets/templates/dividers/002_chapter_devider.designcraft".to_string()
             } else if type_val.eq_ignore_ascii_case("Ulasan") {
                 "assets/templates/dividers/001_ulasan_chapter.designcraft".to_string()
-            } else if type_val.eq_ignore_ascii_case("Note") {
+            } else if type_val.eq_ignore_ascii_case("Note") || type_val.eq_ignore_ascii_case("G") {
                 "assets/templates/front_matter/001_publication_note.designcraft".to_string()
             } else {
                 "assets/templates/data_tables/001_single_table_standard.designcraft".to_string()
@@ -4523,12 +4638,17 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 
                 if is_divider_type(type_val) {
                     let (first_word, digit_num, rest_text) = excel::split_divider_title(title_val);
-                    // 3 textbox values from col title:
-                    // 1. first word (replacing text "BAB")
-                    text_slots.insert("first_word".into(), json!(first_word));
-                    text_slots.insert("prefix".into(), json!(first_word));
-                    text_slots.insert("chapter_prefix".into(), json!(first_word));
-                    text_slots.insert("title_prefix".into(), json!(first_word));
+                    let prefix = if first_word.is_empty() || first_word.chars().all(|c| c.is_ascii_digit()) {
+                        "BAB".to_string()
+                    } else if !rest_text.is_empty() {
+                        first_word.clone()
+                    } else {
+                        "BAB".to_string()
+                    };
+                    text_slots.insert("first_word".into(), json!(prefix));
+                    text_slots.insert("prefix".into(), json!(prefix));
+                    text_slots.insert("chapter_prefix".into(), json!(prefix));
+                    text_slots.insert("title_prefix".into(), json!(prefix));
 
                     // 2. digit number (replacing text "01")
                     let final_digit = if !digit_num.is_empty() { digit_num } else { num_val.to_string() };
@@ -4538,10 +4658,17 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     text_slots.insert("num".into(), json!(final_digit));
 
                     // 3. rest of text (replacing text "Geografi")
-                    text_slots.insert("chapter_title".into(), json!(rest_text));
-                    text_slots.insert("title".into(), json!(rest_text));
-                    text_slots.insert("rest".into(), json!(rest_text));
-                    text_slots.insert("title_rest".into(), json!(rest_text));
+                    let final_title = if !rest_text.is_empty() {
+                        rest_text
+                    } else if !first_word.eq_ignore_ascii_case("bab") && !first_word.chars().all(|c| c.is_ascii_digit()) {
+                        first_word
+                    } else {
+                        title_val.to_string()
+                    };
+                    text_slots.insert("chapter_title".into(), json!(final_title));
+                    text_slots.insert("title".into(), json!(final_title));
+                    text_slots.insert("rest".into(), json!(final_title));
+                    text_slots.insert("title_rest".into(), json!(final_title));
 
                     // Shape with color #e5007e is placeholder for image in col image
                     if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
@@ -4572,8 +4699,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         story_slots.insert("narrative_body".into(), json!(rtf_file.to_string_lossy()));
                         inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
                     }
-                } else if type_val.eq_ignore_ascii_case("Note") {
-                    let note_title = if title_val.is_empty() { "Keterangan Publikasi" } else { title_val };
+                } else if type_val.eq_ignore_ascii_case("Note") || type_val.eq_ignore_ascii_case("G") {
+                    let note_title = title_val.trim();
                     text_slots.insert("title".into(), json!(note_title));
                     text_slots.insert("note_title".into(), json!(note_title));
                     if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
@@ -4613,7 +4740,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                             "story": story_slots,
                             "image": image_slots,
                         },
-                        "image_fitting": "fitProportionally",
+                        "image_fitting": if is_div { "fitContentToFrame" } else { "fitProportionally" },
                         "palette": {
                             "Primary": st.cover_color_primary.trim(),
                             "Accent": st.cover_color_accent.trim(),
@@ -4653,8 +4780,10 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         }
 
                         for img_id in image_slot_ids {
-                            let _ = app.run("object.fit", json!({"mode": "fitProportionally", "ids": [img_id]}));
+                            let fit_mode = if is_div { "fitContentToFrame" } else { "fitProportionally" };
+                            let _ = app.run("object.fit", json!({"mode": fit_mode, "ids": [img_id]}));
                             let _ = app.run("object.fit", json!({"mode": "centerContent", "ids": [img_id]}));
+                            let _ = app.run("object.fittingOptions", json!({"ids": [img_id], "fitting": fit_mode}));
                             let _ = app.run("object.stroke", json!({"swatch": "[None]", "ids": [img_id]}));
                         }
 
@@ -4670,6 +4799,64 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                                 }
                             }
                         }
+                    }
+
+                    // 1. Update page margins for modular template:
+                    // DIV/COVER: margins = 0.0 (adjust to Page Size)
+                    // Content page: margins = doc_margins (adjust to Page Margin)
+                    let page_margins_info = app.session.edit(|doc, _| {
+                        let cur_p = doc.page_count().saturating_sub(1);
+                        if let Some((si, pi)) = doc.page_loc(cur_p)
+                            && let Some(sp) = doc.spreads.get_mut(si)
+                        {
+                            let sp = std::sync::Arc::make_mut(sp);
+                            if let Some(pg) = sp.pages.get_mut(pi) {
+                                pg.margins = if is_cover_or_div { designcraft_doc::Margins::uniform(0.0) } else { doc_margins };
+                                pg.local_margins = true;
+                            }
+                            sp.relayout();
+                            if let Some(pg) = sp.pages.get(pi) {
+                                return Ok(serde_json::json!({
+                                    "x0": pg.margin_rect().x0,
+                                    "x1": pg.margin_rect().x1,
+                                    "page_x0": pg.bounds().x0,
+                                    "page_w": pg.bounds().width(),
+                                }));
+                            }
+                        }
+                        Ok(serde_json::Value::Null)
+                    });
+
+                    // For content pages (not COVER or DIV), adjust template items to follow page margins
+                    if !is_cover_or_div
+                        && let Ok(info_val) = page_margins_info
+                        && let (Some(m_x0), Some(m_x1), Some(pg_x0), Some(pg_w)) = (
+                            info_val.get("x0").and_then(Value::as_f64),
+                            info_val.get("x1").and_then(Value::as_f64),
+                            info_val.get("page_x0").and_then(Value::as_f64),
+                            info_val.get("page_w").and_then(Value::as_f64),
+                        )
+                        && let Some(items) = applied_info.get("items").and_then(Value::as_array)
+                    {
+                        let item_ids: Vec<designcraft_doc::ItemId> = items.iter().filter_map(Value::as_u64).map(designcraft_doc::ItemId).collect();
+
+                        let local_m_x0 = m_x0 - pg_x0;
+                        let local_m_x1 = m_x1 - pg_x0;
+                        let _ = app.session.edit(|doc, _| {
+                            for &it_id in &item_ids {
+                                if let Some(it) = doc.item_mut(it_id)
+                                    && let Some(pb) = it.path.bounds()
+                                {
+                                    // Template items originally placed at template's default margin (36pt)
+                                    if (pb.x0 - 36.0).abs() < 4.0 {
+                                        let is_full_width = (pb.x1 - (pg_w - 36.0)).abs() < 4.0;
+                                        let new_x1 = if is_full_width { local_m_x1 } else { (local_m_x0 + pb.width()).min(local_m_x1) };
+                                        it.path = designcraft_geom::shapes::rectangle(designcraft_geom::Rect::new(local_m_x0, pb.y0, new_x1, pb.y1));
+                                    }
+                                }
+                            }
+                            Ok(serde_json::Value::Null)
+                        });
                     }
 
                     // Auto-insert table from CSV if enabled and present
@@ -4700,14 +4887,32 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         // 1. Insert Page
         app.run("layout.pages.insert", json!({"count": 1}))?;
 
-        // 2. Query Page Margins
-        let (margin, spread_idx) = {
+        // Adjust page margins:
+        // - DIV/COVER sheet: adjusts to Page Size (margins = 0)
+        // - Content pages: adjust with Page Margin (margins = doc_margins)
+        let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
+        let _ = app.session.edit(|doc, _| {
+            if let Some((si, pi)) = doc.page_loc(cur_page_idx)
+                && let Some(sp) = doc.spreads.get_mut(si)
+            {
+                let sp = std::sync::Arc::make_mut(sp);
+                if let Some(pg) = sp.pages.get_mut(pi) {
+                    pg.margins = if is_cover_or_div { designcraft_doc::Margins::uniform(0.0) } else { doc_margins };
+                    pg.local_margins = true;
+                }
+                sp.relayout();
+            }
+            Ok(serde_json::Value::Null)
+        });
+
+        // 2. Query Page Bounds & Margins
+        let (margin, page_bounds, spread_idx) = {
             let active = app.session.active().ok_or("No active document")?;
             let doc = &active.doc;
-            let sp_idx = doc.spreads.len().saturating_sub(1);
-            let spread = doc.spreads.get(sp_idx).ok_or("Spread missing")?;
-            let page = spread.pages.last().ok_or("Page missing")?;
-            (page.margin_rect(), sp_idx)
+            let (si, pi) = doc.page_loc(cur_page_idx).ok_or("Page loc missing")?;
+            let spread = doc.spreads.get(si).ok_or("Spread missing")?;
+            let page = spread.pages.get(pi).ok_or("Page missing")?;
+            (page.margin_rect(), page.bounds(), si)
         };
 
         if st.card1_preset == 5 {
@@ -4716,7 +4921,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let parts: Vec<&str> = [type_val, num_val, title_val].into_iter().filter(|s| !s.is_empty()).collect();
             let line = parts.join(" ");
             if !line.is_empty() {
-                frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 20.0, margin.x1, margin.y0 + 60.0], &line, &st.toc_style);
+                frame_with_style(app, spread_idx, [margin.x0, margin.y0, margin.x1, margin.y0 + 40.0], &line, &st.toc_style);
             }
         } else if type_val.eq_ignore_ascii_case("Ulasan") {
             // Ulasan / Editorial Chapter layout:
@@ -4725,15 +4930,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 
             // 1st Textbox: "BAB 01" (font Arial Black, size 24.0) -> first row
             if !ch_line.is_empty() {
-                frame_with_font_and_style(
-                    app,
-                    spread_idx,
-                    [margin.x0, margin.y0 + 20.0, margin.x1, margin.y0 + 56.0],
-                    &ch_line,
-                    "Arial Black",
-                    24.0,
-                    None,
-                );
+                frame_with_font_and_style(app, spread_idx, [margin.x0, margin.y0, margin.x1, margin.y0 + 36.0], &ch_line, "Arial Black", 24.0, None);
             }
 
             // 2nd Textbox: "Pemerintahan" (font Arial Black, size 20.0) -> second row
@@ -4742,7 +4939,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 frame_with_font_and_style(
                     app,
                     spread_idx,
-                    [margin.x0, margin.y0 + 62.0, margin.x1, margin.y0 + 102.0],
+                    [margin.x0, margin.y0 + 40.0, margin.x1, margin.y0 + 80.0],
                     &title_line,
                     "Arial Black",
                     20.0,
@@ -4757,7 +4954,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 if let Some(rtf_file) = resolved_rtf {
                     let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
                     crate::canvas::go_to_page(app, cur_page_idx);
-                    let rtf_y0 = margin.y0 + 116.0;
+                    let rtf_y0 = margin.y0 + 90.0;
                     let rtf_rect = [margin.x0, rtf_y0, margin.x1, margin.y1];
                     let created_fid = app
                         .run(
@@ -4782,46 +4979,25 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     }
                 }
             }
-        } else if is_divider_type(type_val) {
+        } else if is_div {
             let (first_word, digit_num, rest_text) = excel::split_divider_title(title_val);
             let final_num = if !digit_num.is_empty() { digit_num } else { num_val.to_string() };
+            let prefix = if first_word.is_empty() || first_word.chars().all(|c| c.is_ascii_digit()) {
+                "BAB".to_string()
+            } else if !rest_text.is_empty() {
+                first_word.clone()
+            } else {
+                "BAB".to_string()
+            };
+            let chapter_title = if !rest_text.is_empty() {
+                rest_text
+            } else if !first_word.eq_ignore_ascii_case("bab") && !first_word.chars().all(|c| c.is_ascii_digit()) {
+                first_word
+            } else {
+                title_val.to_string()
+            };
 
-            if !first_word.is_empty() {
-                frame_with_font_and_style(
-                    app,
-                    spread_idx,
-                    [margin.x0, margin.y0 + 20.0, margin.x1 - 100.0, margin.y0 + 56.0],
-                    &first_word,
-                    "Arial Black",
-                    24.0,
-                    None,
-                );
-            }
-
-            if !final_num.is_empty() {
-                frame_with_font_and_style(
-                    app,
-                    spread_idx,
-                    [margin.x1 - 90.0, margin.y0 + 20.0, margin.x1, margin.y0 + 80.0],
-                    &final_num,
-                    "Arial Black",
-                    40.0,
-                    None,
-                );
-            }
-
-            if !rest_text.is_empty() {
-                frame_with_font_and_style(
-                    app,
-                    spread_idx,
-                    [margin.x0, margin.y0 + 62.0, margin.x1 - 100.0, margin.y0 + 102.0],
-                    &rest_text,
-                    "Arial Black",
-                    20.0,
-                    Some(&st.toc_style),
-                );
-            }
-
+            // 1. DIV background / hero image adjusts to full Page Size with fitContentToFrame
             if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty()) {
                 let resolved_img = resolve_catalog_related_file(&st.card1_path, file_str, "png")
                     .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str, "jpg"))
@@ -4830,8 +5006,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 if let Some(img_file) = resolved_img {
                     let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
                     crate::canvas::go_to_page(app, cur_page_idx);
-                    let img_y0 = margin.y0 + 110.0;
-                    let img_rect = [margin.x0, img_y0, margin.x1, margin.y1];
+                    let img_rect = [page_bounds.x0, page_bounds.y0, page_bounds.x1, page_bounds.y1];
                     let created_fid = app
                         .run(
                             "frame.create",
@@ -4848,20 +5023,59 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     if let Some(fid) = created_fid {
                         let img_path_str = img_file.to_string_lossy().to_string();
                         let _ = app.run("file.place", json!({"path": img_path_str, "frame": fid}));
-                        let _ = app.run("object.fit", json!({"mode": "fillProportionally", "ids": [fid]}));
+                        let _ = app.run("object.fit", json!({"mode": "fitContentToFrame", "ids": [fid]}));
                         let _ = app.run("object.fit", json!({"mode": "centerContent", "ids": [fid]}));
+                        let _ = app.run("object.fittingOptions", json!({"ids": [fid], "fitting": "fitContentToFrame"}));
                         let _ = app.run("selection.set", json!({"ids": [fid]}));
                         inserted_images_count = inserted_images_count.saturating_add(1);
                     }
                 }
             }
+
+            // 2. Textboxes drawn on top of divider page
+            if !prefix.is_empty() {
+                frame_with_font_and_style(
+                    app,
+                    spread_idx,
+                    [page_bounds.x0 + 36.0, page_bounds.y0 + 36.0, page_bounds.x1 - 100.0, page_bounds.y0 + 72.0],
+                    &prefix,
+                    "Arial Black",
+                    24.0,
+                    None,
+                );
+            }
+
+            if !final_num.is_empty() {
+                frame_with_font_and_style(
+                    app,
+                    spread_idx,
+                    [page_bounds.x1 - 90.0, page_bounds.y0 + 36.0, page_bounds.x1 - 36.0, page_bounds.y0 + 96.0],
+                    &final_num,
+                    "Arial Black",
+                    40.0,
+                    None,
+                );
+            }
+
+            if !chapter_title.is_empty() {
+                frame_with_font_and_style(
+                    app,
+                    spread_idx,
+                    [page_bounds.x0 + 36.0, page_bounds.y0 + 78.0, page_bounds.x1 - 100.0, page_bounds.y0 + 118.0],
+                    &chapter_title,
+                    "Arial Black",
+                    20.0,
+                    Some(&st.toc_style),
+                );
+            }
         } else if is_chart_type(type_val) {
             // Chart / Grafik layout:
             // 1. Centered 2-line title in Arial Bold: "Grafik 02.01\nPanjang Jalan Kecamatan Karawang Timur 2026"
             let (ch_line, title_line) = split_chart_title(title_val, num_val, type_val);
-            let full_text = if title_line.is_empty() { ch_line } else { format!("{ch_line}\n{title_line}") };
+            let full_text =
+                if title_line.is_empty() { ch_line } else { format!("{ch_line}{}{title_line}", designcraft_doc::story::FORCED_LINE_BREAK) };
 
-            let title_rect = [margin.x0, margin.y0 + 20.0, margin.x1, margin.y0 + 68.0];
+            let title_rect = [margin.x0, margin.y0, margin.x1, margin.y0 + 48.0];
             frame_with_centered_bold_title(app, spread_idx, title_rect, &full_text, Some(&st.toc_style));
 
             // 2. Place image from 'file' column inside margins below the title
@@ -4872,7 +5086,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 if let Some(img_file) = resolved_img {
                     let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
                     crate::canvas::go_to_page(app, cur_page_idx);
-                    let img_y0 = margin.y0 + 76.0;
+                    let img_y0 = margin.y0 + 56.0;
                     let img_rect = [margin.x0, img_y0, margin.x1, margin.y1];
                     let created_fid = app
                         .run(
@@ -4898,18 +5112,23 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     }
                 }
             }
-        } else if type_val.eq_ignore_ascii_case("Note") {
-            // Publication note (A02): centred, 100% transparent Arial title, then the RTF note.
-            let note_title = if title_val.is_empty() { "Keterangan Publikasi" } else { title_val };
-            let title_rect = [margin.x0, margin.y0 + 20.0, margin.x1, margin.y0 + 56.0];
-            frame_with_centered_arial(app, spread_idx, title_rect, note_title);
+        } else if type_val.eq_ignore_ascii_case("Note") || type_val.eq_ignore_ascii_case("G") {
+            // Publication note (A02) or narrative RTF sheet (G):
+            // When title is provided, add centred Arial title box header and place RTF below it.
+            // When sheet only had 1 row (file) with no title, don't add Page Header, just add RTF to page.
+            let has_header = !title_val.trim().is_empty();
+            if has_header {
+                let title_rect = [margin.x0, margin.y0, margin.x1, margin.y0 + 36.0];
+                frame_with_centered_arial(app, spread_idx, title_rect, title_val.trim());
+            }
 
             if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
                 && let Some(rtf_file) = resolve_catalog_related_file(&st.card1_path, file_str, "rtf")
             {
                 let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
                 crate::canvas::go_to_page(app, cur_page_idx);
-                let rtf_rect = [margin.x0, margin.y0 + 64.0, margin.x1, margin.y1];
+                let rtf_rect =
+                    if has_header { [margin.x0, margin.y0 + 44.0, margin.x1, margin.y1] } else { [margin.x0, margin.y0, margin.x1, margin.y1] };
                 let created_fid = app
                     .run(
                         "frame.create",
@@ -4951,8 +5170,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     let c3_x0 = c2_x1 + gutter;
                     let c3_x1 = margin.x1;
 
-                    let row_y0 = margin.y0 + 20.0;
-                    let row_y1 = margin.y0 + 80.0;
+                    let row_y0 = margin.y0;
+                    let row_y1 = margin.y0 + 60.0;
 
                     if !type_val.is_empty() {
                         let _ = app.run(
@@ -4989,7 +5208,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                             "frame.create",
                             json!({
                                 "spread": spread_idx,
-                                "rect": [margin.x0, margin.y0 + 20.0, margin.x1, margin.y0 + 42.0],
+                                "rect": [margin.x0, margin.y0, margin.x1, margin.y0 + 22.0],
                                 "content": "text",
                                 "text": type_val.to_uppercase(),
                                 "caret": false
@@ -5001,7 +5220,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                             "frame.create",
                             json!({
                                 "spread": spread_idx,
-                                "rect": [margin.x0, margin.y0 + 46.0, margin.x1, margin.y0 + 106.0],
+                                "rect": [margin.x0, margin.y0 + 26.0, margin.x1, margin.y0 + 86.0],
                                 "content": "text",
                                 "text": num_val,
                                 "caret": false
@@ -5009,7 +5228,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         );
                     }
                     if !title_val.is_empty() {
-                        frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 112.0, margin.x1, margin.y0 + 220.0], title_val, &st.toc_style);
+                        frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 92.0, margin.x1, margin.y0 + 200.0], title_val, &st.toc_style);
                     }
                 }
                 3 => {
@@ -5084,18 +5303,18 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     let parts: Vec<&str> = [type_val, num_val, title_val].into_iter().filter(|s| !s.is_empty()).collect();
                     let line = parts.join(" ");
                     if !line.is_empty() {
-                        frame_with_style(app, spread_idx, [margin.x0, margin.y0 + 20.0, margin.x1, margin.y0 + 60.0], &line, &st.toc_style);
+                        frame_with_style(app, spread_idx, [margin.x0, margin.y0, margin.x1, margin.y0 + 40.0], &line, &st.toc_style);
                     }
                 }
                 _ => {
                     // 0 or Default: 1 Row · 3 Columns (Col 1 & 2 fit tightly to content, Col 3 takes rest of width with space at end)
                     let gutter = 8.0;
                     let end_space = 20.0;
-                    let row_y0 = margin.y0 + 20.0;
-                    let row_y1 = margin.y0 + 80.0;
+                    let row_y0 = margin.y0;
+                    let row_y1 = margin.y0 + 60.0;
                     let mut cur_x = margin.x0;
 
-                    // Col 1: Type (Fit tightly to content, right-aligned)
+                    // Col 1: Type (Fit tightly to content, starting flush with margin.x0)
                     if !type_val.is_empty() {
                         let formatted_type = type_val.to_uppercase();
                         let c1_w = estimate_text_width(&formatted_type, true);
@@ -5207,11 +5426,15 @@ pub fn target_page_index(app: &DesignApp) -> usize {
     }
     if let Some(st) = app.session.active() {
         let sel_id = st.selection.items.first().copied().or_else(|| st.selection.text.and_then(|t| t.frame));
-        if let Some(id) = sel_id
-            && let Some(loc) = st.doc.find(id)
-            && let designcraft_doc::SpreadRef::Doc(si) = loc.spread
-        {
-            return st.doc.first_page_of_spread(si);
+        if let Some(id) = sel_id {
+            if let Some(p) = st.doc.page_of_item(id) {
+                return p;
+            }
+            if let Some(loc) = st.doc.find(id)
+                && let designcraft_doc::SpreadRef::Doc(si) = loc.spread
+            {
+                return st.doc.first_page_of_spread(si);
+            }
         }
         st.doc.page_count().saturating_sub(1)
     } else {
@@ -5378,7 +5601,24 @@ pub fn split_chart_title(title: &str, num_val: &str, type_val: &str) -> (String,
 }
 
 pub fn is_divider_type(type_val: &str) -> bool {
-    ["divider", "dividers", "pembatas", "div"].iter().any(|k| type_val.eq_ignore_ascii_case(k))
+    let s = type_val.trim();
+    if s.is_empty() {
+        return false;
+    }
+    let lower = s.to_lowercase();
+    if lower == "div" || lower == "divider" || lower == "dividers" || lower == "pembatas" {
+        return true;
+    }
+    if lower.starts_with("divider") || lower.starts_with("pembatas") {
+        return true;
+    }
+    if let Some(rest) = lower.strip_prefix("div") {
+        let rest_clean = rest.trim_start_matches(['_', '-', ' ', '.']);
+        if rest_clean.is_empty() || rest_clean.chars().all(|c| c.is_ascii_digit()) {
+            return true;
+        }
+    }
+    false
 }
 
 pub fn is_chart_type(type_val: &str) -> bool {
@@ -5604,8 +5844,8 @@ pub fn execute_insert_table_matrix(
             }
 
             let has_footnote = footnote_text.is_some();
-            let gap_below_title = 20.0;
-            let table_y0 = if title_bottom > margin.y0 { title_bottom + gap_below_title } else { margin.y0 + 20.0 };
+            let gap_below_title = 12.0;
+            let table_y0 = if title_bottom > margin.y0 { title_bottom + gap_below_title } else { margin.y0 };
             let available_h = (margin.y1 - table_y0).max(60.0);
             let max_table_h = if has_footnote { (available_h - 32.0).max(40.0) } else { available_h };
             let frame_h = max_table_h;
@@ -6081,15 +6321,46 @@ fn find_type_and_number_on_page(doc: &designcraft_doc::Document, page_str: &str,
         }
         let Some(tf) = item.text_frame() else { continue };
         let Some(st) = doc.story(tf.story) else { continue };
-        let txt = st.text.trim();
-        if txt.is_empty() || txt == title {
-            continue;
-        }
 
-        if is_plausible_number(txt) {
-            num_candidate = Some(txt.to_string());
-        } else if is_plausible_type(txt) {
-            type_candidate = Some(to_proper_case(txt));
+        for line in st.text.split(['\n', designcraft_doc::story::FORCED_LINE_BREAK]) {
+            let txt = line.trim();
+            if txt.is_empty() || txt == title {
+                continue;
+            }
+
+            if is_plausible_number(txt) {
+                if num_candidate.is_none() {
+                    num_candidate = Some(txt.to_string());
+                }
+            } else if is_plausible_type(txt) {
+                if type_candidate.is_none() {
+                    type_candidate = Some(to_proper_case(txt));
+                }
+            } else {
+                for prefix in &["Grafik", "Chart", "Tabel", "Table"] {
+                    if let Some(rest) = txt.strip_prefix(prefix) {
+                        let candidate = rest.split_whitespace().next().unwrap_or("");
+                        if is_plausible_number(candidate) {
+                            if type_candidate.is_none() {
+                                type_candidate = Some(to_proper_case(prefix));
+                            }
+                            if num_candidate.is_none() {
+                                num_candidate = Some(candidate.to_string());
+                            }
+                        }
+                    } else if let Some(rest) = txt.to_lowercase().strip_prefix(&prefix.to_lowercase()) {
+                        let candidate = rest.split_whitespace().next().unwrap_or("");
+                        if is_plausible_number(candidate) {
+                            if type_candidate.is_none() {
+                                type_candidate = Some(to_proper_case(prefix));
+                            }
+                            if num_candidate.is_none() {
+                                num_candidate = Some(candidate.to_string());
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -6099,6 +6370,64 @@ fn find_type_and_number_on_page(doc: &designcraft_doc::Document, page_str: &str,
         (None, Some(n)) => Some((String::new(), n)),
         (None, None) => None,
     }
+}
+
+/// Check if an entry line contains only a kicker type word and/or a number (e.g. "Grafik 02.01", "Tabel 01.01", "02.01")
+/// with no actual descriptive title words.
+fn is_type_and_number_only(t: &str) -> bool {
+    let words: Vec<&str> = t.split_whitespace().collect();
+    if words.is_empty() || words.len() > 2 {
+        return false;
+    }
+    if words.len() == 1 {
+        let w = words[0].trim_end_matches('.');
+        w.chars().any(|c| c.is_ascii_digit()) && w.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-')
+    } else {
+        let w0_lower = words[0].to_lowercase();
+        let is_type = ["grafik", "chart", "tabel", "table", "bab", "section"].contains(&w0_lower.as_str());
+        let w1 = words[1].trim_end_matches('.');
+        let is_num = w1.chars().any(|c| c.is_ascii_digit()) && w1.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-');
+        is_type && is_num
+    }
+}
+
+/// Strip type and number prefixes from a title for TablePage layout (which puts the type in the column header
+/// and the number in column 1, leaving only the title text for column 2).
+pub fn strip_tablepage_title_prefix<'a>(title: &'a str, num: &str, typ: &str) -> &'a str {
+    let mut t = title.trim();
+    if !typ.is_empty() {
+        if let Some(rest) = t.strip_prefix(typ) {
+            t = rest.trim();
+        } else if let Some(rest) = t.to_lowercase().strip_prefix(&typ.to_lowercase()) {
+            t = title[title.len() - rest.len()..].trim();
+        }
+    } else {
+        for prefix in &["Tabel", "Table", "Grafik", "Chart"] {
+            if let Some(rest) = t.strip_prefix(prefix) {
+                t = rest.trim();
+                break;
+            } else if let Some(rest) = t.to_lowercase().strip_prefix(&prefix.to_lowercase()) {
+                t = title[title.len() - rest.len()..].trim();
+                break;
+            }
+        }
+    }
+
+    let clean_num = num.trim_end_matches('.');
+    if !clean_num.is_empty() {
+        if let Some(rest) = t.strip_prefix(clean_num) {
+            t = rest.trim();
+        } else if let Some(rest) = t.strip_prefix(num) {
+            t = rest.trim();
+        }
+    } else if let Some((first, rest)) = t.split_once(' ') {
+        let f_clean = first.trim_end_matches('.');
+        if f_clean.chars().any(|c| c.is_ascii_digit()) && f_clean.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-') {
+            t = rest.trim();
+        }
+    }
+
+    t.trim_start_matches(['.', '-', ':', ';', ' '])
 }
 
 /// Wrap a TOC entry title using forced line breaks (`\u{2028}`) so:
@@ -6217,7 +6546,11 @@ fn is_toc_header_line(line: &str) -> bool {
 
 /// Detect whether a record represents a Section header (e.g. "Bab 4", "4.3 Perumahan", or "Section 2")
 /// which in TablePage layout does not receive a page number or dot leaders.
-fn is_section_header(r_type: &str, num_str: &str, title: &str) -> bool {
+/// Lists of tables (kind 1) or charts (kind 2) never contain section headers.
+fn is_section_header(toc_kind: usize, r_type: &str, num_str: &str, title: &str) -> bool {
+    if toc_kind != 0 {
+        return false;
+    }
     let t_lower = r_type.trim().to_lowercase();
     if t_lower == "bab" || t_lower == "section" || t_lower == "subbab" || t_lower == "kategori" || t_lower == "chapter" {
         return true;
@@ -6341,6 +6674,8 @@ fn enrich_toc_story(
             new_lines.push(orig_title_line.to_string());
         }
 
+        // 1. Pre-process raw TOC lines: extract (title, page) and coalesce multi-line entries on the same page
+        let mut raw_entries: Vec<(String, Option<String>)> = Vec::new();
         for (idx, line) in lines.into_iter().enumerate() {
             if idx == 0 || line.trim().is_empty() {
                 continue;
@@ -6352,19 +6687,47 @@ fn enrich_toc_story(
             }
 
             let (raw_title, page_part) = match line_clean.split_once('\t') {
-                Some((t, p)) => (t.trim(), Some(p.trim())),
-                None => (line_clean.trim(), None),
+                Some((t, p)) => (t.trim().to_string(), Some(p.trim().to_string())),
+                None => (line_clean.trim().to_string(), None),
             };
 
-            if raw_title.is_empty() {
-                continue;
+            if !raw_title.is_empty() {
+                raw_entries.push((raw_title, page_part));
             }
+        }
 
+        // Coalesce entries from the same page where one is type+number and the other is the title
+        let mut coalesced: Vec<(String, Option<String>)> = Vec::new();
+        let mut c_idx = 0;
+        while c_idx < raw_entries.len() {
+            let (cur_t, cur_p) = &raw_entries[c_idx];
+            if c_idx + 1 < raw_entries.len() {
+                let (next_t, next_p) = &raw_entries[c_idx + 1];
+                if cur_p.is_some() && cur_p == next_p {
+                    if is_type_and_number_only(cur_t) && !is_type_and_number_only(next_t) {
+                        coalesced.push((format!("{cur_t} {next_t}"), cur_p.clone()));
+                        c_idx += 2;
+                        changed = true;
+                        continue;
+                    } else if !is_type_and_number_only(cur_t) && is_type_and_number_only(next_t) {
+                        coalesced.push((format!("{next_t} {cur_t}"), cur_p.clone()));
+                        c_idx += 2;
+                        changed = true;
+                        continue;
+                    }
+                }
+            }
+            coalesced.push((cur_t.clone(), cur_p.clone()));
+            c_idx += 1;
+        }
+
+        for (raw_title, page_part) in coalesced {
             // Check if this line is an existing TOC self-entry
             let is_self_entry = raw_title.eq_ignore_ascii_case("contents")
                 || raw_title.eq_ignore_ascii_case("table of contents")
                 || raw_title.eq_ignore_ascii_case("daftar isi")
                 || raw_title.eq_ignore_ascii_case("daftar tabel")
+                || raw_title.eq_ignore_ascii_case("daftar grafik")
                 || raw_title.eq_ignore_ascii_case(self_title);
 
             if is_self_entry {
@@ -6380,7 +6743,7 @@ fn enrich_toc_story(
 
             let mut matched_type = String::new();
             let mut matched_num = String::new();
-            let mut clean_title = raw_title.to_string();
+            let mut clean_title = raw_title.clone();
             let mut matched_record = false;
 
             // 1. Try matching against records in st.card1_records
@@ -6392,11 +6755,21 @@ fn enrich_toc_story(
                 let r_num = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
                 let r_title = row.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("").trim();
 
-                if !r_title.is_empty() && (raw_title == r_title || raw_title.ends_with(r_title)) {
+                let titles_match = !r_title.is_empty()
+                    && (raw_title == r_title || raw_title.ends_with(r_title) || r_title.ends_with(&raw_title) || {
+                        let norm_r = strip_tablepage_title_prefix(r_title, r_num, r_type);
+                        let norm_raw = strip_tablepage_title_prefix(&raw_title, r_num, r_type);
+                        !norm_r.is_empty() && norm_r.eq_ignore_ascii_case(norm_raw)
+                    });
+
+                if titles_match {
                     matched_record = true;
                     matched_type = r_type.to_string();
                     matched_num = r_num.to_string();
-                    clean_title = r_title.to_string();
+                    clean_title = strip_tablepage_title_prefix(r_title, r_num, r_type).to_string();
+                    if clean_title.is_empty() {
+                        clean_title = strip_tablepage_title_prefix(&raw_title, r_num, r_type).to_string();
+                    }
                     if let Some(used) = used_records.get_mut(r_idx) {
                         *used = true;
                     }
@@ -6404,7 +6777,7 @@ fn enrich_toc_story(
                 }
             }
 
-            // 2. Strip prefix if in raw_title (e.g. "Tabel 4.2.1 Banyaknya...")
+            // 2. Strip prefix if in raw_title (e.g. "Tabel 4.2.1 Banyaknya..." or "Grafik 02.01 Panjang Jalan...")
             if !matched_record {
                 let trimmed_title = raw_title.trim();
                 let (det_type, after_type) = if let Some(rest) = trimmed_title.strip_prefix("Tabel ") {
@@ -6413,8 +6786,17 @@ fn enrich_toc_story(
                     ("Table", rest.trim())
                 } else if let Some(rest) = trimmed_title.strip_prefix("Grafik ") {
                     ("Grafik", rest.trim())
+                } else if let Some(rest) = trimmed_title.strip_prefix("Chart ") {
+                    ("Chart", rest.trim())
                 } else {
-                    ("", trimmed_title)
+                    let default_type = if plan.kind() == 2 {
+                        "Grafik"
+                    } else if plan.kind() == 1 {
+                        "Tabel"
+                    } else {
+                        ""
+                    };
+                    (default_type, trimmed_title)
                 };
 
                 if let Some((first_word, rest_of_title)) = after_type.split_once(' ')
@@ -6424,28 +6806,42 @@ fn enrich_toc_story(
                     matched_type = det_type.to_string();
                     matched_num = first_word.to_string();
                     clean_title = rest_of_title.trim().to_string();
+                } else if after_type.chars().any(|c| c.is_ascii_digit()) && after_type.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-') {
+                    matched_type = det_type.to_string();
+                    matched_num = after_type.to_string();
+                    clean_title = String::new();
                 }
             }
 
             // 3. Fallback: inspect page frames ONLY if no record in st.card1_records matched!
             if matched_num.is_empty()
                 && !matched_record
-                && let Some(p_str) = page_part
-                && let Some((t_val, n_val)) = find_type_and_number_on_page(doc, p_str, raw_title)
+                && let Some(p_str) = &page_part
+                && let Some((t_val, n_val)) = find_type_and_number_on_page(doc, p_str, &raw_title)
             {
                 matched_type = t_val;
                 matched_num = n_val;
             }
 
+            if matched_type.is_empty() {
+                if plan.kind() == 2 {
+                    matched_type = "Grafik".to_string();
+                } else if plan.kind() == 1 {
+                    matched_type = "Tabel".to_string();
+                }
+            }
+
             if is_table_page {
+                clean_title = strip_tablepage_title_prefix(&clean_title, &matched_num, &matched_type).to_string();
                 let clean_num = matched_num.trim_end_matches('.');
-                let is_sec = is_section_header(&matched_type, clean_num, &clean_title);
+                let is_sec = is_section_header(plan.kind(), &matched_type, clean_num, &clean_title);
                 if is_sec {
                     let entry = if !clean_num.is_empty() { format!("{clean_num}\t{clean_title}") } else { clean_title };
                     new_lines.push(entry);
                 } else {
-                    let wrapped = if plan.hanging { wrap_tablepage_title(&clean_title, width, hanging_indent, page_part) } else { clean_title };
-                    let entry = if let Some(p_str) = page_part {
+                    let wrapped =
+                        if plan.hanging { wrap_tablepage_title(&clean_title, width, hanging_indent, page_part.as_deref()) } else { clean_title };
+                    let entry = if let Some(p_str) = &page_part {
                         if !clean_num.is_empty() { format!("{clean_num}\t{wrapped}\t{p_str}") } else { format!("{wrapped}\t{p_str}") }
                     } else {
                         wrapped
@@ -6466,18 +6862,15 @@ fn enrich_toc_story(
 
                 let title_to_use = if let Some(prefix) = prefix_opt { format!("{prefix} {raw_title}") } else { raw_title.to_string() };
 
-                let wrapped_title = if plan.hanging { wrap_toc_title(&title_to_use, width, hanging_indent, page_part) } else { title_to_use };
+                let wrapped_title =
+                    if plan.hanging { wrap_toc_title(&title_to_use, width, hanging_indent, page_part.as_deref()) } else { title_to_use };
 
-                let original_entry_title = line.split_once('\t').map(|(t, _)| t).unwrap_or(line);
-                if wrapped_title != original_entry_title {
-                    changed = true;
-                }
-
-                if let Some(p_str) = page_part {
+                if let Some(p_str) = &page_part {
                     new_lines.push(format!("{wrapped_title}\t{p_str}"));
                 } else {
                     new_lines.push(wrapped_title);
                 }
+                changed = true;
             }
         }
 
@@ -6490,6 +6883,7 @@ fn enrich_toc_story(
                     || t.eq_ignore_ascii_case("table of contents")
                     || t.eq_ignore_ascii_case("daftar isi")
                     || t.eq_ignore_ascii_case("daftar tabel")
+                    || t.eq_ignore_ascii_case("daftar grafik")
             });
             if !already_has {
                 let wrapped =
@@ -6713,7 +7107,9 @@ fn apply_toc_post_process(
                         && (para_text == plan.title.trim()
                             || para_text.eq_ignore_ascii_case("contents")
                             || para_text.eq_ignore_ascii_case("daftar isi")
-                            || para_text.eq_ignore_ascii_case("daftar tabel"))
+                            || para_text.eq_ignore_ascii_case("daftar tabel")
+                            || para_text.eq_ignore_ascii_case("daftar grafik")
+                            || para_text.eq_ignore_ascii_case("daftar chart"))
                     {
                         "TOC Title"
                     } else if is_toc_header_line(para_text) {
@@ -7125,22 +7521,21 @@ pub fn execute_page_from_rtf(app: &mut DesignApp, st: &mut PubgenState, path: &s
         return Err(format!("File not found: {target_path}"));
     }
 
-    let cur_page =
-        app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app)).unwrap_or_else(|| target_page_index(app));
-    let cur_label = app.session.page_label(cur_page);
-
-    // If a text frame on the selected page is selected, place into that frame.
-    // Otherwise clear any other selection so place_text creates a new text frame on cur_page.
-    let target_frame = {
+    let (cur_page, target_frame) = {
         let active = app.session.active().ok_or("No active document")?;
-        active.selection.items.first().copied().filter(|&id| {
-            active.doc.page_of_item(id) == Some(cur_page)
-                && active
-                    .doc
-                    .item(id)
-                    .is_some_and(|it| matches!(it.content, designcraft_doc::Content::Unassigned | designcraft_doc::Content::Text(_)))
-        })
+        let tf = active.selection.items.first().copied().filter(|&id| {
+            active.doc.item(id).is_some_and(|it| matches!(it.content, designcraft_doc::Content::Unassigned | designcraft_doc::Content::Text(_)))
+        });
+        let fallback_page = app
+            .session
+            .active()
+            .and_then(|s| s.selection.page)
+            .or_else(|| crate::canvas::current_page(app))
+            .unwrap_or_else(|| target_page_index(app));
+        let p = tf.and_then(|id| active.doc.page_of_item(id)).unwrap_or(fallback_page);
+        (p, tf)
     };
+    let cur_label = app.session.page_label(cur_page);
 
     let res = if let Some(fid) = target_frame {
         app.run(
@@ -7365,24 +7760,31 @@ pub fn execute_excel_and_generate(app: &mut DesignApp, st: &mut PubgenState, pat
     st.card2_table_footer = true;
     st.card2_row_conditions = true;
 
+    let mut cover_res_msg = None;
+    if st.excel_had_cover {
+        // The cover page goes before Page 1. Generating it before the body pages ensures
+        // that all subsequent body pages land on their permanent spreads and page sides (Left vs Right),
+        // preventing spread repagination from flipping inside and outside margins.
+        match execute_generate_cover(app, st) {
+            Ok(cover_msg) => {
+                st.cover_status = Some((cover_msg.clone(), true));
+                cover_res_msg = Some(cover_msg);
+            }
+            Err(e) => {
+                st.cover_status = Some((e.clone(), false));
+                return Ok(format!("{conv_msg}, but cover failed: {e}"));
+            }
+        }
+    }
+
     // Run Page from CSV (which auto-inserts the table for each sheet on its corresponding page)
     let gen_res = execute_generate_pages(app, st);
     match gen_res {
         Ok(gen_msg) => {
             st.card1_status = Some((gen_msg.clone(), true));
             let count = st.card2_sheet_tables.len();
-            if st.excel_had_cover {
-                // The cover page goes before Page 1, so it is generated after the body pages.
-                match execute_generate_cover(app, st) {
-                    Ok(cover_msg) => {
-                        st.cover_status = Some((cover_msg.clone(), true));
-                        return Ok(format!("Converted {count} sheets & auto-generated pages + cover ({gen_msg}; {cover_msg})!"));
-                    }
-                    Err(e) => {
-                        st.cover_status = Some((e.clone(), false));
-                        return Ok(format!("Converted {count} sheets & generated pages, but cover failed: {e}"));
-                    }
-                }
+            if let Some(cover_msg) = cover_res_msg {
+                return Ok(format!("Converted {count} sheets & auto-generated pages + cover ({gen_msg}; {cover_msg})!"));
             }
             Ok(format!("Converted {count} sheets & auto-generated pages ({gen_msg})!"))
         }
@@ -7719,9 +8121,9 @@ mod tests {
             .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|st| !st.tables.is_empty()))
             .expect("Table item should exist on spread");
 
-        // In preset 0, title row has row_y1 = margin.y0 + 80.0
-        // The table frame should start at margin.y0 + 80.0 + 20.0 = margin.y0 + 100.0
-        assert_eq!(table_item.bounds().y0, margin.y0 + 100.0);
+        // In preset 0, title row has row_y1 = margin.y0 + 60.0 and gap_below_title = 12.0
+        // The table frame should start at margin.y0 + 60.0 + 12.0 = margin.y0 + 72.0
+        assert_eq!(table_item.bounds().y0, margin.y0 + 72.0);
         assert_eq!(table_item.bounds().x0, margin.x0);
         assert_eq!(table_item.bounds().x1, margin.x1);
     }
@@ -9222,7 +9624,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         std::fs::copy(&sample_xlsx, &workbook).unwrap();
         // The workbook's `file` cells carry paths from the machine that authored it; copy the
         // sidecar assets beside it so the file-name fallback resolves them here too.
-        for sidecar in ["C02_01.png", "ulasan_bab_1.rtf", "A02.rtf"] {
+        for sidecar in ["C02_01.png", "infografik_01.png", "ulasan_bab_1.rtf", "A02.rtf", "R02.rtf"] {
             let src = sample_xlsx.parent().unwrap().join(sidecar);
             if src.is_file() {
                 std::fs::copy(&src, dir.join(sidecar)).unwrap();
@@ -9245,15 +9647,14 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         assert!(msg.contains("cover"), "Sample workbook has a COVER sheet, so a cover page is generated: {msg}");
 
-        let page_count = app.session.active().unwrap().doc.page_count();
-        assert_eq!(page_count, 10, "Expected 10 pages after generating 7 sheet records and the cover");
-
         let doc = &app.session.active().unwrap().doc;
-        // Verify Page 2 contains Note A02
-        let (si2, _) = doc.page_loc(2).unwrap();
-        let page2_items: Vec<_> = doc.spreads[si2].items.iter().filter(|it| doc.page_of_item(it.id) == Some(2)).collect();
-        let page2_texts: Vec<String> = page2_items
+        let page_count = doc.page_count();
+        assert_eq!(page_count, 10, "Expected 10 pages after generating 7 sheet records (with 1 RTF autoflow continuation page) and the cover");
+
+        let page2_texts: Vec<String> = doc.spreads[doc.page_loc(2).unwrap().0]
+            .items
             .iter()
+            .filter(|it| doc.page_of_item(it.id) == Some(2))
             .filter_map(|it| it.text_frame())
             .map(|tf| doc.stories.get(&tf.story).map(|s| s.text.clone()).unwrap_or_default())
             .collect();
@@ -9262,7 +9663,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(!page2_texts.iter().any(|t| t.contains("PEMERINTAHAN")), "Page 2 should not contain Divider text: {page2_texts:?}");
 
         // Verify Page 3 contains Divider DIV
-        let (si3, _) = doc.page_loc(3).unwrap();
+        let (si3, pi3) = doc.page_loc(3).unwrap();
         let page3_items: Vec<_> = doc.spreads[si3].items.iter().filter(|it| doc.page_of_item(it.id) == Some(3)).collect();
         let page3_texts: Vec<String> = page3_items
             .iter()
@@ -9272,6 +9673,51 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(page3_texts.iter().any(|t| t.contains("BAB")), "Page 3 should contain Divider prefix: {page3_texts:?}");
         assert!(page3_texts.iter().any(|t| t.contains("PEMERINTAHAN")), "Page 3 should contain Divider title: {page3_texts:?}");
         assert!(!page3_texts.iter().any(|t| t.contains("Keterangan Publikasi")), "Page 3 should not contain Note text: {page3_texts:?}");
+
+        // Verify COVER (Page 0) and DIV (Page 3) adjust to Page Size (0 margins)
+        let (si0, pi0) = doc.page_loc(0).unwrap();
+        let cover_pg = &doc.spreads[si0].pages[pi0];
+        assert_eq!(cover_pg.margins.top, 0.0, "COVER page must have 0 margins");
+        assert_eq!(cover_pg.margins.inside, 0.0, "COVER page must have 0 margins");
+
+        let div_pg = &doc.spreads[si3].pages[pi3];
+        assert_eq!(div_pg.margins.top, 0.0, "DIV page must have 0 margins");
+        assert_eq!(div_pg.margins.outside, 0.0, "DIV page must have 0 margins");
+
+        // Verify content pages (Page 2 Note, Page 6 Table) follow page margins (BPS doc margins)
+        let pt_per_mm = 72.0 / 25.4;
+        let expected_top = 20.20 * pt_per_mm;
+        let expected_inside = 19.0 * pt_per_mm;
+        let expected_outside = 15.0 * pt_per_mm;
+
+        let (si2, pi2) = doc.page_loc(2).unwrap();
+        let note_pg = &doc.spreads[si2].pages[pi2];
+        assert!((note_pg.margins.top - expected_top).abs() < 0.1, "Note page top margin must follow doc margin");
+        assert!((note_pg.margins.inside - expected_inside).abs() < 0.1, "Note page inside margin must follow doc margin");
+        assert!((note_pg.margins.outside - expected_outside).abs() < 0.1, "Note page outside margin must follow doc margin");
+
+        // Verify items on Note page start flush with page margin x0 (left side is not off)
+        let note_margin = note_pg.margin_rect();
+        let note_items: Vec<_> = doc.spreads[si2].items.iter().filter(|it| doc.page_of_item(it.id) == Some(2)).collect();
+        assert!(note_items.iter().any(|it| (it.bounds().x0 - note_margin.x0).abs() < 1.0), "Note item should start at left margin");
+        for it in &note_items {
+            let ib = it.bounds();
+            assert!(ib.x0 >= note_margin.x0 - 1.0, "Item left {} must align within margin {}", ib.x0, note_margin.x0);
+            assert!(ib.x1 <= note_margin.x1 + 1.0, "Item right {} must not exceed margin {}", ib.x1, note_margin.x1);
+        }
+
+        // Verify Table page (Page 6: Tabel 02.01) follows page margins
+        let (si6, pi6) = doc.page_loc(6).unwrap();
+        let tbl_pg = &doc.spreads[si6].pages[pi6];
+        assert!((tbl_pg.margins.top - expected_top).abs() < 0.1);
+        let tbl_margin = tbl_pg.margin_rect();
+        let tbl_items: Vec<_> = doc.spreads[si6].items.iter().filter(|it| doc.page_of_item(it.id) == Some(6)).collect();
+        assert!(tbl_items.iter().any(|it| (it.bounds().x0 - tbl_margin.x0).abs() < 1.0), "Table item should start at left margin");
+        for it in &tbl_items {
+            let ib = it.bounds();
+            assert!(ib.x0 >= tbl_margin.x0 - 1.0, "Item left {} must align within margin {}", ib.x0, tbl_margin.x0);
+            assert!(ib.x1 <= tbl_margin.x1 + 1.0, "Item right {} must not exceed margin {}", ib.x1, tbl_margin.x1);
+        }
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -9892,6 +10338,59 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     }
 
     #[test]
+    fn test_execute_generate_pages_note_or_g_sheet_single_row_no_header() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G00.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Hello DesignCraft G00 Narrative!}"#).unwrap();
+        let catalog_path = temp_dir.path().join("G00_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        // Title column is empty (as produced when sheet only has 1 row: file)
+        std::fs::write(&catalog_path, format!("type,number,title,file\nNote,00,,\"{escaped}\"\n")).unwrap();
+
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "generate pages should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert!(active.doc.page_count() >= 2, "narrative sheet gets its own page");
+
+        // Verify NO page header story exists
+        assert!(
+            !active.doc.stories.values().any(|s| s.text.trim() == "Keterangan Publikasi" || s.text.trim() == "Note"),
+            "No Page Header story should be created when sheet only had 1 row file"
+        );
+
+        // Verify the RTF narrative is placed on the page
+        assert!(
+            active.doc.stories.values().any(|s| s.text.contains("Hello DesignCraft G00 Narrative!")),
+            "RTF text should be placed directly on the page"
+        );
+
+        // Verify the RTF frame starts at margin.y0 (not margin.y0 + 64.0)
+        let (margin, _) = {
+            let sp_idx = active.doc.spreads.len().saturating_sub(1);
+            let spread = &active.doc.spreads[sp_idx];
+            let page = spread.pages.last().unwrap();
+            (page.margin_rect(), sp_idx)
+        };
+        let rtf_item = active
+            .doc
+            .spreads
+            .last()
+            .unwrap()
+            .items
+            .iter()
+            .find(|it| it.text_frame().is_some_and(|tf| active.doc.stories.get(&tf.story).is_some_and(|s| s.text.contains("Hello DesignCraft G00"))))
+            .expect("RTF frame should exist");
+        let bounds = rtf_item.bounds();
+        assert_eq!(bounds.y0, margin.y0, "RTF frame should start at top margin without header offset");
+    }
+
+    #[test]
     fn test_execute_page_from_rtf_error_handling() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
@@ -10401,6 +10900,86 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     }
 
     #[test]
+    fn test_toc_chart_tablepage_layout_format() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let img_path = sample_image_path();
+        let mut st = PubgenState {
+            card1_records: vec![vec!["Grafik".into(), "02.01".into(), "Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026".into(), img_path]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            toc_layout_style: 1, // TablePage
+            ..Default::default()
+        };
+
+        execute_generate_pages(&mut app, &st).unwrap();
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+
+        st.toc_kind = 2; // TOC Chart
+        st.toc_title = "Daftar Grafik".into();
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "{res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().unwrap();
+        let text = active.doc.story(toc.story).unwrap().text.clone();
+        assert!(text.contains("Grafik\thalaman"), "header must be present: {text}");
+        // Must contain single line for the chart matching TablePage layout:
+        // "02.01\tPanjang Jalan Kecamatan Karawang Timur 2026\t<page>"
+        assert!(
+            text.contains("02.01\tPanjang Jalan Kecamatan Karawang Timur 2026"),
+            "Should format chart number and title into TablePage columns: {text}"
+        );
+        assert!(!text.contains("Grafik 02.01\t"), "Should not contain raw 'Grafik 02.01' line: {text}");
+    }
+
+    #[test]
+    fn test_toc_chart_tablepage_layout_with_existing_newline_paragraphs() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // Create page 1 with 2 separate paragraphs in a single frame, both with style "TOC Entry"
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        ensure_para_style(&mut app, "TOC Entry");
+        let (spread_idx, page_idx) = app.session.active().unwrap().doc.page_loc(1).unwrap();
+        let margin = app.session.active().unwrap().doc.spreads[spread_idx].pages[page_idx].margin_rect();
+        frame_with_centered_bold_title(
+            &mut app,
+            spread_idx,
+            [margin.x0, margin.y0, margin.x1, margin.y0 + 48.0],
+            "Grafik 02.01\nPanjang Jalan Kecamatan Karawang Timur 2026",
+            Some("TOC Entry"),
+        );
+
+        let mut st = PubgenState {
+            toc_kind: 2,
+            toc_title: "Daftar Grafik".into(),
+            toc_style: "TOC Entry".into(),
+            toc_layout_style: 1, // TablePage
+            ..Default::default()
+        };
+
+        crate::canvas::go_to_page(&mut app, 0);
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "{res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().unwrap();
+        let text = active.doc.story(toc.story).unwrap().text.clone();
+        assert!(text.contains("Grafik\thalaman"), "header must be present: {text}");
+        assert!(
+            text.contains("02.01\tPanjang Jalan Kecamatan Karawang Timur 2026\t2"),
+            "Should coalesce the 2 paragraphs on page 2 into one TablePage entry: {text}"
+        );
+        assert!(!text.contains("Grafik 02.01\t"), "Should not contain raw 'Grafik 02.01' line: {text}");
+    }
+
+    #[test]
     fn test_rebuild_toc_rebuilds_only_the_table_of_contents_in_view() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
@@ -10792,6 +11371,12 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         let active = app.session.active().unwrap();
         assert_eq!(active.doc.page_count(), 2);
+        let (si, pi) = active.doc.page_loc(1).unwrap();
+        let pg = &active.doc.spreads[si].pages[pi];
+        eprintln!("ULASAN PAGE 1: side={:?}, bounds={:?}, margins={:?}, margin_rect={:?}", pg.side, pg.bounds(), pg.margins, pg.margin_rect());
+        for it in &active.doc.spreads[si].items {
+            eprintln!("  ITEM: label='{}', bounds={:?}", it.label, it.bounds());
+        }
 
         let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
         assert!(texts.iter().any(|t| t.contains("BAB 01")), "Stories should contain BAB 01: {texts:?}");
@@ -10972,21 +11557,188 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!((last_p.width - 595.27559).abs() < 0.1, "Divider page should be full A4 width 595.28: {}", last_p.width);
         assert!((last_p.height - 841.88976).abs() < 0.1, "Divider page should be full A4 height 841.89: {}", last_p.height);
 
-        // Verify image fits within frame bounds without cropping
+        // Verify image fits frame with fitContentToFrame
         let img_item = last_sp.items.iter().find(|it| it.label.contains("image")).unwrap();
         if let designcraft_doc::Content::Graphic(g) = &img_item.content {
             let placed_rect = g.xf.transform_rect_bbox(designcraft_geom::Rect::new(0.0, 0.0, g.size.0, g.size.1));
             let placed_w = placed_rect.width();
             let placed_h = placed_rect.height();
             let frame_bounds = img_item.inner_bounds();
-            assert!(placed_w <= frame_bounds.width() + 1.0, "Placed width {} must fit in frame {}", placed_w, frame_bounds.width());
-            assert!(placed_h <= frame_bounds.height() + 1.0, "Placed height {} must fit in frame {}", placed_h, frame_bounds.height());
+            assert!(
+                (placed_w - frame_bounds.width()).abs() <= 1.0,
+                "Placed width {} must match frame {} for fitContentToFrame",
+                placed_w,
+                frame_bounds.width()
+            );
+            assert!(
+                (placed_h - frame_bounds.height()).abs() <= 1.0,
+                "Placed height {} must match frame {} for fitContentToFrame",
+                placed_h,
+                frame_bounds.height()
+            );
         }
+
+        // Verify divider page adjusts to Page Size (margins == 0.0)
+        assert_eq!(last_p.margins.top, 0.0, "Divider page margins must be 0 (Page Size)");
+        assert_eq!(last_p.margins.bottom, 0.0, "Divider page margins must be 0 (Page Size)");
+        assert_eq!(last_p.margins.inside, 0.0, "Divider page margins must be 0 (Page Size)");
+        assert_eq!(last_p.margins.outside, 0.0, "Divider page margins must be 0 (Page Size)");
 
         let mut renderer = designcraft_render::Renderer::new();
         let cache = designcraft_compose::Cache::new();
         let opts = designcraft_render::RenderOptions::default();
         let rendered = renderer.render_page(&active.doc, &cache, 1, 1.0, false, &opts);
         assert!(rendered.is_some(), "Divider page should render cleanly without panic");
+    }
+
+    #[test]
+    fn test_content_pages_adjust_to_page_margins_while_cover_and_div_adjust_to_page_size() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card1_preset: 0,
+            card1_records: vec![
+                vec!["COVER".into(), "".into(), "PUBLICATION COVER".into(), "".into(), "".into()],
+                vec!["Note".into(), "".into(), "CATATAN TEKNIS".into(), "".into(), "".into()],
+                vec!["DIV".into(), "01".into(), "BAB 01".into(), "".into(), "".into()],
+                vec!["DIV01".into(), "01".into(), "BAB 01".into(), "".into(), "".into()],
+                vec!["DIV1".into(), "02".into(), "BAB 02".into(), "".into(), "".into()],
+                vec!["Tabel".into(), "1.1".into(), "Luas Wilayah".into(), "".into(), "".into()],
+            ],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        // Set document margins (e.g. 54 pt ~ 19mm)
+        let _ = execute_set_page_margins(&mut app);
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // Spreads / pages: Page 0 is initial blank, then 6 added pages -> total 7 pages
+        assert_eq!(active.doc.page_count(), 7);
+
+        const PT_PER_MM: f64 = 72.0 / 25.4;
+        let expected_top = 20.20 * PT_PER_MM;
+
+        // Page 1: COVER -> margins should be 0.0 (adjust to Page Size)
+        let (sp1_idx, p1_idx) = active.doc.page_loc(1).unwrap();
+        let p1 = &active.doc.spreads[sp1_idx].pages[p1_idx];
+        assert_eq!(p1.margins.top, 0.0, "COVER page margins must be 0 (Page Size)");
+
+        // Page 2: Note -> margins should be custom doc_margins (adjust to Page Margin)
+        let (sp2_idx, p2_idx) = active.doc.page_loc(2).unwrap();
+        let p2 = &active.doc.spreads[sp2_idx].pages[p2_idx];
+        assert!(
+            (p2.margins.top - expected_top).abs() < 0.01,
+            "Note content page must retain custom doc margins (expected {expected_top}, got {})",
+            p2.margins.top
+        );
+        let p2_m = p2.margin_rect();
+        // Check that items on page 2 are inside margins
+        let sp2 = &active.doc.spreads[sp2_idx];
+        for it in &sp2.items {
+            let ib = it.bounds();
+            if ib.x0 >= p2.bounds().x0 && ib.x1 <= p2.bounds().x1 {
+                assert!(ib.x0 >= p2_m.x0 - 1.0, "Item left {} must align with margin {}", ib.x0, p2_m.x0);
+                assert!(ib.y0 >= p2_m.y0 - 1.0, "Item top {} must align with margin {}", ib.y0, p2_m.y0);
+                assert!(ib.x1 <= p2_m.x1 + 1.0, "Item right {} must not exceed margin {}", ib.x1, p2_m.x1);
+            }
+        }
+
+        // Page 3: DIV -> margins should be 0.0 (adjust to Page Size)
+        let (sp3_idx, p3_idx) = active.doc.page_loc(3).unwrap();
+        let p3 = &active.doc.spreads[sp3_idx].pages[p3_idx];
+        assert_eq!(p3.margins.top, 0.0, "DIV page margins must be 0 (Page Size)");
+
+        // Page 4: DIV01 -> margins should be 0.0 (adjust to Page Size)
+        let (sp4_idx, p4_idx) = active.doc.page_loc(4).unwrap();
+        let p4 = &active.doc.spreads[sp4_idx].pages[p4_idx];
+        assert_eq!(p4.margins.top, 0.0, "DIV01 page margins must be 0 (Page Size)");
+
+        // Page 5: DIV1 -> margins should be 0.0 (adjust to Page Size)
+        let (sp5_idx, p5_idx) = active.doc.page_loc(5).unwrap();
+        let p5 = &active.doc.spreads[sp5_idx].pages[p5_idx];
+        assert_eq!(p5.margins.top, 0.0, "DIV1 page margins must be 0 (Page Size)");
+
+        // Page 6: Tabel -> margins should be custom doc_margins (adjust to Page Margin)
+        let (sp6_idx, p6_idx) = active.doc.page_loc(6).unwrap();
+        let p6 = &active.doc.spreads[sp6_idx].pages[p6_idx];
+        assert!(
+            (p6.margins.top - expected_top).abs() < 0.01,
+            "Tabel content page must retain custom doc margins (expected {expected_top}, got {})",
+            p6.margins.top
+        );
+        let p6_m = p6.margin_rect();
+        let sp6 = &active.doc.spreads[sp6_idx];
+        for it in &sp6.items {
+            let ib = it.bounds();
+            if ib.x0 >= p6.bounds().x0 && ib.x1 <= p6.bounds().x1 {
+                assert!(ib.x0 >= p6_m.x0 - 1.0, "Header/table item left {} must align with margin {}", ib.x0, p6_m.x0);
+                assert!(ib.y0 >= p6_m.y0 - 1.0, "Header/table item top {} must align with margin {}", ib.y0, p6_m.y0);
+                assert!(ib.x1 <= p6_m.x1 + 1.0, "Header/table item right {} must not exceed margin {}", ib.x1, p6_m.x1);
+            }
+        }
+    }
+
+    #[test]
+    fn test_custom_page_margins_from_margins_and_columns_applied_to_content() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // User sets custom margins via layout.marginsAndColumns (e.g. top: 48, bottom: 50, inside: 60, outside: 40)
+        app.run(
+            "layout.marginsAndColumns",
+            json!({
+                "margins": {
+                    "top": 48.0,
+                    "bottom": 50.0,
+                    "inside": 60.0,
+                    "outside": 40.0
+                }
+            }),
+        )
+        .unwrap();
+
+        let st = PubgenState {
+            card1_preset: 0,
+            card1_records: vec![vec!["Tabel".into(), "01.01".into(), "Data Penduduk".into(), "".into(), "".into()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let (si, pi) = active.doc.page_loc(1).unwrap();
+        let page = &active.doc.spreads[si].pages[pi];
+        assert_eq!(page.margins.top, 48.0);
+        assert_eq!(page.margins.bottom, 50.0);
+        assert_eq!(page.margins.inside, 60.0);
+        assert_eq!(page.margins.outside, 40.0);
+
+        let m = page.margin_rect();
+        let sp = &active.doc.spreads[si];
+        for it in &sp.items {
+            let ib = it.bounds();
+            if ib.x0 >= page.bounds().x0 && ib.x1 <= page.bounds().x1 {
+                assert!(ib.x0 >= m.x0 - 1.0, "Item left {} must align with margin {}", ib.x0, m.x0);
+                assert!(ib.y0 >= m.y0 - 1.0, "Item top {} must align with margin {}", ib.y0, m.y0);
+                assert!(ib.x1 <= m.x1 + 1.0, "Item right {} must not exceed margin {}", ib.x1, m.x1);
+            }
+        }
     }
 }

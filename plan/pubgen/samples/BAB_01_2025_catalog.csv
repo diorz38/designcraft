@@ -1,0 +1,8 @@
+type,number,title,file,template
+Note,02,,F:\Github\designcraft\plan\pubgen\samples\A02.rtf,
+Note,00,,F:\GitHub\designcraft\plan\pubgen\samples\G00.rtf,
+Note,01,,F:\GitHub\designcraft\plan\pubgen\samples\G01.rtf,
+Note,02,,F:\GitHub\designcraft\plan\pubgen\samples\G02.rtf,
+Divider,01,BAB 01 GEOGRAFI,F:\Github\designcraft\plan\pubgen\samples\infografik_01.png,assets/templates/dividers/002_chapter_devider.designcraft
+Ulasan,01,Bab 01  Geografi,F:\GitHub\designcraft\plan\pubgen\samples\R01.rtf,dividers/special_infographic_divider
+Tabel,01.01,"Luas Daerah Menurut Desa/Kelurahan di Kecamatan Karawang Timur, 2025",01_01,

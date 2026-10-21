@@ -353,7 +353,8 @@ pub fn is_chart_sheet(sheet_name: &str) -> bool {
     }
 }
 
-/// Check if a sheet is a publication-note sheet (named `A02`, `A01..A99`, `A_01..A_99`, `KETERANGAN`, etc.).
+/// Check if a sheet is a publication-note sheet (named `A02`, `A01..A99`, `A_01..A_99`, `KETERANGAN`, etc.)
+/// or a narrative RTF sheet starting with `G` (e.g. `G00`, `G01`, `G02`, etc.).
 pub fn is_note_sheet(sheet_name: &str) -> bool {
     let s = sheet_name.trim();
     if s.is_empty() {
@@ -376,14 +377,28 @@ pub fn is_note_sheet(sheet_name: &str) -> bool {
             return true;
         }
     }
+    if lower.starts_with('g') {
+        return true;
+    }
     false
 }
 
-/// Parse a publication note sheet (e.g. `A02`, `A01`, `Keterangan Publikasi`):
+/// Check if a sheet is a narrative RTF sheet starting with `G` (e.g. `G00`, `G01`, `G02`, etc.).
+pub fn is_g_sheet(sheet_name: &str) -> bool {
+    let s = sheet_name.trim();
+    if s.is_empty() {
+        return false;
+    }
+    s.starts_with('G') || s.starts_with('g')
+}
+
+/// Parse a publication note sheet (e.g. `A02`, `A01`, `Keterangan Publikasi`) or G sheet (e.g. `G00`, `G01`, `G02`):
 /// Can contain title, file/rtf, template in key-value format (or cells) in any order,
 /// or a single row with `.rtf` file path.
 ///
-/// Catalog entry: type `Note`, number from the sheet name (A02 -> 02), title, RTF path, template.
+/// When the sheet only has 1 row (`file`), `title` is left empty so that Page from CSV does not add a Page Header.
+///
+/// Catalog entry: type `Note`, number from the sheet name (A02 -> 02, G00 -> 00), title, RTF path, template.
 pub fn parse_note_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>)> {
     let mut title_val = String::new();
     let mut file_val = String::new();
@@ -416,8 +431,17 @@ pub fn parse_note_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String,
         }
     }
 
-    if title_val.is_empty() {
-        for row in &sheet.grid {
+    // A note/narrative RTF sheet must have an associated RTF or document file path.
+    if file_val.is_empty() {
+        return None;
+    }
+
+    let non_empty_rows: Vec<&Vec<String>> = sheet.grid.iter().filter(|row| row.iter().any(|c| !c.trim().is_empty())).collect();
+
+    // If the sheet has more than 1 non-empty row and title_val wasn't explicitly found by key,
+    // look for a non-file row to serve as title.
+    if title_val.is_empty() && non_empty_rows.len() > 1 {
+        for row in &non_empty_rows {
             let non_empty: Vec<&str> = row.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
             if non_empty.is_empty() {
                 continue;
@@ -440,13 +464,18 @@ pub fn parse_note_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String,
         }
     }
 
-    if title_val.is_empty() {
-        title_val = "Keterangan Publikasi".to_string();
-    }
+    // When the sheet only has 1 row: `file`, `title_val` remains empty so that Page from CSV
+    // does not add a Page Header and simply places the RTF to the page.
 
     let digits: String = sheet.name.chars().filter(|c| c.is_ascii_digit()).collect();
     let num_val = match digits.len() {
-        0 => "02".to_string(),
+        0 => {
+            if sheet.name.trim().to_lowercase().starts_with('g') {
+                "00".to_string()
+            } else {
+                "02".to_string()
+            }
+        }
         1 => format!("0{digits}"),
         _ => digits,
     };
@@ -511,7 +540,7 @@ pub fn parse_chart_sheet(sheet: &ExcelSheetData) -> Option<(String, String, Stri
     Some((t, n, title, file))
 }
 
-/// Check if a sheet is a divider sheet: named `DIV`, `DIV01..99`, `DIV_01..99`, `DIVIDER`, or `PEMBATAS` (case-insensitive).
+/// Check if a sheet is a divider sheet: named `DIV`, `DIV1`, `DIV01`, `DIV_01`, `DIVIDER`, or `PEMBATAS` (case-insensitive).
 pub fn is_divider_sheet(sheet_name: &str) -> bool {
     let s = sheet_name.trim();
     if s.is_empty() {
@@ -521,9 +550,12 @@ pub fn is_divider_sheet(sheet_name: &str) -> bool {
     if lower == "div" || lower == "divider" || lower == "dividers" || lower == "pembatas" {
         return true;
     }
+    if lower.starts_with("divider") || lower.starts_with("pembatas") {
+        return true;
+    }
     if let Some(rest) = lower.strip_prefix("div") {
-        let rest_clean = rest.trim_start_matches('_');
-        if !rest_clean.is_empty() && rest_clean.chars().all(|c| c.is_ascii_digit()) {
+        let rest_clean = rest.trim_start_matches(['_', '-', ' ', '.']);
+        if rest_clean.is_empty() || rest_clean.chars().all(|c| c.is_ascii_digit()) {
             return true;
         }
     }
@@ -1473,6 +1505,16 @@ mod tests {
         assert!(is_note_sheet("A_02"));
         assert!(is_note_sheet("keterangan"));
         assert!(is_note_sheet("Keterangan Publikasi"));
+        assert!(is_note_sheet("G00"));
+        assert!(is_note_sheet("G01"));
+        assert!(is_note_sheet("G02"));
+        assert!(is_note_sheet("g05"));
+        assert!(is_note_sheet("G"));
+        assert!(is_g_sheet("G00"));
+        assert!(is_g_sheet("G01"));
+        assert!(is_g_sheet("g_02"));
+        assert!(!is_g_sheet("A02"));
+        assert!(!is_g_sheet("R01"));
         assert!(!is_note_sheet("A"));
         assert!(!is_note_sheet("AB02"));
         assert!(!is_note_sheet("R02"));
@@ -1497,14 +1539,35 @@ mod tests {
         assert_eq!((t.as_str(), n.as_str()), ("Note", "02"));
         assert_eq!((title.as_str(), file.as_str()), ("Catatan Penting", "A02.rtf"));
 
-        // Single row with file path only: title defaults to "Keterangan Publikasi"
+        // Single row with file path only: title is empty so no Page Header is added
         let sheet_single =
             ExcelSheetData { name: "A02".into(), grid: vec![vec!["file".into(), "E:\\plan\\pubgen\\samples\\A02.rtf".into()]], merges: Vec::new() };
         let (t, n, title, file) = parse_note_sheet(&sheet_single).unwrap();
         assert_eq!(t, "Note");
         assert_eq!(n, "02");
-        assert_eq!(title, "Keterangan Publikasi");
+        assert_eq!(title, "");
         assert_eq!(file, "E:\\plan\\pubgen\\samples\\A02.rtf");
+
+        // G-sheet single row with file path: title is empty, number is 00
+        let sheet_g00 =
+            ExcelSheetData { name: "G00".into(), grid: vec![vec!["file".into(), "plan/pubgen/samples/G00.rtf".into()]], merges: Vec::new() };
+        let (tg, ng, title_g, file_g) = parse_note_sheet(&sheet_g00).unwrap();
+        assert_eq!(tg, "Note");
+        assert_eq!(ng, "00");
+        assert_eq!(title_g, "");
+        assert_eq!(file_g, "plan/pubgen/samples/G00.rtf");
+
+        // G-sheet with title and file: title is preserved
+        let sheet_g01 = ExcelSheetData {
+            name: "G01".into(),
+            grid: vec![vec!["title".into(), "Glosarium".into()], vec!["file".into(), "plan/pubgen/samples/G01.rtf".into()]],
+            merges: Vec::new(),
+        };
+        let (tg1, ng1, title_g1, file_g1) = parse_note_sheet(&sheet_g01).unwrap();
+        assert_eq!(tg1, "Note");
+        assert_eq!(ng1, "01");
+        assert_eq!(title_g1, "Glosarium");
+        assert_eq!(file_g1, "plan/pubgen/samples/G01.rtf");
     }
 
     #[test]
@@ -1755,7 +1818,7 @@ mod tests {
         }
 
         // Verify catalog content includes the Note, Divider, Ulasan and Grafik rows
-        assert!(converted.catalog_csv_content.contains("Note,02,Keterangan Publikasi,"));
+        assert!(converted.catalog_csv_content.contains("Note,02,Keterangan Publikasi,") || converted.catalog_csv_content.contains("Note,02,,"));
         assert!(converted.catalog_csv_content.contains("Divider,02,BAB 02 PEMERINTAHAN,"));
         assert!(converted.catalog_csv_content.contains("Ulasan,02,Bab 02  Pemerintahan,"));
         assert!(converted.catalog_csv_content.contains("Grafik,02.01,Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026,"));
@@ -1842,6 +1905,12 @@ mod tests {
     fn test_is_divider_sheet_and_split_title() {
         assert!(is_divider_sheet("DIV"));
         assert!(is_divider_sheet("div"));
+        assert!(is_divider_sheet("DIV1"));
+        assert!(is_divider_sheet("DIV01"));
+        assert!(is_divider_sheet("DIV 1"));
+        assert!(is_divider_sheet("DIV 01"));
+        assert!(is_divider_sheet("DIV-1"));
+        assert!(is_divider_sheet("DIV-01"));
         assert!(is_divider_sheet("DIV02"));
         assert!(is_divider_sheet("DIV_02"));
         assert!(is_divider_sheet("DIVIDER"));
