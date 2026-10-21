@@ -73,14 +73,16 @@ fn default_toc_style() -> String {
 }
 
 /// The Quick Actions "TOC style" choices: what the table of contents lists.
-pub const TOC_KINDS: [&str; 3] = ["TOC Entry", "TOC Table", "TOC Chart"];
+pub const TOC_KINDS: [&str; 4] = ["TOC Entry", "TOC Table", "TOC Chart", "TOC Paragraph"];
 
 /// The words the first text box on a page must start with for each TOC style; none lists every
-/// paragraph of the tagged style (the original behaviour).
+/// paragraph of the tagged style (the original behaviour). A paragraph list takes chapter pages
+/// only: `RXX` and `BXX` pages open with their "BAB 01" line, table and chart pages don't.
 pub fn toc_kind_words(kind: usize) -> &'static [&'static str] {
     match kind {
         1 => &["Tabel", "Table"],
         2 => &["Grafik", "Chart"],
+        3 => &["BAB"],
         _ => &[],
     }
 }
@@ -90,15 +92,19 @@ pub fn toc_kind_title(kind: usize) -> Option<&'static str> {
     match kind {
         1 => Some("Daftar Table"),
         2 => Some("Daftar Grafik"),
+        3 => Some("Daftar Isi"),
         _ => None,
     }
 }
 
 /// The TOC style a stored table of contents was generated with: its entry's `pageTitle` filter.
 pub fn toc_kind_of_words(words: &[String]) -> usize {
-    if words.iter().any(|w| w.eq_ignore_ascii_case("grafik") || w.eq_ignore_ascii_case("chart")) {
+    let has = |w: &str| words.iter().any(|x| x.eq_ignore_ascii_case(w));
+    if has("bab") {
+        3
+    } else if has("grafik") || has("chart") {
         2
-    } else if words.iter().any(|w| w.eq_ignore_ascii_case("tabel") || w.eq_ignore_ascii_case("table")) {
+    } else if has("tabel") || has("table") {
         1
     } else {
         0
@@ -4927,24 +4933,90 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             // Ulasan / Editorial Chapter layout:
             // Split title "BAB 01 Pemerintahan" into "BAB 01" and "Pemerintahan"
             let (ch_line, title_line) = split_chapter_title(title_val, num_val);
+            // A title without a "BAB"/number prefix (front matter such as "Kata Pengantar") is a
+            // heading only: no chapter-number text box, the whole title centered on the margin.
+            let has_chapter_prefix = title_val.split_whitespace().next().is_some_and(|w| w.eq_ignore_ascii_case("bab"));
+            let header_h = if has_chapter_prefix { 90.0 } else { 44.0 };
 
-            // 1st Textbox: "BAB 01" (font Arial Black, size 24.0) -> first row
-            if !ch_line.is_empty() {
-                frame_with_font_and_style(app, spread_idx, [margin.x0, margin.y0, margin.x1, margin.y0 + 36.0], &ch_line, "Arial Black", 24.0, None);
-            }
-
-            // 2nd Textbox: "Pemerintahan" (font Arial Black, size 20.0) -> second row
-            // Tag with TOC style so TOC lists this chapter
-            if !title_line.is_empty() {
-                frame_with_font_and_style(
+            if has_chapter_prefix {
+                // 1st Textbox: "BAB 01" (font Arial Black, size 24.0) -> first row
+                if !ch_line.is_empty() {
+                    frame_with_font_and_style(
+                        app,
+                        spread_idx,
+                        [margin.x0, margin.y0, margin.x1, margin.y0 + 36.0],
+                        &ch_line,
+                        "Arial Black",
+                        24.0,
+                        None,
+                    );
+                }
+                // 2nd Textbox: "Pemerintahan" (font Arial Black, size 20.0) -> second row
+                // Tag with TOC style so TOC lists this chapter
+                if !title_line.is_empty() {
+                    frame_with_font_and_style(
+                        app,
+                        spread_idx,
+                        [margin.x0, margin.y0 + 40.0, margin.x1, margin.y0 + 80.0],
+                        &title_line,
+                        "Arial Black",
+                        20.0,
+                        Some(&st.toc_style),
+                    );
+                }
+            } else if !title_val.is_empty() {
+                // Front matter: the title alone, centered across the page margins.
+                if let Some(sid) = frame_with_font_and_style(
                     app,
                     spread_idx,
-                    [margin.x0, margin.y0 + 40.0, margin.x1, margin.y0 + 80.0],
-                    &title_line,
-                    "Arial Black",
-                    20.0,
+                    [margin.x0, margin.y0, margin.x1, margin.y0 + 40.0],
+                    &title_val.to_uppercase(),
+                    "Arial",
+                    12.0,
                     Some(&st.toc_style),
-                );
+                ) {
+                    let _ = app.run("text.select", json!({"story": sid, "anchor": 0, "focus": title_val.chars().count() as u64}));
+                    let _ = app.run("type.alignCenter", json!({}));
+                }
+            }
+
+            // Images of a front-matter sheet: `image1` wraps tight around the text (Word "Tight"),
+            // `image2` floats over it (Word "In front of Text": placed last, no wrap).
+            if !has_chapter_prefix {
+                let col = |key: &str| -> Option<String> {
+                    let idx = st.card1_headers.iter().position(|h| h.trim().eq_ignore_ascii_case(key))?;
+                    let v = row.get(idx).map(|s| s.trim()).filter(|s| !s.is_empty())?;
+                    Some(v.to_string())
+                };
+                let mut place = |key: &str, rect: [f64; 4], wrap: &str| {
+                    let Some(file_str) = col(key) else { return };
+                    let Some(img) = resolve_catalog_related_file(&st.card1_path, &file_str, "png")
+                        .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str.as_str(), "jpg"))
+                        .or_else(|| resolve_catalog_related_file(&st.card1_path, &file_str, "jpeg"))
+                    else {
+                        return;
+                    };
+                    let Some(fid) = app
+                        .run("frame.create", json!({"spread": spread_idx, "rect": rect, "content": "graphic"}))
+                        .ok()
+                        .and_then(|r| r.get("id").and_then(Value::as_u64))
+                    else {
+                        return;
+                    };
+                    let _ = app.run("selection.set", json!({"ids": [fid]}));
+                    let _ = app.run("file.place", json!({"path": img.to_string_lossy(), "frame": fid}));
+                    let _ = app.run("object.fit", json!({"mode": "fitProportionally", "ids": [fid]}));
+                    if wrap != "none" {
+                        // ponytail: `boundingBox` is the closest wrap to Word's "Tight" — contour
+                        // edge detection is out of scope until a publication needs it.
+                        let _ = app.run("object.textWrap", json!({"mode": wrap, "offset": 6.0, "ids": [fid]}));
+                    }
+                    inserted_images_count = inserted_images_count.saturating_add(1);
+                };
+                // Picture positions measured from the `daftar_isi` page style, scaled to the margin box.
+                let (mw, mh) = (margin.x1 - margin.x0, margin.y1 - margin.y0);
+                place("image1", [margin.x0, margin.y0 + mh * 0.254, margin.x0 + mw * 0.335, margin.y0 + mh * 0.528], "boundingBox");
+                place("image2", [margin.x1 - mw * 0.244, margin.y0 + mh * 0.354, margin.x1 - mw * 0.044, margin.y0 + mh * 0.464], "none");
             }
 
             // Place RTF narrative body into a frame below the headers
@@ -4954,7 +5026,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 if let Some(rtf_file) = resolved_rtf {
                     let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
                     crate::canvas::go_to_page(app, cur_page_idx);
-                    let rtf_y0 = margin.y0 + 90.0;
+                    let rtf_y0 = margin.y0 + header_h;
                     let rtf_rect = [margin.x0, rtf_y0, margin.x1, margin.y1];
                     let created_fid = app
                         .run(
@@ -6570,13 +6642,19 @@ fn is_section_header(toc_kind: usize, r_type: &str, num_str: &str, title: &str) 
 /// a rebuild builds it from the stored table so it keeps the TOC style, title and filter the user
 /// chose when it was created.
 #[derive(Clone, Debug)]
-pub struct TocPlan {
-    /// Paragraph style the generated pages tag their title with.
+/// One listed paragraph style of a table of contents and the level it nests at.
+struct TocLevel {
     style: String,
+    level: u8,
+    /// `pageTitle` filter: list a page only when its first text box starts with one of these.
+    words: Vec<String>,
+}
+
+pub struct TocPlan {
+    /// The styles the table of contents lists, outermost level first.
+    levels: Vec<TocLevel>,
     /// Title line of the table of contents.
     title: String,
-    /// `pageTitle` filter: list a page only when its first text box starts with one of these words.
-    words: Vec<String>,
     /// 0 Standard, 1 TablePage (BPS catalog layout).
     layout: usize,
     hanging: bool,
@@ -6584,27 +6662,36 @@ pub struct TocPlan {
 }
 
 impl TocPlan {
-    /// The plan the panel's TOC controls describe.
+    /// The plan the panel's TOC controls describe. A paragraph list nests chapter titles over
+    /// the headings the imported RTF files carry.
     fn from_state(st: &PubgenState) -> Self {
+        let levels = if st.toc_kind == 3 {
+            vec![
+                TocLevel { style: st.toc_style.clone(), level: 1, words: toc_kind_words(3).iter().map(|w| (*w).to_string()).collect() },
+                TocLevel { style: "Heading 1".into(), level: 2, words: Vec::new() },
+                TocLevel { style: "Heading 2".into(), level: 3, words: Vec::new() },
+            ]
+        } else {
+            vec![TocLevel { style: st.toc_style.clone(), level: 1, words: toc_kind_words(st.toc_kind).iter().map(|w| (*w).to_string()).collect() }]
+        };
         Self {
-            style: st.toc_style.clone(),
+            levels,
             title: st.toc_title.trim().to_string(),
-            words: toc_kind_words(st.toc_kind).iter().map(|w| (*w).to_string()).collect(),
             layout: st.toc_layout_style,
             hanging: st.toc_hanging_indent,
             include_self: st.toc_include_self,
         }
     }
 
-    /// The plan a stored table of contents rebuilds with: its own TOC style, title and filter, with
-    /// the panel's layout and indentation options.
+    /// The plan a stored table of contents rebuilds with: its own styles, levels, title and
+    /// filters, with the panel's layout and indentation options.
     fn from_toc(st: &PubgenState, toc: &designcraft_doc::Toc) -> Self {
-        let entry = toc.entries.first();
-        let words = entry.map(|e| e.page_title.clone()).unwrap_or_default();
+        let levels: Vec<TocLevel> =
+            toc.entries.iter().map(|e| TocLevel { style: e.style.clone(), level: e.level, words: e.page_title.clone() }).collect();
+        let levels = if levels.is_empty() { vec![TocLevel { style: st.toc_style.clone(), level: 1, words: Vec::new() }] } else { levels };
         Self {
-            style: entry.map(|e| e.style.clone()).unwrap_or_else(|| st.toc_style.clone()),
+            levels,
             title: toc.title.trim().to_string(),
-            words,
             layout: st.toc_layout_style,
             hanging: st.toc_hanging_indent,
             include_self: st.toc_include_self,
@@ -6613,7 +6700,12 @@ impl TocPlan {
 
     /// The Quick Actions TOC style this plan came from (for messages).
     fn kind(&self) -> usize {
-        toc_kind_of_words(&self.words)
+        if self.levels.iter().any(|l| l.level > 1) { 3 } else { toc_kind_of_words(&self.levels.first().map(|l| l.words.clone()).unwrap_or_default()) }
+    }
+
+    /// A list of chapter titles over their headings, regenerated with each entry's own level.
+    fn is_paragraph_toc(&self) -> bool {
+        self.levels.len() > 1
     }
 
     /// Whether the table of contents writes a title line (an empty field writes none, which the
@@ -6627,13 +6719,20 @@ impl TocPlan {
         if self.has_title() { self.title.trim() } else { "Contents" }
     }
 
-    /// The `toc.generate` entry that lists this plan's pages.
-    fn entry_json(&self) -> Value {
-        let mut e = json!({"style": self.style, "level": 1, "pageNumber": "after", "separator": "\t"});
-        if !self.words.is_empty() {
-            e["pageTitle"] = json!(self.words);
-        }
-        e
+    /// The `toc.generate` entries that list this plan's pages.
+    fn entries_json(&self) -> Value {
+        Value::Array(
+            self.levels
+                .iter()
+                .map(|l| {
+                    let mut e = json!({"style": l.style, "level": l.level, "pageNumber": "after", "separator": "\t"});
+                    if !l.words.is_empty() {
+                        e["pageTitle"] = json!(l.words);
+                    }
+                    e
+                })
+                .collect(),
+        )
     }
 }
 
@@ -6646,6 +6745,11 @@ fn enrich_toc_story(
     hanging_indent: f64,
     toc_page: usize,
 ) {
+    // A paragraph list is generated straight from the document's styles: rewriting its text
+    // would desynchronize the entries from the "TOC Level n" styles the engine gave them.
+    if plan.is_paragraph_toc() {
+        return;
+    }
     let _ = app.session.edit(|doc, _| {
         let full_text = doc.story(sid).map(|s| s.text.clone()).ok_or(designcraft_doc::DocError::NoStory(sid))?;
         let toc_page_label = doc.page_name(toc_page);
@@ -7123,6 +7227,12 @@ fn apply_toc_post_process(
                     if pi == 0 { "TOC Title" } else { "TOC Level 1" }
                 };
 
+                // A paragraph list keeps each entry's own "TOC Level n" from `toc.generate`;
+                // flattening it to level 1 would lose the heading nesting.
+                if plan.is_paragraph_toc() && pi > 0 {
+                    continue;
+                }
+
                 // The Tables and Charts lists center their title line.
                 let center = pi == 0 && style_name == "TOC Title" && plan.kind() != 0;
                 story.format_paras(r.start..r.start, |f| {
@@ -7360,7 +7470,9 @@ fn generate_toc(app: &mut DesignApp, st: &PubgenState, page: usize, plan: &TocPl
     let width = page_margin_width(app, page)?;
     let hanging_indent = toc_hanging_indent(st, plan.layout);
 
-    ensure_para_style(app, &plan.style);
+    for level in &plan.levels {
+        ensure_para_style(app, &level.style);
+    }
     ensure_toc_entry_style(app, width, plan.hanging, hanging_indent, plan.layout);
 
     let res = app.run(
@@ -7368,7 +7480,7 @@ fn generate_toc(app: &mut DesignApp, st: &PubgenState, page: usize, plan: &TocPl
         json!({
             "page": page + 1,
             "title": plan.title_or_contents(),
-            "entries": [plan.entry_json()],
+            "entries": plan.entries_json(),
             "replace": replace,
             "autoflow": true
         }),
@@ -9581,8 +9693,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         // Card 1 must have catalog loaded
         assert!(st.card1_path.ends_with("BAB_02_2025_catalog.csv"));
-        assert_eq!(st.card1_records.len(), 7, "7 sheets in BAB_02_2025.xlsx: A02, DIV, R02, 02_01, 02_02, 02_03, C02_01");
-        assert_eq!(st.card1_records.first().and_then(|r| r.first()), Some(&"Note".to_string()), "the A02 sheet becomes the first catalog row (Note)");
+        assert_eq!(st.card1_records.len(), 6, "6 catalog rows in BAB_02_2025.xlsx: DIV, R02, 3 tables, C02_01");
+        assert_eq!(st.card1_records.first().and_then(|r| r.first()), Some(&"Divider".to_string()), "the DIV sheet becomes the first catalog row");
         assert!(st.card1_headers.contains(&"file".to_string()));
 
         // Card 2 must have first table loaded and sheet table list populated
@@ -9596,12 +9708,10 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(st.generated_zip_name.ends_with(".zip"), "ZIP archive name should end with .zip");
         assert_eq!(st.generated_csv_files.len(), 4, "Catalog + 3 tables in generated_csv_files");
 
-        // The COVER sheet fills the card: Title 1 is `cover_level`, Title 2 is `cover_title`.
-        assert_eq!(st.cover_level, "PRODUK DOMESTIK REGIONAL BRUTO", "title1 must not leave the default \"Kecamatan\"");
-        assert_eq!(st.cover_title, "KABUPATEN KARAWANG");
-        assert_eq!(st.cover_year, "2026");
-        assert_eq!(st.cover_volume, "Volume 13 2026");
-        assert_eq!(st.cover_agency_text, "BADAN PUSAT STATISTIK KABUPATEN KARAWANG");
+        // The workbook has no COVER sheet, so the cover fields keep their defaults.
+        assert!(!st.excel_had_cover, "this workbook has no COVER sheet");
+        assert_eq!(st.cover_level, default_cover_level());
+        assert_eq!(st.cover_title, default_cover_title());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -9642,76 +9752,63 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let msg = res.unwrap();
         assert!(msg.contains("auto-generated pages"), "Status should confirm auto-generated pages: {msg}");
         assert!(msg.contains("3 tables auto-inserted"), "Status should confirm 3 tables auto-inserted: {msg}");
-        assert!(msg.contains("2 RTF chapter(s) placed"), "Status should confirm 2 RTFs placed (R02 ulasan + A02 note): {msg}");
+        assert!(msg.contains("1 RTF chapter(s) placed"), "Status should confirm 1 RTF placed (R02 ulasan): {msg}");
         assert!(msg.contains("2 chart image(s) placed"), "Status should confirm 2 images placed (DIV divider + C02_01 chart): {msg}");
+        assert!(!msg.contains("cover"), "This workbook has no COVER sheet, so no cover page: {msg}");
 
-        assert!(msg.contains("cover"), "Sample workbook has a COVER sheet, so a cover page is generated: {msg}");
+        let page_texts = |page: usize| -> Vec<String> {
+            let doc = &app.session.active().unwrap().doc;
+            doc.spreads[doc.page_loc(page).unwrap().0]
+                .items
+                .iter()
+                .filter(|it| doc.page_of_item(it.id) == Some(page))
+                .filter_map(|it| it.text_frame())
+                .map(|tf| doc.stories.get(&tf.story).map(|s| s.text.clone()).unwrap_or_default())
+                .collect()
+        };
 
         let doc = &app.session.active().unwrap().doc;
-        let page_count = doc.page_count();
-        assert_eq!(page_count, 10, "Expected 10 pages after generating 7 sheet records (with 1 RTF autoflow continuation page) and the cover");
+        assert_eq!(doc.page_count(), 8, "6 sheet records + 1 RTF autoflow continuation page, no cover");
 
-        let page2_texts: Vec<String> = doc.spreads[doc.page_loc(2).unwrap().0]
-            .items
-            .iter()
-            .filter(|it| doc.page_of_item(it.id) == Some(2))
-            .filter_map(|it| it.text_frame())
-            .map(|tf| doc.stories.get(&tf.story).map(|s| s.text.clone()).unwrap_or_default())
-            .collect();
-        assert!(page2_texts.iter().any(|t| t.contains("Keterangan Publikasi")), "Page 2 should contain Note title: {page2_texts:?}");
-        assert!(page2_texts.iter().any(|t| t.contains("KARAWANG TIMUR")), "Page 2 should contain Note RTF narrative: {page2_texts:?}");
-        assert!(!page2_texts.iter().any(|t| t.contains("PEMERINTAHAN")), "Page 2 should not contain Divider text: {page2_texts:?}");
+        // Page 1: the DIV divider (full-bleed, no margins).
+        let divider = page_texts(1);
+        assert!(divider.iter().any(|t| t.contains("BAB")), "Page 1 should contain Divider prefix: {divider:?}");
+        assert!(divider.iter().any(|t| t.contains("PEMERINTAHAN")), "Page 1 should contain Divider title: {divider:?}");
+        assert_eq!(doc.spreads[doc.page_loc(1).unwrap().0].pages[doc.page_loc(1).unwrap().1].margins.top, 0.0, "DIV page must have 0 margins");
 
-        // Verify Page 3 contains Divider DIV
-        let (si3, pi3) = doc.page_loc(3).unwrap();
-        let page3_items: Vec<_> = doc.spreads[si3].items.iter().filter(|it| doc.page_of_item(it.id) == Some(3)).collect();
-        let page3_texts: Vec<String> = page3_items
-            .iter()
-            .filter_map(|it| it.text_frame())
-            .map(|tf| doc.stories.get(&tf.story).map(|s| s.text.clone()).unwrap_or_default())
-            .collect();
-        assert!(page3_texts.iter().any(|t| t.contains("BAB")), "Page 3 should contain Divider prefix: {page3_texts:?}");
-        assert!(page3_texts.iter().any(|t| t.contains("PEMERINTAHAN")), "Page 3 should contain Divider title: {page3_texts:?}");
-        assert!(!page3_texts.iter().any(|t| t.contains("Keterangan Publikasi")), "Page 3 should not contain Note text: {page3_texts:?}");
+        // Page 2: the R02 Ulasan chapter, then its autoflow continuation.
+        let ulasan = page_texts(2);
+        assert!(ulasan.iter().any(|t| t.contains("BAB 02")), "Page 2 should contain the chapter line: {ulasan:?}");
+        assert!(ulasan.iter().any(|t| t.contains("Pemerintahan")), "Page 2 should contain the chapter title: {ulasan:?}");
+        assert!(ulasan.iter().any(|t| t.contains("ULASAN")), "Page 2 should contain the RTF narrative: {ulasan:?}");
 
-        // Verify COVER (Page 0) and DIV (Page 3) adjust to Page Size (0 margins)
-        let (si0, pi0) = doc.page_loc(0).unwrap();
-        let cover_pg = &doc.spreads[si0].pages[pi0];
-        assert_eq!(cover_pg.margins.top, 0.0, "COVER page must have 0 margins");
-        assert_eq!(cover_pg.margins.inside, 0.0, "COVER page must have 0 margins");
-
-        let div_pg = &doc.spreads[si3].pages[pi3];
-        assert_eq!(div_pg.margins.top, 0.0, "DIV page must have 0 margins");
-        assert_eq!(div_pg.margins.outside, 0.0, "DIV page must have 0 margins");
-
-        // Verify content pages (Page 2 Note, Page 6 Table) follow page margins (BPS doc margins)
+        // Content pages follow the document margins (BPS catalog).
         let pt_per_mm = 72.0 / 25.4;
         let expected_top = 20.20 * pt_per_mm;
         let expected_inside = 19.0 * pt_per_mm;
         let expected_outside = 15.0 * pt_per_mm;
 
         let (si2, pi2) = doc.page_loc(2).unwrap();
-        let note_pg = &doc.spreads[si2].pages[pi2];
-        assert!((note_pg.margins.top - expected_top).abs() < 0.1, "Note page top margin must follow doc margin");
-        assert!((note_pg.margins.inside - expected_inside).abs() < 0.1, "Note page inside margin must follow doc margin");
-        assert!((note_pg.margins.outside - expected_outside).abs() < 0.1, "Note page outside margin must follow doc margin");
+        let ulasan_pg = &doc.spreads[si2].pages[pi2];
+        assert!((ulasan_pg.margins.top - expected_top).abs() < 0.1, "Ulasan page top margin must follow doc margin");
+        assert!((ulasan_pg.margins.inside - expected_inside).abs() < 0.1, "Ulasan page inside margin must follow doc margin");
+        assert!((ulasan_pg.margins.outside - expected_outside).abs() < 0.1, "Ulasan page outside margin must follow doc margin");
 
-        // Verify items on Note page start flush with page margin x0 (left side is not off)
-        let note_margin = note_pg.margin_rect();
-        let note_items: Vec<_> = doc.spreads[si2].items.iter().filter(|it| doc.page_of_item(it.id) == Some(2)).collect();
-        assert!(note_items.iter().any(|it| (it.bounds().x0 - note_margin.x0).abs() < 1.0), "Note item should start at left margin");
-        for it in &note_items {
+        let ulasan_margin = ulasan_pg.margin_rect();
+        let ulasan_items: Vec<_> = doc.spreads[si2].items.iter().filter(|it| doc.page_of_item(it.id) == Some(2)).collect();
+        assert!(ulasan_items.iter().any(|it| (it.bounds().x0 - ulasan_margin.x0).abs() < 1.0), "Ulasan item should start at left margin");
+        for it in &ulasan_items {
             let ib = it.bounds();
-            assert!(ib.x0 >= note_margin.x0 - 1.0, "Item left {} must align within margin {}", ib.x0, note_margin.x0);
-            assert!(ib.x1 <= note_margin.x1 + 1.0, "Item right {} must not exceed margin {}", ib.x1, note_margin.x1);
+            assert!(ib.x0 >= ulasan_margin.x0 - 1.0, "Item left {} must align within margin {}", ib.x0, ulasan_margin.x0);
+            assert!(ib.x1 <= ulasan_margin.x1 + 1.0, "Item right {} must not exceed margin {}", ib.x1, ulasan_margin.x1);
         }
 
-        // Verify Table page (Page 6: Tabel 02.01) follows page margins
-        let (si6, pi6) = doc.page_loc(6).unwrap();
+        // Verify Table page (Page 4: Tabel 02.01) follows page margins
+        let (si6, pi6) = doc.page_loc(4).unwrap();
         let tbl_pg = &doc.spreads[si6].pages[pi6];
         assert!((tbl_pg.margins.top - expected_top).abs() < 0.1);
         let tbl_margin = tbl_pg.margin_rect();
-        let tbl_items: Vec<_> = doc.spreads[si6].items.iter().filter(|it| doc.page_of_item(it.id) == Some(6)).collect();
+        let tbl_items: Vec<_> = doc.spreads[si6].items.iter().filter(|it| doc.page_of_item(it.id) == Some(4)).collect();
         assert!(tbl_items.iter().any(|it| (it.bounds().x0 - tbl_margin.x0).abs() < 1.0), "Table item should start at left margin");
         for it in &tbl_items {
             let ib = it.bounds();
@@ -10810,6 +10907,113 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(!turned, "every object on the Modern Horizon cover is upright");
     }
 
+    /// A paragraph list nests chapter titles over the heading styles the RTF imports carry.
+    #[test]
+    fn test_toc_paragraph_kind_tables_and_plan() {
+        assert_eq!(toc_kind_words(3), ["BAB"]);
+        assert_eq!(toc_kind_title(3), Some("Daftar Isi"));
+        assert_eq!(toc_kind_of_words(&["BAB".into()]), 3);
+        // The older kinds keep their detection.
+        assert_eq!(toc_kind_of_words(&["Tabel".into(), "Table".into()]), 1);
+        assert_eq!(toc_kind_of_words(&["Grafik".into(), "Chart".into()]), 2);
+        assert_eq!(toc_kind_of_words(&[]), 0);
+
+        let st = PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() };
+        let plan = TocPlan::from_state(&st);
+        assert!(plan.is_paragraph_toc());
+        let levels: Vec<(&str, u8)> = plan.levels.iter().map(|l| (l.style.as_str(), l.level)).collect();
+        assert_eq!(levels, [("TOC Entry", 1), ("Heading 1", 2), ("Heading 2", 3)]);
+        let json = plan.entries_json();
+        let arr = json.as_array().expect("entries array");
+        assert_eq!(arr.len(), 3);
+        assert_eq!(arr[0]["pageTitle"], json!(["BAB"]));
+        assert!(arr[1].get("pageTitle").is_none(), "heading levels list every paragraph of the style");
+
+        // A single-level kind still emits one entry.
+        let st = PubgenState { toc_kind: 1, toc_style: "TOC Entry".into(), ..Default::default() };
+        let plan = TocPlan::from_state(&st);
+        assert!(!plan.is_paragraph_toc());
+        assert_eq!(plan.entries_json().as_array().map(Vec::len), Some(1));
+        assert_eq!(plan.kind(), 1);
+    }
+
+    /// Add a text frame on absolute `page` and tag its paragraphs with `style`.
+    fn add_page_text(app: &mut DesignApp, page: usize, text: &str, style: &str) {
+        let (si, pi) = app.session.active().expect("document").doc.page_loc(page).expect("page");
+        let b = app.session.active().expect("document").doc.spreads[si].pages[pi].bounds();
+        let rect = [b.x0 + 36.0, b.y0 + 36.0, b.x1 - 36.0, b.y0 + 140.0];
+        let res =
+            app.run("frame.create", json!({"spread": si, "rect": rect, "content": "text", "text": text, "caret": false})).expect("frame.create");
+        let sid = res["story"].as_u64().expect("story");
+        let end = text.chars().count().max(1) as u64;
+        app.run("text.select", json!({"story": sid, "anchor": 0, "focus": end})).expect("text.select");
+        app.run("style.paragraph.apply", json!({"name": style})).expect("style.paragraph.apply");
+    }
+
+    /// Four content pages (chapter, two headings, a table) plus a blank page for the TOC.
+    fn paragraph_toc_doc(app: &mut DesignApp) {
+        app.run("file.new", json!({})).unwrap();
+        for name in ["TOC Entry", "Heading 1", "Heading 2"] {
+            ensure_para_style(app, name);
+        }
+        add_page_text(app, 0, "BAB 01", "TOC Entry");
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        add_page_text(app, 1, "Pendahuluan", "Heading 1");
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        add_page_text(app, 2, "Latar Belakang", "Heading 2");
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        add_page_text(app, 3, "Tabel 01.01 Jarak Antar Kecamatan", "TOC Entry");
+        // The table of contents lands on the last page (no canvas in tests).
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+    }
+
+    #[test]
+    fn test_toc_paragraph_scan_finds_styled_paragraphs() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        paragraph_toc_doc(&mut app);
+
+        let st = PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() };
+        let plan = TocPlan::from_state(&st);
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+
+        assert_eq!(
+            rows.iter().map(|(l, t)| (*l, t.as_str())).collect::<Vec<_>>(),
+            [(1, "BAB 01"), (2, "Pendahuluan"), (3, "Latar Belakang")],
+            "chapter at level 1, headings nested under it, table page excluded by `pageTitle: [BAB]`: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn test_toc_paragraph_keeps_toc_level_styles_and_daftar_isi_title() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        paragraph_toc_doc(&mut app);
+
+        let mut st = PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), toc_title: "Daftar Isi".into(), ..Default::default() };
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "{res:?}");
+        assert!(res.as_deref().unwrap_or_default().contains("TOC Paragraph"), "{}", res.unwrap_or_default());
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().expect("table of contents");
+        let story = active.doc.story(toc.story).expect("TOC story");
+        assert!(story.text.starts_with("Daftar Isi"), "the title line: {}", story.text);
+        assert!(story.text.contains("Pendahuluan") && story.text.contains("Latar Belakang"), "{}", story.text);
+        assert!(!story.text.contains("Tabel 01.01"), "table pages stay out of a paragraph list: {}", story.text);
+
+        let styles: Vec<&str> = story.paras.iter().map(|p| p.style.as_str()).collect();
+        assert_eq!(
+            styles,
+            ["TOC Title", "TOC Level 1", "TOC Level 2", "TOC Level 3"],
+            "each entry keeps its own level style instead of being flattened: {styles:?}"
+        );
+    }
+
     #[test]
     fn test_toc_table_style_lists_only_table_pages_and_centers_its_title() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
@@ -11122,6 +11326,47 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(texts.iter().any(|t| t.contains("BAB 01")), "Page should contain 'BAB 01', found: {texts:?}");
         assert!(texts.iter().any(|t| t.contains("Pemerintahan")), "Page should contain 'Pemerintahan', found: {texts:?}");
         assert!(texts.iter().any(|t| t.contains("Bab satu ulasan pemerintahan")), "Page should contain imported RTF content, found: {texts:?}");
+    }
+
+    #[test]
+    fn test_bxx_sheet_gets_rxx_page_layout() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("B01.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Kata pengantar untuk laporan ini.}"#).unwrap();
+
+        // `B01` converts as `Ulasan` (see `is_b_sheet`), so its catalog row is the RXX shape.
+        let st = PubgenState {
+            card1_records: vec![vec!["Ulasan".into(), "01".into(), "Kata Pengantar".into(), rtf_path.to_string_lossy().to_string()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for a BXX-style Ulasan row should succeed: {res:?}");
+        let msg = res.unwrap();
+        assert!(msg.contains("1 RTF chapter(s) placed"), "Summary should confirm RTF placed: {msg}");
+
+        let active = app.session.active().unwrap();
+        let (spread_idx, _) = active.doc.page_loc(1).unwrap();
+        let spread = &active.doc.spreads[spread_idx];
+        let stories: Vec<&designcraft_doc::Story> =
+            spread.items.iter().filter_map(|it| it.text_frame()).filter_map(|tf| active.doc.story(tf.story)).collect();
+        let texts: Vec<&str> = stories.iter().map(|s| s.text.as_str()).collect();
+
+        assert!(!texts.iter().any(|t| t.contains("BAB 01")), "A title without a BAB prefix gets no chapter-number box, found: {texts:?}");
+        assert!(texts.iter().any(|t| t.eq_ignore_ascii_case("Kata Pengantar")), "Page should contain 'Kata Pengantar', found: {texts:?}");
+        let title_para = stories.iter().find(|s| s.text.contains("KATA PENGANTAR")).and_then(|s| s.paras.first()).expect("the centered title frame");
+        assert_eq!(title_para.style, "TOC Entry", "the title frame must carry the TOC style so the chapter is listed");
+        assert_eq!(title_para.para.align, Some(designcraft_doc::Align::Center), "the front-matter title is centered on the margin");
+        assert!(texts.iter().any(|t| t.contains("Kata pengantar untuk laporan ini")), "Page should contain the placed RTF body, found: {texts:?}");
     }
 
     #[test]

@@ -336,6 +336,35 @@ pub fn parse_rtf_review_sheet_with_template(sheet: &ExcelSheetData) -> Option<(S
     Some(("Ulasan".to_string(), num_val, title_val, file_val, template_val))
 }
 
+/// The `image1` / `image2` picture paths of a front-matter (`BXX`) sheet, read leniently from any
+/// row that names them (`image1;path`, `image1 | path`, …). Empty when the sheet has neither.
+pub fn parse_sheet_images(sheet: &ExcelSheetData) -> (Option<String>, Option<String>) {
+    // Strict key match, unlike `extract_field_lenient`: its fallback would turn any other cell
+    // into a picture path.
+    let find = |key: &str| -> Option<String> {
+        for row in &sheet.grid {
+            for (i, cell) in row.iter().enumerate() {
+                let t = cell.trim();
+                for sep in [';', ':', '='] {
+                    if let Some((k, v)) = t.split_once(sep)
+                        && k.trim().eq_ignore_ascii_case(key)
+                        && !v.trim().is_empty()
+                    {
+                        return Some(v.trim().trim_matches('"').trim().to_string());
+                    }
+                }
+                if t.eq_ignore_ascii_case(key)
+                    && let Some(v) = row.get(i + 1).map(|s| s.trim().trim_matches('"').trim()).filter(|s| !s.is_empty())
+                {
+                    return Some(v.to_string());
+                }
+            }
+        }
+        None
+    };
+    (find("image1"), find("image2"))
+}
+
 /// Backward-compatible wrapper for `parse_rtf_review_sheet_with_template` returning 4-tuple.
 pub fn parse_rtf_review_sheet(sheet: &ExcelSheetData) -> Option<(String, String, String, String)> {
     let (t, n, title, file, _) = parse_rtf_review_sheet_with_template(sheet)?;
@@ -390,6 +419,13 @@ pub fn is_g_sheet(sheet_name: &str) -> bool {
         return false;
     }
     s.starts_with('G') || s.starts_with('g')
+}
+
+/// Check if a sheet is a narrative RTF chapter sheet named `BXX` (e.g. `B01`, `B02`): front
+/// matter laid out like an `RXX` review chapter. Digits only after the `B`, so `BAB…` never matches.
+pub fn is_b_sheet(sheet_name: &str) -> bool {
+    let s = sheet_name.trim();
+    s.len() >= 2 && (s.starts_with('B') || s.starts_with('b')) && s[1..].chars().all(|c| c.is_ascii_digit())
 }
 
 /// Parse a publication note sheet (e.g. `A02`, `A01`, `Keterangan Publikasi`) or G sheet (e.g. `G00`, `G01`, `G02`):
@@ -875,6 +911,9 @@ struct CatalogEntryItem {
     title: String,
     file: String,
     template: Option<String>,
+    /// Front-matter sheets only: the two picture files of the page.
+    image1: Option<String>,
+    image2: Option<String>,
 }
 
 /// Convert multiple Excel sheets into 1 catalog CSV and individual table CSVs.
@@ -902,17 +941,27 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         if is_divider_sheet(sheet_name)
             && let Some((t_val, n_val, title_val, f_val, tpl_val)) = parse_divider_sheet_with_template(sheet)
         {
-            entries.push(CatalogEntryItem { entry_type: t_val, number: n_val, title: title_val, file: f_val, template: tpl_val });
+            entries.push(CatalogEntryItem {
+                entry_type: t_val,
+                number: n_val,
+                title: title_val,
+                file: f_val,
+                template: tpl_val,
+                image1: None,
+                image2: None,
+            });
             // DIV sheets are divider spreads, not tabular data
             continue;
         }
 
-        // Check if sheet is an RXX RTF chapter review sheet
-        if is_rtf_review_sheet(sheet_name)
+        // Check if sheet is an RXX review chapter or a BXX front-matter chapter: both are
+        // narrative RTF sheets laid out the same way
+        if (is_rtf_review_sheet(sheet_name) || is_b_sheet(sheet_name))
             && let Some((t_val, n_val, title_val, f_val, tpl_val)) = parse_rtf_review_sheet_with_template(sheet)
         {
-            entries.push(CatalogEntryItem { entry_type: t_val, number: n_val, title: title_val, file: f_val, template: tpl_val });
-            // RXX sheets are narrative review chapters (RTF), not tabular data
+            let (image1, image2) = if is_b_sheet(sheet_name) { parse_sheet_images(sheet) } else { (None, None) };
+            entries.push(CatalogEntryItem { entry_type: t_val, number: n_val, title: title_val, file: f_val, template: tpl_val, image1, image2 });
+            // Narrative chapters (RTF), not tabular data
             continue;
         }
 
@@ -920,7 +969,15 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         if is_chart_sheet(sheet_name)
             && let Some((t_val, n_val, title_val, f_val, tpl_val)) = parse_chart_sheet_with_template(sheet)
         {
-            entries.push(CatalogEntryItem { entry_type: t_val, number: n_val, title: title_val, file: f_val, template: tpl_val });
+            entries.push(CatalogEntryItem {
+                entry_type: t_val,
+                number: n_val,
+                title: title_val,
+                file: f_val,
+                template: tpl_val,
+                image1: None,
+                image2: None,
+            });
             // CXX sheets are graphic chart figures, not tabular data
             continue;
         }
@@ -929,7 +986,15 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         if is_note_sheet(sheet_name)
             && let Some((t_val, n_val, title_val, f_val, tpl_val)) = parse_note_sheet_with_template(sheet)
         {
-            entries.push(CatalogEntryItem { entry_type: t_val, number: n_val, title: title_val, file: f_val, template: tpl_val });
+            entries.push(CatalogEntryItem {
+                entry_type: t_val,
+                number: n_val,
+                title: title_val,
+                file: f_val,
+                template: tpl_val,
+                image1: None,
+                image2: None,
+            });
             // The A02 sheet carries a narrative RTF note, not tabular data
             continue;
         }
@@ -938,7 +1003,15 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         let first_row = sheet.grid.first().cloned().unwrap_or_default();
         let (t_val, n_val, title_val, f_val) = parse_catalog_entry(&first_row, &safe_name);
         let tpl_val = extract_template_from_sheet(sheet);
-        entries.push(CatalogEntryItem { entry_type: t_val, number: n_val, title: title_val, file: f_val, template: tpl_val });
+        entries.push(CatalogEntryItem {
+            entry_type: t_val,
+            number: n_val,
+            title: title_val,
+            file: f_val,
+            template: tpl_val,
+            image1: None,
+            image2: None,
+        });
 
         // 2. Process table data for individual CSV
         if let Some(table_csv) = worksheet_to_csv(sheet) {
@@ -947,6 +1020,38 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
     }
 
     let has_any_template = entries.iter().any(|e| e.template.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false));
+    let has_any_image = entries.iter().any(|e| e.image1.is_some() || e.image2.is_some());
+    if has_any_image {
+        let mut rows = vec![if has_any_template {
+            "type,number,title,file,template,image1,image2".to_string()
+        } else {
+            "type,number,title,file,image1,image2".to_string()
+        }];
+        for e in &entries {
+            let base = format!(
+                "{},{},{},{}",
+                escape_csv_field(&e.entry_type),
+                escape_csv_field(&e.number),
+                escape_csv_field(&e.title),
+                escape_csv_field(&e.file),
+            );
+            let base = if has_any_template { format!("{base},{}", escape_csv_field(e.template.as_deref().unwrap_or(""))) } else { base };
+            rows.push(format!(
+                "{base},{},{}",
+                escape_csv_field(e.image1.as_deref().unwrap_or("")),
+                escape_csv_field(e.image2.as_deref().unwrap_or("")),
+            ));
+        }
+        return ExcelConversionResult {
+            catalog_csv_name: format!("{base_stem}_catalog.csv"),
+            catalog_csv_content: rows.join(
+                "
+",
+            ),
+            table_csvs,
+            cover,
+        };
+    }
 
     let mut catalog_rows = Vec::new();
     if has_any_template {
@@ -1409,6 +1514,41 @@ mod tests {
         assert_eq!(res.table_csvs[0].0, "02_01.csv");
     }
 
+    /// `BXX` front-matter sheets become `Ulasan` chapters, laid out like `RXX`, and never a table.
+    #[test]
+    fn test_bxx_sheet_is_ulasan_like_rxx() {
+        assert!(is_b_sheet("B01"));
+        assert!(is_b_sheet("b02"));
+        assert!(!is_b_sheet("BAB"));
+        assert!(!is_b_sheet("B"));
+        assert!(!is_b_sheet("R01"));
+        assert!(!is_b_sheet("01_01"));
+
+        let sheet = ExcelSheetData {
+            name: "B01".into(),
+            grid: vec![
+                vec!["title".into(), "Kata Pengantar".into()],
+                vec!["file".into(), "plan/pubgen/samples/B01.rtf".into()],
+                vec!["image1".into(), "plan/pubgen/samples/B01_pict1.jpg".into()],
+                vec!["image2".into(), "plan/pubgen/samples/B01_pict2.png".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let res = convert_excel_to_csv_data(std::slice::from_ref(&sheet), "BAB_01_2025");
+        assert!(res.catalog_csv_content.contains("Ulasan,01,Kata Pengantar"), "catalog: {}", res.catalog_csv_content);
+        assert!(!res.catalog_csv_content.contains("Tabel,title"), "sheets are not tables: {}", res.catalog_csv_content);
+        assert!(res.table_csvs.is_empty(), "a BXX sheet emits no table CSV: {:?}", res.table_csvs);
+        // The page layout reads the picture paths from the catalog's `image1` / `image2` columns.
+        let header = res.catalog_csv_content.lines().next().unwrap_or_default().to_string();
+        assert_eq!(header, "type,number,title,file,image1,image2", "catalog: {}", res.catalog_csv_content);
+        assert!(
+            res.catalog_csv_content
+                .contains("Ulasan,01,Kata Pengantar,plan/pubgen/samples/B01.rtf,plan/pubgen/samples/B01_pict1.jpg,plan/pubgen/samples/B01_pict2.png"),
+            "catalog: {}",
+            res.catalog_csv_content
+        );
+    }
+
     #[test]
     fn test_is_rtf_review_sheet_and_parse_rxx() {
         assert!(is_rtf_review_sheet("R01"));
@@ -1802,11 +1942,11 @@ mod tests {
         let sheets = parse_xlsx_sheets(path.to_str().unwrap());
         assert!(sheets.is_ok(), "Should parse sheets from BAB_02_2025.xlsx: {:?}", sheets);
         let s_list = sheets.unwrap();
-        assert_eq!(s_list.len(), 9, "BAB_02_2025.xlsx has 9 sheets: COVER, A02, DIV, R02, 02_01, 02_02, 02_03, C02_01, note");
+        assert_eq!(s_list.len(), 7, "BAB_02_2025.xlsx has 7 sheets: DIV, R02, 02_01, 02_02, 02_03, C02_01, note");
 
         let converted = convert_excel_to_csv_data(&s_list, "BAB_02_2025");
-        assert_eq!(converted.cover.as_ref().map(|c| c.style.as_str()), Some("MODERN HORIZON"));
-        // A02 (Note), DIV (Divider), R02 (Ulasan) and C02_01 (Grafik) are not tables, and COVER / note are not pages,
+        assert!(converted.cover.is_none(), "this workbook has no COVER sheet");
+        // DIV (Divider), R02 (Ulasan) and C02_01 (Grafik) are not tables, and note is not a page,
         // so only the 3 tabular sheets produce table CSVs
         assert_eq!(converted.table_csvs.len(), 3);
         assert_eq!(converted.table_csvs[0].0, "02_01.csv");
@@ -1817,8 +1957,7 @@ mod tests {
             assert!(!tbl_csv.is_empty());
         }
 
-        // Verify catalog content includes the Note, Divider, Ulasan and Grafik rows
-        assert!(converted.catalog_csv_content.contains("Note,02,Keterangan Publikasi,") || converted.catalog_csv_content.contains("Note,02,,"));
+        // Verify catalog content includes the Divider, Ulasan and Grafik rows
         assert!(converted.catalog_csv_content.contains("Divider,02,BAB 02 PEMERINTAHAN,"));
         assert!(converted.catalog_csv_content.contains("Ulasan,02,Bab 02  Pemerintahan,"));
         assert!(converted.catalog_csv_content.contains("Grafik,02.01,Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026,"));
