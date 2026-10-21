@@ -124,10 +124,50 @@ No engine changes. No new `PubgenState` fields — the level styles come from co
 pub const TOC_KINDS: [&str; 4] = ["TOC Entry", "TOC Table", "TOC Chart", "TOC Paragraph"];
 ```
 
-- `toc_kind_words(3)` → `&["BAB"]` — scoping primitive. Verified: RXX pages' first text box is the `BAB 01` chapter line (`pubgen.rs:4930`), DIV pages' first box is the `BAB` prefix (`pubgen.rs:5040`), while table/chart pages start with `Tabel`/`Grafik`. So `pageTitle: ["BAB"]` excludes table and chart pages with zero new engine code.
+- `toc_kind_words(3)` → `&["BAB"]` — scoping primitive for `RXX`. Verified: `RXX` pages' first text box is the `BAB 01` chapter line (`pubgen.rs:4930`), DIV pages' first box is the `BAB` prefix (`pubgen.rs:5040`), while table/chart pages start with `Tabel`/`Grafik`. So `pageTitle: ["BAB"]` excludes table and chart pages with zero new engine code.
 - `toc_kind_title(3)` → `Some("Daftar Isi")`.
 - `toc_kind_of_words` → add the `3` arm: `words` contains `bab` → `3`. Check it **before** the table/chart arms.
 - `default_toc_title()` (`pubgen.rs:67`) unchanged.
+
+### B1a. `BXX` sheets in **Excel to CSV Data** — same page style as `RXX`
+
+Sample workbook `plan/pubgen/samples/BAB_01_2025.xlsx` has sheets:
+`COVER, A02, G00, G01, G02, B01, DIV, R01, 01_01, note`.
+
+`B01.rtf` exists (184-line narrative, tags `\s1..\s9`) but the sheet is misrouted today:
+
+- `is_note_sheet` covers only `A##`, `G*`, `KETERANGAN*` (`pubgen_excel.rs:358-385`), and `is_rtf_review_sheet` only `R` + digits (`:160-168`).
+- `B01` reaches `parse_catalog_entry` (`pubgen_excel.rs:114`) with grid `[["title","Kata Pengantar"],["file","…B01.rtf"],["image1",…],["image2",…]]`. Two non-empty cells → `("Tabel", "title", "Kata Pengantar", "B01")` — a bogus `Tabel` row. That is why `BAB_01_2025_catalog.csv` has no `B01` line and `B01.rtf` is never placed.
+
+**Requirement: `BXX` becomes type `Ulasan`, exactly as `RXX`** — same catalog row shape, same page layout, same TOC treatment, no new type and no new style.
+
+1. **`is_b_sheet`** in `pubgen_excel.rs`, beside `is_g_sheet` (`:387`):
+   ```rust
+   /// Check if a sheet is a narrative RTF sheet like `RXX` but named `BXX` (e.g. `B01`, `B02`).
+   pub fn is_b_sheet(sheet_name: &str) -> bool {
+       let s = sheet_name.trim();
+       s.len() >= 2 && (s.starts_with('B') || s.starts_with('b')) && s[1..].chars().all(|c| c.is_ascii_digit())
+   }
+   ```
+   Digit-suffixed only, so `BAB…` sheet names never match.
+
+2. **`parse_rtf_review_sheet_with_template` must accept both prefixes** (`pubgen_excel.rs:316`). It reads the same grid layout (`title` row 1, `file` row 2) as `B01`, so the only change is the workbook entry point's gate — keep the parser as-is and let `B01` through it. It already emits `("Ulasan", num, title, file, template)`, with `num` from `extract_first_two_digit_number(&title_val)` falling back to the sheet-name digits, so `B01` → `"01"`.
+
+3. **Route it in `convert_excel_to_csv_data`** (`pubgen_excel.rs:909-917`), in the same branch as `RXX`:
+   ```rust
+   // Check if sheet is an RXX or BXX RTF chapter sheet (BXX = front matter, same page style)
+   if (is_rtf_review_sheet(sheet_name) || is_b_sheet(sheet_name))
+       && let Some((t_val, n_val, title_val, f_val, tpl_val)) = parse_rtf_review_sheet_with_template(sheet)
+   {
+       entries.push(CatalogEntryItem { entry_type: t_val, number: n_val, title: title_val, file: f_val, template: tpl_val });
+       continue;
+   }
+   ```
+   Result: the generated catalog gains a `Ulasan,01,Kata Pengantar,…B01.rtf,…` row. `execute_excel_to_csvs` (`pubgen.rs:7713`) needs **no change** — it just loads that catalog.
+
+4. **Page generation needs no change.** `parse_rtf_review_sheet_with_template` returns type `Ulasan`, so the existing `Ulasan` branch (`pubgen.rs:4926`) runs unchanged: `split_chapter_title("Kata Pengantar", "01")` → first box `"BAB 01"`, second box `"Kata Pengantar"` tagged `st.toc_style`, then the RTF body is placed below.
+
+   Verified consequence: because the first text box of a `BXX` page is also `BAB 01`, the `pageTitle: ["BAB"]` filter already scopes `BXX` pages into a `TOC Paragraph` alongside `RXX`, and still excludes `Tabel`/`Grafik` pages. No extra level, style or filter is needed.
 
 The ComboBox at `pubgen.rs:3915-3921` iterates `TOC_KINDS`, so the new item appears with no UI edit. The title auto-fill at `pubgen.rs:3926-3927` already reacts to `toc_kind_title`.
 
@@ -157,7 +197,7 @@ pub struct TocPlan {
 ```rust
 let levels = if st.toc_kind == 3 {
     vec![
-        TocLevel { style: st.toc_style.clone(), level: 1, words: vec!["BAB".into()] },
+        TocLevel { style: st.toc_style.clone(), level: 1, words: vec!["BAB".into()] }, // RXX + BXX
         TocLevel { style: "Heading 1".into(),     level: 2, words: vec![] },
         TocLevel { style: "Heading 2".into(),     level: 3, words: vec![] },
     ]
@@ -212,6 +252,10 @@ Continuation headers (`sync_toc_continuation_headers`, `pubgen.rs:7203`) use `pl
 1. `toc_paragraph_kind_tables` — `toc_kind_words(3) == ["BAB"]`, `toc_kind_title(3) == Some("Daftar Isi")`, `toc_kind_of_words(&["BAB".into()]) == 3`, and the existing kind 0/1/2 detection still holds.
 2. `toc_paragraph_plan_has_three_levels` — `TocPlan::from_state` with `toc_kind: 3`, `toc_style: "TOC Entry"` → `levels` = `[("TOC Entry",1,["BAB"]), ("Heading 1",2,[]), ("Heading 2",3,[])]`; `entries_json()` round-trips them.
 3. `toc_paragraph_scan_finds_styled_paragraphs` — build a doc: a chapter page with a `BAB 01` frame tagged `TOC Entry`, an RTF-placed story with paragraphs styled `Heading 1` / `Heading 2` (apply styles via `style.paragraph.apply` after `file.place`), and a table page whose first box starts `Tabel`. Run `toc.entries` with the 3-entry plan. Assert: chapter page listed at level 1, the heading paragraphs at levels 2/3, table page absent.
+
+3b. `bxx_sheet_is_ulasan_like_rxx` (`pubgen_excel.rs` tests) — `is_b_sheet("B01")`, `is_b_sheet("b02")` true; `is_b_sheet("BAB")`, `is_b_sheet("B")`, `is_b_sheet("R01")`, `is_b_sheet("01_01")` false. Then `convert_excel_to_csv_data` on a `B01` sheet with grid `[["title","Kata Pengantar"],["file","B01.rtf"],["image1",…],["image2",…]]` yields a `Ulasan,01,Kata Pengantar,…B01.rtf` catalog line and **no** `B01.csv` table output.
+
+3c. `bxx_page_gets_rxx_layout` — feed that catalog to `execute_generate_pages` with a synthetic `B01.rtf`; assert the page contains `BAB 01` and `Kata Pengantar` frames, that the title frame is tagged `st.toc_style`, and the RTF text is placed.
 4. `toc_paragraph_keeps_toc_level_styles` — `execute_add_toc` with kind 3; assert the generated story's paragraphs use `TOC Title`, `TOC Level 1`, `TOC Level 2`, `TOC Level 3` in document order (and not all `TOC Level 1`).
 5. `toc_paragraph_title_is_daftar_isi` — the frame's first line is `Daftar Isi`.
 
@@ -242,12 +286,14 @@ cargo xtask wasm
 ## 4. Order of work
 
 1. **Task A** (RTF stylesheet) first — without it, level 2/3 entries cannot exist.
-2. **Task B** (kind + plan + post-process) second.
-3. **Task C** tests land with their task, not at the end.
+2. **Task B1a** (`BXX` → `Ulasan` in Excel to CSV) next — small, self-contained in `pubgen_excel.rs`, unblocks real `B01` workbooks.
+3. **Task B2/B3** (kind + plan + post-process) last.
+4. **Task C** tests land with their task, not at the end.
 
 One commit per task id, e.g.:
 
 - `M?: rtf import stylesheet paragraph styles`
+- `M?: pubgen BXX sheets convert as Ulasan chapters`
 - `M?: pubgen TOC Paragraph multi-level kind`
 
 ---
@@ -260,6 +306,8 @@ One commit per task id, e.g.:
 - [ ] PubGen Card 3 offers `TOC Paragraph`, which fills the title with `Daftar Isi`.
 - [ ] A `TOC Paragraph` TOC lists chapter titles at level 1, `Heading 1` at level 2, `Heading 2` at level 3, with indents 0 / 12 / 24 pt.
 - [ ] Table and chart pages are absent from a `TOC Paragraph` (via `pageTitle: ["BAB"]`).
+- [ ] Excel to CSV Data turns a `BXX` sheet into a `Ulasan` catalog row and emits no table CSV for it.
+- [ ] A `BXX` page gets the same layout as an `RXX` page (`BAB 01` + title tagged with the TOC style + RTF body) and appears in the `Daftar Isi`.
 - [ ] Existing TOC Entry / TOC Table / TOC Chart behaviour is unchanged.
 - [ ] `cargo xtask ci` green.
 
