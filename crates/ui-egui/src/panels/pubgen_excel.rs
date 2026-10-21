@@ -353,26 +353,100 @@ pub fn is_chart_sheet(sheet_name: &str) -> bool {
     }
 }
 
-/// Check if a sheet is the publication-note sheet: exactly `A02` (case-insensitive).
+/// Check if a sheet is a publication-note sheet (named `A02`, `A01..A99`, `A_01..A_99`, `KETERANGAN`, etc.).
 pub fn is_note_sheet(sheet_name: &str) -> bool {
-    sheet_name.trim().eq_ignore_ascii_case("A02")
+    let s = sheet_name.trim();
+    if s.is_empty() {
+        return false;
+    }
+    let lower = s.to_lowercase();
+    if lower == "keterangan"
+        || lower == "keterangan publikasi"
+        || lower == "keterangan_publikasi"
+        || lower == "catatan"
+        || lower == "catatan publikasi"
+        || lower == "pubnote"
+        || lower == "publication_note"
+    {
+        return true;
+    }
+    if let Some(rest) = lower.strip_prefix('a') {
+        let rest_clean = rest.trim_start_matches('_').trim();
+        if !rest_clean.is_empty() && rest_clean.chars().all(|c| c.is_ascii_digit()) {
+            return true;
+        }
+    }
+    false
 }
 
-/// Parse the `A02` note sheet with 2 or more rows:
-/// Row 1: title;"Keterangan Publikasi" (or col 0: title, col 1: text)
-/// Row 2: file;[path of RTF file] (or col 0: file, col 1: path)
-/// Row 3 (optional): template;[template path or ID]
+/// Parse a publication note sheet (e.g. `A02`, `A01`, `Keterangan Publikasi`):
+/// Can contain title, file/rtf, template in key-value format (or cells) in any order,
+/// or a single row with `.rtf` file path.
 ///
 /// Catalog entry: type `Note`, number from the sheet name (A02 -> 02), title, RTF path, template.
 pub fn parse_note_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>)> {
-    let row1 = sheet.grid.first()?;
-    let row2 = sheet.grid.get(1);
+    let mut title_val = String::new();
+    let mut file_val = String::new();
 
-    let title_val = extract_field_lenient(row1, "title");
-    let file_val = row2.map(|r| extract_field_lenient(r, "file")).unwrap_or_default();
-    let digits: String = sheet.name.trim().chars().skip(1).collect();
+    for row in &sheet.grid {
+        if title_val.is_empty()
+            && let Some(t) = extract_field_for_keys(row, &["title", "judul", "keterangan"])
+        {
+            title_val = t;
+        }
+        if file_val.is_empty()
+            && let Some(f) = extract_field_for_keys(row, &["file", "rtf", "path", "document", "dokumen"])
+        {
+            file_val = f;
+        }
+    }
+
+    if file_val.is_empty() {
+        for row in &sheet.grid {
+            for cell in row {
+                let c = cell.trim().trim_matches('"');
+                if c.to_lowercase().ends_with(".rtf") {
+                    file_val = c.to_string();
+                    break;
+                }
+            }
+            if !file_val.is_empty() {
+                break;
+            }
+        }
+    }
+
+    if title_val.is_empty() {
+        for row in &sheet.grid {
+            let non_empty: Vec<&str> = row.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+            if non_empty.is_empty() {
+                continue;
+            }
+            let first = non_empty[0];
+            if !first.eq_ignore_ascii_case("file")
+                && !first.eq_ignore_ascii_case("template")
+                && !first.eq_ignore_ascii_case("divider")
+                && !first.to_lowercase().ends_with(".rtf")
+            {
+                if non_empty.len() >= 2 && first.eq_ignore_ascii_case("title") {
+                    title_val = non_empty[1].trim_matches('"').trim().to_string();
+                } else if non_empty.len() == 1 {
+                    title_val = first.trim_matches('"').trim().to_string();
+                } else {
+                    title_val = non_empty.join(" ");
+                }
+                break;
+            }
+        }
+    }
+
+    if title_val.is_empty() {
+        title_val = "Keterangan Publikasi".to_string();
+    }
+
+    let digits: String = sheet.name.chars().filter(|c| c.is_ascii_digit()).collect();
     let num_val = match digits.len() {
-        0 => "01".to_string(),
+        0 => "02".to_string(),
         1 => format!("0{digits}"),
         _ => digits,
     };
@@ -1393,10 +1467,12 @@ mod tests {
         assert!(is_note_sheet("A02"));
         assert!(is_note_sheet("a02"));
         assert!(is_note_sheet(" A02 "));
-        // Only the exact `A02` sheet is a note sheet; other A## names are ordinary sheets.
-        assert!(!is_note_sheet("A03"));
-        assert!(!is_note_sheet("A2"));
-        assert!(!is_note_sheet("A3"));
+        assert!(is_note_sheet("A01"));
+        assert!(is_note_sheet("A03"));
+        assert!(is_note_sheet("A2"));
+        assert!(is_note_sheet("A_02"));
+        assert!(is_note_sheet("keterangan"));
+        assert!(is_note_sheet("Keterangan Publikasi"));
         assert!(!is_note_sheet("A"));
         assert!(!is_note_sheet("AB02"));
         assert!(!is_note_sheet("R02"));
@@ -1420,6 +1496,15 @@ mod tests {
         let (t, n, title, file) = parse_note_sheet(&sheet).unwrap();
         assert_eq!((t.as_str(), n.as_str()), ("Note", "02"));
         assert_eq!((title.as_str(), file.as_str()), ("Catatan Penting", "A02.rtf"));
+
+        // Single row with file path only: title defaults to "Keterangan Publikasi"
+        let sheet_single =
+            ExcelSheetData { name: "A02".into(), grid: vec![vec!["file".into(), "E:\\plan\\pubgen\\samples\\A02.rtf".into()]], merges: Vec::new() };
+        let (t, n, title, file) = parse_note_sheet(&sheet_single).unwrap();
+        assert_eq!(t, "Note");
+        assert_eq!(n, "02");
+        assert_eq!(title, "Keterangan Publikasi");
+        assert_eq!(file, "E:\\plan\\pubgen\\samples\\A02.rtf");
     }
 
     #[test]

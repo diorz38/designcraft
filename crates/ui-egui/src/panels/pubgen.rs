@@ -9246,11 +9246,32 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(msg.contains("cover"), "Sample workbook has a COVER sheet, so a cover page is generated: {msg}");
 
         let page_count = app.session.active().unwrap().doc.page_count();
-        eprintln!(
-            "DEBUG_PAGES: count={page_count}, spreads={:?}",
-            app.session.active().unwrap().doc.spreads.iter().map(|s| s.pages.len()).collect::<Vec<_>>()
-        );
         assert_eq!(page_count, 10, "Expected 10 pages after generating 7 sheet records and the cover");
+
+        let doc = &app.session.active().unwrap().doc;
+        // Verify Page 2 contains Note A02
+        let (si2, _) = doc.page_loc(2).unwrap();
+        let page2_items: Vec<_> = doc.spreads[si2].items.iter().filter(|it| doc.page_of_item(it.id) == Some(2)).collect();
+        let page2_texts: Vec<String> = page2_items
+            .iter()
+            .filter_map(|it| it.text_frame())
+            .map(|tf| doc.stories.get(&tf.story).map(|s| s.text.clone()).unwrap_or_default())
+            .collect();
+        assert!(page2_texts.iter().any(|t| t.contains("Keterangan Publikasi")), "Page 2 should contain Note title: {page2_texts:?}");
+        assert!(page2_texts.iter().any(|t| t.contains("KARAWANG TIMUR")), "Page 2 should contain Note RTF narrative: {page2_texts:?}");
+        assert!(!page2_texts.iter().any(|t| t.contains("PEMERINTAHAN")), "Page 2 should not contain Divider text: {page2_texts:?}");
+
+        // Verify Page 3 contains Divider DIV
+        let (si3, _) = doc.page_loc(3).unwrap();
+        let page3_items: Vec<_> = doc.spreads[si3].items.iter().filter(|it| doc.page_of_item(it.id) == Some(3)).collect();
+        let page3_texts: Vec<String> = page3_items
+            .iter()
+            .filter_map(|it| it.text_frame())
+            .map(|tf| doc.stories.get(&tf.story).map(|s| s.text.clone()).unwrap_or_default())
+            .collect();
+        assert!(page3_texts.iter().any(|t| t.contains("BAB")), "Page 3 should contain Divider prefix: {page3_texts:?}");
+        assert!(page3_texts.iter().any(|t| t.contains("PEMERINTAHAN")), "Page 3 should contain Divider title: {page3_texts:?}");
+        assert!(!page3_texts.iter().any(|t| t.contains("Keterangan Publikasi")), "Page 3 should not contain Note text: {page3_texts:?}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

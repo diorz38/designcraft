@@ -165,6 +165,7 @@ fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
         let (spread_idx, page_in_spread) = d.page_loc(page_idx).ok_or_else(|| bad("template.page.apply", "Page location not found"))?;
 
         // Update page geometry to match template page
+        let mut dest_page_x = 0.0;
         if let Some(dest_sp) = d.spreads.get_mut(spread_idx) {
             let dest_sp_mut = Arc::make_mut(dest_sp);
             if let Some(dest_p) = dest_sp_mut.pages.get_mut(page_in_spread) {
@@ -174,6 +175,9 @@ fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
                 dest_p.columns = tpl_cols;
             }
             dest_sp_mut.relayout();
+            if let Some(dest_p) = dest_sp_mut.pages.get(page_in_spread) {
+                dest_page_x = dest_p.x;
+            }
         }
 
         // Apply palette overrides & swatches
@@ -207,11 +211,12 @@ fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
             }
         }
 
-        // Copy template spread items into target spread
+        // Copy template spread items into target spread (offsetting by page position within spread)
         let mut maps = crate::cmd::datamerge::fill::Maps::default();
         let spread_ref = SpreadRef::Doc(spread_idx);
+        let offset = Vec2::new(dest_page_x - tpl_page.x, 0.0);
         for it in &tpl_spread.items {
-            copy_item(d, &tpl_doc, it, spread_ref, Vec2::ZERO, &mut maps)?;
+            copy_item(d, &tpl_doc, it, spread_ref, offset, &mut maps)?;
         }
 
         let mut image_tasks = Vec::new();

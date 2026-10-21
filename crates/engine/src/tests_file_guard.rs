@@ -46,6 +46,8 @@ const ALLOWED: &[(&str, &str)] = &[
         "ui-egui/src/panels/pubgen_excel.rs",
         "Pubgen Excel importer reads user-selected workbook files and writes converted CSV/ZIP files chosen via file picker",
     ),
+    ("engine/src/cmd/template/catalog.rs", "scans local template directories to discover canonical page templates and their previews"),
+    ("engine/src/cmd/template/mod.rs", "reads template .designcraft document files to apply layout and styles to document pages"),
 ];
 
 fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
