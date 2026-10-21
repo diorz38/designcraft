@@ -437,6 +437,176 @@ pub fn parse_chart_sheet(sheet: &ExcelSheetData) -> Option<(String, String, Stri
     Some((t, n, title, file))
 }
 
+/// Check if a sheet is a divider sheet: named `DIV`, `DIV01..99`, `DIV_01..99`, `DIVIDER`, or `PEMBATAS` (case-insensitive).
+pub fn is_divider_sheet(sheet_name: &str) -> bool {
+    let s = sheet_name.trim();
+    if s.is_empty() {
+        return false;
+    }
+    let lower = s.to_lowercase();
+    if lower == "div" || lower == "divider" || lower == "dividers" || lower == "pembatas" {
+        return true;
+    }
+    if let Some(rest) = lower.strip_prefix("div") {
+        let rest_clean = rest.trim_start_matches('_');
+        if !rest_clean.is_empty() && rest_clean.chars().all(|c| c.is_ascii_digit()) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Split chapter divider title into `(first_word, digit_number, rest_of_text)`.
+/// E.g. "BAB 02 PEMERINTAHAN" -> ("BAB", "02", "PEMERINTAHAN")
+///      "BAB 01 Geografi"      -> ("BAB", "01", "Geografi")
+pub fn split_divider_title(title: &str) -> (String, String, String) {
+    let words: Vec<&str> = title.split_whitespace().collect();
+    if words.is_empty() {
+        return (String::new(), String::new(), String::new());
+    }
+    let first_word = words[0].to_string();
+    if words.len() == 1 {
+        return (first_word, String::new(), String::new());
+    }
+
+    // Look for the first word among words[1..] that contains digits
+    let mut num_idx = None;
+    for (i, &w) in words.iter().enumerate().skip(1) {
+        let digits: String = w.chars().filter(|c| c.is_ascii_digit()).collect();
+        if !digits.is_empty() {
+            num_idx = Some((i, digits));
+            break;
+        }
+    }
+
+    if let Some((idx, digits)) = num_idx {
+        let num = if digits.len() == 1 { format!("0{digits}") } else { digits };
+        let rest_raw = words[idx + 1..].join(" ");
+        let rest = rest_raw.trim_start_matches(|c: char| c == ':' || c == '-' || c == ';' || c == '.' || c.is_whitespace()).to_string();
+        (first_word, num, rest)
+    } else {
+        let rest = words[1..].join(" ");
+        (first_word, String::new(), rest)
+    }
+}
+
+/// Resolve a divider template specification (e.g. "002" or "002_chapter_devider") to its template path.
+pub fn resolve_divider_template(tpl_spec: &str) -> String {
+    let raw = tpl_spec.trim().trim_matches('"').trim();
+    if raw.is_empty() {
+        return "assets/templates/dividers/002_chapter_devider.designcraft".to_string();
+    }
+
+    let is_numeric = raw.chars().all(|c| c.is_ascii_digit());
+    if is_numeric {
+        let n: u32 = raw.parse().unwrap_or(2);
+        let prefix = format!("{n:03}");
+        for base in ["assets/templates/dividers", "../../assets/templates/dividers", "../assets/templates/dividers"] {
+            let dir = std::path::Path::new(base);
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let fname = entry.file_name().to_string_lossy().to_string();
+                    if fname.starts_with(&prefix) && fname.ends_with(".designcraft") {
+                        return format!("assets/templates/dividers/{fname}");
+                    }
+                }
+            }
+        }
+        return format!("assets/templates/dividers/{prefix}_chapter_devider.designcraft");
+    }
+
+    if raw.contains('/') || raw.contains('\\') || raw.ends_with(".designcraft") {
+        return raw.to_string();
+    }
+    format!("assets/templates/dividers/{raw}.designcraft")
+}
+
+/// Parse a `DIV` divider sheet:
+/// Row 1: title;"BAB 02 PEMERINTAHAN" (or col A: title, col B: value)
+/// Row 2: image;"E:\path\to\infografik.png" (or file / photo)
+/// Row 3: template;"002" (or divider / template)
+pub fn parse_divider_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>)> {
+    let mut title_val = String::new();
+    let mut image_val = String::new();
+
+    for row in &sheet.grid {
+        if title_val.is_empty()
+            && let Some(t) = extract_field_for_keys(row, &["title", "judul"])
+        {
+            title_val = t;
+        }
+        if image_val.is_empty()
+            && let Some(img) = extract_field_for_keys(row, &["image", "file", "photo", "hero", "gambar"])
+        {
+            image_val = img;
+        }
+    }
+
+    if image_val.is_empty() {
+        for row in &sheet.grid {
+            for cell in row {
+                let c = cell.trim().trim_matches('"');
+                let lower = c.to_lowercase();
+                if lower.ends_with(".png")
+                    || lower.ends_with(".jpg")
+                    || lower.ends_with(".jpeg")
+                    || lower.ends_with(".webp")
+                    || lower.ends_with(".svg")
+                    || lower.ends_with(".pdf")
+                {
+                    image_val = c.to_string();
+                    break;
+                }
+            }
+            if !image_val.is_empty() {
+                break;
+            }
+        }
+    }
+
+    if title_val.is_empty()
+        && let Some(first_row) = sheet.grid.first()
+    {
+        let non_empty: Vec<&str> = first_row.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        if non_empty.len() == 1 {
+            title_val = non_empty[0].to_string();
+        } else if non_empty.len() >= 2
+            && !non_empty[0].eq_ignore_ascii_case("image")
+            && !non_empty[0].eq_ignore_ascii_case("template")
+            && !non_empty[0].eq_ignore_ascii_case("divider")
+        {
+            title_val = non_empty[1].to_string();
+        }
+    }
+
+    let (_, split_num, _) = split_divider_title(&title_val);
+    let num_val = if !split_num.is_empty() {
+        split_num
+    } else {
+        extract_first_two_digit_number(&title_val).unwrap_or_else(|| {
+            let digits: String = sheet.name.chars().filter(|c| c.is_ascii_digit()).collect();
+            if digits.len() == 1 {
+                format!("0{digits}")
+            } else if !digits.is_empty() {
+                digits
+            } else {
+                "01".to_string()
+            }
+        })
+    };
+
+    let raw_tpl = extract_template_from_sheet(sheet);
+    let template_val = Some(resolve_divider_template(raw_tpl.as_deref().unwrap_or("002")));
+
+    Some(("Divider".to_string(), num_val, title_val, image_val, template_val))
+}
+
+/// Backward-compatible wrapper for `parse_divider_sheet_with_template` returning 4-tuple.
+pub fn parse_divider_sheet(sheet: &ExcelSheetData) -> Option<(String, String, String, String)> {
+    let (t, n, title, file, _) = parse_divider_sheet_with_template(sheet)?;
+    Some((t, n, title, file))
+}
+
 /// Automatically reconstruct table column headers by propagating horizontal & vertical
 /// cell merges across header rows and joining ancestor levels with `--`.
 #[allow(clippy::needless_range_loop)]
@@ -619,6 +789,15 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
             continue;
         }
         if is_ignored_sheet(sheet_name) {
+            continue;
+        }
+
+        // Check if sheet is a DIV divider sheet
+        if is_divider_sheet(sheet_name)
+            && let Some((t_val, n_val, title_val, f_val, tpl_val)) = parse_divider_sheet_with_template(sheet)
+        {
+            entries.push(CatalogEntryItem { entry_type: t_val, number: n_val, title: title_val, file: f_val, template: tpl_val });
+            // DIV sheets are divider spreads, not tabular data
             continue;
         }
 
@@ -1475,11 +1654,11 @@ mod tests {
         let sheets = parse_xlsx_sheets(path.to_str().unwrap());
         assert!(sheets.is_ok(), "Should parse sheets from BAB_02_2025.xlsx: {:?}", sheets);
         let s_list = sheets.unwrap();
-        assert_eq!(s_list.len(), 8, "BAB_02_2025.xlsx has 8 sheets: COVER, A02, R02, C02_01, 02_01, 02_02, 02_03, note");
+        assert_eq!(s_list.len(), 9, "BAB_02_2025.xlsx has 9 sheets: COVER, A02, DIV, R02, 02_01, 02_02, 02_03, C02_01, note");
 
         let converted = convert_excel_to_csv_data(&s_list, "BAB_02_2025");
         assert_eq!(converted.cover.as_ref().map(|c| c.style.as_str()), Some("MODERN HORIZON"));
-        // A02 (Note), R02 (Ulasan) and C02_01 (Grafik) are not tables, and COVER / note are not pages,
+        // A02 (Note), DIV (Divider), R02 (Ulasan) and C02_01 (Grafik) are not tables, and COVER / note are not pages,
         // so only the 3 tabular sheets produce table CSVs
         assert_eq!(converted.table_csvs.len(), 3);
         assert_eq!(converted.table_csvs[0].0, "02_01.csv");
@@ -1490,8 +1669,9 @@ mod tests {
             assert!(!tbl_csv.is_empty());
         }
 
-        // Verify catalog content includes the Note, Ulasan and Grafik rows
+        // Verify catalog content includes the Note, Divider, Ulasan and Grafik rows
         assert!(converted.catalog_csv_content.contains("Note,02,Keterangan Publikasi,"));
+        assert!(converted.catalog_csv_content.contains("Divider,02,BAB 02 PEMERINTAHAN,"));
         assert!(converted.catalog_csv_content.contains("Ulasan,02,Bab 02  Pemerintahan,"));
         assert!(converted.catalog_csv_content.contains("Grafik,02.01,Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026,"));
         assert!(converted.catalog_csv_content.contains("Tabel,02.01,"));
@@ -1571,5 +1751,77 @@ mod tests {
         assert_eq!(lines.len(), 3);
         assert_eq!(lines[1], "Ulasan,01,BAB 01 Pemerintahan,ulasan_bab_1.rtf,dividers/special_infographic_divider");
         assert_eq!(lines[2], "Tabel,01.01,\"Luas Wilayah Menurut Kecamatan, 2026\",01_01,");
+    }
+
+    #[test]
+    fn test_is_divider_sheet_and_split_title() {
+        assert!(is_divider_sheet("DIV"));
+        assert!(is_divider_sheet("div"));
+        assert!(is_divider_sheet("DIV02"));
+        assert!(is_divider_sheet("DIV_02"));
+        assert!(is_divider_sheet("DIVIDER"));
+        assert!(is_divider_sheet("pembatas"));
+        assert!(!is_divider_sheet("COVER"));
+        assert!(!is_divider_sheet("A02"));
+        assert!(!is_divider_sheet("R02"));
+        assert!(!is_divider_sheet("02_01"));
+
+        let (first, num, rest) = split_divider_title("BAB 02 PEMERINTAHAN");
+        assert_eq!(first, "BAB");
+        assert_eq!(num, "02");
+        assert_eq!(rest, "PEMERINTAHAN");
+
+        let (first1, num1, rest1) = split_divider_title("BAB 01 Geografi");
+        assert_eq!(first1, "BAB");
+        assert_eq!(num1, "01");
+        assert_eq!(rest1, "Geografi");
+
+        let (first2, num2, rest2) = split_divider_title("BAB 2: PEMERINTAHAN DAERAH");
+        assert_eq!(first2, "BAB");
+        assert_eq!(num2, "02");
+        assert_eq!(rest2, "PEMERINTAHAN DAERAH");
+    }
+
+    #[test]
+    fn test_convert_excel_to_csv_data_with_div_sheet() {
+        // As seen in user image #2:
+        // Sheet DIV:
+        // title | BAB 02 PEMERINTAHAN
+        // image | E:\Github\designcraft\plan\pubgen\samples\infografik_01.png
+        // template | 002
+        let sheet_div = ExcelSheetData {
+            name: "DIV".into(),
+            grid: vec![
+                vec!["title".into(), "BAB 02 PEMERINTAHAN".into()],
+                vec!["image".into(), "E:\\Github\\designcraft\\plan\\pubgen\\samples\\infografik_01.png".into()],
+                vec!["template".into(), "002".into()],
+            ],
+            merges: Vec::new(),
+        };
+
+        let sheet_tbl = ExcelSheetData {
+            name: "02_01".into(),
+            grid: vec![
+                vec!["Tabel 02.01 Jumlah Penduduk".into()],
+                vec!["Kecamatan".into(), "Jumlah".into()],
+                vec!["Karawang".into(), "50000".into()],
+            ],
+            merges: Vec::new(),
+        };
+
+        let res = convert_excel_to_csv_data(&[sheet_div, sheet_tbl], "BAB_02");
+        let lines: Vec<&str> = res.catalog_csv_content.lines().collect();
+
+        assert_eq!(lines[0], "type,number,title,file,template");
+        assert_eq!(lines.len(), 3);
+        assert_eq!(
+            lines[1],
+            "Divider,02,BAB 02 PEMERINTAHAN,E:\\Github\\designcraft\\plan\\pubgen\\samples\\infografik_01.png,assets/templates/dividers/002_chapter_devider.designcraft"
+        );
+        assert_eq!(lines[2], "Tabel,02.01,Jumlah Penduduk,02_01,");
+
+        // The DIV sheet must NOT produce a table CSV, only 02_01 does!
+        assert_eq!(res.table_csvs.len(), 1);
+        assert_eq!(res.table_csvs[0].0, "02_01.csv");
     }
 }

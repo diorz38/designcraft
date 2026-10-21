@@ -4444,6 +4444,16 @@ pub fn resolve_template_path_spec(catalog_path: &str, spec: &str) -> Option<Stri
         if let Some(found) = scanned.iter().find(|t| t.id.to_lowercase() == clean_lower) {
             return Some(found.path.to_string_lossy().to_string());
         }
+        // If numeric 1-3 digits (e.g. "002" or "2"), check for divider templates with matching prefix
+        if clean.len() <= 3 && clean.chars().all(|c| c.is_ascii_digit()) {
+            let padded = format!("{:03}_", clean.parse::<u32>().unwrap_or(0));
+            if let Some(found) = scanned.iter().find(|t| t.category == "dividers" && t.id.starts_with(&padded)) {
+                return Some(found.path.to_string_lossy().to_string());
+            }
+            if let Some(found) = scanned.iter().find(|t| t.id.starts_with(&padded)) {
+                return Some(found.path.to_string_lossy().to_string());
+            }
+        }
         // Substring / suffix / prefix match on ID
         if let Some(found) = scanned.iter().find(|t| {
             let id_l = t.id.to_lowercase();
@@ -4488,12 +4498,14 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         let row_tpl_spec = row.get(4).map(String::as_str).unwrap_or("").trim();
         let explicit_tpl_path = if !row_tpl_spec.is_empty() { resolve_template_path_spec(&st.card1_path, row_tpl_spec) } else { None };
 
-        if explicit_tpl_path.is_some() || st.card1_preset == 6 {
+        if explicit_tpl_path.is_some() || st.card1_preset == 6 || is_divider_type(type_val) {
             // Modular Template Mode: delegate to template engine
             let raw_tpl = if let Some(ref ep) = explicit_tpl_path {
                 ep.clone()
             } else if !st.card1_template_path.trim().is_empty() {
                 st.card1_template_path.trim().to_string()
+            } else if is_divider_type(type_val) {
+                "assets/templates/dividers/002_chapter_devider.designcraft".to_string()
             } else if type_val.eq_ignore_ascii_case("Ulasan") {
                 "assets/templates/dividers/001_ulasan_chapter.designcraft".to_string()
             } else if type_val.eq_ignore_ascii_case("Note") {
@@ -4509,7 +4521,46 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 let mut story_slots = serde_json::Map::new();
                 let mut image_slots = serde_json::Map::new();
 
-                if type_val.eq_ignore_ascii_case("Ulasan") {
+                if is_divider_type(type_val) {
+                    let (first_word, digit_num, rest_text) = excel::split_divider_title(title_val);
+                    // 3 textbox values from col title:
+                    // 1. first word (replacing text "BAB")
+                    text_slots.insert("first_word".into(), json!(first_word));
+                    text_slots.insert("prefix".into(), json!(first_word));
+                    text_slots.insert("chapter_prefix".into(), json!(first_word));
+                    text_slots.insert("title_prefix".into(), json!(first_word));
+
+                    // 2. digit number (replacing text "01")
+                    let final_digit = if !digit_num.is_empty() { digit_num } else { num_val.to_string() };
+                    text_slots.insert("chapter_num".into(), json!(final_digit));
+                    text_slots.insert("number".into(), json!(final_digit));
+                    text_slots.insert("digit".into(), json!(final_digit));
+                    text_slots.insert("num".into(), json!(final_digit));
+
+                    // 3. rest of text (replacing text "Geografi")
+                    text_slots.insert("chapter_title".into(), json!(rest_text));
+                    text_slots.insert("title".into(), json!(rest_text));
+                    text_slots.insert("rest".into(), json!(rest_text));
+                    text_slots.insert("title_rest".into(), json!(rest_text));
+
+                    // Shape with color #e5007e is placeholder for image in col image
+                    if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
+                        && let Some(img_file) = resolve_catalog_related_file(&st.card1_path, file_str, "png")
+                            .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str, "jpg"))
+                            .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str, "jpeg"))
+                            .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str, "pdf"))
+                            .or_else(|| {
+                                let p = std::path::Path::new(file_str);
+                                if p.is_file() { Some(p.to_path_buf()) } else { None }
+                            })
+                    {
+                        image_slots.insert("image".into(), json!(img_file.to_string_lossy()));
+                        image_slots.insert("photo".into(), json!(img_file.to_string_lossy()));
+                        image_slots.insert("hero".into(), json!(img_file.to_string_lossy()));
+                        image_slots.insert("divider_image".into(), json!(img_file.to_string_lossy()));
+                        inserted_images_count = inserted_images_count.saturating_add(1);
+                    }
+                } else if type_val.eq_ignore_ascii_case("Ulasan") {
                     let (ch_line, title_line) = split_chapter_title(title_val, num_val);
                     text_slots.insert("chapter_num".into(), json!(ch_line));
                     text_slots.insert("chapter_title".into(), json!(title_line));
@@ -4562,6 +4613,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                             "story": story_slots,
                             "image": image_slots,
                         },
+                        "image_fitting": "fitProportionally",
                         "palette": {
                             "Primary": st.cover_color_primary.trim(),
                             "Accent": st.cover_color_accent.trim(),
@@ -4573,6 +4625,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 if let Ok(applied_info) = apply_res {
                     let mut table_placeholder_id = None;
                     let mut story_ids_to_tag = Vec::new();
+                    let mut image_slot_ids = Vec::new();
                     if let Some(items) = applied_info.get("items").and_then(Value::as_array) {
                         if let Some(active) = app.session.active() {
                             for it_id_val in items {
@@ -4591,10 +4644,18 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                                             && let Some(tf) = item.text_frame()
                                         {
                                             story_ids_to_tag.push(tf.story);
+                                        } else if item.label.contains("image") || item.label.contains("photo") || item.label.contains("hero") {
+                                            image_slot_ids.push(it_id);
                                         }
                                     }
                                 }
                             }
+                        }
+
+                        for img_id in image_slot_ids {
+                            let _ = app.run("object.fit", json!({"mode": "fitProportionally", "ids": [img_id]}));
+                            let _ = app.run("object.fit", json!({"mode": "centerContent", "ids": [img_id]}));
+                            let _ = app.run("object.stroke", json!({"swatch": "[None]", "ids": [img_id]}));
                         }
 
                         if !story_ids_to_tag.is_empty()
@@ -4718,6 +4779,79 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         if execute_page_from_rtf(app, &mut st_copy, &rtf_path_str).is_ok() {
                             inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
                         }
+                    }
+                }
+            }
+        } else if is_divider_type(type_val) {
+            let (first_word, digit_num, rest_text) = excel::split_divider_title(title_val);
+            let final_num = if !digit_num.is_empty() { digit_num } else { num_val.to_string() };
+
+            if !first_word.is_empty() {
+                frame_with_font_and_style(
+                    app,
+                    spread_idx,
+                    [margin.x0, margin.y0 + 20.0, margin.x1 - 100.0, margin.y0 + 56.0],
+                    &first_word,
+                    "Arial Black",
+                    24.0,
+                    None,
+                );
+            }
+
+            if !final_num.is_empty() {
+                frame_with_font_and_style(
+                    app,
+                    spread_idx,
+                    [margin.x1 - 90.0, margin.y0 + 20.0, margin.x1, margin.y0 + 80.0],
+                    &final_num,
+                    "Arial Black",
+                    40.0,
+                    None,
+                );
+            }
+
+            if !rest_text.is_empty() {
+                frame_with_font_and_style(
+                    app,
+                    spread_idx,
+                    [margin.x0, margin.y0 + 62.0, margin.x1 - 100.0, margin.y0 + 102.0],
+                    &rest_text,
+                    "Arial Black",
+                    20.0,
+                    Some(&st.toc_style),
+                );
+            }
+
+            if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                let resolved_img = resolve_catalog_related_file(&st.card1_path, file_str, "png")
+                    .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str, "jpg"))
+                    .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str, "jpeg"));
+
+                if let Some(img_file) = resolved_img {
+                    let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
+                    crate::canvas::go_to_page(app, cur_page_idx);
+                    let img_y0 = margin.y0 + 110.0;
+                    let img_rect = [margin.x0, img_y0, margin.x1, margin.y1];
+                    let created_fid = app
+                        .run(
+                            "frame.create",
+                            json!({
+                                "spread": spread_idx,
+                                "rect": img_rect,
+                                "content": "graphic",
+                                "caret": false
+                            }),
+                        )
+                        .ok()
+                        .and_then(|res| res.get("id").and_then(Value::as_u64));
+
+                    if let Some(fid) = created_fid {
+                        let img_path_str = img_file.to_string_lossy().to_string();
+                        let _ = app.run("file.place", json!({"path": img_path_str, "frame": fid}));
+                        let _ = app.run("object.fit", json!({"mode": "fillProportionally", "ids": [fid]}));
+                        let _ = app.run("object.fit", json!({"mode": "centerContent", "ids": [fid]}));
+                        let _ = app.run("selection.set", json!({"ids": [fid]}));
+                        inserted_images_count = inserted_images_count.saturating_add(1);
                     }
                 }
             }
@@ -5241,6 +5375,10 @@ pub fn split_chart_title(title: &str, num_val: &str, type_val: &str) -> (String,
     }
 
     (t.to_string(), String::new())
+}
+
+pub fn is_divider_type(type_val: &str) -> bool {
+    ["divider", "dividers", "pembatas", "div"].iter().any(|k| type_val.eq_ignore_ascii_case(k))
 }
 
 pub fn is_chart_type(type_val: &str) -> bool {
@@ -9041,7 +9179,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         // Card 1 must have catalog loaded
         assert!(st.card1_path.ends_with("BAB_02_2025_catalog.csv"));
-        assert_eq!(st.card1_records.len(), 6, "6 sheets in BAB_02_2025.xlsx: A02, R02, C02_01, 02_01, 02_02, 02_03");
+        assert_eq!(st.card1_records.len(), 7, "7 sheets in BAB_02_2025.xlsx: A02, DIV, R02, 02_01, 02_02, 02_03, C02_01");
         assert_eq!(st.card1_records.first().and_then(|r| r.first()), Some(&"Note".to_string()), "the A02 sheet becomes the first catalog row (Note)");
         assert!(st.card1_headers.contains(&"file".to_string()));
 
@@ -9103,14 +9241,16 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(msg.contains("auto-generated pages"), "Status should confirm auto-generated pages: {msg}");
         assert!(msg.contains("3 tables auto-inserted"), "Status should confirm 3 tables auto-inserted: {msg}");
         assert!(msg.contains("2 RTF chapter(s) placed"), "Status should confirm 2 RTFs placed (R02 ulasan + A02 note): {msg}");
-        assert!(msg.contains("1 chart image(s) placed"), "Status should confirm 1 chart placed: {msg}");
+        assert!(msg.contains("2 chart image(s) placed"), "Status should confirm 2 images placed (DIV divider + C02_01 chart): {msg}");
 
         assert!(msg.contains("cover"), "Sample workbook has a COVER sheet, so a cover page is generated: {msg}");
 
-        // Initial doc has 1 page + 7 generated pages (6 records; the R02 ulasan RTF adds one
-        // overflow page) + 1 cover page before Page 1 = 9 pages
         let page_count = app.session.active().unwrap().doc.page_count();
-        assert_eq!(page_count, 9, "Expected 9 pages after generating 6 sheet records and the cover");
+        eprintln!(
+            "DEBUG_PAGES: count={page_count}, spreads={:?}",
+            app.session.active().unwrap().doc.spreads.iter().map(|s| s.pages.len()).collect::<Vec<_>>()
+        );
+        assert_eq!(page_count, 10, "Expected 10 pages after generating 7 sheet records and the cover");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -10765,5 +10905,67 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(texts.iter().any(|t| t.contains("BAB 02")), "Stories should contain BAB 02: {texts:?}");
         assert!(texts.iter().any(|t| t.contains("Sosial")), "Stories should contain Sosial: {texts:?}");
         assert!(texts.iter().any(|t| t.contains("Ulasan sosial Bab 2")), "Stories should contain RTF text: {texts:?}");
+    }
+
+    #[test]
+    fn test_execute_generate_pages_divider_with_002_template() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let img_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plan/pubgen/samples/infografik_01.png");
+
+        let st = PubgenState {
+            card1_preset: 0,
+            card1_records: vec![vec!["Divider".into(), "02".into(), "BAB 02 PEMERINTAHAN".into(), img_path.into(), "002".into()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for divider should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2);
+
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        // 3 textbox values from col title:
+        // first_word replacing "BAB" -> "BAB"
+        assert!(texts.iter().any(|t| t.contains("BAB")), "Stories should contain BAB: {texts:?}");
+        // digit number replacing "01" -> "02"
+        assert!(texts.iter().any(|t| t.contains("02")), "Stories should contain 02: {texts:?}");
+        // rest of text replacing "Geografi" -> "PEMERINTAHAN"
+        assert!(texts.iter().any(|t| t.contains("PEMERINTAHAN")), "Stories should contain PEMERINTAHAN: {texts:?}");
+
+        // Shape with color #e5007e has image placed into it
+        let has_image = active.doc.spreads.iter().flat_map(|sp| &sp.items).any(|it| matches!(it.content, designcraft_doc::Content::Graphic(_)));
+        assert!(has_image, "Divider page should contain placed image");
+
+        // Verify page geometry is full A4 (210 x 297 mm)
+        let last_sp = active.doc.spreads.last().unwrap();
+        let last_p = last_sp.pages.last().unwrap();
+        assert!((last_p.width - 595.27559).abs() < 0.1, "Divider page should be full A4 width 595.28: {}", last_p.width);
+        assert!((last_p.height - 841.88976).abs() < 0.1, "Divider page should be full A4 height 841.89: {}", last_p.height);
+
+        // Verify image fits within frame bounds without cropping
+        let img_item = last_sp.items.iter().find(|it| it.label.contains("image")).unwrap();
+        if let designcraft_doc::Content::Graphic(g) = &img_item.content {
+            let placed_rect = g.xf.transform_rect_bbox(designcraft_geom::Rect::new(0.0, 0.0, g.size.0, g.size.1));
+            let placed_w = placed_rect.width();
+            let placed_h = placed_rect.height();
+            let frame_bounds = img_item.inner_bounds();
+            assert!(placed_w <= frame_bounds.width() + 1.0, "Placed width {} must fit in frame {}", placed_w, frame_bounds.width());
+            assert!(placed_h <= frame_bounds.height() + 1.0, "Placed height {} must fit in frame {}", placed_h, frame_bounds.height());
+        }
+
+        let mut renderer = designcraft_render::Renderer::new();
+        let cache = designcraft_compose::Cache::new();
+        let opts = designcraft_render::RenderOptions::default();
+        let rendered = renderer.render_page(&active.doc, &cache, 1, 1.0, false, &opts);
+        assert!(rendered.is_some(), "Divider page should render cleanly without panic");
     }
 }

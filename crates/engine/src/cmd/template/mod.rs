@@ -290,12 +290,11 @@ fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
     })?;
 
     // 6. Execute external file placing tasks (Images and RTF Stories) via session commands
+    let fit_mode = p.get("image_fitting").and_then(Value::as_str).unwrap_or("fitProportionally");
     for (fid, img_path) in inserted.image_tasks {
         if Path::new(&img_path).exists() {
             let _ = s.execute("file.place", &json!({"frame": fid.0, "path": img_path}));
-            // Cover the frame, as the template's artwork does: a photo frame is designed to be
-            // filled edge to edge, and fitting the whole image inside would leave bands of paper.
-            let _ = s.execute("object.fit", &json!({"mode": "fillProportionally", "ids": [fid.0]}));
+            let _ = s.execute("object.fit", &json!({"mode": fit_mode, "ids": [fid.0]}));
             let _ = s.execute("object.fit", &json!({"mode": "centerContent", "ids": [fid.0]}));
         }
     }
