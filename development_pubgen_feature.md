@@ -140,6 +140,10 @@ Run the application locally with the Pubgen feature enabled to test the UI:
 ```bash
 cargo run -p designcraft --features pubgen
 ```
+or
+```bash
+cargo run --release -p designcraft --features pubgen
+```
 - Switch to the **Pubgen** tab in the right dock.
 - Test generating pages from `plan/pubgen/samples/sample_chapters.csv`.
 - Test inserting tables with multi-stack headers from `plan/pubgen/samples/sample_3stack_table.csv`.
