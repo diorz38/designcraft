@@ -85,6 +85,16 @@ Click the **Pubgen** tab. You will see four collapsible cards:
 
 You can click the triangle arrow `▼` next to any section header to expand or collapse it.
 
+### Bilingual Publication Toggle (`Single Lang` / `Dual Lang`)
+At the top header band of the Pubgen panel, you can toggle between **Single Lang** (default) and **Dual Lang**:
+- **Single Lang**: Standard monolingual generation matching legacy publications.
+- **Dual Lang**: Generates bilingual Indonesian-English content adhering to BPS statistical standards:
+  - **Covers**: Binds English title into the dedicated `#slot:text:title_en` slot across all 10 cover styles.
+  - **Dividers (`DIV`)**: Emits dual-language chapter headings, with English subtitles rendered in the accent swatch.
+  - **Review Chapters (`RXX`) & Front Matter (`BXX`)**: Synthesizes sequential spreads (Indonesian spread followed by English spread).
+  - **Statistical Tables (`XX_XX`)**: Produces 2-row header chrome (`Tabel` / italic `Table`) and 2-line titles split on `" / "` with italicized English.
+  - **Charts (`CXX_XX`)**: Emits bilingual subtitle structures with accurate italicization of English components.
+
 ---
 
 ## 3. Card 1: Publication Cover (Cover Page Generator)

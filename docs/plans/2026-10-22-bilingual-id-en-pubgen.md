@@ -1,8 +1,8 @@
 # Bilingual (Indonesian–English) Generated Pages — Implementation Plan
 
-> **Status:** READY (rev 4 — phased execution with Bilingual Toggle in Phase 1)
+> **Status:** COMPLETED (Phases 1–7 executed & verified)
 > **Date:** 2026-10-22
-> **Target Branch:** `feature/pubgen-modular-templates`
+> **Target Branch:** `feature/pubgen-bilingual-id-en`
 > **Scope:** Pubgen (`crates/ui-egui/src/panels/pubgen*.rs`), Excel/RTF ingestion, template slots, TOC, UI locale
 > **Reference:** `plan/pubgen/PLAN.md` (current state), `docs/plans/2026-10-20-data-driven-template-system.md`
 

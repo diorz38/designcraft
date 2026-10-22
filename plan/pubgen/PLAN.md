@@ -175,7 +175,20 @@ Phase 8: Advanced Table Dev beyond the PRD                    [DONE]
 - [x] **Task 8.3: Table Footer** — the last data row becomes `RowKind::Footer`; with Horizontal Rules it gets a 0.5pt top rule and 1.0pt bottom rule.
 - [x] **Task 8.4: Conditional Summary Rules** — rows whose first (or index-prefixed second) column starts with `Jumlah` / `Tahun` / `Kab` / `Kabupaten` / `Kec` / `Kecamatan` / `Total` receive 0.5pt framing rules (`matches_pubgen_row_condition`, `detect_condition_rows`).
 - [x] **Task 8.5: Footnote / Source Auto-Detection** — a trailing row with text only in column 1 is excluded from the grid and emitted as a standalone text frame directly below the table (`detect_footnote_row`).
-- [x] **Task 8.6: Delimiter Auto-Detection** — shared with Card 1.
+---
+
+## Phase 9: Bilingual (Indonesian–English) Publication Generation
+
+**Goal:** Deliver bilingual publication generation adhering to BPS publication standards with zero regression to legacy monolingual output.
+
+### Tasks
+- [x] **Task 9.1: Bilingual Toggle & State Persistence** — `Single Lang` / `Dual Lang` toggle in header band; persisted `locale`, `bilingual_output`, and `doc_language` in `PubgenState`; added `"indonesian" => "id"` in `designcraft-doc`.
+- [x] **Task 9.2: Ingestion & Parsing** — RTF `\langN` / `\deflangN` extraction (LCID 14345 & 1057 mapped to `"Indonesian"`); bilingual parsing in `pubgen_excel.rs` for `COVER`, `DIV`, and `RXX`/`BXX`.
+- [x] **Task 9.3: Inline Bilingual Generation (Tables & Charts)** — `template.page.apply` with `lang` parameter; inline 2-row table chrome (`Tabel` / italic `Table`); 2-line title split on `" / "` with italicized English; chart bilingual subtitle formatting (`split_chart_title_parts` + `italicize_ranges`); permissive bilingual row keywords.
+- [x] **Task 9.4: Multi-Spread Editorial Generation (Dividers & Chapters)** — `#slot:text:title_en` in divider templates; sequential two-spread generation for `RXX`/`Ulasan` and `BXX` front-matter spreads (ID spread followed by EN spread).
+- [x] **Task 9.5: Bilingual Covers across 10 Templates** — Added `#slot:text:title_en` to all 10 cover templates (`assets/templates/covers/*.designcraft`); wired `execute_generate_cover` to bind `title_en` when `bilingual_output` is enabled.
+- [x] **Task 9.6: UI Localization (Indonesian App Interface)** — Full Indonesian translation catalog in `crates/ui-egui/src/i18n/id.rs`; registered in `LANGUAGES` and routed Pubgen panel strings through `tr()`.
+- [x] **Task 9.7: Quality Gates & Verification** — Verified with `cargo xtask ci` (fmt, clippy, tests, assets, layers, wasm) and 124/124 tests in `designcraft-ui-egui --features pubgen`.
 
 ---
 

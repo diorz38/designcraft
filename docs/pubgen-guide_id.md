@@ -74,6 +74,16 @@ Klik tab **Pubgen**. Anda akan melihat 4 kartu menu utama:
 
 Anda dapat mengklik tanda panah `▼` di sebelah setiap judul kartu untuk membuka atau menutup menu tersebut.
 
+### Tombol Mode Dwi Bahasa (`Single Lang` / `Dual Lang`)
+Di bilah tajuk atas panel Pubgen, Anda dapat beralih antara **Single Lang** (default satu bahasa) dan **Dual Lang** (dwi bahasa):
+- **Single Lang**: Pembuatan publikasi satu bahasa (monolingual) standar seperti sebelumnya.
+- **Dual Lang**: Menghasilkan publikasi dwi bahasa Indonesia-Inggris sesuai standar publikasi BPS:
+  - **Sampul Depan**: Menautkan judul bahasa Inggris ke slot `#slot:text:title_en` di seluruh 10 gaya sampul.
+  - **Halaman Pembatas Bab (`DIV`)**: Menampilkan judul ganda dengan subjudul bahasa Inggris menggunakan warna aksen.
+  - **Bab Ulasan (`RXX`) & Bagian Depan (`BXX`)**: Membuat sebaran berurutan (halaman Indonesia diikuti halaman Inggris).
+  - **Tabel Statistik (`XX_XX`)**: Menggunakan tajuk 2 baris (`Tabel` / `Table` miring) dan judul 2 baris dengan teks Inggris dicetak miring.
+  - **Grafik (`CXX_XX`)**: Memformat judul dan subjudul dwi bahasa dengan perlakuan cetak miring presisi pada bagian bahasa Inggris.
+
 ---
 
 ## 3. Bagian 1: Publication Cover (Pembuat Halaman Sampul Otomatis)
