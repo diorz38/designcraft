@@ -1805,6 +1805,18 @@ fn resolve_cover_image(path: &str) -> String {
     path.to_string()
 }
 
+fn resolve_template_path(path: &str) -> Option<std::path::PathBuf> {
+    let p = std::path::Path::new(path);
+    if p.is_file() {
+        return Some(p.to_path_buf());
+    }
+    let from_manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join(path);
+    if from_manifest.is_file() {
+        return Some(from_manifest);
+    }
+    None
+}
+
 fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
     let title_text = if st.cover_title.trim().is_empty() { "KARAWANG TIMUR" } else { st.cover_title.trim() };
     // The second headline line has its own frame in the cover templates (`title#2`), styled
@@ -1850,36 +1862,43 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     ];
 
     if let Some(&tpl_path) = canonical_templates.get(st.cover_style)
-        && std::path::Path::new(tpl_path).exists()
+        && let Some(tpl_file) = resolve_template_path(tpl_path)
     {
-        let res = app.run(
-            "template.page.apply",
-            json!({
-                "path": tpl_path,
-                "before": 0,
-                "slots": {
-                    "text": {
-                        "title": title_text,
-                        "title#2": title2_text,
-                        "year": year_text,
-                        "volume": volume_text,
-                        "catalogue": cat_text,
-                        "code": code_text,
-                        "agency": agency_text,
-                    },
-                    "image": {
-                        "hero": skyline,
-                        "landscape": landscape,
-                        "logo": logo,
-                    }
-                },
-                "palette": {
-                    "Primary": primary,
-                    "Accent": accent,
-                    "Dark": dark,
+        let tpl_path_str = tpl_file.to_string_lossy().to_string();
+        let mut text_slots = serde_json::Map::new();
+        text_slots.insert("title".into(), json!(title_text));
+        text_slots.insert("title#2".into(), json!(title2_text));
+        if st.bilingual_output && !st.cover_title_en.trim().is_empty() {
+            text_slots.insert("title_en".into(), json!(st.cover_title_en.trim()));
+        }
+        text_slots.insert("year".into(), json!(year_text));
+        text_slots.insert("volume".into(), json!(volume_text));
+        text_slots.insert("catalogue".into(), json!(cat_text));
+        text_slots.insert("code".into(), json!(code_text));
+        text_slots.insert("agency".into(), json!(agency_text));
+
+        let mut apply_params = json!({
+            "path": tpl_path_str,
+            "before": 0,
+            "slots": {
+                "text": text_slots,
+                "image": {
+                    "hero": skyline,
+                    "landscape": landscape,
+                    "logo": logo,
                 }
-            }),
-        );
+            },
+            "palette": {
+                "Primary": primary,
+                "Accent": accent,
+                "Dark": dark,
+            }
+        });
+        if !st.doc_language.trim().is_empty() {
+            apply_params["lang"] = json!(st.doc_language.trim());
+        }
+
+        let res = app.run("template.page.apply", apply_params);
         if res.is_ok() {
             crate::canvas::go_to_page(app, 0);
             let _ = app.session.edit(|doc, _| {
@@ -12655,5 +12674,45 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn test_cover_bilingual() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // 1. Single Lang mode (bilingual_output = false)
+        let mut st = PubgenState {
+            cover_style: 0,
+            cover_title: "KARAWANG TIMUR".into(),
+            cover_title2: "DALAM ANGKA".into(),
+            cover_title_en: "IN FIGURES".into(),
+            bilingual_output: false,
+            ..Default::default()
+        };
+
+        let res = execute_generate_cover(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_cover single lang should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("KARAWANG TIMUR")), "Should contain ID title: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("DALAM ANGKA")), "Should contain ID title2: {texts:?}");
+        assert!(!texts.iter().any(|t| t.contains("IN FIGURES")), "Should NOT contain title_en when bilingual_output is false: {texts:?}");
+
+        // 2. Dual Lang mode (bilingual_output = true)
+        let mut app_dual = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app_dual.run("file.new", json!({})).unwrap();
+        st.bilingual_output = true;
+
+        let res_dual = execute_generate_cover(&mut app_dual, &st);
+        assert!(res_dual.is_ok(), "execute_generate_cover dual lang should succeed: {res_dual:?}");
+
+        let active_dual = app_dual.session.active().unwrap();
+        let texts_dual: Vec<String> = active_dual.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts_dual.iter().any(|t| t.contains("KARAWANG TIMUR")), "Should contain ID title: {texts_dual:?}");
+        assert!(texts_dual.iter().any(|t| t.contains("DALAM ANGKA")), "Should contain ID title2: {texts_dual:?}");
+        assert!(texts_dual.iter().any(|t| t.contains("IN FIGURES")), "Should contain title_en in bilingual mode: {texts_dual:?}");
+    }
 }
+
 
