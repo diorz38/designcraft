@@ -109,6 +109,7 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `plan/pubgen/samples/style/design-6.designcraft` | DesignCraft contributor (traced) | traced cover geometry for Cover Style 9 (Urban Angle), drawn over the Pubgen reference template | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/design-10.designcraft` | DesignCraft contributor (traced) | traced cover geometry for Cover Style 8 (Business Report), drawn over the Pubgen reference template | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/daftar_isi.designcraft` | DesignCraft contributor (generated) | sample table-of-contents document for Pubgen | CC0-1.0 | Test document |
+| `plan/pubgen/Check_Cover.designcraft` | DesignCraft contributor (generated) | scratch document for checking the Publication Cover styles | CC0-1.0 | Test document |
 | `plan/pubgen/samples/thumb/business_report.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 8 (Business Report) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/chevron_medallion.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 3 (Chevron Medallion) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/corporate_headline.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 5 (Corporate Headline) | CC0-1.0 | Test thumbnail |
