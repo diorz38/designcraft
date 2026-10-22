@@ -119,6 +119,11 @@ fn default_cover_title() -> String {
     "KARAWANG TIMUR".into()
 }
 
+/// The second headline line of the cover: the templates give it its own frame and style.
+fn default_cover_title2() -> String {
+    "Title 2".into()
+}
+
 fn default_cover_year() -> String {
     "2026".into()
 }
@@ -274,6 +279,10 @@ pub struct PubgenState {
     pub cover_level: String,
     #[serde(default = "default_cover_title")]
     pub cover_title: String,
+    /// The second headline line. The cover templates carry it in their own frame (`title#2`),
+    /// styled smaller and in another colour than the headline above it.
+    #[serde(default = "default_cover_title2")]
+    pub cover_title2: String,
     #[serde(default = "default_cover_year")]
     pub cover_year: String,
     #[serde(default = "default_cover_volume")]
@@ -353,6 +362,7 @@ impl Default for PubgenState {
             cover_style: 2,
             cover_level: default_cover_level(),
             cover_title: default_cover_title(),
+            cover_title2: default_cover_title2(),
             cover_year: default_cover_year(),
             cover_volume: default_cover_volume(),
             cover_catalogue: default_cover_catalogue(),
@@ -1394,18 +1404,20 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
     });
 
     // 3. Form fields
-    // #1 Title 1: default "KECAMATAN"
+    // #1 Title: one headline, typed over several rows (the cover keeps it as written).
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Title 1:").size(11.0).color(t.text));
+        ui.label(RichText::new("Title:").size(11.0).color(t.text));
         let avail = (ui.available_width() - 4.0).max(100.0);
-        ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_level));
+        ui.add_sized([avail, crate::widgets::FIELD_H * 1.8], egui::TextEdit::multiline(&mut st.cover_title).hint_text("KARAWANG TIMUR\nDALAM ANGKA"))
+            .on_hover_text("The cover headline, as written (multi-line supported)");
     });
 
-    // #2 Title 2: default "KARAWANG TIMUR"
+    // #2 Title 2: the second headline line, in the cover's own frame and style.
     ui.horizontal(|ui| {
         ui.label(RichText::new("Title 2:").size(11.0).color(t.text));
         let avail = (ui.available_width() - 4.0).max(100.0);
-        ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_title));
+        ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_title2))
+            .on_hover_text("The second headline line, set smaller and in another colour");
     });
 
     // #3 Year & #4 Volume
@@ -1755,6 +1767,10 @@ fn resolve_cover_image(path: &str) -> String {
 fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
     let level_text = if st.cover_level.trim().is_empty() { "Kecamatan" } else { st.cover_level.trim() };
     let title_text = if st.cover_title.trim().is_empty() { "KARAWANG TIMUR" } else { st.cover_title.trim() };
+    // The second headline line has its own frame in the cover templates (`title#2`), styled
+    // smaller and in another colour than the headline above it. An empty field leaves that
+    // frame blank.
+    let title2_text = st.cover_title2.trim();
     let year_text = if st.cover_year.trim().is_empty() { "2026" } else { st.cover_year.trim() };
     let volume_text = if st.cover_volume.trim().is_empty() { "Volume 23 2026" } else { st.cover_volume.trim() };
 
@@ -1804,6 +1820,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 "slots": {
                     "text": {
                         "title": title_text,
+                        "title#2": title2_text,
                         "level": level_text,
                         "year": year_text,
                         "volume": volume_text,
@@ -1950,17 +1967,30 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 
             // 7. Headline Block
             add_cover_text_frame(app, 0, [40.0, 92.0, 555.0, 126.0], level_text, dark, "Arial", "Bold", 20.0, None, Some(50.0), "center")?;
-            let combined_title = format!("{title_text}\nDALAM ANGKA");
             add_cover_text_frame(
                 app,
                 0,
-                [20.0, 126.0, 575.0, 225.0],
-                &combined_title,
+                [20.0, 126.0, 575.0, 186.0],
+                title_text,
                 primary,
                 "Arial Black",
                 "Regular",
                 33.0,
                 Some(39.0),
+                Some(30.0),
+                "center",
+            )?;
+            // The second headline line: smaller, and in the accent colour.
+            add_cover_text_frame(
+                app,
+                0,
+                [20.0, 186.0, 575.0, 225.0],
+                title2_text,
+                accent,
+                "Arial Black",
+                "Regular",
+                24.0,
+                Some(28.0),
                 Some(30.0),
                 "center",
             )?;
@@ -2086,7 +2116,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             // Headline Block
             add_cover_text_frame(app, 0, [35.0, 55.0, 380.0, 90.0], level_text, "#334155", "Arial", "Bold", 20.0, None, Some(50.0), "left")?;
             add_cover_text_frame(app, 0, [35.0, 90.0, 440.0, 142.0], title_text, accent, "Arial Black", "Regular", 34.0, None, Some(30.0), "left")?;
-            add_cover_text_frame(app, 0, [35.0, 142.0, 440.0, 195.0], "DALAM ANGKA", dark, "Arial Black", "Regular", 34.0, None, Some(30.0), "left")?;
+            add_cover_text_frame(app, 0, [35.0, 142.0, 440.0, 195.0], title2_text, dark, "Arial Black", "Regular", 24.0, None, Some(30.0), "left")?;
 
             // Bottom-Left Logo
             app.run("frame.create", json!({"spread": 0, "rect": [35.0, 742.0, 82.0, 788.0], "content": "graphic", "shape": "rectangle"}))?;
@@ -2215,7 +2245,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             // 9. Headline Block
             add_cover_text_frame(app, 0, [40.0, 565.0, 420.0, 597.0], level_text, primary, "Arial", "Bold", 22.0, None, Some(40.0), "left")?;
             add_cover_text_frame(app, 0, [40.0, 597.0, 550.0, 647.0], title_text, primary, "Arial Black", "Regular", 38.0, None, Some(20.0), "left")?;
-            add_cover_text_frame(app, 0, [40.0, 647.0, 550.0, 697.0], "DALAM ANGKA", dark, "Arial Black", "Regular", 38.0, None, Some(20.0), "left")?;
+            add_cover_text_frame(app, 0, [40.0, 647.0, 550.0, 697.0], title2_text, accent, "Arial Black", "Regular", 28.0, None, Some(20.0), "left")?;
 
             // 10. Bottom-Left Logo
             app.run("frame.create", json!({"spread": 0, "rect": [40.0, 742.0, 84.0, 788.0], "content": "graphic", "shape": "rectangle"}))?;
@@ -2380,17 +2410,30 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 Some(40.0),
                 "center",
             )?;
-            let combined_title = format!("{title_text}\nDALAM ANGKA");
             add_cover_text_frame(
                 app,
                 0,
-                [21.28 * sx, 201.46 * sy, 573.99 * sx, 330.00 * sy],
-                &combined_title,
+                [21.28 * sx, 201.46 * sy, 573.99 * sx, 275.00 * sy],
+                title_text,
                 "#ffffff",
                 "Arial Black",
                 "Regular",
                 26.0 * s_avg,
                 Some(31.0 * s_avg),
+                Some(20.0),
+                "center",
+            )?;
+            // The second headline line: smaller, and in the accent colour.
+            add_cover_text_frame(
+                app,
+                0,
+                [21.28 * sx, 275.00 * sy, 573.99 * sx, 330.00 * sy],
+                title2_text,
+                accent,
+                "Arial Black",
+                "Regular",
+                19.0 * s_avg,
+                Some(23.0 * s_avg),
                 Some(20.0),
                 "center",
             )?;
@@ -2649,17 +2692,30 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 Some(30.0),
                 "left",
             )?;
-            let combined_title = format!("{title_text}\nDALAM ANGKA");
             add_cover_text_frame(
                 app,
                 0,
-                [36.0 * sx, 265.0 * sy, 270.0 * sx, 395.0 * sy],
-                &combined_title,
+                [36.0 * sx, 265.0 * sy, 270.0 * sx, 340.0 * sy],
+                title_text,
                 "#ffffff",
                 "Arial Black",
                 "Regular",
                 25.0 * s_avg,
                 Some(30.0 * s_avg),
+                Some(15.0),
+                "left",
+            )?;
+            // The second headline line: smaller, and in the accent colour.
+            add_cover_text_frame(
+                app,
+                0,
+                [36.0 * sx, 340.0 * sy, 270.0 * sx, 395.0 * sy],
+                title2_text,
+                accent,
+                "Arial Black",
+                "Regular",
+                18.0 * s_avg,
+                Some(22.0 * s_avg),
                 Some(15.0),
                 "left",
             )?;
@@ -2952,7 +3008,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 app,
                 0,
                 [28.0 * sx, 624.0 * sy, 320.0 * sx, 654.0 * sy],
-                "DALAM ANGKA",
+                title2_text,
                 "#ffffff",
                 "Arial",
                 "Bold",
@@ -3146,7 +3202,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 app,
                 0,
                 [36.0 * sx, 431.0 * sy, 384.0 * sx, 465.0 * sy],
-                "DALAM ANGKA",
+                title2_text,
                 dark,
                 "Arial Black",
                 "Regular",
@@ -3305,7 +3361,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 app,
                 0,
                 [x(36.0), y(690.0), x(380.0), y(730.0)],
-                "DALAM ANGKA",
+                title2_text,
                 "#ffffff",
                 "Arial Black",
                 "Regular",
@@ -3493,7 +3549,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 app,
                 0,
                 [x(36.0), y(176.0), x(360.0), y(206.0)],
-                "DALAM ANGKA",
+                title2_text,
                 dark,
                 "Arial Black",
                 "Regular",
@@ -3797,7 +3853,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 app,
                 0,
                 [x(36.0), y(728.0), x(330.0), y(776.0)],
-                "DALAM ANGKA",
+                title2_text,
                 dark,
                 "Arial Black",
                 "Regular",
@@ -7777,14 +7833,17 @@ fn apply_excel_cover(st: &mut PubgenState, cover: &excel::ExcelCoverData, base_d
         st.cover_style = idx;
     }
 
-    // The card's "Title 1" is `cover_level` and "Title 2" is `cover_title`
-    // (see the frame slots `#slot:text:level` / `#slot:text:title`).
-    let level = if !cover.level.trim().is_empty() { cover.level.trim() } else { cover.title1.trim() };
-    if !level.is_empty() {
-        st.cover_level = level.to_string();
+    // The sheet's `title1` is the card's "Title" (the headline) and `title2` its "Title 2" (the
+    // second headline line); `level` is the kicker above the headline (see the frame slots
+    // `#slot:text:title` / `#slot:text:title#2` / `#slot:text:level`).
+    if !cover.level.trim().is_empty() {
+        st.cover_level = cover.level.trim().to_string();
+    }
+    if !cover.title1.trim().is_empty() {
+        st.cover_title = cover.title1.trim().to_string();
     }
     if !cover.title2.trim().is_empty() {
-        st.cover_title = cover.title2.trim().to_string();
+        st.cover_title2 = cover.title2.trim().to_string();
     }
     if !cover.year.trim().is_empty() {
         st.cover_year = cover.year.trim().to_string();
@@ -8013,6 +8072,29 @@ pub fn execute_download_csv_zip(app: &mut DesignApp, st: &mut PubgenState) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_cover_card_carries_one_title_and_a_second_title_line() {
+        let st = PubgenState::default();
+        // The card takes a single headline and keeps the second headline line, with its dummy text.
+        assert_eq!(st.cover_title, default_cover_title());
+        assert_eq!(st.cover_title2, "Title 2");
+    }
+
+    #[test]
+    fn test_excel_cover_sheet_fills_title_and_title2() {
+        let mut st = PubgenState::default();
+        let cover = excel::ExcelCoverData {
+            level: "KABUPATEN".to_string(),
+            title1: "PRODUK DOMESTIK REGIONAL BRUTO".to_string(),
+            title2: "KABUPATEN KARAWANG".to_string(),
+            ..Default::default()
+        };
+        apply_excel_cover(&mut st, &cover, None);
+        assert_eq!(st.cover_level, "KABUPATEN");
+        assert_eq!(st.cover_title, "PRODUK DOMESTIK REGIONAL BRUTO");
+        assert_eq!(st.cover_title2, "KABUPATEN KARAWANG");
+    }
 
     #[test]
     fn test_parse_csv_content_rfc4180() {
@@ -10727,6 +10809,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             "ISBN",
             "BADAN PUSAT STATISTIK",
             "DALAM ANGKA",
+            "TITLE 2",
             "20",
             "26",
         ];
@@ -10779,7 +10862,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         execute_generate_cover(&mut app, &st).unwrap();
 
         let active = app.session.active().unwrap();
-        let allowed = ["KECAMATAN", "KARAWANG", "2026", "20", "26", "VOLUME", "KATALOG", "ISSN", "ISBN", "BADAN PUSAT", "DALAM ANGKA"];
+        let allowed = ["KECAMATAN", "KARAWANG", "2026", "20", "26", "VOLUME", "KATALOG", "ISSN", "ISBN", "BADAN PUSAT", "DALAM ANGKA", "TITLE 2"];
         for story in active.doc.stories.values() {
             let upper = story.text.to_uppercase();
             assert!(allowed.iter().any(|a| upper.contains(a)), "text must come from the cover options: {}", story.text);
@@ -10808,6 +10891,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             "ISBN",
             "BADAN PUSAT STATISTIK",
             "DALAM ANGKA",
+            "TITLE 2",
         ];
         for text in &texts {
             // Nothing from the reference template survives: no brand, no lorem, no subtitle.
@@ -10853,6 +10937,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             "ISBN",
             "BADAN PUSAT STATISTIK",
             "DALAM ANGKA",
+            "TITLE 2",
         ];
         for story in active.doc.stories.values() {
             for banned in ["COMPANY NAME", "YOUR HEADLINE HERE", "LOREM IPSUM", "BUSINESS REPORT"] {
@@ -10887,7 +10972,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         // Headline: level, title, suffix down the left of the dark block.
         let level = frame("KECAMATAN");
         let title = frame("KARAWANG");
-        let suffix = frame("DALAM ANGKA");
+        let suffix = frame("Title 2");
         assert!(level.y0 < title.y0 && title.y1 <= suffix.y0 + 1.0, "headline order: {level:?} {title:?} {suffix:?}");
         assert!(suffix.y1 < page.y0 + 740.0, "the headline sits inside the dark block: {suffix:?}");
 

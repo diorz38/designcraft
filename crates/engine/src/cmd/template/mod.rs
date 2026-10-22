@@ -27,7 +27,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Apply Template Page…",
             ["Layout", "Templates"],
             None,
-            "{path?: string, bytes?: [u8], base64?: string, before?: usize, after?: usize, target_page?: usize, position?: before|after, slots?: {text?: {...}, image?: {...}, story?: {...}}, palette?: {...}} → {page, spread, items: [id], slots_bound: count} — a text slot split over several frames labels them `#slot:text:<key>`, `#slot:text:<key>#2`, … and the value is divided between them (lines, else words, else characters: `2026` → `20`, `26`)",
+            "{path?: string, bytes?: [u8], base64?: string, before?: usize, after?: usize, target_page?: usize, position?: before|after, slots?: {text?: {...}, image?: {...}, story?: {...}}, palette?: {...}} → {page, spread, items: [id], slots_bound: count} — a text slot split over several frames labels them `#slot:text:<key>`, `#slot:text:<key>#2`, … and the value is divided between them (lines, else words, else characters: `2026` → `20`, `26`); a part may be given its own value as `<key>#<n>` (e.g. `title#2`), which is used as written and leaves the plain value to the parts that have none",
             has_doc,
             apply_template_page
         ),
@@ -256,14 +256,27 @@ fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
         for t in tagged {
             match t.kind {
                 SlotType::Text => {
-                    let Some(raw) = text_slots.get(&t.key) else { continue };
                     let count = parts.get(&t.key).copied().unwrap_or(1);
-                    // One frame takes the value whole; several take one part each (see
+                    // A part may carry its own value (`title#2`): it is then used as written, and
+                    // the plain value is divided over the parts that have none (see
                     // `split_slot_value`).
-                    let piece = if count <= 1 {
-                        Some(raw.clone())
+                    let mut own: HashMap<u32, String> = HashMap::new();
+                    for part in 1..=count {
+                        if let Some(v) = text_slots.get(&format!("{}#{}", t.key, part)) {
+                            own.insert(part, v.clone());
+                        }
+                    }
+                    let plain = text_slots.get(&t.key).cloned();
+                    if plain.is_none() && own.is_empty() {
+                        continue;
+                    }
+                    let free_parts: Vec<u32> = (1..=count).filter(|p| !own.contains_key(p)).collect();
+                    let pieces =
+                        if free_parts.is_empty() { Vec::new() } else { split_slot_value(plain.as_deref().unwrap_or_default(), free_parts.len()) };
+                    let piece = if let Some(v) = own.get(&t.part) {
+                        Some(v.clone())
                     } else {
-                        split_slot_value(raw, count as usize).into_iter().nth(t.part.saturating_sub(1) as usize)
+                        free_parts.iter().position(|p| *p == t.part).and_then(|i| pieces.get(i).cloned())
                     };
                     if let (Some(text_val), Some(sid)) = (piece, t.story)
                         && let Some(story) = d.story_mut(sid)

@@ -100,6 +100,53 @@ fn test_template_page_apply_binds_text_parts() {
 }
 
 #[test]
+fn test_template_page_apply_binds_a_part_given_its_own_value() {
+    // The cover's headline frame and its second line: the second part carries its own value
+    // (`title#2`), so the headline above it is placed as written.
+    let mut tpl_doc = Document::new(&NewDocument { pages: 1, facing_pages: false, width: 420.0, height: 595.0, ..Default::default() });
+    let layer = tpl_doc.default_layer();
+    let mut frame = |y: f64, label: &str| {
+        let rect = Rect::new(36.0, y, 384.0, 40.0);
+        let (id, _) = tpl_doc.add_text_frame(SpreadRef::Doc(0), rect, layer, "demo", ParaFormat::default()).unwrap();
+        if let Some(it) = tpl_doc.item_mut(id) {
+            it.label = label.to_string();
+        }
+    };
+    frame(36.0, "#slot:text:title");
+    frame(80.0, "#slot:text:title#2");
+
+    let tpl_bytes = designcraft_format::save(&tpl_doc).unwrap();
+
+    let mut s = Session::new();
+    s.execute("file.new", &json!({"pages": 1})).unwrap();
+    let res = s
+        .execute(
+            "template.page.apply",
+            &json!({
+                "bytes": tpl_bytes,
+                "slots": {"text": {"title": "KARAWANG TIMUR\nDALAM ANGKA", "title#2": "Title 2"}}
+            }),
+        )
+        .expect("apply should succeed");
+    assert_eq!(res["slots_bound"], 2, "both headline frames bind: {res}");
+
+    let active = s.active().unwrap();
+    let mut texts: Vec<String> = active
+        .doc
+        .spreads
+        .iter()
+        .flat_map(|sp| sp.items.iter())
+        .filter_map(|it| match &it.content {
+            Content::Text(tf) => active.doc.story(tf.story).map(|st| st.text.clone()),
+            _ => None,
+        })
+        .collect();
+    texts.sort();
+    // The headline keeps both of its lines; the second frame carries its own text.
+    assert_eq!(texts, vec!["KARAWANG TIMUR\nDALAM ANGKA", "Title 2"]);
+}
+
+#[test]
 fn test_parse_slot_tag_non_slot_or_invalid() {
     assert_eq!(parse_slot_tag("regular_frame_label"), None);
     assert_eq!(parse_slot_tag("#slot:"), None);

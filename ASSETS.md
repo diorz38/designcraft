@@ -91,6 +91,16 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `plan/pubgen/samples/C02_01.png` | DesignCraft contributor (generated) | synthetic chart-sheet test asset for Pubgen table-from-CSV | CC0-1.0 | Test sample |
 | `plan/pubgen/samples/A02.rtf` | DesignCraft contributor / Pubgen sample | synthetic publication-note text asset for Pubgen Page from RTF | CC0-1.0 | Test sample |
 | `plan/pubgen/samples/pembatas_bab.jpg` | DesignCraft contributor / Pubgen sample | synthetic chapter divider test asset for Pubgen Page from Image | CC0-1.0 | Test sample |
+| `plan/pubgen/samples/B01_pict1.jpg` | DesignCraft contributor / Pubgen sample | sample picture placed by the Pubgen Page from RTF | CC0-1.0 | Test sample |
+| `plan/pubgen/samples/B01_pict2.png` | DesignCraft contributor / Pubgen sample | sample picture placed by the Pubgen Page from RTF | CC0-1.0 | Test sample |
+| `plan/pubgen/samples/DUAL_LANG/B01_pict1.jpg` | DesignCraft contributor / Pubgen sample | bilingual copy of the sample picture placed by the Pubgen Page from RTF | CC0-1.0 | Test sample |
+| `plan/pubgen/samples/DUAL_LANG/B01_pict2.png` | DesignCraft contributor / Pubgen sample | bilingual copy of the sample picture placed by the Pubgen Page from RTF | CC0-1.0 | Test sample |
+| `plan/pubgen/samples/DUAL_LANG/C02_01.png` | DesignCraft contributor (generated) | bilingual copy of the synthetic chart-sheet test asset | CC0-1.0 | Test sample |
+| `plan/pubgen/samples/DUAL_LANG/Sarana_Ekonomi_Karawang_Timur_2025.png` | DesignCraft contributor / Pubgen sample | bilingual copy of the synthetic infographic test asset | CC0-1.0 | Test sample |
+| `plan/pubgen/samples/DUAL_LANG/infografik_01.png` | DesignCraft contributors | bilingual copy of the sample infographic graphic illustration | CC0-1.0 | Authored sample graphic |
+| `plan/pubgen/samples/DUAL_LANG/infografik_02.png` | DesignCraft contributors | bilingual copy of the sample infographic graphic illustration | CC0-1.0 | Authored sample graphic |
+| `plan/pubgen/samples/DUAL_LANG/pembatas_bab.jpg` | DesignCraft contributor / Pubgen sample | bilingual copy of the synthetic chapter divider test asset | CC0-1.0 | Test sample |
+| `plan/pubgen/samples/DUAL_LANG/visualisasi_keuangan_perdagangan_portrait.png` | DesignCraft contributor / Pubgen sample | bilingual copy of the synthetic portrait test asset | CC0-1.0 | Test sample |
 | `plan/pubgen/samples/style/design-1.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/design-2.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/design-3.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
@@ -98,6 +108,7 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `plan/pubgen/samples/style/design-5.designcraft` | DesignCraft contributor (traced) | traced cover geometry for Cover Style 7 (Modern Horizon), drawn over the Pubgen reference template | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/design-6.designcraft` | DesignCraft contributor (traced) | traced cover geometry for Cover Style 9 (Urban Angle), drawn over the Pubgen reference template | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/design-10.designcraft` | DesignCraft contributor (traced) | traced cover geometry for Cover Style 8 (Business Report), drawn over the Pubgen reference template | CC0-1.0 | Test document |
+| `plan/pubgen/samples/style/daftar_isi.designcraft` | DesignCraft contributor (generated) | sample table-of-contents document for Pubgen | CC0-1.0 | Test document |
 | `plan/pubgen/samples/thumb/business_report.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 8 (Business Report) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/chevron_medallion.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 3 (Chevron Medallion) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/corporate_headline.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 5 (Corporate Headline) | CC0-1.0 | Test thumbnail |
