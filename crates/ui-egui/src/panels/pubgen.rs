@@ -6618,6 +6618,7 @@ struct TocLevel {
     chapter_number: bool,
 }
 
+#[derive(Clone, Debug)]
 pub struct TocPlan {
     /// The styles the table of contents lists, outermost level first.
     levels: Vec<TocLevel>,
@@ -6691,6 +6692,21 @@ impl TocPlan {
     /// page titles and adds the narrative pages as a second level of the same depth.
     fn is_paragraph_toc(&self) -> bool {
         self.levels.first().is_some_and(|l| l.style == TOC_NARRATIVE_STYLE)
+    }
+
+    /// Documents whose pages predate the narrative style keep their chapters: the card's TOC style
+    /// on pages that open with "BAB" still lists them (with the chapter line, as a new page's),
+    /// and a `pageTitle` filter keeps table and chart pages out. Only used while the document has
+    /// no narrative-styled paragraph at all, so regenerated pages never take this path.
+    fn with_legacy_chapters(&self, st: &PubgenState) -> Self {
+        let mut plan = self.clone();
+        plan.levels.push(TocLevel {
+            style: st.toc_style.clone(),
+            level: 1,
+            words: toc_kind_words(3).iter().map(|w| (*w).to_string()).collect(),
+            chapter_number: true,
+        });
+        plan
     }
 
     /// Whether the table of contents writes a title line (an empty field writes none, which the
@@ -7492,9 +7508,21 @@ fn toc_hanging_indent(st: &PubgenState, layout: usize) -> f64 {
 
 /// Generate (or regenerate) one table of contents on `page` and run the panel's post-process
 /// (type/number merging, title styles, continuation pages and headers).
+/// Whether any paragraph of the document carries `style` (the panel's own marker styles are only
+/// present once a page has been generated with them).
+fn document_uses_style(app: &DesignApp, style: &str) -> bool {
+    app.session.active().is_some_and(|a| a.doc.stories.values().any(|s| s.paras.iter().any(|p| p.style == style)))
+}
+
 fn generate_toc(app: &mut DesignApp, st: &PubgenState, page: usize, plan: &TocPlan, replace: bool) -> Result<(u64, u64), String> {
     let width = page_margin_width(app, page)?;
     let hanging_indent = toc_hanging_indent(st, plan.layout);
+
+    // A document whose pages were made before the narrative style existed still lists its
+    // chapters, rather than coming up empty until its pages are generated again.
+    let legacy = plan.clone();
+    let plan = if plan.is_paragraph_toc() && !document_uses_style(app, TOC_NARRATIVE_STYLE) { legacy.with_legacy_chapters(st) } else { legacy };
+    let plan = &plan;
 
     for level in &plan.levels {
         ensure_para_style(app, &level.style);
@@ -10183,6 +10211,37 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let toc = active.doc.tocs.last().expect("table of contents");
         let text = active.doc.story(toc.story).expect("TOC story").text.clone();
         assert!(text.contains("BAB 01 Geografi"), "the review page reads chapter line and title: {text}");
+    }
+
+    #[test]
+    fn test_toc_paragraph_lists_a_legacy_chapter_page_until_its_pages_are_regenerated() {
+        // A page made before the narrative style existed: the chapter line in a plain box, the
+        // title below it tagged with the card's TOC style.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        ensure_para_style(&mut app, "TOC Entry");
+        let (si, pi) = app.session.active().unwrap().doc.page_loc(0).unwrap();
+        let b = app.session.active().unwrap().doc.spreads[si].pages[pi].bounds();
+        for (text, style, dy) in [("BAB 01", None, 0.0_f64), ("Geografi", Some("TOC Entry"), 40.0_f64)] {
+            let rect = [b.x0 + 36.0, b.y0 + 36.0 + dy, b.x1 - 36.0, b.y0 + 76.0 + dy];
+            let res =
+                app.run("frame.create", json!({"spread": si, "rect": rect, "content": "text", "text": text, "caret": false})).expect("frame.create");
+            if let Some(style) = style {
+                let sid = res["story"].as_u64().expect("story");
+                app.run("text.select", json!({"story": sid, "anchor": 0, "focus": text.chars().count() as u64})).expect("text.select");
+                app.run("style.paragraph.apply", json!({"name": style})).expect("style.paragraph.apply");
+            }
+        }
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+
+        let mut st = PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), toc_title: "Daftar Isi".into(), ..Default::default() };
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "{res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().expect("table of contents");
+        let text = active.doc.story(toc.story).expect("TOC story").text.clone();
+        assert!(text.contains("BAB 01 Geografi"), "an older document still lists its chapter: {text}");
     }
 
     #[test]
