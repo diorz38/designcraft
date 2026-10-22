@@ -1,6 +1,6 @@
 # Bilingual (Indonesian–English) Generated Pages — Implementation Plan
 
-> **Status:** READY (rev 3 — mixed per-sheet model, verified against `acabc3af`)
+> **Status:** READY (rev 4 — phased execution with Bilingual Toggle in Phase 1)
 > **Date:** 2026-10-22
 > **Target Branch:** `feature/pubgen-modular-templates`
 > **Scope:** Pubgen (`crates/ui-egui/src/panels/pubgen*.rs`), Excel/RTF ingestion, template slots, TOC, UI locale
@@ -257,72 +257,283 @@ Not changed: `dock.rs`, `panels/mod.rs`, `i18n/{de,fr,…}.rs`, chart rendering 
 
 ---
 
-## 5. Phases
+## 5. Phased Execution Plan
 
 ```
-P1 Locale core ──► P2 Ingestion ──► P3 Generation (per pattern) ──► P4 Gates/docs
-                                          │
-                                          └──► P5 UI locale
+Phase 1: Bilingual Toggle UI & Locale Foundation
+   │
+   ▼
+Phase 2: Ingestion & Workbook Parsing (Excel & RTF)
+   │
+   ├───────────────────────────┬───────────────────────────┐
+   ▼                           ▼                           ▼
+Phase 3: Tables & Charts    Phase 4: Dividers & Chapters   Phase 5: Covers & Templates
+(Inline Bilingual)          (Dual Spreads / Slotted)       (Cover Templates & Slots)
+   │                           │                           │
+   └───────────────────────────┼───────────────────────────┘
+                               │
+                               ▼
+Phase 6: Quality Gates, Regressions & Visual Verification
+                               │
+                               ▼
+Phase 7: UI Localization (Indonesian App Interface)
 ```
 
-### P1 — Locale core (no behaviour change)
-1. Add `pubgen_locale.rs`: `Locale`, `LocaleWords` (ID + EN), `split_pair`, `split_table_title`, `split_chart_title_parts`, `italicize_ranges`, alias tables.
-2. Add the three state fields with defaults (`Locale::Id`, `false`, `""` — empty `doc_language` means "leave each run's existing language", required for §8.2 byte-identity); serde round-trip test including `""`.
-3. Add the `Single Lang`/`Dual Lang` toggle to `pubgen_header_band` (§2.3) — pure UI + one bool, no generation change yet.
-4. Replace the TOC ternary with `words(locale)`; assert byte-identical output both locales.
-5. `language_tag("Indonesian") == Some("id")` test in `crates/doc`.
+---
 
-### P2 — Ingestion
-1. `ExcelCoverData.title_id/title_en` + alias fallback (`title1`/`title` → `title_id`; `title2` stays the second ID line, never an EN alias); test legacy two-line ID cover.
-2. `parse_rtf_review_sheet_with_template`: `file_id` with `file`/`rtf`/`path` aliases, plus optional `file_en`. Same for `is_b_sheet` rows.
-3. `parse_divider_sheet_with_template`: `title_id`/`title_en` (+ `title`/`judul` alias).
-4. `convert_excel_to_csv_data`: `CatalogEntryItem` gains `title_en`/`file_en`; columns appended **at the end**, only when any row has a value. Two snapshot tests (legacy workbook, bilingual workbook).
-5. `load_card1_csv` (`pubgen.rs:4370`): detect `title_en`/`file_en` headers by name; auto-set `locale` from `type` words; badge in Card 1.
-6. RTF `\lang*` → `CharAttrs.language`; LCID 14345 (what the sample corpus actually declares) and 1057, plus `\deflang` fallback tests.
-7. No change to table/chart sheet parsing — their bilingual data is inside the title cell.
+### Phase 1: Bilingual Toggle UI & Locale Foundation
 
-### P3 — Generation, per pattern
-Thread `&LocaleWords` through `execute_generate_pages` (`pubgen.rs:4638`) and the code-path renderers.
+**Goal:** Deliver the primary user-facing **Bilingual Toggle** in the Pubgen header band, wire up `PubgenState` persistence, establish the `pubgen_locale` helper module, and register the core language tag — maintaining 100% byte-identity for existing single-language runs.
 
-Every bilingual branch below is gated on `st.bilingual_output` (the header toggle, §2.3). With the toggle on `Single Lang`, each pattern renders only the half selected by `st.locale` and the output must match today's pages.
+- **Files:**
+  - Modify: `crates/ui-egui/src/panels/pubgen.rs` (`pubgen_header_band`, `PubgenState`, TOC ternary replacement)
+  - Create: `crates/ui-egui/src/panels/pubgen_locale.rs`
+  - Modify: `crates/doc/src/attrs.rs` (`language_tag`)
+  - Test: `crates/ui-egui/src/panels/pubgen_locale.rs` (unit tests), `crates/doc/src/attrs.rs` (unit tests)
 
-1. **COVER** — `execute_generate_cover` (`pubgen.rs:1767`): ID block = `st.cover_title` (+ `st.cover_title2` on the `title#2` frame), EN block = new `st.cover_title_en` fed from the `COVER` sheet key `title_en`. Remember the cover is **not** catalog-driven: the change lands in `parse_cover_sheet` → `ExcelCoverData` → `apply_excel_cover` → `execute_generate_cover`, not in the `card1` row loop. Single-language mode uses only the active locale's block. The 10 cover templates each need an EN frame first (§4).
-2. **AXX/GXX** — no behaviour change; only `doc_language` is set.
-3. **BXX** — treat as `Ulasan`: page 1 renders `file_id`, page 2 renders `file_en` (skipped in single-language mode; EN page only when `file_en` set). **[CONFIRM]** — if BXX must stay one page, drop the EN page and keep the ID one.
-4. **DIV** — `title_id` → existing `chapter_title`/`first_word`/`chapter_num` slots; `title_en` → new `title_en` slot (template first needs the band split, §4). Same for the duplicate code path at `pubgen.rs:5110`.
-5. **RXX (`Ulasan`)** — emit two spreads per row: ID spread (`chapter_num`/`chapter_title`/`narrative_body` from `file_id`), then EN spread (same slots; body from `file_en`). The EN chapter heading comes from the EN RTF's own first paragraph — a catalog row **cannot** carry `title_en` (§3.2), so do not branch on it. Same logic in both the template path (`pubgen.rs:4752`) and the code path (`pubgen.rs:4988`). Generate only the ID spread in single-language mode; skip the EN spread when `file_en` is empty.
-6. **XX_XX tables** — template path: bind `table_num="<num>"` (the number, as today), plus the new `table_kind_en="Table"` and `table_title_en=<EN>`. Code path: `split_table_title` → two frames or one frame with `FORCED_LINE_BREAK`, then `italicize_ranges` over the EN line.
-   - **`Tabel`/`Table` is a change to what the slot holds.** Today `table_num` receives `num_val` (`"01.01"`), and the word `Tabel` comes from the source `type` cell, uppercased (`type_val.to_uppercase()` at four sites: `pubgen.rs:5311,5341,5394,5447`). Decide: uppercase `"TABEL"/"TABLE"` (consistent with today) or title-case `"Tabel"/"Table"` (what §1 says). **[CONFIRM]** — the model text and the renderer disagree today.
-   - The code-path renderers are **per preset** (0–5, `pubgen.rs:5300-5460`) and preset 5 ("TOC Line") joins type+number+title into one line; the two-row chrome must be implemented in each preset that is meant to show it, not once.
-7. **CXX_XX charts** — `pubgen.rs:5199`: build the display string from `ChartTitleParts`, then `italicize_ranges` for `en_kicker` and `en_subtitle`. No template change (charts are code-only).
-   - `frame_with_centered_bold_title` (`pubgen.rs:5648`) applies `{"fontFamily":"Arial","fontStyle":"Bold","size":11.0}` over the **whole** story. Italic must therefore be `"Bold Italic"`, not `"Italic"`, or the shift is lost.
-   - That same function passes `text.chars().count()` to `text.select` (`:5652`), but `text.select` reads **byte** offsets (`cmd/text.rs:63`). With `U+2028` in the chart string the selection already stops short. Fix this while adding `italicize_ranges` — it is the same char→byte conversion.
-8. Set `doc_language` on generated stories **only when `st.doc_language` is non-empty** (`type.char {"attrs":{"language": st.doc_language}}` after `text.select`), including slot-bound template text; add `lang` to the `template.page.apply` payload under the same condition. Empty means "leave each run's own language", which is what makes §8.2 true.
-9. Row conditions: `total_words` = `jumlah/tahun/kabupaten/kab/kecamatan/kec/total/sum/subtotal/year/district/subdistrict` (permissive both ways).
-10. TOC: entry text keeps the ID kicker + number; EN title appended as `" — <EN>"`? **[CONFIRM]** Default in this plan: TOC entry = `"<kicker> <number> <ID title>"` only, EN not listed; the EN page/chapter is reachable but unlisted. Decide before P3 finishes.
+- **Step 1.1: Add Bilingual Mode Toggle in Pubgen Header Band**
+  - In `pubgen_header_band` (`pubgen.rs:500-522`), immediately after the `"Set Page Margin"` button in the horizontal layout, add the Bilingual Toggle:
+    ```rust
+    // after the Page Margin button inside the same horizontal row
+    let label = if st.bilingual_output { "Dual Lang" } else { "Single Lang" };
+    let tip = "Single Lang: generate the active output language only.\n\
+               Dual Lang (Bilingual): generate both languages, per the sheet pattern rules (see docs/pubgen-guide.md).";
+    if outline_button(ui, label, 90.0).on_hover_text(tip).clicked() {
+        st.bilingual_output = !st.bilingual_output;
+    }
+    ```
+  - Display immediate visual feedback in the status line (`"Mode: Dual Lang (Bilingual)"` / `"Mode: Single Lang"`).
+  - Clear separation of concerns: this toggle controls *mode* (single vs dual/bilingual); `st.locale` controls *which* language when in single-language mode.
+  - The toggle does not mutate the active document, catalog, or rows; it governs generation output mode.
 
-### P4 — Tests, gates, docs
-1. Unit tests:
-   - `split_pair`: `"A / B"` → `("A","B")`; `"Medis/Dokter"` → `None`; `"A/B"` → `None`.
-   - `split_table_title`: ID-only, ID+EN, EN containing `/`.
-   - `split_chart_title_parts` on the plan's example: italic ranges cover exactly `Chart`, and `Road…District` but not `, 2026`.
-   - `toc_header_line` ID → `"Tabel\thalaman"`, EN → `"Table\tpage"`.
-   - Cover `title_id`/`title_en` + legacy `title1`/`title2` fallback: `title2` must still render as the **second ID line**, and `title_en` absent must leave the cover single-language.
-   - RTF `\deflang14345` (the LCID the sample workbooks use) and `\deflang1057` → run language `"Indonesian"`; `\lang` resets per group.
-   - `matches_pubgen_row_condition` matches `Jumlah` and `Total`.
-   - Catalog conversion: legacy bytes identical; bilingual emits `title_en,file_en`; `card1_headers.len()` gates unchanged for a 4-column legacy catalog.
-   - `PubgenState` serde round-trip, including `bilingual_output` defaulting to `false` and `doc_language` defaulting to `""` when absent from JSON.
-   - Header toggle flips `bilingual_output` and leaves `locale`, rows and document untouched.
-   - `italicize_ranges` maps char offsets to byte offsets: a range after `U+2028` in the chart title lands on the right characters.
-2. Gates: `cargo xtask ci`, `cargo check/test -p designcraft-ui-egui --features pubgen -- pubgen`, `cargo xtask layers`, `cargo xtask assets`, `cargo xtask wasm`. **`cargo xtask ci` does not enable the `pubgen` feature** (verified: no reference in `xtask/src/main.rs` or the workflows), so the explicit `--features pubgen` run above is the only thing that compiles this code — treat it as a required gate, not an extra.
-3. Visual: `cargo run --release -p designcraft -- --sample --control 7979`, generate bilingual, `ui.screenshot`; check table two-line titles do not clip, divider `title_en` is smaller/differently coloured, chart italics land on the right characters.
-4. Docs: per-pattern table (§1) in both guides; Phase 9 in `plan/pubgen/PLAN.md`.
+- **Step 1.2: Add Bilingual State Fields to `PubgenState`**
+  - Add fields with `#[serde(default)]` to `PubgenState` (`pubgen.rs:167-310`):
+    ```rust
+    #[serde(default)]
+    pub locale: Locale,            // single-language mode target (default: Locale::Id)
+    #[serde(default)]
+    pub bilingual_output: bool,    // false = Single Lang (default), true = Dual Lang / Bilingual
+    #[serde(default)]
+    pub doc_language: String,      // default: "" (preserves existing run language; non-empty stamps language)
+    ```
+  - Ensure string serialization (`"id"` / `"en"`) for `Locale`.
+  - Add unit test for serde round-trip: missing fields in old state JSON default gracefully without crashing or altering document output.
 
-### P5 — UI locale
-1. `i18n/id.rs` full table following `i18n/de.rs`; register `("id", "Bahasa Indonesia")` in `LANGUAGES` and the `tr` dispatch.
-2. `dock_extended.rs` "Pubgen" tab label through `tr`.
-3. Audit remaining raw literals in the Pubgen cards (`"Columns:"`, `"Layout:"`, `"Scope:"`, `"TOC title:"`, `"Template:"`, `"Sheet table:"`, …).
-4. Interface language, output language (`locale`) and language mode (`Single Lang`/`Dual Lang`) are three separate controls; tooltips document each. The mode toggle label also routes through `tr`.
+- **Step 1.3: Create `pubgen_locale.rs` Scaffolding**
+  - Implement `Locale`, `LocaleWords`, and `words(locale: Locale) -> &'static LocaleWords`.
+  - Implement parsing utilities:
+    - `split_pair(s: &str) -> Option<(&str, &str)>` (splits on exact `" / "`, bare `/` returns `None`).
+    - `split_table_title(s: &str) -> (String, Option<String>)`.
+    - `split_chart_title_parts(s: &str) -> ChartTitleParts`.
+    - `italicize_ranges(app: &mut DesignApp, story: u64, text: &str, ranges: &[(usize, usize)])` with char-to-byte conversion.
+  - Implement `type_aliases`, `total_words`, `detect_from_records`.
+
+- **Step 1.4: Refactor Existing TOC Chrome to Use `words(locale)`**
+  - Replace the hardcoded Indonesian/English ternary in `pubgen.rs:6604-6613` with `words(st.locale)`.
+  - Verify that single-language output is completely identical.
+
+- **Step 1.5: Register Indonesian Language Tag in Core Doc**
+  - In `crates/doc/src/attrs.rs`: add `"indonesian" => "id"` to `language_tag`.
+  - Add unit test asserting `language_tag("Indonesian") == Some("id")`.
+
+- **Verification:**
+  - `cargo test -p designcraft-doc`
+  - `cargo test -p designcraft-ui-egui --features pubgen -- pubgen_locale`
+  - Interactive/headless verification: click Bilingual toggle in UI, verify state flips and UI reflects `"Dual Lang"` vs `"Single Lang"`.
+
+---
+
+### Phase 2: Ingestion & Workbook Parsing (Excel & RTF)
+
+**Goal:** Parse bilingual metadata from Excel workbooks (`COVER`, `DIV`, `RXX`, `BXX`) and extract RTF language tagging (`\langN`), without altering single-language catalog schemas or breaking legacy workbooks.
+
+- **Files:**
+  - Modify: `crates/ui-egui/src/panels/pubgen_excel.rs`
+  - Modify: `crates/ui-egui/src/panels/pubgen.rs` (`load_card1_csv`)
+  - Modify: `crates/textimport/src/rtf.rs`
+  - Test: `crates/textimport/tests` or `rtf.rs` inline tests, `pubgen_excel.rs` tests
+
+- **Step 2.1: Excel Cover Parsing (`parse_cover_sheet`)**
+  - In `pubgen_excel.rs:202-232`: add normalized key `"titleen"` mapping to `ExcelCoverData.title_en`.
+  - Map `"titleid"`, `"title"`, `"title1"` to `title_id`.
+  - **Critical:** `title2` must remain mapped to the second ID headline line (`title2`), NEVER aliased to `title_en`. If `title_en` is missing, `title_en` remains empty.
+
+- **Step 2.2: Review & Divider Sheet Parsing**
+  - `parse_rtf_review_sheet_with_template`: extract `file_id` (with aliases `file`, `rtf`, `path`) and optional `file_en` using `extract_field_for_keys`. Same for `BXX` front-matter sheets.
+  - `parse_divider_sheet_with_template`: extract `title_id` (aliases `title`, `judul`) and `title_en`.
+
+- **Step 2.3: Catalog CSV Generation (`convert_excel_to_csv_data`)**
+  - Add `title_en` and `file_en` to `CatalogEntryItem`.
+  - In `convert_excel_to_csv_data` (`pubgen_excel.rs:922`): append `,title_en,file_en` at the very end of the header and rows **only when at least one row has a non-empty EN value**.
+  - Snapshot test: legacy workbooks emit byte-identical CSV (no extra trailing commas if no EN data).
+
+- **Step 2.4: Card 1 Ingestion UI (`load_card1_csv`)**
+  - In `pubgen.rs:4370`: look up `title_en` and `file_en` by header name, avoiding positional assumptions.
+  - Guard `headers.len() >= 4` checks; display bilingual badge in Card 1 when dual-language columns exist.
+
+- **Step 2.5: RTF Language Tag Extraction (`rtf.rs`)**
+  - Parse `\langN`, `\deflangN`, `\langfe` control words.
+  - Support LCID 14345 (0x3809) and 1057 (0x0421) -> `"Indonesian"`.
+  - Set `CharAttrs.language`. Reset on `\pard` and group pop.
+
+- **Verification:**
+  - `cargo test -p designcraft-textimport`
+  - `cargo test -p designcraft-ui-egui --features pubgen -- pubgen_excel`
+
+---
+
+### Phase 3: Inline Bilingual Generation — Tables & Charts
+
+**Goal:** Generate single-page inline bilingual content for data tables (`XX_XX`) and charts (`CXX_XX`) when `bilingual_output` is enabled.
+
+- **Files:**
+  - Modify: `crates/ui-egui/src/panels/pubgen.rs` (table renderers, chart renderers)
+  - Modify: `crates/ui-egui/src/panels/pubgen_locale.rs`
+  - Modify: `assets/templates/data_tables/001_single_table_standard.designcraft`
+  - Test: `pubgen.rs` table/chart bilingual tests
+
+- **Step 3.1: Table Inline Title Generation (`XX_XX`)**
+  - Use `split_table_title`: splits on `" / "`. Line 1 = ID (roman), Line 2 = EN (italic).
+  - Code-path renderers (Presets 0–5 in `pubgen.rs:5300-5460`):
+    - Emit two-row header chrome: `Tabel` on row 1, `Table` on row 2 (italic).
+    - Emit two-line title: ID line, then EN line with `italicize_ranges`.
+  - Template path:
+    - In `001_single_table_standard.designcraft`: add `#slot:text:table_kind_en` (`"Table"`, italic) and `#slot:text:table_title_en` (italic).
+    - Adjust geometry: expand title frame height and shift `table:main` downward to prevent overlap.
+    - Bind `table_num` with number only (`"01.01"`), plus the new EN slots.
+
+- **Step 3.2: Chart Bilingual Title & Italicization (`CXX_XX`)**
+  - In `pubgen.rs:5198-5241`: parse chart title with `split_chart_title_parts`.
+  - Format: `"<ID kicker> / <EN kicker> <number> <ID subtitle> / <EN subtitle>, <year>"`.
+  - Apply `italicize_ranges`: convert char offsets to UTF-8 byte offsets; apply `"fontStyle": "Bold Italic"` (preserving Arial 11 pt Bold).
+  - Fix existing selection bug where char counts were passed as byte offsets to `text.select`.
+
+- **Step 3.3: Permissive Row Condition Matching**
+  - Update `matches_pubgen_row_condition`: recognize bilingual row keywords (`jumlah`, `kabupaten`, `kecamatan`, `tahun`, `total`, `sum`, `subtotal`, `district`, `subdistrict`, `year`).
+
+- **Verification:**
+  - `cargo test -p designcraft-ui-egui --features pubgen -- test_table_bilingual`
+  - `cargo test -p designcraft-ui-egui --features pubgen -- test_chart_bilingual_parts`
+  - Visual verification: check that table titles do not clip and chart italics land on exact characters.
+
+---
+
+### Phase 4: Multi-Spread Editorial Generation — Dividers & Chapters
+
+**Goal:** Implement bilingual layout for divider pages (`DIV`) and sequential two-spread generation for narrative review chapters (`RXX`) and front-matter (`BXX`).
+
+- **Files:**
+  - Modify: `crates/ui-egui/src/panels/pubgen.rs` (`execute_generate_pages`)
+  - Modify: `assets/templates/dividers/002_chapter_devider.designcraft`
+  - Modify: `assets/templates/dividers/001_ulasan_chapter.designcraft`
+  - Test: `pubgen.rs` editorial generation tests
+
+- **Step 4.1: Divider Slotted Layout (`DIV`)**
+  - In `002_chapter_devider.designcraft`:
+    - Add `#slot:text:title_en` frame below `chapter_title`.
+    - Adjust vertical bounds so `chapter_title` and `title_en` fit cleanly without colliding with the hero image starting at y 135.77.
+    - Style: smaller font size, Accent swatch.
+  - In `pubgen.rs`: bind `title_id` and `title_en` into template slots.
+
+- **Step 4.2: Review Chapters Sequential Spreads (`RXX` / `Ulasan`)**
+  - When `st.bilingual_output` is enabled: emit two spreads per RXX catalog row.
+    - Spread 1 (ID): populate `chapter_num`, `chapter_title`, and `narrative_body` from `file_id`.
+    - Spread 2 (EN): populate same template slots with EN body from `file_en`; derive EN chapter heading from EN RTF first paragraph (since catalog row carries no `title_en`).
+  - Single-language mode: emit ID spread only.
+  - Skip EN spread if `file_en` is missing.
+  - Ensure generation idempotency: re-generating does not create orphan duplicate spreads.
+
+- **Step 4.3: Front Matter Chapters (`BXX`)**
+  - Handle `BXX` matching the RXX rule: Spread 1 (ID from `file_id`), Spread 2 (EN from `file_en`).
+  - Maintain `AXX`/`GXX` as single-page (preserving RTF-authored language).
+
+- **Step 4.4: Document Language Setting**
+  - When `st.doc_language` is non-empty, apply `type.char {"attrs":{"language": st.doc_language}}` to generated text runs and pass `lang` to `template.page.apply`.
+  - When `st.doc_language` is empty (`""`), leave run languages untouched.
+
+- **Verification:**
+  - `cargo test -p designcraft-ui-egui --features pubgen -- test_ulasan_dual_spread`
+  - Visual verification: divider page shows balanced dual titles; RXX produces clean ID then EN spreads.
+
+---
+
+### Phase 5: Cover Generation & Template Slots
+
+**Goal:** Support bilingual covers from the `COVER` sheet across all 10 cover templates, providing dedicated slots for English title blocks.
+
+- **Files:**
+  - Modify: `crates/ui-egui/src/panels/pubgen.rs` (`execute_generate_cover`, `apply_excel_cover`)
+  - Modify: `assets/templates/covers/*.designcraft` (10 templates)
+  - Test: `pubgen.rs` cover generation tests
+
+- **Step 5.1: Cover Template Frame Slots**
+  - Add `#slot:text:title_en` frame to all 10 cover template `.designcraft` files.
+  - Specifically update single-title templates `000_wave_curves` and `003_chevron_medallion` to incorporate the second title slot.
+  - Handle 2-spread templates `004` and `005` appropriately.
+  - Ensure original art and geometries pass `cargo xtask assets`.
+
+- **Step 5.2: Cover Execution Wireup**
+  - In `apply_excel_cover`: populate `st.cover_title` (ID), `st.cover_title2` (ID second line), and new `st.cover_title_en` (EN block).
+  - In `execute_generate_cover`: bind `title_en` into `#slot:text:title_en` when `st.bilingual_output` is true.
+  - When `st.bilingual_output` is false, omit the EN slot and render single-language cover matching legacy output.
+
+- **Verification:**
+  - `cargo test -p designcraft-ui-egui --features pubgen -- test_cover_bilingual`
+  - Generate covers for all 10 templates in both Single Lang and Dual Lang modes; verify visual layout.
+
+---
+
+### Phase 6: Quality Gates, Regressions & Visual Verification
+
+**Goal:** Ensure all quality gates pass, regression suites verify byte-identity for single-language mode, and visual verification confirms clean layout.
+
+- **Files:**
+  - Test fixtures: `plan/pubgen/samples/`
+  - Docs: `docs/pubgen-guide.md`, `docs/pubgen-guide_id.md`, `plan/pubgen/PLAN.md`
+
+- **Step 6.1: Automated Quality Gates**
+  - `cargo xtask ci`
+  - Explicit pubgen gate: `cargo test -p designcraft-ui-egui --features pubgen`
+  - Architecture checks: `cargo xtask layers`, `cargo xtask assets`, `cargo xtask wasm`
+
+- **Step 6.2: Regression & Byte-Identity Suite**
+  - Run regression test on legacy monolingual workbook: assert generated document and catalog CSV match baseline bytes.
+  - Run bilingual test suite covering `split_pair`, `split_table_title`, `split_chart_title_parts`, RTF LCIDs 14345 & 1057, and serde round-trips.
+
+- **Step 6.3: Visual Verification via Control Channel**
+  - Run `cargo run --release -p designcraft -- --sample --control 7979`.
+  - Capture screenshots using `ui.screenshot` and verify against layout expectations:
+    - Table titles do not clip or overlap header rules.
+    - Divider `title_en` sits comfortably above the hero image.
+    - Chart italics apply to exact words.
+
+- **Step 6.4: Documentation Updates**
+  - Document per-sheet bilingual rules in `docs/pubgen-guide.md` and `docs/pubgen-guide_id.md`.
+  - Log Phase 9 in `plan/pubgen/PLAN.md`.
+
+---
+
+### Phase 7: UI Localization (Indonesian App Interface)
+
+**Goal:** Deliver Indonesian UI translation for the Pubgen panel and application chrome, keeping UI language strictly independent of publication output language.
+
+- **Files:**
+  - Create: `crates/ui-egui/src/i18n/id.rs`
+  - Modify: `crates/ui-egui/src/i18n.rs`
+  - Modify: `crates/ui-egui/src/dock_extended.rs`
+  - Modify: `crates/ui-egui/src/panels/pubgen.rs`
+
+- **Step 7.1: Indonesian Translation Dictionary**
+  - Create `crates/ui-egui/src/i18n/id.rs` with translations matching `de.rs` / `fr.rs`.
+  - Register `("id", "Bahasa Indonesia")` in `LANGUAGES` and wire `tr` dispatch.
+
+- **Step 7.2: Pubgen Panel i18n Audit**
+  - Route all Pubgen card headers, button labels, tooltips, and the Bilingual Toggle label (`"Single Lang"` / `"Dual Lang"`) through `i18n::tr`.
+  - Ensure UI interface language selection is cleanly distinguished from `st.locale` (output language) and `st.bilingual_output` (bilingual toggle).
+
+- **Verification:**
+  - `cargo test -p designcraft-ui-egui`
+  - Switch application interface language to `Bahasa Indonesia` in Preferences; verify all Pubgen cards and controls render in Indonesian.
 
 ---
 
