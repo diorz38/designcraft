@@ -8,6 +8,7 @@ mod ar;
 mod cs;
 mod de;
 mod fr;
+mod id;
 mod it;
 mod ja;
 mod ka;
@@ -27,6 +28,7 @@ pub const LANGUAGES: &[(&str, &str)] = &[
     ("ar", "العربية"),
     ("pt-br", "Português (Brasil)"),
     ("it", "Italiano"),
+    ("id", "Bahasa Indonesia"),
     ("uk", "Українська"),
     ("ru", "Русский"),
     ("cs", "Čeština"),
@@ -4450,6 +4452,7 @@ pub fn tr<'a>(lang: &str, s: &'a str) -> &'a str {
     static UKRAINIAN: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     static PORTUGUESE_BR: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     static ITALIAN: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
+    static INDONESIAN: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     static POLISH: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     static RUSSIAN: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     static CZECH: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
@@ -4481,6 +4484,9 @@ pub fn tr<'a>(lang: &str, s: &'a str) -> &'a str {
     }
     if lang == "it" {
         return ITALIAN.get_or_init(|| it::TABLE.iter().copied().collect()).get(s).copied().unwrap_or(s);
+    }
+    if lang == "id" {
+        return INDONESIAN.get_or_init(|| id::TABLE.iter().copied().collect()).get(s).copied().unwrap_or(s);
     }
     if lang == "pl" {
         return POLISH.get_or_init(|| pl::TABLE.iter().copied().collect()).get(s).copied().unwrap_or(s);
@@ -5140,5 +5146,16 @@ mod tests {
                 assert_ne!(tr(code, key), key, "{code}: {key}");
             }
         }
+    }
+
+    #[test]
+    fn indonesian_pubgen_and_interface_translations() {
+        assert_eq!(tr("id", "File"), "Berkas");
+        assert_eq!(tr("id", "Single Lang"), "Bahasa Tunggal");
+        assert_eq!(tr("id", "Dual Lang"), "Dwi Bahasa");
+        assert_eq!(tr("id", "Generate Cover"), "Buat Sampul");
+        assert_eq!(tr("id", "Generate Pages"), "Buat Halaman");
+        assert_eq!(tr("id", "Redefine Style"), "Definisikan Ulang Gaya");
+        assert_eq!(tr("id", "Apply \"{name}\", Clear Overrides"), "Terapkan \"{name}\", Hapus Penggantian");
     }
 }

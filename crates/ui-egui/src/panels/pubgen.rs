@@ -517,8 +517,9 @@ fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
         let (r, _) = ui.allocate_exact_size(vec2(g.size().x + 10.0, 33.0), Sense::hover());
         ui.painter().galley(pos2(r.min.x, r.center().y - g.size().y / 2.0), g, t.text_strong);
 
+        let lang = app.ui.language.clone();
         let tip = "Set document margins:\nTop: 20.20 mm\nBottom: 20 mm\nInside: 19 mm\nOutside: 15 mm";
-        let resp = outline_button(ui, "Set Page Margin", 120.0).on_hover_text(tip);
+        let resp = outline_button(ui, crate::i18n::tr(&lang, "Set Page Margin"), 120.0).on_hover_text(tip);
         if resp.clicked() {
             match execute_set_page_margins(app) {
                 Ok(msg) => st.header_status = Some((msg, true)),
@@ -526,7 +527,8 @@ fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
             }
         }
 
-        let mode_label = if st.bilingual_output { "Dual Lang" } else { "Single Lang" };
+        let mode_raw = if st.bilingual_output { "Dual Lang" } else { "Single Lang" };
+        let mode_label = crate::i18n::tr(&lang, mode_raw);
         let mode_tip = "Single Lang: generate the active output language only.\n\
                         Dual Lang (Bilingual): generate both languages, per the sheet pattern rules (see docs/pubgen-guide.md).";
         let mode_resp = outline_button(ui, mode_label, 90.0).on_hover_text(mode_tip);
