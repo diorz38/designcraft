@@ -1087,7 +1087,7 @@ fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &C
                 let breaks = if pp.composer.single_line() || gl.iter().any(|g| g.ch == '\t') || gl.len() > 4000 {
                     let tab = |j: usize, x: f64, i: usize| {
                         let ind = pp.left_indent + if j == 0 { pp.first_line_indent } else { 0.0 };
-                        tab_advance(&pp.tabs, pp.left_indent, ind + x, gl.get(i + 1..).unwrap_or_default()).0
+                        tab_advance(&pp.tabs, pp.left_indent, ind + x, gl.get(i + 1..).unwrap_or_default(), tab_after_label(&gl, i)).0
                     };
                     breaker::greedy(&gl, &hy, &spacing, &width, &tab)
                 } else if pp.balance_ragged && !spacing.justify {
@@ -1442,7 +1442,7 @@ fn compose_with_db(doc: &Document, story: &Story, frames: &[FrameSpec], opts: &C
                             _ if line_no + j == 0 => pp.first_line_indent,
                             _ => 0.0,
                         };
-                    tab_advance(&pp.tabs, pp.left_indent, x0 + ind + x - col.x0, rest.get(i + 1..).unwrap_or_default()).0
+                    tab_advance(&pp.tabs, pp.left_indent, x0 + ind + x - col.x0, rest.get(i + 1..).unwrap_or_default(), tab_after_label(rest, i)).0
                 };
                 breaker::greedy(rest, rest_h, &spacing, &width, &tab)
             } else if pp.balance_ragged && !spacing.justify {
@@ -3186,14 +3186,28 @@ pub fn hj_severity(ratio: f64, min: f64, max: f64) -> u8 {
     }
 }
 
+/// True when nothing but a list label (or nothing at all) sits at `i`: the tab there is the indent
+/// tab after a bullet or number. Label glyphs are synthetic (`len` 0), so they don't count.
+fn tab_after_label(glyphs: &[Glyph], i: usize) -> bool {
+    !glyphs.get(..i).unwrap_or_default().iter().any(|g| g.len > 0 && !g.ch.is_whitespace())
+}
+
 /// Advance of a tab that starts `abs` from the tab origin and is followed by `after`, and the
 /// explicit tab stop it reaches (none: the left indent or the next default stop, left aligned).
 /// Right, centre and character alignment look at the text up to the next tab or forced break.
 ///
 /// The left indent is a left stop of its own: in a hanging indent, the tab after a bullet or
-/// number reaches it unless an explicit stop comes first.
-fn tab_advance<'a>(tabs: &'a [designcraft_doc::TabStop], left_indent: f64, abs: f64, after: &[Glyph]) -> (f64, Option<&'a designcraft_doc::TabStop>) {
-    let indent_ahead = left_indent > abs + 0.01;
+/// number (`after_label`) reaches it unless an explicit stop comes first. A tab later in the line
+/// reaches the next explicit stop even past the indent, so a table of contents entry whose text is
+/// shorter than the hanging indent still reaches its right tab.
+fn tab_advance<'a>(
+    tabs: &'a [designcraft_doc::TabStop],
+    left_indent: f64,
+    abs: f64,
+    after: &[Glyph],
+    after_label: bool,
+) -> (f64, Option<&'a designcraft_doc::TabStop>) {
+    let indent_ahead = after_label && left_indent > abs + 0.01;
     let stop = tabs.iter().find(|t| t.position > abs + 0.01).filter(|t| !indent_ahead || t.position <= left_indent);
     let (pos, align) = match stop {
         Some(t) => (t.position, t.align),
@@ -3256,7 +3270,8 @@ fn layout_line(
     let mut last_tab: Option<(usize, bool)> = None;
     while i < line.len() {
         if line[i].ch == '\t' {
-            let (w, stop) = tab_advance(&pp.tabs, pp.left_indent, x0 + x - tab_origin, line.get(i + 1..).unwrap_or_default());
+            let (w, stop) =
+                tab_advance(&pp.tabs, pp.left_indent, x0 + x - tab_origin, line.get(i + 1..).unwrap_or_default(), tab_after_label(&line, i));
             if let Some(t) = stop
                 && !t.leader.is_empty()
             {
@@ -3845,7 +3860,7 @@ fn split_drop_cap(
     let mut x = indent - lsb;
     for i in 0..dc.len() {
         let tab = match dc.get(i) {
-            Some(g) if g.ch == '\t' => Some(tab_advance(stops, indent, x, dc.get(i + 1..).unwrap_or_default()).0),
+            Some(g) if g.ch == '\t' => Some(tab_advance(stops, indent, x, dc.get(i + 1..).unwrap_or_default(), true).0),
             _ => None,
         };
         if let (Some(w), Some(g)) = (tab, dc.get_mut(i)) {

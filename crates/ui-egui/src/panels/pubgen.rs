@@ -7214,11 +7214,26 @@ fn add_toc_self_entry(app: &mut DesignApp, sid: designcraft_doc::StoryId, plan: 
         if listed {
             return Ok(serde_json::Value::Null);
         }
-        // Right after the title line, as the entry it is.
-        let at = ranges.get(1).map(|r| r.end).unwrap_or_else(|| story.len());
-        let entry = format!("\n{title}\t{page_label}");
+        // Where it belongs in page order, like the entries around it: before the first entry whose
+        // page number is higher. A label that isn't plain digits (roman front matter) or a table
+        // without numbered entries keeps it at the top, right after the title.
+        let page_no = page_label.trim().parse::<u64>().ok();
+        let mut at = ranges.last().map_or_else(|| story.len(), |r| r.end);
+        for r in ranges.iter().skip(1) {
+            let label = story.text[r.clone()].rsplit('\t').next().unwrap_or_default().trim().to_string();
+            let higher = match (page_no, label.parse::<u64>().ok()) {
+                (Some(page), Some(other)) => other > page,
+                (None, Some(_)) => true,
+                _ => false,
+            };
+            if higher {
+                at = r.start;
+                break;
+            }
+        }
+        let entry = if at >= story.len() { format!("\n{title}\t{page_label}") } else { format!("{title}\t{page_label}\n") };
+        let start = if at >= story.len() { at + 1 } else { at };
         story.insert(at, &entry);
-        let start = at + 1;
         story.format_paras(start..start, |f| *f = designcraft_doc::ParaFormat { style: "TOC Level 1".to_string(), ..Default::default() });
         Ok(serde_json::Value::Null)
     });
@@ -11224,6 +11239,43 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let toc = active.doc.tocs.last().expect("table of contents");
         let text = active.doc.story(toc.story).expect("TOC story").text.clone();
         assert!(!text.contains(&format!("Daftar Isi\t{label}")), "the entry is gone when the option is off: {text}");
+    }
+
+    #[test]
+    fn test_toc_self_entry_sits_in_page_order() {
+        // The entry that lists the table of contents itself falls where its page falls among the
+        // entries: first when the table opens the document, last when it closes it.
+        let cases = [(0_usize, "Daftar Isi\t1\nBAB 01 Geografi\t3"), (4, "Pendahuluan\t4\nDaftar Isi\t5")];
+        for (toc_page, expected) in cases {
+            let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({})).unwrap();
+            ensure_para_style(&mut app, "TOC Entry");
+            app.run("layout.pages.insert", json!({"count": 4})).unwrap();
+            let (si, pi) = app.session.active().unwrap().doc.page_loc(0).unwrap();
+            let b = app.session.active().unwrap().doc.spreads[si].pages[pi].bounds();
+            let rect = [b.x0 + 36.0, b.y0 + 36.0, b.x1 - 36.0, b.y0 + 200.0];
+            let res = app
+                .run(
+                    "frame.create",
+                    json!({"spread": si, "rect": rect, "content": "text", "caret": false, "text": "Daftar Isi\nBAB 01 Geografi\t3\nPendahuluan\t4"}),
+                )
+                .expect("frame.create");
+            let sid = designcraft_doc::StoryId(res["story"].as_u64().expect("story"));
+            let st = PubgenState {
+                toc_kind: 3,
+                toc_style: "TOC Entry".into(),
+                toc_title: "Daftar Isi".into(),
+                toc_include_self: true,
+                ..Default::default()
+            };
+            let plan = TocPlan::from_state(&st);
+            add_toc_self_entry(&mut app, sid, &plan, toc_page);
+
+            let active = app.session.active().unwrap();
+            let text = active.doc.story(sid).expect("story").text.clone();
+            assert!(text.contains(expected), "on page {}: {text}", toc_page + 1);
+            assert_eq!(text.split('\n').count(), 4, "one paragraph per entry: {text}");
+        }
     }
 
     #[test]

@@ -1639,6 +1639,29 @@ fn tab_leaders_fill_the_gap() {
 }
 
 #[test]
+fn short_entry_reaches_its_right_tab_past_the_hanging_indent() {
+    // A table of contents row: hanging indent (left 68, first line -68) and a right tab with a
+    // leader at the column edge. A short entry ("Daftar Isi") starts before the left indent, but
+    // its tab must still reach the explicit stop rather than stop at the indent (a dot leader
+    // would otherwise vanish on short headings).
+    let para = ParaAttrs {
+        tabs: Some(vec![designcraft_doc::TabStop { position: 540.0, align: TabAlign::Right, leader: ". ".into(), align_on: String::new() }]),
+        left_indent: Some(68.0),
+        first_line_indent: Some(-68.0),
+        ..Default::default()
+    };
+    let (d, sid, _) = doc_with("Daftar Isi\t5", Rect::new(0.0, 0.0, 540.0, 100.0), para);
+    let cs = compose_story(&d, sid, &Default::default());
+    let line = &cs.frames[0].lines[0];
+    let tab = line.glyphs.iter().find(|g| g.byte == 10 && g.len > 0).unwrap();
+    assert!(tab.adv > 400.0, "the tab jumps past the indent to the stop, not {} to the indent", tab.adv);
+    let num = line.glyphs.iter().find(|g| g.byte == 11).unwrap();
+    assert!((num.x + num.adv - 540.0).abs() < 0.01, "the page number ends at the stop, not at {}", num.x + num.adv);
+    let dots = line.glyphs.iter().filter(|g| g.len == 0 && g.visible).count();
+    assert!(dots > 20, "{dots} leader glyphs");
+}
+
+#[test]
 fn right_indent_tab_leaders_follow_stop_precedence_without_moving_text() {
     let text = "Intro\u{e006}12";
     let cases = [
