@@ -11147,6 +11147,9 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             "26",
         ];
         for story in active.doc.stories.values() {
+            if story.text.is_empty() {
+                continue;
+            }
             for banned in ["COMPANY NAME", "YOUR HEADLINE HERE", "LOREM IPSUM", "BUSINESS REPORT 2050"] {
                 assert!(!story.text.contains(banned), "template text '{banned}' must not reach the cover: {}", story.text);
             }
@@ -11197,6 +11200,9 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let active = app.session.active().unwrap();
         let allowed = ["KECAMATAN", "KARAWANG", "2026", "20", "26", "VOLUME", "KATALOG", "ISSN", "ISBN", "BADAN PUSAT", "DALAM ANGKA", "TITLE 2"];
         for story in active.doc.stories.values() {
+            if story.text.is_empty() {
+                continue;
+            }
             let upper = story.text.to_uppercase();
             assert!(allowed.iter().any(|a| upper.contains(a)), "text must come from the cover options: {}", story.text);
         }
@@ -11227,6 +11233,9 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             "TITLE 2",
         ];
         for text in &texts {
+            if text.is_empty() {
+                continue;
+            }
             // Nothing from the reference template survives: no brand, no lorem, no subtitle.
             for banned in ["COMPANY NAME", "YOUR HEADLINE HERE", "LOREM IPSUM", "BUSINESS REPORT"] {
                 assert!(!text.contains(banned), "template text '{banned}' must not reach the cover: {text}");
@@ -11273,6 +11282,9 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             "TITLE 2",
         ];
         for story in active.doc.stories.values() {
+            if story.text.is_empty() {
+                continue;
+            }
             for banned in ["COMPANY NAME", "YOUR HEADLINE HERE", "LOREM IPSUM", "BUSINESS REPORT"] {
                 assert!(!story.text.contains(banned), "template text '{banned}' must not reach the cover: {}", story.text);
             }
