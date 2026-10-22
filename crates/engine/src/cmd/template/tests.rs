@@ -361,7 +361,7 @@ fn test_canonical_cover_templates_are_distinct_designs() {
                 .subpaths
                 .iter()
                 .flat_map(|sp| sp.anchors.iter())
-                .map(|a| ((a.p.x as f64 * 10.0).round() as i64, (a.p.y as f64 * 10.0).round() as i64))
+                .map(|a| ((a.p.x * 10.0).round() as i64, (a.p.y * 10.0).round() as i64))
                 .collect();
             points.sort();
             points.dedup();
@@ -401,8 +401,10 @@ fn test_canonical_cover_templates_are_distinct_designs() {
             if name == other {
                 continue;
             }
-            if theirs.iter().all(|pair| mine.contains(pair)) {
-                panic!("{name} carries the headline block of {other}: two covers must be different designs");
+            for pair in theirs {
+                if mine.contains(pair) {
+                    panic!("{name} and {other} share a {} frame: two covers must be different designs", pair.0);
+                }
             }
         }
     }
