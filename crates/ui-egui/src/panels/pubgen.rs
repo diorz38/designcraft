@@ -75,6 +75,11 @@ fn default_toc_style() -> String {
 /// The Quick Actions "TOC style" choices: what the table of contents lists.
 pub const TOC_KINDS: [&str; 4] = ["TOC Entry", "TOC Table", "TOC Chart", "TOC Paragraph"];
 
+/// The paragraph style of a narrative page's title: the pages the `GXX` and `RXX` sheets produce.
+/// The paragraph table of contents lists these pages and nothing else, so a table, chart, divider
+/// or publication-note page never shows up in it.
+pub const TOC_NARRATIVE_STYLE: &str = "TOC Chapter";
+
 /// The words the first text box on a page must start with for each TOC style; none lists every
 /// paragraph of the tagged style (the original behaviour). A paragraph list takes chapter pages
 /// only: `RXX` and `BXX` pages open with their "BAB 01" line, table and chart pages don't.
@@ -3867,7 +3872,7 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
     ui.horizontal(|ui| {
         ui.label(RichText::new("TOC style:").size(11.0).color(t.text));
         let cur = TOC_KINDS.get(st.toc_kind).copied().unwrap_or(TOC_KINDS[0]);
-        let tip = "TOC Entry: every page whose title carries the TOC tag style\nTOC Table: only pages whose first text box starts with \"Tabel\" or \"Table\"\nTOC Chart: only pages whose first text box starts with \"Grafik\" or \"Chart\"";
+        let tip = "TOC Entry: every page whose title carries the TOC tag style, plus the narrative pages\nTOC Table: only pages whose first text box starts with \"Tabel\" or \"Table\"\nTOC Chart: only pages whose first text box starts with \"Grafik\" or \"Chart\"\nTOC Paragraph: the narrative pages (the GXX and RXX sheets) with their Heading 1 and Heading 2 paragraphs nested under them";
         let before = st.toc_kind;
         egui::ComboBox::from_id_salt("pubgen_toc_kind")
             .selected_text(cur)
@@ -4552,8 +4557,10 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     let mut inserted_images_count = 0usize;
 
     // Every preset tags its title (or the combined TOC line) with the TOC paragraph style, so the
-    // Quick Actions "Add TOC" lists one entry per generated page.
+    // Quick Actions "Add TOC" lists one entry per generated page. The narrative pages (the G and
+    // Ulasan sheets) carry the narrative style instead, so the paragraph list names them alone.
     ensure_para_style(app, &st.toc_style);
+    ensure_para_style(app, TOC_NARRATIVE_STYLE);
 
     let doc_margins = {
         let active = app.session.active().ok_or("No active document")?;
@@ -4566,6 +4573,9 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         let title_val = row.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("").trim();
         let is_div = is_divider_type(type_val);
         let is_cover_or_div = is_div || type_val.eq_ignore_ascii_case("COVER");
+        // The narrative sheets: `GXX` (the front matter) and `RXX` (the chapter reviews). Their
+        // pages are the ones the paragraph table of contents lists.
+        let is_narrative_row = type_val.eq_ignore_ascii_case("Ulasan") || type_val.eq_ignore_ascii_case("G");
 
         let row_tpl_spec = row.get(4).map(String::as_str).unwrap_or("").trim();
         let explicit_tpl_path = if !row_tpl_spec.is_empty() { resolve_template_path_spec(&st.card1_path, row_tpl_spec) } else { None };
@@ -4747,11 +4757,14 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         if !story_ids_to_tag.is_empty()
                             && let Some(active) = app.session.active_mut()
                         {
+                            // A narrative page (the G and Ulasan sheets) carries the narrative
+                            // style, so the paragraph table of contents lists it and nothing else.
+                            let title_style = if is_narrative_row { TOC_NARRATIVE_STYLE.to_string() } else { st.toc_style.clone() };
                             let doc = std::sync::Arc::make_mut(&mut active.doc);
                             for sid in story_ids_to_tag {
                                 if let Some(story) = doc.story_mut(sid) {
                                     for p in &mut story.paras {
-                                        p.style = st.toc_style.clone();
+                                        p.style = title_style.clone();
                                     }
                                 }
                             }
@@ -4903,7 +4916,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     );
                 }
                 // 2nd Textbox: "Pemerintahan" (font Arial Black, size 20.0) -> second row
-                // Tag with TOC style so TOC lists this chapter
+                // Tag with the narrative style so the paragraph table of contents lists this
+                // chapter (and only the narrative pages).
                 if !title_line.is_empty() {
                     frame_with_font_and_style(
                         app,
@@ -4912,7 +4926,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         &title_line,
                         "Arial Black",
                         20.0,
-                        Some(&st.toc_style),
+                        Some(TOC_NARRATIVE_STYLE),
                     );
                 }
             } else if !title_val.is_empty() {
@@ -4924,7 +4938,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     &title_val.to_uppercase(),
                     "Arial",
                     12.0,
-                    Some(&st.toc_style),
+                    Some(TOC_NARRATIVE_STYLE),
                 ) {
                     let _ = app.run("text.select", json!({"story": sid, "anchor": 0, "focus": title_val.chars().count() as u64}));
                     let _ = app.run("type.alignCenter", json!({}));
@@ -6599,6 +6613,9 @@ struct TocLevel {
     level: u8,
     /// `pageTitle` filter: list a page only when its first text box starts with one of these.
     words: Vec<String>,
+    /// Prefix the entry with the page's first text box (the chapter line): a narrative page's
+    /// title reads "BAB 01 Geografi" instead of "Geografi".
+    chapter_number: bool,
 }
 
 pub struct TocPlan {
@@ -6616,14 +6633,22 @@ impl TocPlan {
     /// The plan the panel's TOC controls describe. A paragraph list nests chapter titles over
     /// the headings the imported RTF files carry.
     fn from_state(st: &PubgenState) -> Self {
+        let level = |style: String, words: Vec<String>, chapter_number: bool| TocLevel { style, level: 1, words, chapter_number };
         let levels = if st.toc_kind == 3 {
+            // The narrative pages (the G and Ulasan sheets) and the headings they carry.
             vec![
-                TocLevel { style: st.toc_style.clone(), level: 1, words: toc_kind_words(3).iter().map(|w| (*w).to_string()).collect() },
-                TocLevel { style: "Heading 1".into(), level: 2, words: Vec::new() },
-                TocLevel { style: "Heading 2".into(), level: 3, words: Vec::new() },
+                level(TOC_NARRATIVE_STYLE.to_string(), Vec::new(), true),
+                TocLevel { style: "Heading 1".into(), level: 2, words: Vec::new(), chapter_number: false },
+                TocLevel { style: "Heading 2".into(), level: 3, words: Vec::new(), chapter_number: false },
+            ]
+        } else if st.toc_kind == 0 {
+            // The plain list: every tagged page title plus the narrative pages.
+            vec![
+                level(st.toc_style.clone(), toc_kind_words(0).iter().map(|w| (*w).to_string()).collect(), false),
+                level(TOC_NARRATIVE_STYLE.to_string(), Vec::new(), false),
             ]
         } else {
-            vec![TocLevel { style: st.toc_style.clone(), level: 1, words: toc_kind_words(st.toc_kind).iter().map(|w| (*w).to_string()).collect() }]
+            vec![level(st.toc_style.clone(), toc_kind_words(st.toc_kind).iter().map(|w| (*w).to_string()).collect(), false)]
         };
         Self {
             levels,
@@ -6637,9 +6662,16 @@ impl TocPlan {
     /// The plan a stored table of contents rebuilds with: its own styles, levels, title and
     /// filters, with the panel's layout and indentation options.
     fn from_toc(st: &PubgenState, toc: &designcraft_doc::Toc) -> Self {
-        let levels: Vec<TocLevel> =
-            toc.entries.iter().map(|e| TocLevel { style: e.style.clone(), level: e.level, words: e.page_title.clone() }).collect();
-        let levels = if levels.is_empty() { vec![TocLevel { style: st.toc_style.clone(), level: 1, words: Vec::new() }] } else { levels };
+        let levels: Vec<TocLevel> = toc
+            .entries
+            .iter()
+            .map(|e| TocLevel { style: e.style.clone(), level: e.level, words: e.page_title.clone(), chapter_number: e.chapter_number })
+            .collect();
+        let levels = if levels.is_empty() {
+            vec![TocLevel { style: st.toc_style.clone(), level: 1, words: Vec::new(), chapter_number: false }]
+        } else {
+            levels
+        };
         Self {
             levels,
             title: toc.title.trim().to_string(),
@@ -6655,8 +6687,10 @@ impl TocPlan {
     }
 
     /// A list of chapter titles over their headings, regenerated with each entry's own level.
+    /// The narrative list leads with the narrative pages; the plain list leads with the tagged
+    /// page titles and adds the narrative pages as a second level of the same depth.
     fn is_paragraph_toc(&self) -> bool {
-        self.levels.len() > 1
+        self.levels.first().is_some_and(|l| l.style == TOC_NARRATIVE_STYLE)
     }
 
     /// Whether the table of contents writes a title line (an empty field writes none, which the
@@ -6679,6 +6713,9 @@ impl TocPlan {
                     let mut e = json!({"style": l.style, "level": l.level, "pageNumber": "after", "separator": "\t"});
                     if !l.words.is_empty() {
                         e["pageTitle"] = json!(l.words);
+                    }
+                    if l.chapter_number {
+                        e["chapterNumber"] = json!(true);
                     }
                     e
                 })
@@ -7139,6 +7176,38 @@ fn compute_detected_prefix_width(st: &PubgenState) -> f64 {
     }
 }
 
+/// The entry that lists the table of contents itself ("Daftar Isi .... 5").
+///
+/// The flat lists get it from `enrich_toc_story`, which rewrites their text; a paragraph list
+/// keeps the engine's own level styles, so its entry is added as a paragraph of its own.
+fn add_toc_self_entry(app: &mut DesignApp, sid: designcraft_doc::StoryId, plan: &TocPlan, toc_page: usize) {
+    if !plan.include_self {
+        return;
+    }
+    let title = plan.title_or_contents().to_string();
+    let _ = app.session.edit(|doc, _| {
+        let page_label = doc.page_name(toc_page);
+        let Some(story) = doc.story_mut(sid) else {
+            return Ok(serde_json::Value::Null);
+        };
+        // Already listed (a rebuild starts from the engine's fresh story, but a second call on the
+        // same story must not add the entry twice). The title line is not an entry.
+        let ranges = story.para_ranges();
+        let listed =
+            ranges.iter().skip(1).any(|r| story.text[r.clone()].split('\t').next().unwrap_or_default().trim().eq_ignore_ascii_case(title.trim()));
+        if listed {
+            return Ok(serde_json::Value::Null);
+        }
+        // Right after the title line, as the entry it is.
+        let at = ranges.get(1).map(|r| r.end).unwrap_or_else(|| story.len());
+        let entry = format!("\n{title}\t{page_label}");
+        story.insert(at, &entry);
+        let start = at + 1;
+        story.format_paras(start..start, |f| *f = designcraft_doc::ParaFormat { style: "TOC Level 1".to_string(), ..Default::default() });
+        Ok(serde_json::Value::Null)
+    });
+}
+
 fn apply_toc_post_process(
     app: &mut DesignApp,
     st: &PubgenState,
@@ -7150,6 +7219,12 @@ fn apply_toc_post_process(
     mut pages_added: u64,
 ) -> u64 {
     enrich_toc_story(app, sid, st, plan, width, hanging_indent, target_page);
+
+    // A paragraph list keeps the engine's own level styles, so the entry that lists the table of
+    // contents itself is added here: `enrich_toc_story` rewrites the flat lists and skips them.
+    if plan.is_paragraph_toc() {
+        add_toc_self_entry(app, sid, plan, target_page);
+    }
 
     let _ = app.session.edit(|doc, _| {
         if let Some(story) = doc.story_mut(sid) {
@@ -10081,6 +10156,68 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     }
 
     #[test]
+    fn test_toc_paragraph_lists_a_generated_review_page_with_its_chapter_line() {
+        // The whole way: an RXX row becomes a page with two text boxes (the chapter line and the
+        // title), and the paragraph list names it "BAB 01 Geografi".
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card1_records: vec![vec!["Ulasan".into(), "01".into(), "BAB 01 Geografi".into()]],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 0,
+            toc_kind: 3,
+            toc_style: "TOC Entry".into(),
+            toc_title: "Daftar Isi".into(),
+            ..Default::default()
+        };
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        crate::canvas::go_to_page(&mut app, 0);
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "{res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().expect("table of contents");
+        let text = active.doc.story(toc.story).expect("TOC story").text.clone();
+        assert!(text.contains("BAB 01 Geografi"), "the review page reads chapter line and title: {text}");
+    }
+
+    #[test]
+    fn test_toc_table_list_names_itself_when_include_self_is_on() {
+        // The Tables list gets the self entry like the plain list does.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card1_records: vec![vec!["Tabel".into(), "02.01.".into(), "Jumlah Rukun Warga (RW)".into()]],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 5,
+            toc_kind: 1,
+            toc_style: "TOC Entry".into(),
+            toc_title: "Daftar Tabel".into(),
+            toc_include_self: true,
+            ..Default::default()
+        };
+        execute_generate_pages(&mut app, &st).unwrap();
+        crate::canvas::go_to_page(&mut app, 0);
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "{res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().expect("table of contents");
+        let first_frame = active.doc.story(toc.story).expect("TOC story").frames.first().copied().expect("frame");
+        let toc_pg = active.doc.page_of_item(first_frame).expect("page");
+        let label = app.session.page_label(toc_pg);
+        let text = active.doc.story(toc.story).expect("TOC story").text.clone();
+        assert!(text.contains(&format!("Daftar Tabel\t{label}")), "the tables list names itself: {text}");
+    }
+
+    #[test]
     fn test_tablepage_toc_layout_style_generates_header_and_standalone_number_column() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
@@ -10896,12 +11033,18 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let plan = TocPlan::from_state(&st);
         assert!(plan.is_paragraph_toc());
         let levels: Vec<(&str, u8)> = plan.levels.iter().map(|l| (l.style.as_str(), l.level)).collect();
-        assert_eq!(levels, [("TOC Entry", 1), ("Heading 1", 2), ("Heading 2", 3)]);
+        assert_eq!(levels, [(TOC_NARRATIVE_STYLE, 1), ("Heading 1", 2), ("Heading 2", 3)]);
         let json = plan.entries_json();
         let arr = json.as_array().expect("entries array");
         assert_eq!(arr.len(), 3);
-        assert_eq!(arr[0]["pageTitle"], json!(["BAB"]));
+        assert_eq!(arr[0]["chapterNumber"], json!(true), "the narrative entry carries the chapter line");
+        assert!(arr[0].get("pageTitle").is_none(), "the narrative style alone picks the narrative pages");
         assert!(arr[1].get("pageTitle").is_none(), "heading levels list every paragraph of the style");
+
+        // The plain list keeps the tagged page titles and adds the narrative pages.
+        let st = PubgenState { toc_kind: 0, toc_style: "TOC Entry".into(), ..Default::default() };
+        let plan = TocPlan::from_state(&st);
+        assert_eq!(plan.entries_json().as_array().map(Vec::len), Some(2));
 
         // A single-level kind still emits one entry.
         let st = PubgenState { toc_kind: 1, toc_style: "TOC Entry".into(), ..Default::default() };
@@ -10913,9 +11056,15 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
     /// Add a text frame on absolute `page` and tag its paragraphs with `style`.
     fn add_page_text(app: &mut DesignApp, page: usize, text: &str, style: &str) {
+        add_page_text_at(app, page, text, style, 0.0);
+    }
+
+    /// The same, `dy` points below the top margin: a page with two text boxes (the chapter line
+    /// and the title below it).
+    fn add_page_text_at(app: &mut DesignApp, page: usize, text: &str, style: &str, dy: f64) {
         let (si, pi) = app.session.active().expect("document").doc.page_loc(page).expect("page");
         let b = app.session.active().expect("document").doc.spreads[si].pages[pi].bounds();
-        let rect = [b.x0 + 36.0, b.y0 + 36.0, b.x1 - 36.0, b.y0 + 140.0];
+        let rect = [b.x0 + 36.0, b.y0 + 36.0 + dy, b.x1 - 36.0, b.y0 + 140.0 + dy];
         let res =
             app.run("frame.create", json!({"spread": si, "rect": rect, "content": "text", "text": text, "caret": false})).expect("frame.create");
         let sid = res["story"].as_u64().expect("story");
@@ -10927,10 +11076,12 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     /// Four content pages (chapter, two headings, a table) plus a blank page for the TOC.
     fn paragraph_toc_doc(app: &mut DesignApp) {
         app.run("file.new", json!({})).unwrap();
-        for name in ["TOC Entry", "Heading 1", "Heading 2"] {
+        for name in ["TOC Entry", TOC_NARRATIVE_STYLE, "Heading 1", "Heading 2"] {
             ensure_para_style(app, name);
         }
-        add_page_text(app, 0, "BAB 01", "TOC Entry");
+        // A narrative page: the chapter line in its own text box, the title below it.
+        add_page_text_at(app, 0, "BAB 01", "TOC Entry", 0.0);
+        add_page_text_at(app, 0, "Geografi", TOC_NARRATIVE_STYLE, 40.0);
         app.run("layout.pages.insert", json!({"count": 1})).unwrap();
         add_page_text(app, 1, "Pendahuluan", "Heading 1");
         app.run("layout.pages.insert", json!({"count": 1})).unwrap();
@@ -10958,8 +11109,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         assert_eq!(
             rows.iter().map(|(l, t)| (*l, t.as_str())).collect::<Vec<_>>(),
-            [(1, "BAB 01"), (2, "Pendahuluan"), (3, "Latar Belakang")],
-            "chapter at level 1, headings nested under it, table page excluded by `pageTitle: [BAB]`: {rows:?}"
+            [(1, "BAB 01 Geografi"), (2, "Pendahuluan"), (3, "Latar Belakang")],
+            "the narrative page at level 1 with its chapter line, the headings nested under it, the table page left out: {rows:?}"
         );
     }
 
@@ -10977,6 +11128,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let toc = active.doc.tocs.last().expect("table of contents");
         let story = active.doc.story(toc.story).expect("TOC story");
         assert!(story.text.starts_with("Daftar Isi"), "the title line: {}", story.text);
+        assert!(story.text.contains("BAB 01 Geografi"), "the narrative entry reads chapter line and title: {}", story.text);
         assert!(story.text.contains("Pendahuluan") && story.text.contains("Latar Belakang"), "{}", story.text);
         assert!(!story.text.contains("Tabel 01.01"), "table pages stay out of a paragraph list: {}", story.text);
 
@@ -10986,6 +11138,33 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             ["TOC Title", "TOC Level 1", "TOC Level 2", "TOC Level 3"],
             "each entry keeps its own level style instead of being flattened: {styles:?}"
         );
+    }
+
+    #[test]
+    fn test_toc_include_self_lists_the_toc_page_in_a_paragraph_list() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        paragraph_toc_doc(&mut app);
+
+        let mut st =
+            PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), toc_title: "Daftar Isi".into(), toc_include_self: true, ..Default::default() };
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "{res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().expect("table of contents");
+        let first_frame = active.doc.story(toc.story).expect("TOC story").frames.first().copied().expect("frame");
+        let toc_page = active.doc.page_of_item(first_frame).expect("page");
+        let label = app.session.page_label(toc_page);
+        let text = active.doc.story(toc.story).expect("TOC story").text.clone();
+        assert!(text.contains(&format!("Daftar Isi\t{label}")), "the list names the table of contents itself: {text}");
+
+        // Without the option the entry is gone again.
+        st.toc_include_self = false;
+        assert!(execute_rebuild_toc(&mut app, &mut st).is_ok());
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().expect("table of contents");
+        let text = active.doc.story(toc.story).expect("TOC story").text.clone();
+        assert!(!text.contains(&format!("Daftar Isi\t{label}")), "the entry is gone when the option is off: {text}");
     }
 
     #[test]
@@ -11338,7 +11517,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(!texts.iter().any(|t| t.contains("BAB 01")), "A title without a BAB prefix gets no chapter-number box, found: {texts:?}");
         assert!(texts.iter().any(|t| t.eq_ignore_ascii_case("Kata Pengantar")), "Page should contain 'Kata Pengantar', found: {texts:?}");
         let title_para = stories.iter().find(|s| s.text.contains("KATA PENGANTAR")).and_then(|s| s.paras.first()).expect("the centered title frame");
-        assert_eq!(title_para.style, "TOC Entry", "the title frame must carry the TOC style so the chapter is listed");
+        assert_eq!(title_para.style, TOC_NARRATIVE_STYLE, "the title frame must carry the narrative style so the paragraph list names the page");
         assert_eq!(title_para.para.align, Some(designcraft_doc::Align::Center), "the front-matter title is centered on the margin");
         assert!(texts.iter().any(|t| t.contains("Kata pengantar untuk laporan ini")), "Page should contain the placed RTF body, found: {texts:?}");
     }

@@ -422,13 +422,22 @@ Pubgen dapat memindai seluruh judul halaman di dokumen Anda dan menyusun Daftar 
 #### Jenis Daftar Isi (TOC style)
 | Jenis | Isinya | Judul otomatis |
 |---|---|---|
-| **TOC Entry** | semua halaman yang judulnya memakai gaya penanda TOC (perilaku awal) | *sesuai yang Anda ketik* |
+| **TOC Entry** | semua halaman yang judulnya memakai gaya penanda TOC, ditambah halaman naratif (perilaku awal) | *sesuai yang Anda ketik* |
 | **TOC Table** | hanya halaman yang **kotak teks pertamanya** diawali `Tabel` atau `Table` (tidak peka huruf besar/kecil) | `Daftar Table` |
 | **TOC Chart** | hanya halaman yang **kotak teks pertamanya** diawali `Grafik` atau `Chart` (tidak peka huruf besar/kecil) | `Daftar Grafik` |
+| **TOC Paragraph** | halaman naratif (lembar `GXX` dan `RXX`) beserta judul-judul di bawahnya, bertingkat | `Daftar Isi` |
 
 Memilih **TOC Table** atau **TOC Chart** akan mengisi kolom Judul secara otomatis dan menengahkan baris judulnya;
 Anda tetap bisa mengubahnya. Penyaring ini tersimpan di dalam dokumen, sehingga **Rebuild TOC** dan menu
 *Layout ▸ Update Table of Contents* tetap mempertahankannya.
+
+**TOC Paragraph** adalah daftar bertingkat khas sebuah publikasi: halaman naratif (prakata dari lembar `GXX` dan
+ulasan bab dari lembar `RXX`) di tingkat pertama, lalu paragraf `Heading 1` dan `Heading 2` dari isi setiap bab di
+bawahnya. Tidak ada halaman lain — tabel, grafik, pembatas, maupun keterangan publikasi — yang ikut terdaftar.
+Baris halaman naratif memuat kedua kotak teksnya, sehingga barisnya berbunyi `BAB 01 Geografi ......... 2`.
+
+**Include TOC page in TOC entries** mendaftarkan halaman daftar isi itu sendiri di dalam daftarnya — untuk semua
+jenis daftar, termasuk daftar paragraf yang bertingkat.
 
 Satu dokumen boleh memuat beberapa daftar sekaligus — misalnya *Daftar Table* dan *Daftar Grafik* berdampingan.
 **Add TOC** membuat daftar di halaman yang sedang dibuka dan menggantikan daftar yang sudah ada di halaman itu

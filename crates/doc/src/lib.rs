@@ -767,6 +767,10 @@ pub struct TocEntry {
     /// Empty lists every paragraph of the style.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub page_title: Vec<String>,
+    /// Prefix the entry with the page's first text box: a heading that lives on its own frame
+    /// reads "BAB 01 Geografi" instead of "Geografi".
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub chapter_number: bool,
 }
 
 impl TocEntry {
@@ -781,6 +785,7 @@ impl TocEntry {
             separator_style: None,
             sort: false,
             page_title: Vec::new(),
+            chapter_number: false,
         }
     }
 }
