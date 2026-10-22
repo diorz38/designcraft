@@ -5156,7 +5156,9 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let has_header = !title_val.trim().is_empty();
             if has_header {
                 let title_rect = [margin.x0, margin.y0, margin.x1, margin.y0 + 36.0];
-                frame_with_centered_arial(app, spread_idx, title_rect, title_val.trim());
+                // Tag the title with the narrative style so the paragraph table of contents names
+                // the page, as the template flow does for its title slot.
+                frame_with_centered_arial(app, spread_idx, title_rect, title_val.trim(), Some(TOC_NARRATIVE_STYLE));
             }
 
             if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
@@ -5571,12 +5573,15 @@ fn frame_with_centered_bold_title(app: &mut DesignApp, spread_idx: usize, rect: 
 }
 
 /// Centred Arial title in a 100 % transparent text box (no fill, no stroke).
-fn frame_with_centered_arial(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], text: &str) -> Option<u64> {
+fn frame_with_centered_arial(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], text: &str, style: Option<&str>) -> Option<u64> {
     let res = app.run("frame.create", json!({"spread": spread_idx, "rect": rect, "content": "text", "text": text, "caret": false})).ok()?;
     let fid = res.get("id").and_then(Value::as_u64)?;
     let story = res.get("story").and_then(Value::as_u64)?;
     let end = text.chars().count().max(1) as u64;
     let _ = app.run("text.select", json!({"story": story, "anchor": 0, "focus": end}));
+    if let Some(style) = style {
+        let _ = app.run("style.paragraph.apply", json!({"name": style}));
+    }
     let _ = app.run("type.char", json!({"fontFamily": "Arial", "size": 11.0}));
     let _ = app.run("selection.set", json!({"ids": [fid]}));
     let _ = app.run("type.alignCenter", json!({}));
@@ -10617,6 +10622,39 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(active.doc.stories.values().any(|s| s.text.contains("Hello DesignCraft Note!")), "RTF text should be placed on the generated page");
     }
 
+    #[test]
+    fn test_execute_generate_pages_g_sheet_tags_its_title_for_the_paragraph_toc() {
+        // `GXX` sheet rows (front matter such as the compiler page, the explanatory notes or the
+        // abbreviations) keep the narrative style on their title, so a paragraph table of contents
+        // names them beside the chapter reviews. The template flow tagged its title slot; the
+        // preset flow left it plain.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G00.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Hello DesignCraft G00 Narrative!}"#).unwrap();
+        let catalog_path = temp_dir.path().join("G00_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nG,00,TIM PENYUSUN/COMPILERS,\"{escaped}\"\n")).unwrap();
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        st.card1_preset = 0;
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        execute_generate_pages(&mut app, &st).expect("generate pages");
+
+        let active = app.session.active().unwrap();
+        let title_story = active.doc.stories.values().find(|s| s.text.contains("TIM PENYUSUN/COMPILERS")).expect("title story");
+        assert_eq!(title_story.paras[0].style, TOC_NARRATIVE_STYLE, "the page title carries the narrative style");
+
+        let plan = TocPlan::from_state(&PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() });
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+        assert_eq!(rows, [(1, "TIM PENYUSUN/COMPILERS".to_string())], "the paragraph list names the page with its title alone: {rows:?}");
+    }
     #[test]
     fn test_execute_generate_pages_note_or_g_sheet_single_row_no_header() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
