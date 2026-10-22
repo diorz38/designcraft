@@ -468,7 +468,7 @@ fn assets_dir() -> std::path::PathBuf {
 fn test_canonical_cover_templates_carry_their_slots() {
     // What the Pubgen cover card fills: every cover must offer all of these, or a silently
     // unfilled cover ships (the panel reports success whatever comes back).
-    const TEXT_KEYS: [&str; 7] = ["title", "level", "year", "volume", "catalogue", "code", "agency"];
+    const TEXT_KEYS: [&str; 6] = ["title", "year", "volume", "catalogue", "code", "agency"];
 
     let dir = assets_dir().join("templates").join("covers");
     let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)

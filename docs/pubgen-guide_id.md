@@ -222,7 +222,6 @@ Anda dapat memilih tema baku atau memasukkan kode warna heksadesimal sendiri:
 
 ### Metadata & Isian Informasi Publikasi
 Lengkapi data publikasi Anda:
-- **Level**: Kata pengantar di atas judul (contoh: `KECAMATAN`, `KABUPATEN`). Diambil dari baris `level` pada sheet `COVER`, dengan bawaan `Kecamatan`.
 - **Title**: Judul sampul (contoh: `KARAWANG TIMUR`). Diketik pada kotak multi-baris dan diletakkan ke halaman apa adanya. Pubgen akan memformat teks ini dengan font **Arial Black**.
 - **Title 2**: Baris judul kedua (contoh: `DALAM ANGKA`). Berada pada bingkai milik desain sampul, di bawah judul utama dengan gaya tersendiri — lebih kecil dan berwarna lain. Isian ini diawali teks dummy `Title 2`.
 - **Year**: Masukkan tahun publikasi (contoh: `2026`). Ditampilkan menonjol dengan font tebal **Arial Black**.

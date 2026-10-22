@@ -111,10 +111,6 @@ pub fn toc_kind_of_words(words: &[String]) -> usize {
     }
 }
 
-fn default_cover_level() -> String {
-    "Kecamatan".into()
-}
-
 fn default_cover_title() -> String {
     "KARAWANG TIMUR".into()
 }
@@ -275,8 +271,6 @@ pub struct PubgenState {
     // Card: Publication Cover (before Quick Actions)
     #[serde(default)]
     pub cover_style: usize,
-    #[serde(default = "default_cover_level")]
-    pub cover_level: String,
     #[serde(default = "default_cover_title")]
     pub cover_title: String,
     /// The second headline line. The cover templates carry it in their own frame (`title#2`),
@@ -360,7 +354,6 @@ impl Default for PubgenState {
             generated_zip_name: String::new(),
             generated_zip_bytes: Vec::new(),
             cover_style: 2,
-            cover_level: default_cover_level(),
             cover_title: default_cover_title(),
             cover_title2: default_cover_title2(),
             cover_year: default_cover_year(),
@@ -1765,7 +1758,6 @@ fn resolve_cover_image(path: &str) -> String {
 }
 
 fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
-    let level_text = if st.cover_level.trim().is_empty() { "Kecamatan" } else { st.cover_level.trim() };
     let title_text = if st.cover_title.trim().is_empty() { "KARAWANG TIMUR" } else { st.cover_title.trim() };
     // The second headline line has its own frame in the cover templates (`title#2`), styled
     // smaller and in another colour than the headline above it. An empty field leaves that
@@ -1821,7 +1813,6 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     "text": {
                         "title": title_text,
                         "title#2": title2_text,
-                        "level": level_text,
                         "year": year_text,
                         "volume": volume_text,
                         "catalogue": cat_text,
@@ -1966,7 +1957,6 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             add_cover_text_frame(app, 0, [320.0, 42.0, 555.0, 60.0], &code_text, dark, "Arial", "Bold", 8.5, None, None, "right")?;
 
             // 7. Headline Block
-            add_cover_text_frame(app, 0, [40.0, 92.0, 555.0, 126.0], level_text, dark, "Arial", "Bold", 20.0, None, Some(50.0), "center")?;
             add_cover_text_frame(
                 app,
                 0,
@@ -2114,7 +2104,6 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.color", json!({"color": accent, "target": "stroke"}));
 
             // Headline Block
-            add_cover_text_frame(app, 0, [35.0, 55.0, 380.0, 90.0], level_text, "#334155", "Arial", "Bold", 20.0, None, Some(50.0), "left")?;
             add_cover_text_frame(app, 0, [35.0, 90.0, 440.0, 142.0], title_text, accent, "Arial Black", "Regular", 34.0, None, Some(30.0), "left")?;
             add_cover_text_frame(app, 0, [35.0, 142.0, 440.0, 195.0], title2_text, dark, "Arial Black", "Regular", 24.0, None, Some(30.0), "left")?;
 
@@ -2243,7 +2232,6 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             add_cover_text_frame(app, 0, [320.0, 42.0, 555.0, 60.0], &code_text, dark, "Arial", "Bold", 8.5, None, None, "right")?;
 
             // 9. Headline Block
-            add_cover_text_frame(app, 0, [40.0, 565.0, 420.0, 597.0], level_text, primary, "Arial", "Bold", 22.0, None, Some(40.0), "left")?;
             add_cover_text_frame(app, 0, [40.0, 597.0, 550.0, 647.0], title_text, primary, "Arial Black", "Regular", 38.0, None, Some(20.0), "left")?;
             add_cover_text_frame(app, 0, [40.0, 647.0, 550.0, 697.0], title2_text, accent, "Arial Black", "Regular", 28.0, None, Some(20.0), "left")?;
 
@@ -2397,19 +2385,6 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             )?;
 
             // 10. Headline Block Inside Chevron (Items 25 & 27)
-            add_cover_text_frame(
-                app,
-                0,
-                [28.38 * sx, 167.51 * sy, 566.90 * sx, 201.46 * sy],
-                level_text,
-                accent,
-                "Arial",
-                "Bold",
-                15.0 * s_avg,
-                None,
-                Some(40.0),
-                "center",
-            )?;
             add_cover_text_frame(
                 app,
                 0,
@@ -2679,19 +2654,6 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             )?;
 
             // 9. Headline Block (Inside Left Chevron Banner)
-            add_cover_text_frame(
-                app,
-                0,
-                [36.0 * sx, 235.0 * sy, 260.0 * sx, 265.0 * sy],
-                level_text,
-                accent,
-                "Arial",
-                "Bold",
-                14.0 * s_avg,
-                None,
-                Some(30.0),
-                "left",
-            )?;
             add_cover_text_frame(
                 app,
                 0,
@@ -2975,21 +2937,6 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let _ = app.run("object.opacity", json!({"opacity": 0.85}));
             let _ = app.run("object.dropShadow", json!({"on": true, "distance": 8, "size": 16, "opacity": 0.28}));
 
-            let level_upper = level_text.to_uppercase();
-            add_cover_text_frame(
-                app,
-                0,
-                [28.0 * sx, 478.0 * sy, 320.0 * sx, 506.0 * sy],
-                &level_upper,
-                "#ffffff",
-                "Arial",
-                "Bold",
-                15.0 * s_avg,
-                None,
-                Some(40.0),
-                "left",
-            )?;
-
             let formatted_title = if title_text.contains(' ') { title_text.replace(' ', "\n") } else { title_text.to_string() };
             add_cover_text_frame(
                 app,
@@ -3170,20 +3117,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 "center",
             )?;
 
-            // 8. Middle-left headline: level, title (accent), then the standard publication suffix
-            add_cover_text_frame(
-                app,
-                0,
-                [36.0 * sx, 358.0 * sy, 384.0 * sx, 392.0 * sy],
-                &level_text.to_uppercase(),
-                dark,
-                "Arial Black",
-                "Regular",
-                28.0 * s_avg,
-                None,
-                Some(30.0),
-                "left",
-            )?;
+            // 8. Middle-left headline: the title (accent), then the standard publication suffix
             // One full-width line: the frame is as wide as the page, so a title never hyphenates here.
             add_cover_text_frame(
                 app,
@@ -3326,24 +3260,11 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 "right",
             )?;
 
-            // 6. Headline inside the dark block: level, title (accent), then the standard suffix.
+            // 6. Headline inside the dark block: the title (accent), then the standard suffix.
             //    The frames stop short of the accent block, whose left edge cuts into the dark block,
             //    so an accent-coloured title never runs out over accent-coloured paper. One word per
             //    line in the title, as on the reference cover, so a long title never hyphenates.
             let formatted_title = if title_text.contains(' ') { title_text.replace(' ', "\n") } else { title_text.to_string() };
-            add_cover_text_frame(
-                app,
-                0,
-                [x(36.0), y(534.0), x(380.0), y(574.0)],
-                &level_text.to_uppercase(),
-                "#ffffff",
-                "Arial Black",
-                "Regular",
-                26.0 * s_avg,
-                None,
-                Some(40.0),
-                "left",
-            )?;
             add_cover_text_frame(
                 app,
                 0,
@@ -3517,21 +3438,8 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 "right",
             )?;
 
-            // 6. Headline stack top-left: level (navy), title (orange, one line), DALAM ANGKA
-            //    (navy) — the navy / orange / navy rhythm of the reference.
-            add_cover_text_frame(
-                app,
-                0,
-                [x(36.0), y(96.0), x(360.0), y(126.0)],
-                &level_text.to_uppercase(),
-                dark,
-                "Arial Black",
-                "Regular",
-                20.0 * s_avg,
-                None,
-                Some(26.0),
-                "left",
-            )?;
+            // 6. Headline stack top-left: the title (orange, one line), then DALAM ANGKA (navy) —
+            //    the navy / orange / navy rhythm of the reference.
             add_cover_text_frame(
                 app,
                 0,
@@ -3822,20 +3730,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             )?;
             let _ = app.run("transform.rotate", json!({"ids": [vol_id], "angle": -50.0}));
 
-            // 8. Headline stack on the white left panel (level, title in accent, DALAM ANGKA).
-            add_cover_text_frame(
-                app,
-                0,
-                [x(36.0), y(600.0), x(330.0), y(648.0)],
-                &level_text.to_uppercase(),
-                dark,
-                "Arial Black",
-                "Regular",
-                22.0 * s_avg,
-                None,
-                Some(15.0),
-                "left",
-            )?;
+            // 8. Headline stack on the white left panel (title in accent, then DALAM ANGKA).
             add_cover_text_frame(
                 app,
                 0,
@@ -7834,11 +7729,8 @@ fn apply_excel_cover(st: &mut PubgenState, cover: &excel::ExcelCoverData, base_d
     }
 
     // The sheet's `title1` is the card's "Title" (the headline) and `title2` its "Title 2" (the
-    // second headline line); `level` is the kicker above the headline (see the frame slots
-    // `#slot:text:title` / `#slot:text:title#2` / `#slot:text:level`).
-    if !cover.level.trim().is_empty() {
-        st.cover_level = cover.level.trim().to_string();
-    }
+    // second headline line); see the frame slots `#slot:text:title` / `#slot:text:title#2`. The
+    // sheet's `level` row has no frame to fill any more: the covers carry no kicker line.
     if !cover.title1.trim().is_empty() {
         st.cover_title = cover.title1.trim().to_string();
     }
@@ -8091,7 +7983,6 @@ mod tests {
             ..Default::default()
         };
         apply_excel_cover(&mut st, &cover, None);
-        assert_eq!(st.cover_level, "KABUPATEN");
         assert_eq!(st.cover_title, "PRODUK DOMESTIK REGIONAL BRUTO");
         assert_eq!(st.cover_title2, "KABUPATEN KARAWANG");
     }
@@ -9792,7 +9683,6 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         // The workbook has no COVER sheet, so the cover fields keep their defaults.
         assert!(!st.excel_had_cover, "this workbook has no COVER sheet");
-        assert_eq!(st.cover_level, default_cover_level());
         assert_eq!(st.cover_title, default_cover_title());
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -10969,11 +10859,10 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(cat.y1 < page.y0 + 60.0 && cat.x0 > page.center().x, "the catalogue sits in the top-right: {cat:?}");
         assert!(code.y0 >= cat.y1 - 1.0 && code.y1 < page.y0 + 70.0, "ISSN/ISBN sit under the catalogue: {code:?}");
 
-        // Headline: level, title, suffix down the left of the dark block.
-        let level = frame("KECAMATAN");
+        // Headline: the title and its second line down the left of the dark block.
         let title = frame("KARAWANG");
         let suffix = frame("Title 2");
-        assert!(level.y0 < title.y0 && title.y1 <= suffix.y0 + 1.0, "headline order: {level:?} {title:?} {suffix:?}");
+        assert!(title.y1 <= suffix.y0 + 1.0, "headline order: {title:?} {suffix:?}");
         assert!(suffix.y1 < page.y0 + 740.0, "the headline sits inside the dark block: {suffix:?}");
 
         // Year in the accent block, with the volume directly underneath it.

@@ -255,7 +255,6 @@ You can choose from pre-configured institutional themes or type your own hex col
 
 ### Metadata & Content Fields
 Fill in your publication details:
-- **Level**: The kicker above the headline (e.g. `KECAMATAN`, `KABUPATEN`). It comes from the `COVER` sheet's `level` row and defaults to `Kecamatan`.
 - **Title**: The cover headline (e.g., `KARAWANG TIMUR`), typed in a multi-row box and placed on the page as written. Pubgen formats it in **Arial Black**.
 - **Title 2**: The second headline line (e.g., `DALAM ANGKA`). It sits in the cover design's own frame, below the headline and in its own style — smaller and in another colour. The field starts with the dummy text `Title 2`.
 - **Year**: The publication year (e.g., `2026`). Rendered in giant **Arial Black** numerals.
