@@ -14,6 +14,7 @@ struct State {
     underline: bool,
     strike: bool,
     size: Option<f64>,
+    language: Option<String>,
     /// Inside a destination whose text is ignored.
     skip: bool,
     /// Inside a `\listtext` group (list numbers/bullets).
@@ -37,9 +38,28 @@ impl State {
                 underline: self.underline.then_some(true),
                 strikethrough: self.strike.then_some(true),
                 size: self.size,
+                language: self.language.clone(),
                 ..Default::default()
             },
         }
+    }
+}
+
+/// Map a Microsoft Locale ID (LCID) to the canonical language name.
+fn lcid_to_language(lcid: i64) -> Option<&'static str> {
+    match lcid {
+        1057 | 14345 => Some("Indonesian"),
+        1033 => Some("English: USA"),
+        3081 => Some("English: Australian"),
+        2057 => Some("English: UK"),
+        1025 => Some("Arabic"),
+        1031 => Some("German: Standard"),
+        1036 => Some("French: Standard"),
+        1034 => Some("Spanish: Castilian"),
+        1040 => Some("Italian: Standard"),
+        1041 => Some("Japanese"),
+        2052 => Some("Chinese: Simplified"),
+        _ => None,
     }
 }
 
@@ -310,6 +330,7 @@ pub fn import(bytes: &[u8]) -> Result<Imported, ImportError> {
     let mut units = crate::Utf16Units::default();
     let mut buf = String::new();
     let mut fmt = stack[0].format();
+    let mut default_doc_lang: Option<String> = None;
     let mut warnings = Vec::new();
     let flush = |st: &mut Story, buf: &mut String, fmt: &CharFormat| {
         if !buf.is_empty() {
@@ -535,7 +556,25 @@ pub fn import(bytes: &[u8]) -> Result<Imported, ImportError> {
                         s.underline = false;
                         s.strike = false;
                         s.size = None;
+                        s.language = default_doc_lang.clone();
                     }),
+                    "deflang" | "deflangfe" => {
+                        if let Some(p) = param {
+                            let lang = lcid_to_language(p).map(str::to_string);
+                            default_doc_lang = lang.clone();
+                            restyle(&|s| {
+                                if s.language.is_none() {
+                                    s.language = lang.clone();
+                                }
+                            });
+                        }
+                    }
+                    "lang" | "langfe" => {
+                        let lang = param.and_then(lcid_to_language).map(str::to_string);
+                        restyle(&|s| {
+                            s.language = lang.clone();
+                        });
+                    }
                     "uc" => {
                         if let (Some(s), Some(n)) = (stack.last_mut(), param) {
                             s.uc = n.max(0) as usize;
@@ -803,5 +842,42 @@ Kepala BPS\par
         assert_eq!(st.paras[1].para.align, Some(Align::Left), "the shape's own \\pard applies inside its group");
         assert_eq!(st.paras[2].para.align, Some(Align::Center), "the shape's \\pard must not leak into the following paragraph");
         assert_eq!(st.paras[2].para.left_indent, Some(170.1));
+    }
+
+    #[test]
+    fn imports_rtf_language_tags() {
+        // Document with deflang14345 (Indonesian) and a span with lang1033 (English)
+        let rtf = br"{\rtf1\ansi\deflang14345
+\pard Indonesian text {\lang1033 English text} back to default\par
+}";
+        let imp = import(rtf).unwrap();
+        let st = &imp.story;
+        st.check().unwrap();
+
+        // 1. Indonesian runs carry language "Indonesian"
+        let f_start = st.format_after(0);
+        assert_eq!(f_start.over.language.as_deref(), Some("Indonesian"));
+
+        // 2. English span carries "English: USA"
+        let en_pos = st.text.find("English").unwrap();
+        let f_en = st.format_after(en_pos);
+        assert_eq!(f_en.over.language.as_deref(), Some("English: USA"));
+
+        // 3. Post-group text reverts to document default "Indonesian"
+        let back_pos = st.text.find("back to").unwrap();
+        let f_back = st.format_after(back_pos);
+        assert_eq!(f_back.over.language.as_deref(), Some("Indonesian"));
+
+        // Also test LCID 1057 (canonical Indonesian) and 3081 (Australian)
+        let rtf2 = br"{\rtf1\ansi\deflang1057
+\pard Halo {\lang3081 G'day} Dunia\par
+}";
+        let imp2 = import(rtf2).unwrap();
+        let st2 = &imp2.story;
+        assert_eq!(st2.format_after(0).over.language.as_deref(), Some("Indonesian"));
+        let gday_pos = st2.text.find("G'day").unwrap();
+        assert_eq!(st2.format_after(gday_pos).over.language.as_deref(), Some("English: Australian"));
+        let dunia_pos = st2.text.find("Dunia").unwrap();
+        assert_eq!(st2.format_after(dunia_pos).over.language.as_deref(), Some("Indonesian"));
     }
 }

@@ -291,6 +291,8 @@ pub struct PubgenState {
     /// styled smaller and in another colour than the headline above it.
     #[serde(default = "default_cover_title2")]
     pub cover_title2: String,
+    #[serde(default)]
+    pub cover_title_en: String,
     #[serde(default = "default_cover_year")]
     pub cover_year: String,
     #[serde(default = "default_cover_volume")]
@@ -370,6 +372,7 @@ impl Default for PubgenState {
             cover_style: 2,
             cover_title: default_cover_title(),
             cover_title2: default_cover_title2(),
+            cover_title_en: String::new(),
             cover_year: default_cover_year(),
             cover_volume: default_cover_volume(),
             cover_catalogue: default_cover_catalogue(),
@@ -609,6 +612,16 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
             }
             if let Some(tpl_hdr) = st.card1_headers.get(4) {
                 badge(ui, t, "template", tpl_hdr);
+            }
+            if let Some(idx) = st.card1_headers.iter().position(|h| h.trim().eq_ignore_ascii_case("title_en"))
+                && let Some(h) = st.card1_headers.get(idx)
+            {
+                badge(ui, t, "title_en", h);
+            }
+            if let Some(idx) = st.card1_headers.iter().position(|h| h.trim().eq_ignore_ascii_case("file_en"))
+                && let Some(h) = st.card1_headers.get(idx)
+            {
+                badge(ui, t, "file_en", h);
             }
         });
     }
@@ -1438,6 +1451,14 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
         let avail = (ui.available_width() - 4.0).max(100.0);
         ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_title2))
             .on_hover_text("The second headline line, set smaller and in another colour");
+    });
+
+    // Title EN: English translation of title (optional, used in bilingual publications)
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Title EN:").size(11.0).color(t.text));
+        let avail = (ui.available_width() - 4.0).max(100.0);
+        ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_title_en))
+            .on_hover_text("English title for dual-language cover");
     });
 
     // #3 Year & #4 Volume
@@ -7768,6 +7789,9 @@ fn apply_excel_cover(st: &mut PubgenState, cover: &excel::ExcelCoverData, base_d
     }
     if !cover.title2.trim().is_empty() {
         st.cover_title2 = cover.title2.trim().to_string();
+    }
+    if !cover.title_en.trim().is_empty() {
+        st.cover_title_en = cover.title_en.trim().to_string();
     }
     if !cover.year.trim().is_empty() {
         st.cover_year = cover.year.trim().to_string();

@@ -28,6 +28,7 @@ pub struct ExcelCoverData {
     pub level: String,
     pub title1: String,
     pub title2: String,
+    pub title_en: String,
     pub year: String,
     pub volume: String,
     pub catalogue: String,
@@ -214,8 +215,9 @@ pub fn parse_cover_sheet(sheet: &ExcelSheetData) -> ExcelCoverData {
         let slot = match norm.as_str() {
             "style" => &mut cover.style,
             "level" => &mut cover.level,
-            "title1" | "title" => &mut cover.title1,
+            "titleid" | "title1" | "title" => &mut cover.title1,
             "title2" => &mut cover.title2,
+            "titleen" => &mut cover.title_en,
             "year" => &mut cover.year,
             "volume" => &mut cover.volume,
             "nocatalogue" | "catalogue" | "catalog" | "katalog" => &mut cover.catalogue,
@@ -310,15 +312,39 @@ pub fn extract_field_lenient(row: &[String], expected_key: &str) -> String {
 }
 
 /// Parse an RXX RTF review sheet with 2 or more rows:
+/// Parse an RXX RTF review sheet with support for bilingual English RTF (`file_en`):
 /// Row 1: title;"BAB 01 Pemerintahan"
 /// Row 2: file;[path to file RTF]
-/// Row 3 (optional): divider;[template path or ID] (or diivider, template, etc.)
-pub fn parse_rtf_review_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>)> {
+/// Optional: file_en;[path to English RTF]
+/// Optional: divider;[template path or ID] (or diivider, template, etc.)
+pub fn parse_rtf_review_sheet_bilingual(
+    sheet: &ExcelSheetData,
+) -> Option<(String, String, String, String, Option<String>, Option<String>)> {
     let row1 = sheet.grid.first()?;
-    let row2 = sheet.grid.get(1);
+    let title_val = extract_field_for_keys(row1, &["title_id", "titleid", "title", "judul"])
+        .unwrap_or_else(|| extract_field_lenient(row1, "title"));
 
-    let title_val = extract_field_lenient(row1, "title");
-    let file_val = row2.map(|r| extract_field_lenient(r, "file")).unwrap_or_default();
+    let mut file_val = String::new();
+    let mut file_en = None;
+
+    for row in &sheet.grid {
+        if file_val.is_empty()
+            && let Some(f) = extract_field_for_keys(row, &["file_id", "fileid", "file", "rtf", "path"])
+        {
+            file_val = f;
+        }
+        if file_en.is_none()
+            && let Some(fen) = extract_field_for_keys(row, &["file_en", "fileen", "rtf_en", "rtfen", "path_en", "pathen"])
+        {
+            file_en = Some(fen);
+        }
+    }
+
+    if file_val.is_empty()
+        && let Some(row2) = sheet.grid.get(1)
+    {
+        file_val = extract_field_lenient(row2, "file");
+    }
 
     let num_val = extract_first_two_digit_number(&title_val).unwrap_or_else(|| {
         let digits: String = sheet.name.chars().filter(|c| c.is_ascii_digit()).collect();
@@ -333,7 +359,13 @@ pub fn parse_rtf_review_sheet_with_template(sheet: &ExcelSheetData) -> Option<(S
 
     let template_val = extract_template_from_sheet(sheet);
 
-    Some(("Ulasan".to_string(), num_val, title_val, file_val, template_val))
+    Some(("Ulasan".to_string(), num_val, title_val, file_val, template_val, file_en))
+}
+
+/// Backward-compatible wrapper for `parse_rtf_review_sheet_bilingual` returning 5-tuple.
+pub fn parse_rtf_review_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>)> {
+    let (t, n, title, file, tpl, _) = parse_rtf_review_sheet_bilingual(sheet)?;
+    Some((t, n, title, file, tpl))
 }
 
 /// The `image1` / `image2` picture paths of a front-matter (`BXX`) sheet, read leniently from any
@@ -663,19 +695,28 @@ pub fn resolve_divider_template(tpl_spec: &str) -> String {
     format!("assets/templates/dividers/{raw}.designcraft")
 }
 
-/// Parse a `DIV` divider sheet:
-/// Row 1: title;"BAB 02 PEMERINTAHAN" (or col A: title, col B: value)
+/// Parse a `DIV` divider sheet with support for `title_en`:
+/// Row 1: title;"BAB 02 PEMERINTAHAN" (or title_id / judul)
+/// Optional: title_en;"CHAPTER 02 GOVERNMENT" (or judulen)
 /// Row 2: image;"E:\path\to\infografik.png" (or file / photo)
 /// Row 3: template;"002" (or divider / template)
-pub fn parse_divider_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>)> {
+pub fn parse_divider_sheet_bilingual(
+    sheet: &ExcelSheetData,
+) -> Option<(String, String, String, String, Option<String>, Option<String>)> {
     let mut title_val = String::new();
+    let mut title_en_val = None;
     let mut image_val = String::new();
 
     for row in &sheet.grid {
         if title_val.is_empty()
-            && let Some(t) = extract_field_for_keys(row, &["title", "judul"])
+            && let Some(t) = extract_field_for_keys(row, &["title_id", "titleid", "title", "judul"])
         {
             title_val = t;
+        }
+        if title_en_val.is_none()
+            && let Some(ten) = extract_field_for_keys(row, &["title_en", "titleen", "judulen", "judul_en"])
+        {
+            title_en_val = Some(ten);
         }
         if image_val.is_empty()
             && let Some(img) = extract_field_for_keys(row, &["image", "file", "photo", "hero", "gambar"])
@@ -740,7 +781,13 @@ pub fn parse_divider_sheet_with_template(sheet: &ExcelSheetData) -> Option<(Stri
     let raw_tpl = extract_template_from_sheet(sheet);
     let template_val = Some(resolve_divider_template(raw_tpl.as_deref().unwrap_or("002")));
 
-    Some(("Divider".to_string(), num_val, title_val, image_val, template_val))
+    Some(("Divider".to_string(), num_val, title_val, image_val, template_val, title_en_val))
+}
+
+/// Backward-compatible wrapper for `parse_divider_sheet_bilingual` returning 5-tuple.
+pub fn parse_divider_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>)> {
+    let (t, n, title, img, tpl, _) = parse_divider_sheet_bilingual(sheet)?;
+    Some((t, n, title, img, tpl))
 }
 
 /// Backward-compatible wrapper for `parse_divider_sheet_with_template` returning 4-tuple.
@@ -914,11 +961,14 @@ struct CatalogEntryItem {
     /// Front-matter sheets only: the two picture files of the page.
     image1: Option<String>,
     image2: Option<String>,
+    title_en: Option<String>,
+    file_en: Option<String>,
 }
 
 /// Convert multiple Excel sheets into 1 catalog CSV and individual table CSVs.
 /// If any sheet defines a template/divider (e.g. in Row 3), the catalog emits a 5th `template` column.
 /// If no sheet defines a template, the catalog preserves the standard 4-column format `type,number,title,file`.
+/// When bilingual fields (`title_en` on DIV or `file_en` on RXX/BXX) are present, `title_en,file_en` columns are appended.
 pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> ExcelConversionResult {
     let mut entries = Vec::new();
     let mut table_csvs = Vec::new();
@@ -939,7 +989,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
 
         // Check if sheet is a DIV divider sheet
         if is_divider_sheet(sheet_name)
-            && let Some((t_val, n_val, title_val, f_val, tpl_val)) = parse_divider_sheet_with_template(sheet)
+            && let Some((t_val, n_val, title_val, f_val, tpl_val, ten_val)) = parse_divider_sheet_bilingual(sheet)
         {
             entries.push(CatalogEntryItem {
                 entry_type: t_val,
@@ -949,6 +999,8 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
                 template: tpl_val,
                 image1: None,
                 image2: None,
+                title_en: ten_val,
+                file_en: None,
             });
             // DIV sheets are divider spreads, not tabular data
             continue;
@@ -957,10 +1009,20 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         // Check if sheet is an RXX review chapter or a BXX front-matter chapter: both are
         // narrative RTF sheets laid out the same way
         if (is_rtf_review_sheet(sheet_name) || is_b_sheet(sheet_name))
-            && let Some((t_val, n_val, title_val, f_val, tpl_val)) = parse_rtf_review_sheet_with_template(sheet)
+            && let Some((t_val, n_val, title_val, f_val, tpl_val, fen_val)) = parse_rtf_review_sheet_bilingual(sheet)
         {
             let (image1, image2) = if is_b_sheet(sheet_name) { parse_sheet_images(sheet) } else { (None, None) };
-            entries.push(CatalogEntryItem { entry_type: t_val, number: n_val, title: title_val, file: f_val, template: tpl_val, image1, image2 });
+            entries.push(CatalogEntryItem {
+                entry_type: t_val,
+                number: n_val,
+                title: title_val,
+                file: f_val,
+                template: tpl_val,
+                image1,
+                image2,
+                title_en: None,
+                file_en: fen_val,
+            });
             // Narrative chapters (RTF), not tabular data
             continue;
         }
@@ -977,6 +1039,8 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
                 template: tpl_val,
                 image1: None,
                 image2: None,
+                title_en: None,
+                file_en: None,
             });
             // CXX sheets are graphic chart figures, not tabular data
             continue;
@@ -994,6 +1058,8 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
                 template: tpl_val,
                 image1: None,
                 image2: None,
+                title_en: None,
+                file_en: None,
             });
             // The A02 sheet carries a narrative RTF note, not tabular data
             continue;
@@ -1011,6 +1077,8 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
             template: tpl_val,
             image1: None,
             image2: None,
+            title_en: None,
+            file_en: None,
         });
 
         // 2. Process table data for individual CSV
@@ -1021,11 +1089,17 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
 
     let has_any_template = entries.iter().any(|e| e.template.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false));
     let has_any_image = entries.iter().any(|e| e.image1.is_some() || e.image2.is_some());
+    let has_any_bilingual = entries.iter().any(|e| {
+        e.title_en.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false)
+            || e.file_en.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false)
+    });
+
     if has_any_image {
-        let mut rows = vec![if has_any_template {
-            "type,number,title,file,template,image1,image2".to_string()
-        } else {
-            "type,number,title,file,image1,image2".to_string()
+        let mut rows = vec![match (has_any_template, has_any_bilingual) {
+            (true, true) => "type,number,title,file,template,image1,image2,title_en,file_en".to_string(),
+            (true, false) => "type,number,title,file,template,image1,image2".to_string(),
+            (false, true) => "type,number,title,file,image1,image2,title_en,file_en".to_string(),
+            (false, false) => "type,number,title,file,image1,image2".to_string(),
         }];
         for e in &entries {
             let base = format!(
@@ -1036,46 +1110,57 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
                 escape_csv_field(&e.file),
             );
             let base = if has_any_template { format!("{base},{}", escape_csv_field(e.template.as_deref().unwrap_or(""))) } else { base };
-            rows.push(format!(
+            let with_img = format!(
                 "{base},{},{}",
                 escape_csv_field(e.image1.as_deref().unwrap_or("")),
                 escape_csv_field(e.image2.as_deref().unwrap_or("")),
-            ));
+            );
+            if has_any_bilingual {
+                rows.push(format!(
+                    "{with_img},{},{}",
+                    escape_csv_field(e.title_en.as_deref().unwrap_or("")),
+                    escape_csv_field(e.file_en.as_deref().unwrap_or("")),
+                ));
+            } else {
+                rows.push(with_img);
+            }
         }
         return ExcelConversionResult {
             catalog_csv_name: format!("{base_stem}_catalog.csv"),
-            catalog_csv_content: rows.join(
-                "
-",
-            ),
+            catalog_csv_content: rows.join("\n"),
             table_csvs,
             cover,
         };
     }
 
     let mut catalog_rows = Vec::new();
-    if has_any_template {
-        catalog_rows.push("type,number,title,file,template".to_string());
-        for e in &entries {
+    match (has_any_template, has_any_bilingual) {
+        (true, true) => catalog_rows.push("type,number,title,file,template,title_en,file_en".to_string()),
+        (true, false) => catalog_rows.push("type,number,title,file,template".to_string()),
+        (false, true) => catalog_rows.push("type,number,title,file,title_en,file_en".to_string()),
+        (false, false) => catalog_rows.push("type,number,title,file".to_string()),
+    }
+    for e in &entries {
+        let base = format!(
+            "{},{},{},{}",
+            escape_csv_field(&e.entry_type),
+            escape_csv_field(&e.number),
+            escape_csv_field(&e.title),
+            escape_csv_field(&e.file),
+        );
+        let base = if has_any_template {
+            format!("{base},{}", escape_csv_field(e.template.as_deref().unwrap_or("")))
+        } else {
+            base
+        };
+        if has_any_bilingual {
             catalog_rows.push(format!(
-                "{},{},{},{},{}",
-                escape_csv_field(&e.entry_type),
-                escape_csv_field(&e.number),
-                escape_csv_field(&e.title),
-                escape_csv_field(&e.file),
-                escape_csv_field(e.template.as_deref().unwrap_or("")),
+                "{base},{},{}",
+                escape_csv_field(e.title_en.as_deref().unwrap_or("")),
+                escape_csv_field(e.file_en.as_deref().unwrap_or("")),
             ));
-        }
-    } else {
-        catalog_rows.push("type,number,title,file".to_string());
-        for e in &entries {
-            catalog_rows.push(format!(
-                "{},{},{},{}",
-                escape_csv_field(&e.entry_type),
-                escape_csv_field(&e.number),
-                escape_csv_field(&e.title),
-                escape_csv_field(&e.file),
-            ));
+        } else {
+            catalog_rows.push(base);
         }
     }
 
@@ -2116,5 +2201,64 @@ mod tests {
         // The DIV sheet must NOT produce a table CSV, only 02_01 does!
         assert_eq!(res.table_csvs.len(), 1);
         assert_eq!(res.table_csvs[0].0, "02_01.csv");
+    }
+
+    #[test]
+    fn test_bilingual_excel_cover_and_catalog() {
+        // Test COVER sheet with title_id, title2, and title_en
+        let cover_sheet = ExcelSheetData {
+            name: "COVER".into(),
+            grid: vec![
+                vec!["title_id".into(), "KECAMATAN KARAWANG TIMUR".into()],
+                vec!["title2".into(), "DALAM ANGKA 2026".into()],
+                vec!["title_en".into(), "KARAWANG TIMUR SUBDISTRICT IN FIGURES 2026".into()],
+                vec!["author".into(), "BPS Kabupaten Karawang".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let cover = parse_cover_sheet(&cover_sheet);
+        assert_eq!(cover.title1, "KECAMATAN KARAWANG TIMUR");
+        assert_eq!(cover.title2, "DALAM ANGKA 2026");
+        assert_eq!(cover.title_en, "KARAWANG TIMUR SUBDISTRICT IN FIGURES 2026");
+
+        // Test DIV with title_en and R01 with file_en
+        let div_sheet = ExcelSheetData {
+            name: "DIV".into(),
+            grid: vec![
+                vec!["title".into(), "BAB 02 PEMERINTAHAN".into()],
+                vec!["title_en".into(), "CHAPTER 02 GOVERNMENT".into()],
+                vec!["image".into(), "infografik_02.png".into()],
+                vec!["template".into(), "002".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let r01_sheet = ExcelSheetData {
+            name: "R02".into(),
+            grid: vec![
+                vec!["title".into(), "BAB 02 PEMERINTAHAN".into()],
+                vec!["file".into(), "ulasan_02_id.rtf".into()],
+                vec!["file_en".into(), "ulasan_02_en.rtf".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let tbl_sheet = ExcelSheetData {
+            name: "02_01".into(),
+            grid: vec![
+                vec!["Tabel 02.01 Luas Wilayah / Area".into()],
+                vec!["Kecamatan".into(), "Luas".into()],
+            ],
+            merges: Vec::new(),
+        };
+
+        let res = convert_excel_to_csv_data(&[cover_sheet, div_sheet, r01_sheet, tbl_sheet], "BILINGUAL_RUN");
+        assert!(res.cover.is_some());
+        let lines: Vec<&str> = res.catalog_csv_content.lines().collect();
+        // Since bilingual fields are present and DIV has a template, header has 7 columns:
+        // type,number,title,file,template,title_en,file_en
+        assert_eq!(lines[0], "type,number,title,file,template,title_en,file_en");
+        assert_eq!(lines.len(), 4);
+        assert!(lines[1].contains("Divider,02,BAB 02 PEMERINTAHAN,infografik_02.png,assets/templates/dividers/002_chapter_devider.designcraft,CHAPTER 02 GOVERNMENT,"));
+        assert!(lines[2].contains("Ulasan,02,BAB 02 PEMERINTAHAN,ulasan_02_id.rtf,,,ulasan_02_en.rtf"));
+        assert_eq!(lines[3], "Tabel,02.01,Luas Wilayah / Area,02_01,,,");
     }
 }
