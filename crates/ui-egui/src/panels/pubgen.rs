@@ -4776,11 +4776,11 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         }
 
                         // A sheet with no title line puts the RTF at the top of the page, so the
-                        // RTF opens with it: that paragraph is the page's title for the paragraph
-                        // table of contents.
+                        // page's title is the RTF's own heading: tag that paragraph for the
+                        // paragraph table of contents.
                         if title_val.trim().is_empty() && (is_narrative_row || type_val.eq_ignore_ascii_case("Note")) {
                             for sid in body_story_ids {
-                                tag_first_paragraph(app, sid, TOC_NARRATIVE_STYLE);
+                                tag_page_title(app, sid, TOC_NARRATIVE_STYLE);
                             }
                         }
                     }
@@ -5201,10 +5201,10 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     let rtf_path_str = rtf_file.to_string_lossy().to_string();
                     if execute_page_from_rtf(app, &mut st_copy, &rtf_path_str).is_ok() {
                         inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
-                        // No title line on the page, so the RTF opens with it: that paragraph is
-                        // the page's title for the paragraph table of contents.
+                        // No title line on the page, so the page's title is the RTF's own
+                        // heading: tag that paragraph for the paragraph table of contents.
                         if !has_header && let Some(sid) = story_of_frame(app, fid) {
-                            tag_first_paragraph(app, sid, TOC_NARRATIVE_STYLE);
+                            tag_page_title(app, sid, TOC_NARRATIVE_STYLE);
                         }
                     }
                 }
@@ -5514,18 +5514,68 @@ fn ensure_para_style(app: &mut DesignApp, name: &str) {
     }
 }
 
-/// Give the first paragraph of `sid` the paragraph style `style`. A `Note`/`G` page whose sheet
-/// gave no title opens with the RTF's own title line — Word writes that as direct formatting, so
-/// no `Heading n` arrives — and the paragraph table of contents names the page with it.
-fn tag_first_paragraph(app: &mut DesignApp, sid: designcraft_doc::StoryId, style: &str) {
+/// How many of a page's opening paragraphs the title search weighs.
+const TITLE_SCAN: usize = 12;
+
+/// The paragraph that reads as the page's title: the largest centred line among the page's opening
+/// paragraphs (the first one on a tie).
+///
+/// A `Note`/`G` sheet gives no title, so the page opens with the RTF's own heading. Word writes
+/// that heading as a `Heading n`, as the `Pendahuluan` style or as direct formatting (bold,
+/// capitals, coloured, centred) from sheet to sheet, so the search goes by how it looks rather
+/// than by its name. On the compilers' page that leaves out the ISSN line above it (right-aligned)
+/// and the publication's title below it (set smaller), and takes "TIM PENYUSUN/COMPILERS".
+fn page_title_index(doc: &designcraft_doc::Document, sid: designcraft_doc::StoryId) -> Option<usize> {
+    let story = doc.story(sid)?;
+    let mut seen = 0;
+    let mut sized: Vec<(usize, f64, bool)> = Vec::new(); // paragraph, text size, centred
+    for (i, r) in story.para_ranges().iter().enumerate() {
+        if !story.text.get(r.clone()).is_some_and(|t| !t.trim().is_empty()) {
+            continue;
+        }
+        seen += 1;
+        if seen > TITLE_SCAN {
+            break;
+        }
+        let mut size: Option<f64> = None;
+        for (run, format) in story.runs() {
+            if run.start >= r.end {
+                break;
+            }
+            if run.end <= r.start {
+                continue;
+            }
+            if let Some(s) = format.over.size {
+                size = Some(size.map_or(s, |m: f64| m.max(s)));
+            }
+        }
+        let size = size.or_else(|| story.paras.get(i).and_then(|p| doc.styles.para(&p.style)).and_then(|s| s.chars.size)).unwrap_or(0.0);
+        let centred = story.paras.get(i).is_some_and(|p| p.para.align == Some(designcraft_doc::Align::Center));
+        sized.push((i, size, centred));
+    }
+    let largest = |centred_only: bool| {
+        sized
+            .iter()
+            .filter(|(_, _, centred)| !centred_only || *centred)
+            .fold(None::<(usize, f64)>, |best, &(i, size, _)| match best {
+                Some((_, b)) if b >= size => best,
+                _ => Some((i, size)),
+            })
+            .map(|(i, _)| i)
+    };
+    largest(true).or_else(|| largest(false))
+}
+
+/// Tag the paragraph that reads as a title-less `Note`/`G` page's title with `style`, so the
+/// paragraph table of contents names the page. Only the style changes: the RTF's own centring,
+/// boldness and size stay on the paragraph.
+fn tag_page_title(app: &mut DesignApp, sid: designcraft_doc::StoryId, style: &str) {
     ensure_para_style(app, style);
     let _ = app.session.edit(|doc, _| {
-        let story = doc.story_mut(sid).ok_or(designcraft_doc::DocError::NoStory(sid))?;
-        let first = story.para_ranges().first().cloned();
-        if let Some(r) = first
-            && story.text.get(r.clone()).is_some_and(|t| !t.trim().is_empty())
+        if let Some(i) = page_title_index(doc, sid)
+            && let Some(story) = doc.story_mut(sid)
+            && let Some(r) = story.para_ranges().get(i).cloned()
         {
-            // Only the style: the RTF's own centring and boldness stay on the paragraph.
             story.format_paras(r.start..r.start, |f| f.style = style.to_string());
         }
         Ok(serde_json::Value::Null)
@@ -10542,8 +10592,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     fn test_execute_generate_pages_g_sheet_without_title_names_its_rtf_title() {
         // The `GXX` sheets carry no title row, only the RTF link, so the page opens with the
         // RTF's own title line. Word writes that line as direct formatting (bold, caps, centred),
-        // not as a `Heading 1`, so the paragraph table of contents has to take the page's first
-        // paragraph as its title or the page is missing from the list.
+        // not as a `Heading 1`, so the paragraph table of contents has to read the page's heading
+        // off how it looks or the page is missing from the list.
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
         let temp_dir = tempfile::tempdir().unwrap();
@@ -10672,6 +10722,98 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             .and_then(|s| s.paras.get(1).map(|p| p.style.clone()))
             .unwrap_or_default();
         assert_eq!(table_entry, "TOC Table Level 1", "the Tables list's entry takes its own style");
+    }
+
+    #[test]
+    fn test_g_sheet_title_skips_the_issn_line_and_the_book_title() {
+        // The compilers' page (a `G` sheet that links only its RTF): a right-aligned ISSN line, a
+        // few empty lines, then the page's own title in the largest centred type, with the
+        // publication's title set smaller below it. Naming the page after its first paragraph
+        // listed the ISSN line; naming it after its largest centred line lists the page.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G00.rtf");
+        let rtf = concat!(
+            r"{\rtf1\ansi\deff0{\fonttbl{\f0 Arial;}}{\stylesheet{\s0 Normal;}}",
+            r"\pard\plain\s0\qr\fs24 ISSN: 2828-7346\par",
+            r"\pard\plain\s0\par",
+            r"\pard\plain\s0\par",
+            r"\pard\plain\s0\par",
+            r"\pard\plain\s0\qc\b\fs28 TIM PENYUSUN/COMPILERS\par",
+            r"\pard\plain\s0\qc\b\fs22 Kecamatan Karawang Timur Dalam Angka 2025\par",
+            r"\pard\plain\s0\qc\fs22 Karawang Timur District in Figures 2025\par}",
+        );
+        std::fs::write(&rtf_path, rtf.as_bytes()).unwrap();
+        let catalog_path = temp_dir.path().join("G00_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nG,00,,\"{escaped}\"\n")).unwrap();
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        st.card1_preset = 0;
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        execute_generate_pages(&mut app, &st).expect("generate pages");
+
+        let active = app.session.active().unwrap();
+        let body = active.doc.stories.values().find(|s| s.text.contains("TIM PENYUSUN")).expect("placed RTF");
+        let style_of = |needle: &str| {
+            let i = body.para_ranges().iter().position(|r| body.text.get(r.clone()).is_some_and(|t| t.contains(needle))).expect("paragraph");
+            body.paras[i].style.clone()
+        };
+        assert_eq!(style_of("TIM PENYUSUN"), TOC_NARRATIVE_STYLE, "the page's title names the page");
+        assert_eq!(style_of("ISSN"), designcraft_doc::story::BASIC_PARAGRAPH, "the ISSN line stays out of the list");
+        assert_eq!(style_of("Kecamatan Karawang"), designcraft_doc::story::BASIC_PARAGRAPH, "so does the publication's title");
+
+        let plan = TocPlan::from_state(&PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() });
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+        assert_eq!(rows, [(1, "TIM PENYUSUN/COMPILERS".to_string())], "the paragraph list names the page once, at its own level: {rows:?}");
+    }
+
+    #[test]
+    fn test_g_sheet_title_skips_an_empty_opening_paragraph() {
+        // The explanatory-notes sheet (G01) opens with an empty paragraph and carries its title
+        // next: searching for the first non-empty paragraph's look finds the title where taking
+        // the very first paragraph found nothing, so the page was missing from the list.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G01.rtf");
+        let rtf = concat!(
+            r"{\rtf1\ansi\deff0{\fonttbl{\f0 Arial;}}{\stylesheet{\s0 Normal;}}",
+            r"\pard\plain\s0\par",
+            r"\pard\plain\s0\qc\b\fs30 Penjelasan Umum/Explanatory Notes\par",
+            r"\pard\plain\s0\ql\fs24 The publication covers the regency and its subdistricts.\par}",
+        );
+        std::fs::write(&rtf_path, rtf.as_bytes()).unwrap();
+        let catalog_path = temp_dir.path().join("G01_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nG,01,,\"{escaped}\"\n")).unwrap();
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        st.card1_preset = 0;
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        execute_generate_pages(&mut app, &st).expect("generate pages");
+
+        let active = app.session.active().unwrap();
+        let body = active.doc.stories.values().find(|s| s.text.contains("Penjelasan Umum")).expect("placed RTF");
+        let ranges = body.para_ranges();
+        let title = ranges.iter().position(|r| body.text.get(r.clone()).is_some_and(|t| t.contains("Penjelasan Umum"))).expect("title paragraph");
+        assert_eq!(body.paras[title].style, TOC_NARRATIVE_STYLE, "the RTF's title line is the page's title");
+        assert_eq!(body.paras[0].para.align, None, "the empty opening paragraph keeps its own look");
+
+        let plan = TocPlan::from_state(&PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() });
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+        assert_eq!(rows, [(1, "Penjelasan Umum/Explanatory Notes".to_string())], "the paragraph list names the page: {rows:?}");
     }
 
     #[test]

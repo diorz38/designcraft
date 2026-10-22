@@ -535,9 +535,13 @@ the title. The filter is stored in the document, so **Rebuild TOC** and *Layout 
 **TOC Paragraph** is the nested list of a publication: the narrative pages (the front matter from the `GXX`
 sheets and the chapter reviews from the `RXX` sheets) at the first level, the `Heading 1` and `Heading 2`
 paragraphs of their bodies below them. No other page — a table, a chart, a divider or a publication note —
-is listed. A narrative page's entry carries both of its text boxes: the chapter line and the title read
-`BAB 01 Geografi ......... 2`. A `GXX` sheet with no title row (only the RTF link) puts the RTF at the top of
-the page, so the RTF's own first line is the page's title and the page is listed with it.
+is listed. A narrative page's entry carries its chapter line and its title, both of its text boxes reading
+`BAB 01 Geografi ......... 2`; the chapter line only counts when it has its own box above the title, so a page
+that opens with another line in the title's box keeps its own text. A `GXX` sheet with no title row (only the
+RTF link) puts the RTF at the top of the page, so the page's title is the largest centred line among the RTF's
+opening paragraphs — the heading, written as a Word heading in some sheets and as direct formatting in others.
+That leaves out the ISSN line above it (right-aligned) and the publication's title below it (set smaller), and
+copes with an empty opening paragraph.
 
 Each list keeps the paragraph styles its rows use: `TOC Level 1…n` for the contents, `TOC Table Level 1…n`
 for the Tables list and `TOC Chart Level 1…n` for the Charts list. The styles carry the list's tab stop and

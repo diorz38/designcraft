@@ -434,9 +434,13 @@ Anda tetap bisa mengubahnya. Penyaring ini tersimpan di dalam dokumen, sehingga 
 **TOC Paragraph** adalah daftar bertingkat khas sebuah publikasi: halaman naratif (prakata dari lembar `GXX` dan
 ulasan bab dari lembar `RXX`) di tingkat pertama, lalu paragraf `Heading 1` dan `Heading 2` dari isi setiap bab di
 bawahnya. Tidak ada halaman lain — tabel, grafik, pembatas, maupun keterangan publikasi — yang ikut terdaftar.
-Baris halaman naratif memuat kedua kotak teksnya, sehingga barisnya berbunyi `BAB 01 Geografi ......... 2`.
-Lembar `GXX` yang tidak punya baris judul (hanya tautan RTF) menaruh RTF di bagian atas halaman, jadi baris
-pertama RTF itu sendiri yang menjadi judul halaman dan dipakai sebagai baris daftar.
+Baris halaman naratif memuat baris bab dan judulnya, sehingga barisnya berbunyi `BAB 01 Geografi ......... 2`;
+baris bab hanya dihitung kalau kotaknya sendiri berada di atas judul, jadi halaman yang dibuka baris lain di kotak
+judulnya tetap memakai teksnya sendiri. Lembar `GXX` yang tidak punya baris judul (hanya tautan RTF) menaruh RTF di
+bagian atas halaman, sehingga judul halaman adalah baris **paling besar yang ditengahkan** di antara paragraf-paragraf
+awal RTF — yaitu judulnya, yang ditulis sebagai heading Word di sebagian lembar dan sebagai format langsung di
+lembar lain. Dengan begitu baris ISSN di atasnya (rata kanan) dan judul publikasi di bawahnya (huruf lebih kecil)
+tidak ikut terpakai, dan paragraf kosong di awal RTF pun tidak mengganggu.
 
 Setiap daftar memakai gaya paragrafnya sendiri: `TOC Level 1…n` untuk daftar isi, `TOC Table Level 1…n` untuk
 daftar tabel, dan `TOC Chart Level 1…n` untuk daftar grafik. Gaya itu membawa posisi tab dan indentasi daftar
