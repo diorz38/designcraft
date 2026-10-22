@@ -18,6 +18,10 @@ use crate::widgets::{divider, full_width, outline_button, rule, section, selecti
 #[path = "pubgen_excel.rs"]
 pub mod excel;
 
+#[path = "pubgen_locale.rs"]
+pub mod locale;
+pub use locale::Locale;
+
 const PANEL_ID: &str = "pubgen_panel_state";
 
 /// Index of the "Modern Horizon" cover style — the one traced from the reference annual-report
@@ -268,6 +272,16 @@ pub struct PubgenState {
     #[serde(default)]
     pub header_status: Option<(String, bool)>,
 
+    /// Target locale for single-language generation mode.
+    #[serde(default)]
+    pub locale: Locale,
+    /// Bilingual / Dual-language generation mode: false = Single Lang (default), true = Dual Lang.
+    #[serde(default)]
+    pub bilingual_output: bool,
+    /// Document-level language setting: "" = leave run language untouched (default), else language name e.g. "Indonesian".
+    #[serde(default)]
+    pub doc_language: String,
+
     // Card: Publication Cover (before Quick Actions)
     #[serde(default)]
     pub cover_style: usize,
@@ -373,6 +387,9 @@ impl Default for PubgenState {
             excel_auto_generate: true,
             excel_had_cover: false,
             header_status: None,
+            locale: Locale::Id,
+            bilingual_output: false,
+            doc_language: String::new(),
         }
     }
 }
@@ -504,6 +521,16 @@ fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
                 Ok(msg) => st.header_status = Some((msg, true)),
                 Err(err) => st.header_status = Some((err, false)),
             }
+        }
+
+        let mode_label = if st.bilingual_output { "Dual Lang" } else { "Single Lang" };
+        let mode_tip = "Single Lang: generate the active output language only.\n\
+                        Dual Lang (Bilingual): generate both languages, per the sheet pattern rules (see docs/pubgen-guide.md).";
+        let mode_resp = outline_button(ui, mode_label, 90.0).on_hover_text(mode_tip);
+        if mode_resp.clicked() {
+            st.bilingual_output = !st.bilingual_output;
+            let mode_str = if st.bilingual_output { "Dual Lang (Bilingual)" } else { "Single Lang" };
+            st.header_status = Some((format!("Mode: {mode_str}"), true));
         }
     });
     rule(ui);
@@ -6557,8 +6584,13 @@ fn toc_header_line(plan: &TocPlan, st: &PubgenState) -> String {
         let t = r.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("");
         t.eq_ignore_ascii_case("table") || t.eq_ignore_ascii_case("chart")
     });
-    let (id_type, en_type) = if plan.kind() == 2 { ("Grafik", "Chart") } else { ("Tabel", "Table") };
-    if english { format!("{en_type}\tpage") } else { format!("{id_type}\thalaman") }
+    let w = if english {
+        locale::words(Locale::En)
+    } else {
+        locale::words(st.locale)
+    };
+    let type_word = if plan.kind() == 2 { w.figure } else { w.table };
+    format!("{type_word}\t{}", w.page_column)
 }
 
 /// Whether a line is the column header of a TablePage table of contents ("Tabel\thalaman",
@@ -11960,4 +11992,59 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             }
         }
     }
+
+    #[test]
+    fn test_pubgen_state_bilingual_defaults_and_serde() {
+        let st = PubgenState::default();
+        assert!(!st.bilingual_output);
+        assert_eq!(st.locale, Locale::Id);
+        assert_eq!(st.doc_language, "");
+
+        let json_str = serde_json::to_string(&st).unwrap();
+        let deser: PubgenState = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(deser.bilingual_output, st.bilingual_output);
+        assert_eq!(deser.locale, st.locale);
+        assert_eq!(deser.doc_language, st.doc_language);
+
+        // Deserializing older JSON lacking the bilingual fields falls back to defaults safely
+        let old_json = r#"{"card1_path":"","card1_records":[],"card1_headers":[],"card1_type_col":0,"card1_num_col":1,"card1_title_col":2,"card1_preset":0,"card1_range_all":true,"card1_range_from":1,"card1_range_to":10,"card1_append":true,"card1_status":null,"card2_path":"","card2_matrix":[],"card2_first_row_header":true,"card2_col_numbers":true,"card2_table_footer":true,"card2_style":3,"card2_placement":2,"card2_status":null}"#;
+        let old_deser: PubgenState = serde_json::from_str(old_json).unwrap();
+        assert!(!old_deser.bilingual_output);
+        assert_eq!(old_deser.locale, Locale::Id);
+        assert_eq!(old_deser.doc_language, "");
+    }
+
+    #[test]
+    fn test_bilingual_toggle_flip() {
+        let mut st = PubgenState::default();
+        assert!(!st.bilingual_output);
+        st.bilingual_output = !st.bilingual_output;
+        assert!(st.bilingual_output);
+        let mode_label = if st.bilingual_output { "Dual Lang" } else { "Single Lang" };
+        assert_eq!(mode_label, "Dual Lang");
+        st.bilingual_output = !st.bilingual_output;
+        assert!(!st.bilingual_output);
+    }
+
+    #[test]
+    fn test_toc_header_line_uses_locale_words() {
+        let mut st = PubgenState::default();
+        st.card1_records = vec![vec!["Tabel".into(), "01.01".into(), "Penduduk".into()]];
+        st.locale = Locale::Id;
+        let plan_table = TocPlan::from_state(&st);
+        assert_eq!(toc_header_line(&plan_table, &st), "Tabel\thalaman");
+
+        st.locale = Locale::En;
+        assert_eq!(toc_header_line(&plan_table, &st), "Table\tpage");
+
+        // Chart list
+        st.toc_kind = 2;
+        let plan_chart = TocPlan::from_state(&st);
+        st.locale = Locale::Id;
+        assert_eq!(toc_header_line(&plan_chart, &st), "Grafik\thalaman");
+
+        st.locale = Locale::En;
+        assert_eq!(toc_header_line(&plan_chart, &st), "Chart\tpage");
+    }
 }
+

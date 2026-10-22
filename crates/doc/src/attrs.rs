@@ -344,6 +344,7 @@ pub fn language_tag(language: &str) -> Option<&'static str> {
         "urdu" => "ur",
         "hebrew" => "he",
         "georgian" => "ka",
+        "indonesian" => "id",
         _ => return None,
     })
 }
@@ -1552,6 +1553,7 @@ mod tests {
         assert_eq!(language_tag("Farsi"), Some("fa"));
         assert_eq!(language_tag("Urdu"), Some("ur"));
         assert_eq!(language_tag("Hebrew"), Some("he"));
+        assert_eq!(language_tag("Indonesian"), Some("id"));
         assert_eq!(language_tag("[No Language]"), None);
         assert_eq!(language_tag("Klingon"), None);
         assert_eq!(language_tag(""), None);
