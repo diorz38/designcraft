@@ -27,7 +27,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Apply Template Page…",
             ["Layout", "Templates"],
             None,
-            "{path?: string, bytes?: [u8], base64?: string, before?: usize, after?: usize, target_page?: usize, position?: before|after, slots?: {text?: {...}, image?: {...}, story?: {...}}, palette?: {...}} → {page, spread, items: [id], slots_bound: count} — a text slot split over several frames labels them `#slot:text:<key>`, `#slot:text:<key>#2`, … and the value is divided between them (lines, else words, else characters: `2026` → `20`, `26`); a part may be given its own value as `<key>#<n>` (e.g. `title#2`), which is used as written and leaves the plain value to the parts that have none",
+            "{path?: string, bytes?: [u8], base64?: string, before?: usize, after?: usize, target_page?: usize, position?: before|after, slots?: {text?: {...}, image?: {...}, story?: {...}}, palette?: {...}, image_fitting?: fitProportionally|fillProportionally|fitContentToFrame|none} → {page, spread, items: [id], slots_bound: count} — a text slot split over several frames labels them `#slot:text:<key>`, `#slot:text:<key>#2`, … and the value is divided between them (lines, else words, else characters: `2026` → `20`, `26`); a part may be given its own value as `<key>#<n>` (e.g. `title#2`), which is used as written and leaves the plain value to the parts that have none; an image slot takes its picture the way the frame wants it — a photograph covers the frame (the frame's shape cuts it), a logo fits inside it",
             has_doc,
             apply_template_page
         ),
@@ -77,6 +77,17 @@ fn get_template_preview(_s: &mut Session, p: &Value) -> Result<Value> {
         Ok(json!({
             "has_preview": false,
         }))
+    }
+}
+
+/// How a template's image frame takes the picture it is given.
+///
+/// A photograph covers its frame — the frame's shape (a cover's X, a chevron) cuts it, and the
+/// picture fills the shape. A logo fits inside its frame: cropping a mark would cut it.
+fn default_image_fit(key: &str) -> &'static str {
+    match key {
+        "logo" | "emblem" | "mark" => "fitProportionally",
+        _ => "fillProportionally",
     }
 }
 
@@ -152,7 +163,7 @@ fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
         page_idx: usize,
         spread_idx: usize,
         new_items: Vec<ItemId>,
-        image_tasks: Vec<(ItemId, String)>,
+        image_tasks: Vec<(ItemId, String, String)>,
         story_tasks: Vec<(ItemId, String)>,
         slots_bound: usize,
     }
@@ -288,7 +299,7 @@ fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
                 }
                 SlotType::Image => {
                     if let Some(img_path) = image_slots.get(&t.key) {
-                        image_tasks.push((t.id, img_path.clone()));
+                        image_tasks.push((t.id, img_path.clone(), t.key.clone()));
                         slots_bound = slots_bound.saturating_add(1);
                     }
                 }
@@ -308,11 +319,12 @@ fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
     })?;
 
     // 6. Execute external file placing tasks (Images and RTF Stories) via session commands
-    let fit_mode = p.get("image_fitting").and_then(Value::as_str).unwrap_or("fitProportionally");
-    for (fid, img_path) in inserted.image_tasks {
+    let fit_mode = p.get("image_fitting").and_then(Value::as_str);
+    for (fid, img_path, key) in inserted.image_tasks {
         if Path::new(&img_path).exists() {
             let _ = s.execute("file.place", &json!({"frame": fid.0, "path": img_path}));
-            let _ = s.execute("object.fit", &json!({"mode": fit_mode, "ids": [fid.0]}));
+            let mode = fit_mode.unwrap_or_else(|| default_image_fit(&key));
+            let _ = s.execute("object.fit", &json!({"mode": mode, "ids": [fid.0]}));
             let _ = s.execute("object.fit", &json!({"mode": "centerContent", "ids": [fid.0]}));
         }
     }

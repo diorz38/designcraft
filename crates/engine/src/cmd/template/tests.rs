@@ -147,6 +147,55 @@ fn test_template_page_apply_binds_a_part_given_its_own_value() {
 }
 
 #[test]
+fn test_a_photograph_covers_the_frame_it_is_placed_in() {
+    // A cover's photo frame is a shape (the X, the chevron) that cuts the picture: the picture
+    // must fill the frame, or it floats inside the shape and the cover reads wrong. A logo fits
+    // inside its frame instead — cropping a mark would cut it.
+    let template = assets_dir().join("templates").join("covers").join("009_urban_angle.designcraft");
+    let photo = assets_dir().join("app-icon").join("hicolor").join("512x512").join("apps").join("ai.storyteller.designcraft.png");
+    if !template.exists() || !photo.exists() {
+        return;
+    }
+    let photo = photo.to_string_lossy().to_string();
+
+    let mut s = Session::new();
+    s.execute("file.new", &json!({"pages": 1})).unwrap();
+    let res = s
+        .execute(
+            "template.page.apply",
+            &json!({
+                "path": template.to_string_lossy(),
+                "slots": {"image": {"hero": photo, "logo": photo}}
+            }),
+        )
+        .expect("apply should succeed");
+    assert_eq!(res["slots_bound"], 2, "the photo and the logo bind: {res}");
+
+    let active = s.active().unwrap();
+    let doc = &active.doc;
+    let mut photo_box = None;
+    for spread in &doc.spreads {
+        for it in &spread.items {
+            if it.label != "#slot:image:hero" {
+                continue;
+            }
+            let Content::Graphic(g) = &it.content else { continue };
+            let b = it.bounds();
+            // The picture as it is drawn: its natural size, scaled into the frame.
+            let c = g.xf.as_coeffs();
+            let drawn = (g.size.0 * c[0].abs(), g.size.1 * c[3].abs());
+            let frame = (b.x1 - b.x0, b.y1 - b.y0);
+            photo_box = Some((drawn.0 >= frame.0 - 0.5 && drawn.1 >= frame.1 - 0.5, drawn, frame));
+        }
+    }
+    let (covers, drawn, frame) = photo_box.expect("the photo frame");
+    assert!(covers, "a photograph covers its frame: drawn {drawn:?} in a frame of {frame:?}");
+    // A logo fits inside its frame: cropping a mark would cut it.
+    assert_eq!(super::default_image_fit("logo"), "fitProportionally");
+    assert_eq!(super::default_image_fit("hero"), "fillProportionally");
+}
+
+#[test]
 fn test_parse_slot_tag_non_slot_or_invalid() {
     assert_eq!(parse_slot_tag("regular_frame_label"), None);
     assert_eq!(parse_slot_tag("#slot:"), None);
