@@ -318,6 +318,96 @@ fn test_canonical_assets_catalog_discovery() {
     assert_eq!(covers.len(), 10, "Should discover 10 canonical cover templates");
 }
 
+#[test]
+fn test_canonical_cover_templates_are_distinct_designs() {
+    // A cover file replaced by a copy of another cover ships the wrong artwork under the wrong
+    // name: Honeycomb Hexagon once carried the Geometric & Medallion artwork.
+    let dir = assets_dir().join("templates").join("covers");
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cover templates at {dir:?}: {e}"))
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "designcraft"))
+        .collect();
+    files.sort();
+
+    // The artwork: every item that is not a slot frame, by shape and box.
+    fn artwork(items: &[std::sync::Arc<designcraft_doc::Item>], out: &mut Vec<String>) {
+        for it in items {
+            if parse_slot_tag(&it.label).is_none() {
+                let b = it.bounds();
+                out.push(format!("{:?}{:.1},{:.1},{:.1},{:.1}", it.shape, b.x0, b.y0, b.x1, b.y1));
+            }
+            if let Content::Group { items } = &it.content {
+                artwork(items, out);
+            }
+        }
+    }
+
+    // The headline block: the kicker above the headline and the headline itself, in the
+    // frame's own shape (a copy of another cover carries that cover's shapes).
+    fn headline(items: &[std::sync::Arc<designcraft_doc::Item>], out: &mut Vec<(String, String)>) {
+        for it in items {
+            let Some(tag) = parse_slot_tag(&it.label) else {
+                if let Content::Group { items } = &it.content {
+                    headline(items, out);
+                }
+                continue;
+            };
+            if tag.key != "level" && tag.key != "title" {
+                continue;
+            }
+            let mut points: Vec<(i64, i64)> = it
+                .path
+                .subpaths
+                .iter()
+                .flat_map(|sp| sp.anchors.iter())
+                .map(|a| ((a.p.x as f64 * 10.0).round() as i64, (a.p.y as f64 * 10.0).round() as i64))
+                .collect();
+            points.sort();
+            points.dedup();
+            let shape = points.iter().map(|(x, y)| format!("{x},{y}")).collect::<Vec<_>>().join(" ");
+            out.push((tag.key.to_string(), shape));
+        }
+    }
+
+    let mut seen: Vec<(String, String)> = Vec::new();
+    let mut blocks: Vec<(String, Vec<(String, String)>)> = Vec::new();
+    for path in &files {
+        let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
+        let doc = designcraft_format::load(&bytes).unwrap_or_else(|e| panic!("{path:?}: {e}"));
+        let mut shapes = Vec::new();
+        let mut kicker_and_headline = Vec::new();
+        for spread in &doc.spreads {
+            artwork(&spread.items, &mut shapes);
+            headline(&spread.items, &mut kicker_and_headline);
+        }
+        shapes.sort();
+        let signature = shapes.join("|");
+        assert!(!signature.is_empty(), "{path:?}: no artwork at all");
+        if let Some((other, _)) = seen.iter().find(|(_, sig)| *sig == signature) {
+            panic!("{path:?} carries the artwork of {other}: two covers must be different designs");
+        }
+        seen.push((path.display().to_string(), signature));
+
+        // The same headline block in two covers means one of them is a copy of the other: the
+        // cover then shows up under the wrong name (Honeycomb Hexagon once carried the Geometric
+        // & Medallion headline block, and the Wave Curves one as well).
+        kicker_and_headline.sort();
+        blocks.push((path.display().to_string(), kicker_and_headline));
+    }
+
+    for (name, mine) in &blocks {
+        for (other, theirs) in &blocks {
+            if name == other {
+                continue;
+            }
+            if theirs.iter().all(|pair| mine.contains(pair)) {
+                panic!("{name} carries the headline block of {other}: two covers must be different designs");
+            }
+        }
+    }
+}
+
 /// The repository root, from the crate directory a test runs in.
 fn assets_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("assets")
