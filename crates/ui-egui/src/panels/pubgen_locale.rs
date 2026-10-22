@@ -250,11 +250,13 @@ pub fn char_to_byte_range(text: &str, char_start: usize, char_end: usize) -> (us
     (byte_start, byte_end)
 }
 
-/// Apply italic styling to the specified character ranges of a story.
-///
-/// Converts char offsets to byte offsets for `text.select`, then dispatches
-/// `type.char` with fontStyle: "Bold Italic" (preserving bold headings).
+/// Apply italic styling to the specified character ranges of a story (defaults to "Bold Italic").
 pub fn italicize_ranges(app: &mut crate::DesignApp, story: u64, text: &str, ranges: &[(usize, usize)]) {
+    italicize_ranges_style(app, story, text, ranges, "Bold Italic");
+}
+
+/// Apply character font style (e.g. "Italic", "Regular", "Bold Italic") to the specified character ranges of a story.
+pub fn italicize_ranges_style(app: &mut crate::DesignApp, story: u64, text: &str, ranges: &[(usize, usize)], font_style: &str) {
     for &(char_start, char_end) in ranges {
         let (byte_start, byte_end) = char_to_byte_range(text, char_start, char_end);
         if byte_start >= byte_end {
@@ -272,7 +274,7 @@ pub fn italicize_ranges(app: &mut crate::DesignApp, story: u64, text: &str, rang
             "type.char",
             serde_json::json!({
                 "attrs": {
-                    "fontStyle": "Bold Italic"
+                    "fontStyle": font_style
                 }
             }),
         );

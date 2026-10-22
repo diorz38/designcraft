@@ -11,6 +11,8 @@ use std::io::{Read, Write};
 use std::path::Path;
 use zip::ZipArchive;
 
+use super::locale;
+
 /// Parsed worksheet data from an XLSX file.
 #[derive(Debug, Clone, Default)]
 pub struct ExcelSheetData {
@@ -110,6 +112,106 @@ pub fn escape_csv_field(val: &str) -> String {
 /// Parse the first row of an Excel sheet into `(type, number, title, file)`.
 ///
 /// Example:
+/// Format table number into standard 4-digit dot-separated string "XX.XX" (e.g. "01.01").
+pub fn format_table_number(num_val: &str, sheet_name: &str) -> String {
+    let n = num_val.trim().trim_matches(|c| c == ':' || c == ';' || c == '.');
+    let split_char = if n.contains('.') {
+        Some('.')
+    } else if n.contains('_') {
+        Some('_')
+    } else if n.contains('-') {
+        Some('-')
+    } else {
+        None
+    };
+
+    if let Some(ch) = split_char {
+        let parts: Vec<&str> = n.split(ch).collect();
+        if parts.len() == 2
+            && let Ok(p1) = parts[0].parse::<u32>()
+            && let Ok(p2) = parts[1].parse::<u32>()
+        {
+            return format!("{p1:02}.{p2:02}");
+        }
+    }
+
+    let f = sheet_name.trim().strip_suffix(".csv").unwrap_or(sheet_name.trim());
+    if f.contains('_') {
+        let parts: Vec<&str> = f.split('_').collect();
+        if parts.len() == 2
+            && let Ok(p1) = parts[0].parse::<u32>()
+            && let Ok(p2) = parts[1].parse::<u32>()
+        {
+            return format!("{p1:02}.{p2:02}");
+        }
+    }
+
+    if !n.is_empty() {
+        n.to_string()
+    } else {
+        sheet_name.to_string()
+    }
+}
+
+/// Check if a sheet is named `XX_XX` (e.g. 01_01, 02_03, etc.).
+pub fn is_table_sheet_name(sheet_name: &str) -> bool {
+    let s = sheet_name.trim().strip_suffix(".csv").unwrap_or(sheet_name.trim());
+    let parts: Vec<&str> = s.split('_').collect();
+    if parts.len() == 2 && parts[0].chars().all(|c| c.is_ascii_digit()) && parts[1].chars().all(|c| c.is_ascii_digit()) {
+        !parts[0].is_empty() && !parts[1].is_empty()
+    } else {
+        false
+    }
+}
+
+/// Split bilingual table title and harmonize trailing year (e.g. ", 2025") across both lines:
+/// Line 1: Indonesian text, [year]
+/// Line 2: English text, [year]
+pub fn split_and_harmonize_table_title(title: &str, title_en_opt: Option<&str>) -> (String, Option<String>) {
+    let (id_raw, en_raw_opt) = if let Some((id, en)) = locale::split_pair(title) {
+        (id.to_string(), Some(en.to_string()))
+    } else if let Some(en) = title_en_opt.filter(|s| !s.trim().is_empty()) {
+        (title.trim().to_string(), Some(en.trim().to_string()))
+    } else {
+        (title.trim().to_string(), None)
+    };
+
+    let Some(en_raw) = en_raw_opt else {
+        return (id_raw, None);
+    };
+
+    let id_trimmed = id_raw.trim();
+    let en_trimmed = en_raw.trim();
+
+    let id_year = extract_trailing_year(id_trimmed);
+    let en_year = extract_trailing_year(en_trimmed);
+
+    let (final_id, final_en) = match (id_year, en_year) {
+        (None, Some(yr)) => {
+            let id_clean = id_trimmed.trim_end_matches(',').trim_end();
+            (format!("{id_clean}, {yr}"), en_trimmed.to_string())
+        }
+        (Some(yr), None) => {
+            let en_clean = en_trimmed.trim_end_matches(',').trim_end();
+            (id_trimmed.to_string(), format!("{en_clean}, {yr}"))
+        }
+        _ => (id_trimmed.to_string(), en_trimmed.to_string()),
+    };
+
+    (final_id, Some(final_en))
+}
+
+fn extract_trailing_year(s: &str) -> Option<&str> {
+    let trimmed = s.trim();
+    if trimmed.len() >= 4 {
+        let last_4 = &trimmed[trimmed.len() - 4..];
+        if last_4.chars().all(|c| c.is_ascii_digit()) {
+            return Some(last_4);
+        }
+    }
+    None
+}
+
 /// "Tabel 02.03 Jumlah Pegawai Negeri Sipil Pemerintah..."
 /// -> type: "Tabel", number: "02.03", title: "Jumlah Pegawai...", file: sheet_name
 pub fn parse_catalog_entry(first_row_cells: &[String], sheet_name: &str) -> (String, String, String, String) {
@@ -138,14 +240,24 @@ pub fn parse_catalog_entry(first_row_cells: &[String], sheet_name: &str) -> (Str
         if is_type {
             let t = words[0].to_string();
             let n = words[1].trim_matches(|c| c == ':' || c == ';').to_string();
-            let title = words[2..].join(" ");
+            let title = if let Some(pos) = full.find(words[1]) {
+                let after = &full[pos + words[1].len()..];
+                after.trim().to_string()
+            } else {
+                words[2..].join(" ")
+            };
             return (t, n, title, sheet_name.into());
         }
 
         // What if word 0 is already a number/code (e.g. "02.03 Judul...")
         if words[0].chars().any(|c| c.is_ascii_digit()) {
             let n = words[0].trim_matches(|c| c == ':' || c == ';' || c == '.').to_string();
-            let title = words[1..].join(" ");
+            let title = if let Some(pos) = full.find(words[0]) {
+                let after = &full[pos + words[0].len()..];
+                after.trim().to_string()
+            } else {
+                words[1..].join(" ")
+            };
             return ("Tabel".into(), n, title, sheet_name.into());
         }
     }
@@ -237,36 +349,42 @@ pub fn parse_cover_sheet(sheet: &ExcelSheetData) -> ExcelCoverData {
 pub const TEMPLATE_KEYS: &[&str] =
     &["divider", "dividers", "diivider", "diividers", "diivder", "template", "templates", "tpl", "pembatas", "layout", "style"];
 
+fn key_matches(k: &str, expected_keys: &[&str]) -> bool {
+    let k_norm: String = k.chars().filter(|c| !matches!(c, '_' | ' ' | '-')).collect();
+    expected_keys.iter().any(|key| {
+        let key_norm: String = key.chars().filter(|c| !matches!(c, '_' | ' ' | '-')).collect();
+        k_norm.eq_ignore_ascii_case(&key_norm)
+    })
+}
+
 /// Extract the value for any of the given expected keys from a row of cells.
 pub fn extract_field_for_keys(row: &[String], expected_keys: &[&str]) -> Option<String> {
     for cell in row {
         let t = cell.trim();
         for sep in [';', ':', '='] {
-            if let Some((k, v)) = t.split_once(sep) {
-                let k_trim = k.trim();
-                if expected_keys.iter().any(|key| k_trim.eq_ignore_ascii_case(key)) {
-                    let val = v.trim().trim_matches('"').trim().to_string();
-                    if !val.is_empty() {
-                        return Some(val);
-                    }
+            if let Some((k, v)) = t.split_once(sep)
+                && key_matches(k.trim(), expected_keys)
+            {
+                let val = v.trim().trim_matches('"').trim().to_string();
+                if !val.is_empty() {
+                    return Some(val);
                 }
             }
         }
     }
     let non_empty: Vec<&str> = row.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-    if non_empty.len() >= 2 {
-        let first = non_empty[0];
-        if expected_keys.iter().any(|key| first.eq_ignore_ascii_case(key)) {
-            let val = non_empty[1].trim_matches('"').trim().to_string();
-            if !val.is_empty() {
-                return Some(val);
-            }
+    if non_empty.len() >= 2
+        && key_matches(non_empty[0], expected_keys)
+    {
+        let val = non_empty[1].trim_matches('"').trim().to_string();
+        if !val.is_empty() {
+            return Some(val);
         }
     }
     if non_empty.len() == 1 {
         let cell = non_empty[0];
         if let Some((k, v)) = cell.split_once(|c: char| c.is_whitespace())
-            && expected_keys.iter().any(|key| k.trim().eq_ignore_ascii_case(key))
+            && key_matches(k.trim(), expected_keys)
         {
             let val = v.trim().trim_matches('"').trim().to_string();
             if !val.is_empty() {
@@ -317,14 +435,25 @@ pub fn extract_field_lenient(row: &[String], expected_key: &str) -> String {
 /// Row 2: file;[path to file RTF]
 /// Optional: file_en;[path to English RTF]
 /// Optional: divider;[template path or ID] (or diivider, template, etc.)
-pub fn parse_rtf_review_sheet_bilingual(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>, Option<String>)> {
-    let row1 = sheet.grid.first()?;
-    let title_val = extract_field_for_keys(row1, &["title_id", "titleid", "title", "judul"]).unwrap_or_else(|| extract_field_lenient(row1, "title"));
-
+pub fn parse_rtf_review_sheet_bilingual(
+    sheet: &ExcelSheetData,
+) -> Option<(String, String, String, String, Option<String>, Option<String>, Option<String>)> {
+    let mut title_val = String::new();
+    let mut title_en = None;
     let mut file_val = String::new();
     let mut file_en = None;
 
     for row in &sheet.grid {
+        if title_val.is_empty()
+            && let Some(t) = extract_field_for_keys(row, &["title_id", "titleid", "title", "judul"])
+        {
+            title_val = t;
+        }
+        if title_en.is_none()
+            && let Some(ten) = extract_field_for_keys(row, &["title_en", "titleen", "judulen", "judul_en"])
+        {
+            title_en = Some(ten);
+        }
         if file_val.is_empty()
             && let Some(f) = extract_field_for_keys(row, &["file_id", "fileid", "file", "rtf", "path"])
         {
@@ -337,10 +466,24 @@ pub fn parse_rtf_review_sheet_bilingual(sheet: &ExcelSheetData) -> Option<(Strin
         }
     }
 
+    if title_val.is_empty()
+        && let Some(row1) = sheet.grid.first()
+    {
+        title_val = extract_field_lenient(row1, "title");
+    }
+
     if file_val.is_empty()
         && let Some(row2) = sheet.grid.get(1)
     {
         file_val = extract_field_lenient(row2, "file");
+    }
+
+    // Split combined bilingual title like "Kata Pengantar / Preface"
+    if let Some((id_part, en_part)) = locale::split_pair(&title_val) {
+        if title_en.is_none() {
+            title_en = Some(en_part.to_string());
+        }
+        title_val = id_part.to_string();
     }
 
     let num_val = extract_first_two_digit_number(&title_val).unwrap_or_else(|| {
@@ -356,12 +499,12 @@ pub fn parse_rtf_review_sheet_bilingual(sheet: &ExcelSheetData) -> Option<(Strin
 
     let template_val = extract_template_from_sheet(sheet);
 
-    Some(("Ulasan".to_string(), num_val, title_val, file_val, template_val, file_en))
+    Some(("Ulasan".to_string(), num_val, title_val, file_val, template_val, title_en, file_en))
 }
 
 /// Backward-compatible wrapper for `parse_rtf_review_sheet_bilingual` returning 5-tuple.
 pub fn parse_rtf_review_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>)> {
-    let (t, n, title, file, tpl, _) = parse_rtf_review_sheet_bilingual(sheet)?;
+    let (t, n, title, file, tpl, _, _) = parse_rtf_review_sheet_bilingual(sheet)?;
     Some((t, n, title, file, tpl))
 }
 
@@ -1004,7 +1147,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         // Check if sheet is an RXX review chapter or a BXX front-matter chapter: both are
         // narrative RTF sheets laid out the same way
         if (is_rtf_review_sheet(sheet_name) || is_b_sheet(sheet_name))
-            && let Some((t_val, n_val, title_val, f_val, tpl_val, fen_val)) = parse_rtf_review_sheet_bilingual(sheet)
+            && let Some((t_val, n_val, title_val, f_val, tpl_val, ten_val, fen_val)) = parse_rtf_review_sheet_bilingual(sheet)
         {
             let (image1, image2) = if is_b_sheet(sheet_name) { parse_sheet_images(sheet) } else { (None, None) };
             entries.push(CatalogEntryItem {
@@ -1015,7 +1158,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
                 template: tpl_val,
                 image1,
                 image2,
-                title_en: None,
+                title_en: ten_val,
                 file_en: fen_val,
             });
             // Narrative chapters (RTF), not tabular data
