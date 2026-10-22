@@ -27,7 +27,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Apply Template Page…",
             ["Layout", "Templates"],
             None,
-            "{path?: string, bytes?: [u8], base64?: string, before?: usize, after?: usize, target_page?: usize, position?: before|after, slots?: {text?: {...}, image?: {...}, story?: {...}}, palette?: {...}, image_fitting?: fitProportionally|fillProportionally|fitContentToFrame|none} → {page, spread, items: [id], slots_bound: count} — a text slot split over several frames labels them `#slot:text:<key>`, `#slot:text:<key>#2`, … and the value is divided between them (lines, else words, else characters: `2026` → `20`, `26`); a part may be given its own value as `<key>#<n>` (e.g. `title#2`), which is used as written and leaves the plain value to the parts that have none; an image slot takes its picture the way the frame wants it — a photograph covers the frame (the frame's shape cuts it), a logo fits inside it",
+            "{path?: string, bytes?: [u8], base64?: string, lang?: string, before?: usize, after?: usize, target_page?: usize, position?: before|after, slots?: {text?: {...}, image?: {...}, story?: {...}}, palette?: {...}, image_fitting?: fitProportionally|fillProportionally|fitContentToFrame|none} → {page, spread, items: [id], slots_bound: count} — a text slot split over several frames labels them `#slot:text:<key>`, `#slot:text:<key>#2`, … and the value is divided between them (lines, else words, else characters: `2026` → `20`, `26`); a part may be given its own value as `<key>#<n>` (e.g. `title#2`), which is used as written and leaves the plain value to the parts that have none; an image slot takes its picture the way the frame wants it — a photograph covers the frame (the frame's shape cuts it), a logo fits inside it",
             has_doc,
             apply_template_page
         ),
@@ -129,6 +129,8 @@ fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
     } else {
         Some(n.saturating_sub(1))
     };
+
+    let lang_param = p.get("lang").and_then(Value::as_str).filter(|s| !s.trim().is_empty()).map(|s| s.trim().to_string());
 
     // 4. Extract slots & palette overrides
     let text_slots: HashMap<String, String> = p
@@ -294,6 +296,11 @@ fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
                     {
                         let len = story.len();
                         story.replace(0..len, &text_val);
+                        if let Some(lang) = &lang_param {
+                            for r in &mut story.chars {
+                                r.format.over.language = Some(lang.clone());
+                            }
+                        }
                         slots_bound = slots_bound.saturating_add(1);
                     }
                 }
