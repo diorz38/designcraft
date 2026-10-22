@@ -363,10 +363,18 @@ fn test_canonical_cover_templates_carry_their_slots() {
             tags(&spread.items, &mut labels);
         }
         let keys: Vec<(SlotType, String)> = labels.iter().filter_map(|l| parse_slot_tag(l)).map(|t| (t.kind, t.key.to_string())).collect();
+        let parts: Vec<(SlotType, String, u32)> =
+            labels.iter().filter_map(|l| parse_slot_tag(l)).map(|t| (t.kind, t.key.to_string(), t.part)).collect();
 
         for key in TEXT_KEYS {
             assert!(keys.iter().any(|(k, s)| *k == SlotType::Text && s == key), "{path:?}: no `#slot:text:{key}` frame (tags: {labels:?})");
         }
+        // The card's second headline line has its own frame in every cover: it is styled smaller
+        // and in another colour than the headline above it, so a cover without it loses that line.
+        assert!(
+            parts.iter().any(|(k, s, p)| *k == SlotType::Text && s == "title" && *p == 2),
+            "{path:?}: no `#slot:text:title#2` frame (tags: {labels:?})"
+        );
         assert!(
             keys.iter().any(|(k, s)| *k == SlotType::Image && (s == "hero" || s == "landscape")),
             "{path:?}: no `#slot:image:hero` (or landscape) frame (tags: {labels:?})"
