@@ -4970,53 +4970,55 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     }
 
                     // Sequential EN spread for Ulasan
-                    if st.bilingual_output && !file_en_val.is_empty() && is_ulasan_type(type_val)
+                    if st.bilingual_output
+                        && !file_en_val.is_empty()
+                        && is_ulasan_type(type_val)
                         && let Some(en_rtf_file) = resolve_catalog_related_file(&st.card1_path, file_en_val, "rtf")
                     {
                         let (en_ch_line, en_title_line) = if let Ok(en_bytes) = std::fs::read(&en_rtf_file)
-                                && let Ok(imp) = designcraft_textimport::import("review_en.rtf", &en_bytes)
-                                && let Some(first_para) = imp.story.text.lines().map(str::trim).find(|l| !l.is_empty())
-                            {
-                                split_chapter_title_locale(first_para, num_val, true)
-                            } else {
-                                (format!("CHAPTER {num_val}"), title_val.to_string())
-                            };
+                            && let Ok(imp) = designcraft_textimport::import("review_en.rtf", &en_bytes)
+                            && let Some(first_para) = imp.story.text.lines().map(str::trim).find(|l| !l.is_empty())
+                        {
+                            split_chapter_title_locale(first_para, num_val, true)
+                        } else {
+                            (format!("CHAPTER {num_val}"), title_val.to_string())
+                        };
 
-                            let mut en_text_slots = serde_json::Map::new();
-                            en_text_slots.insert("chapter_num".into(), json!(en_ch_line));
-                            en_text_slots.insert("chapter_title".into(), json!(en_title_line));
-                            en_text_slots.insert("title".into(), json!(en_title_line));
-                            en_text_slots.insert("number".into(), json!(en_ch_line));
+                        let mut en_text_slots = serde_json::Map::new();
+                        en_text_slots.insert("chapter_num".into(), json!(en_ch_line));
+                        en_text_slots.insert("chapter_title".into(), json!(en_title_line));
+                        en_text_slots.insert("title".into(), json!(en_title_line));
+                        en_text_slots.insert("number".into(), json!(en_ch_line));
 
-                            let mut en_story_slots = serde_json::Map::new();
-                            en_story_slots.insert("narrative_body".into(), json!(en_rtf_file.to_string_lossy()));
+                        let mut en_story_slots = serde_json::Map::new();
+                        en_story_slots.insert("narrative_body".into(), json!(en_rtf_file.to_string_lossy()));
 
-                            let mut en_apply_params = json!({
-                                "path": tpl_path,
-                                "slots": {
-                                    "text": en_text_slots,
-                                    "story": en_story_slots,
-                                    "image": serde_json::Map::new(),
-                                },
-                                "image_fitting": "fitProportionally",
-                                "palette": {
-                                    "Primary": st.cover_color_primary.trim(),
-                                    "Accent": st.cover_color_accent.trim(),
-                                    "Dark": st.cover_color_dark.trim(),
-                                }
-                            });
-                            if !st.doc_language.trim().is_empty() {
-                                en_apply_params["lang"] = json!(st.doc_language.trim());
+                        let mut en_apply_params = json!({
+                            "path": tpl_path,
+                            "slots": {
+                                "text": en_text_slots,
+                                "story": en_story_slots,
+                                "image": serde_json::Map::new(),
+                            },
+                            "image_fitting": "fitProportionally",
+                            "palette": {
+                                "Primary": st.cover_color_primary.trim(),
+                                "Accent": st.cover_color_accent.trim(),
+                                "Dark": st.cover_color_dark.trim(),
                             }
-
-                            if let Ok(en_applied) = app.run("template.page.apply", en_apply_params) {
-                                post_process_template_applied_page(app, st, &en_applied, false, doc_margins);
-                                inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
-                                generated_count = generated_count.saturating_add(1);
-                            }
+                        });
+                        if !st.doc_language.trim().is_empty() {
+                            en_apply_params["lang"] = json!(st.doc_language.trim());
                         }
 
-                        continue;
+                        if let Ok(en_applied) = app.run("template.page.apply", en_apply_params) {
+                            post_process_template_applied_page(app, st, &en_applied, false, doc_margins);
+                            inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
+                            generated_count = generated_count.saturating_add(1);
+                        }
+                    }
+
+                    continue;
                 }
             }
         }
@@ -5184,7 +5186,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             }
 
             // Sequential EN spread for Ulasan in procedural mode
-            if st.bilingual_output && !file_en_val.is_empty()
+            if st.bilingual_output
+                && !file_en_val.is_empty()
                 && let Some(en_rtf_file) = resolve_catalog_related_file(&st.card1_path, file_en_val, "rtf")
             {
                 let (en_ch_line, en_title_line) = if let Ok(en_bytes) = std::fs::read(&en_rtf_file)
@@ -5224,7 +5227,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     }
                 };
 
-                let has_en_prefix = en_ch_line.split_whitespace().next().is_some_and(|w| w.eq_ignore_ascii_case("chapter") || w.eq_ignore_ascii_case("bab"));
+                let has_en_prefix =
+                    en_ch_line.split_whitespace().next().is_some_and(|w| w.eq_ignore_ascii_case("chapter") || w.eq_ignore_ascii_case("bab"));
                 let en_header_h = if has_en_prefix { 90.0 } else { 44.0 };
                 if has_en_prefix {
                     if !en_ch_line.is_empty() {
@@ -5258,9 +5262,10 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         "Arial",
                         12.0,
                         Some(&st.toc_style),
-                    ) {
-                        let _ = app.run("text.select", json!({"story": sid, "anchor": 0, "focus": en_title_line.len() as u64}));
-                        let _ = app.run("type.alignCenter", json!({}));
+                    )
+                {
+                    let _ = app.run("text.select", json!({"story": sid, "anchor": 0, "focus": en_title_line.len() as u64}));
+                    let _ = app.run("type.alignCenter", json!({}));
                 }
 
                 crate::canvas::go_to_page(app, en_page_idx);
@@ -5421,12 +5426,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     parts.en_kicker.as_deref().unwrap_or(""),
                     if parts.number.is_empty() { String::new() } else { format!(" {}", parts.number) }
                 );
-                let line2 = format!(
-                    "{} / {}{}",
-                    parts.id_subtitle,
-                    parts.en_subtitle.as_deref().unwrap_or(""),
-                    parts.suffix
-                );
+                let line2 = format!("{} / {}{}", parts.id_subtitle, parts.en_subtitle.as_deref().unwrap_or(""), parts.suffix);
                 let full_text = format!("{line1}{}{line2}", designcraft_doc::story::FORCED_LINE_BREAK);
                 let title_rect = [margin.x0, margin.y0, margin.x1, margin.y0 + 48.0];
                 if let Some(story) = frame_with_centered_bold_title(app, spread_idx, title_rect, &full_text, Some(&st.toc_style)) {
@@ -5551,13 +5551,14 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     let row_y1 = margin.y0 + 60.0;
 
                     if !type_val.is_empty() {
-                        let (formatted_type, italic_second) = if st.bilingual_output && (type_val.eq_ignore_ascii_case("tabel") || type_val.eq_ignore_ascii_case("table")) {
-                            (format!("TABEL{}TABLE", designcraft_doc::story::FORCED_LINE_BREAK), true)
-                        } else if !st.bilingual_output && (type_val.eq_ignore_ascii_case("tabel") || type_val.eq_ignore_ascii_case("table")) {
-                            (locale::words(st.locale).table.to_uppercase(), false)
-                        } else {
-                            (type_val.to_uppercase(), false)
-                        };
+                        let (formatted_type, italic_second) =
+                            if st.bilingual_output && (type_val.eq_ignore_ascii_case("tabel") || type_val.eq_ignore_ascii_case("table")) {
+                                (format!("TABEL{}TABLE", designcraft_doc::story::FORCED_LINE_BREAK), true)
+                            } else if !st.bilingual_output && (type_val.eq_ignore_ascii_case("tabel") || type_val.eq_ignore_ascii_case("table")) {
+                                (locale::words(st.locale).table.to_uppercase(), false)
+                            } else {
+                                (type_val.to_uppercase(), false)
+                            };
 
                         if let Ok(res) = app.run(
                             "frame.create",
@@ -5568,8 +5569,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                                 "text": formatted_type,
                                 "caret": false
                             }),
-                        )
-                            && italic_second
+                        ) && italic_second
                             && let Some(story) = res.get("story").and_then(Value::as_u64)
                         {
                             locale::italicize_ranges(app, story, &formatted_type, &[(6, 11)]);
@@ -5588,7 +5588,9 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         );
                     }
                     if !title_val.is_empty() {
-                        if st.bilingual_output && let Some((id_t, en_t)) = locale::split_pair(title_val) {
+                        if st.bilingual_output
+                            && let Some((id_t, en_t)) = locale::split_pair(title_val)
+                        {
                             let full_title = format!("{id_t}{}{en_t}", designcraft_doc::story::FORCED_LINE_BREAK);
                             if let Some(story) = frame_with_style(app, spread_idx, [c3_x0, row_y0, c3_x1, row_y1], &full_title, &st.toc_style) {
                                 let en_start = id_t.chars().count() + 1;
@@ -5715,13 +5717,14 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 
                     // Col 1: Type (Fit tightly to content, starting flush with margin.x0)
                     if !type_val.is_empty() {
-                        let (formatted_type, italic_second) = if st.bilingual_output && (type_val.eq_ignore_ascii_case("tabel") || type_val.eq_ignore_ascii_case("table")) {
-                            (format!("TABEL{}TABLE", designcraft_doc::story::FORCED_LINE_BREAK), true)
-                        } else if !st.bilingual_output && (type_val.eq_ignore_ascii_case("tabel") || type_val.eq_ignore_ascii_case("table")) {
-                            (locale::words(st.locale).table.to_uppercase(), false)
-                        } else {
-                            (type_val.to_uppercase(), false)
-                        };
+                        let (formatted_type, italic_second) =
+                            if st.bilingual_output && (type_val.eq_ignore_ascii_case("tabel") || type_val.eq_ignore_ascii_case("table")) {
+                                (format!("TABEL{}TABLE", designcraft_doc::story::FORCED_LINE_BREAK), true)
+                            } else if !st.bilingual_output && (type_val.eq_ignore_ascii_case("tabel") || type_val.eq_ignore_ascii_case("table")) {
+                                (locale::words(st.locale).table.to_uppercase(), false)
+                            } else {
+                                (type_val.to_uppercase(), false)
+                            };
                         let c1_w = estimate_text_width(if italic_second { "TABLE" } else { &formatted_type }, true);
                         let c1_x0 = cur_x;
                         let c1_x1 = (c1_x0 + c1_w).min(margin.x1 - 100.0);
@@ -5772,7 +5775,9 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         let max_x1 = (margin.x1 - end_space).max(c3_x0 + 40.0);
                         let c3_x1 = max_x1.min(margin.x1);
 
-                        if st.bilingual_output && let Some((id_t, en_t)) = locale::split_pair(title_val) {
+                        if st.bilingual_output
+                            && let Some((id_t, en_t)) = locale::split_pair(title_val)
+                        {
                             let full_title = format!("{id_t}{}{en_t}", designcraft_doc::story::FORCED_LINE_BREAK);
                             if let Some(story) = frame_with_style(app, spread_idx, [c3_x0, row_y0, c3_x1, row_y1], &full_title, &st.toc_style) {
                                 let en_start = id_t.chars().count() + 1;
@@ -6977,11 +6982,7 @@ fn toc_header_line(plan: &TocPlan, st: &PubgenState) -> String {
         let t = r.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("");
         t.eq_ignore_ascii_case("table") || t.eq_ignore_ascii_case("chart")
     });
-    let w = if english {
-        locale::words(Locale::En)
-    } else {
-        locale::words(st.locale)
-    };
+    let w = if english { locale::words(Locale::En) } else { locale::words(st.locale) };
     let type_word = if plan.kind() == 2 { w.figure } else { w.table };
     format!("{type_word}\t{}", w.page_column)
 }
@@ -12147,12 +12148,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let st = PubgenState {
             card1_preset: 0,
             bilingual_output: true,
-            card1_records: vec![vec![
-                "Tabel".into(),
-                "01.01".into(),
-                "Luas Daerah / Total Area".into(),
-                "".into(),
-            ]],
+            card1_records: vec![vec!["Tabel".into(), "01.01".into(), "Luas Daerah / Total Area".into(), "".into()]],
             card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
             card1_type_col: 0,
             card1_num_col: 1,
@@ -12170,7 +12166,10 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         // Col 1 has TABEL and TABLE joined by forced line break
         assert!(texts.iter().any(|t| t.contains("TABEL") && t.contains("TABLE")), "Col 1 should have TABEL and TABLE: {texts:?}");
         // Col 3 has Luas Daerah and Total Area
-        assert!(texts.iter().any(|t| t.contains("Luas Daerah") && t.contains("Total Area")), "Col 3 should have Luas Daerah and Total Area: {texts:?}");
+        assert!(
+            texts.iter().any(|t| t.contains("Luas Daerah") && t.contains("Total Area")),
+            "Col 3 should have Luas Daerah and Total Area: {texts:?}"
+        );
 
         // 3. Test Modular Template bilingual generation
         let mut app2 = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
@@ -12203,12 +12202,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let st = PubgenState {
             card1_preset: 0,
             bilingual_output: true,
-            card1_records: vec![vec![
-                "Grafik".into(),
-                "02.01".into(),
-                title.into(),
-                "".into(),
-            ]],
+            card1_records: vec![vec!["Grafik".into(), "02.01".into(), title.into(), "".into()]],
             card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
             card1_type_col: 0,
             card1_num_col: 1,
@@ -12227,9 +12221,10 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(chart_story.text.contains("Panjang Jalan / Road Length, 2026"), "Line 2 should have subtitle and suffix");
 
         // Verify that 'Chart' and 'Road Length' runs have Bold Italic
-        let has_italic_chart = chart_story.chars.iter().any(|r| {
-            r.format.over.font_style.as_deref() == Some("Bold Italic") || r.format.over.font_style.as_deref() == Some("Italic")
-        });
+        let has_italic_chart = chart_story
+            .chars
+            .iter()
+            .any(|r| r.format.over.font_style.as_deref() == Some("Bold Italic") || r.format.over.font_style.as_deref() == Some("Italic"));
         assert!(has_italic_chart, "Chart title must have italicised English parts");
     }
 
@@ -12640,7 +12635,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let id_rtf = dir.join("R01_id.rtf");
         let en_rtf = dir.join("R01_en.rtf");
         std::fs::write(&id_rtf, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Ulasan wilayah Indonesia.}"#).unwrap();
-        std::fs::write(&en_rtf, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 CHAPTER 01 GEOGRAPHY\par Narrative review in English.}"#).unwrap();
+        std::fs::write(&en_rtf, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 CHAPTER 01 GEOGRAPHY\par Narrative review in English.}"#)
+            .unwrap();
 
         let st = PubgenState {
             card1_preset: 6,
@@ -12716,5 +12712,3 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(texts_dual.iter().any(|t| t.contains("IN FIGURES")), "Should contain title_en in bilingual mode: {texts_dual:?}");
     }
 }
-
-

@@ -317,12 +317,9 @@ pub fn extract_field_lenient(row: &[String], expected_key: &str) -> String {
 /// Row 2: file;[path to file RTF]
 /// Optional: file_en;[path to English RTF]
 /// Optional: divider;[template path or ID] (or diivider, template, etc.)
-pub fn parse_rtf_review_sheet_bilingual(
-    sheet: &ExcelSheetData,
-) -> Option<(String, String, String, String, Option<String>, Option<String>)> {
+pub fn parse_rtf_review_sheet_bilingual(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>, Option<String>)> {
     let row1 = sheet.grid.first()?;
-    let title_val = extract_field_for_keys(row1, &["title_id", "titleid", "title", "judul"])
-        .unwrap_or_else(|| extract_field_lenient(row1, "title"));
+    let title_val = extract_field_for_keys(row1, &["title_id", "titleid", "title", "judul"]).unwrap_or_else(|| extract_field_lenient(row1, "title"));
 
     let mut file_val = String::new();
     let mut file_en = None;
@@ -700,9 +697,7 @@ pub fn resolve_divider_template(tpl_spec: &str) -> String {
 /// Optional: title_en;"CHAPTER 02 GOVERNMENT" (or judulen)
 /// Row 2: image;"E:\path\to\infografik.png" (or file / photo)
 /// Row 3: template;"002" (or divider / template)
-pub fn parse_divider_sheet_bilingual(
-    sheet: &ExcelSheetData,
-) -> Option<(String, String, String, String, Option<String>, Option<String>)> {
+pub fn parse_divider_sheet_bilingual(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>, Option<String>)> {
     let mut title_val = String::new();
     let mut title_en_val = None;
     let mut image_val = String::new();
@@ -1090,8 +1085,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
     let has_any_template = entries.iter().any(|e| e.template.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false));
     let has_any_image = entries.iter().any(|e| e.image1.is_some() || e.image2.is_some());
     let has_any_bilingual = entries.iter().any(|e| {
-        e.title_en.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false)
-            || e.file_en.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false)
+        e.title_en.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false) || e.file_en.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false)
     });
 
     if has_any_image {
@@ -1110,11 +1104,8 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
                 escape_csv_field(&e.file),
             );
             let base = if has_any_template { format!("{base},{}", escape_csv_field(e.template.as_deref().unwrap_or(""))) } else { base };
-            let with_img = format!(
-                "{base},{},{}",
-                escape_csv_field(e.image1.as_deref().unwrap_or("")),
-                escape_csv_field(e.image2.as_deref().unwrap_or("")),
-            );
+            let with_img =
+                format!("{base},{},{}", escape_csv_field(e.image1.as_deref().unwrap_or("")), escape_csv_field(e.image2.as_deref().unwrap_or("")),);
             if has_any_bilingual {
                 rows.push(format!(
                     "{with_img},{},{}",
@@ -1148,11 +1139,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
             escape_csv_field(&e.title),
             escape_csv_field(&e.file),
         );
-        let base = if has_any_template {
-            format!("{base},{}", escape_csv_field(e.template.as_deref().unwrap_or("")))
-        } else {
-            base
-        };
+        let base = if has_any_template { format!("{base},{}", escape_csv_field(e.template.as_deref().unwrap_or(""))) } else { base };
         if has_any_bilingual {
             catalog_rows.push(format!(
                 "{base},{},{}",
@@ -2243,10 +2230,7 @@ mod tests {
         };
         let tbl_sheet = ExcelSheetData {
             name: "02_01".into(),
-            grid: vec![
-                vec!["Tabel 02.01 Luas Wilayah / Area".into()],
-                vec!["Kecamatan".into(), "Luas".into()],
-            ],
+            grid: vec![vec!["Tabel 02.01 Luas Wilayah / Area".into()], vec!["Kecamatan".into(), "Luas".into()]],
             merges: Vec::new(),
         };
 
@@ -2257,7 +2241,9 @@ mod tests {
         // type,number,title,file,template,title_en,file_en
         assert_eq!(lines[0], "type,number,title,file,template,title_en,file_en");
         assert_eq!(lines.len(), 4);
-        assert!(lines[1].contains("Divider,02,BAB 02 PEMERINTAHAN,infografik_02.png,assets/templates/dividers/002_chapter_devider.designcraft,CHAPTER 02 GOVERNMENT,"));
+        assert!(lines[1].contains(
+            "Divider,02,BAB 02 PEMERINTAHAN,infografik_02.png,assets/templates/dividers/002_chapter_devider.designcraft,CHAPTER 02 GOVERNMENT,"
+        ));
         assert!(lines[2].contains("Ulasan,02,BAB 02 PEMERINTAHAN,ulasan_02_id.rtf,,,ulasan_02_en.rtf"));
         assert_eq!(lines[3], "Tabel,02.01,Luas Wilayah / Area,02_01,,,");
     }

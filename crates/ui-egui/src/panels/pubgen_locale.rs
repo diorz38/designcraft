@@ -82,14 +82,8 @@ pub static ID_WORDS: LocaleWords = LocaleWords {
     toc_figures: "Daftar Grafik",
     page_column: "halaman",
     source: "Sumber",
-    total_words: &[
-        "jumlah", "tahun", "kabupaten", "kab", "kecamatan", "kec", "total",
-        "sum", "subtotal", "year", "district", "subdistrict",
-    ],
-    type_aliases: &[
-        "tabel", "table", "grafik", "chart", "bab", "chapter", "ulasan", "review",
-        "keterangan", "note", "pembatas", "divider",
-    ],
+    total_words: &["jumlah", "tahun", "kabupaten", "kab", "kecamatan", "kec", "total", "sum", "subtotal", "year", "district", "subdistrict"],
+    type_aliases: &["tabel", "table", "grafik", "chart", "bab", "chapter", "ulasan", "review", "keterangan", "note", "pembatas", "divider"],
 };
 
 pub static EN_WORDS: LocaleWords = LocaleWords {
@@ -104,14 +98,8 @@ pub static EN_WORDS: LocaleWords = LocaleWords {
     toc_figures: "List of Figures",
     page_column: "page",
     source: "Source",
-    total_words: &[
-        "total", "sum", "subtotal", "year", "district", "subdistrict",
-        "jumlah", "tahun", "kabupaten", "kab", "kecamatan", "kec",
-    ],
-    type_aliases: &[
-        "table", "tabel", "chart", "grafik", "chapter", "bab", "review", "ulasan",
-        "note", "keterangan", "divider", "pembatas",
-    ],
+    total_words: &["total", "sum", "subtotal", "year", "district", "subdistrict", "jumlah", "tahun", "kabupaten", "kab", "kecamatan", "kec"],
+    type_aliases: &["table", "tabel", "chart", "grafik", "chapter", "bab", "review", "ulasan", "note", "keterangan", "divider", "pembatas"],
 };
 
 /// Get canonical vocabulary for the given locale.
@@ -126,16 +114,9 @@ pub fn words(locale: Locale) -> &'static LocaleWords {
 pub fn detect_from_records(type_col: usize, rows: &[Vec<String>]) -> Locale {
     let has_en = rows.iter().any(|r| {
         let t = r.get(type_col).map(String::as_str).unwrap_or("");
-        t.eq_ignore_ascii_case("table")
-            || t.eq_ignore_ascii_case("chart")
-            || t.eq_ignore_ascii_case("chapter")
-            || t.eq_ignore_ascii_case("review")
+        t.eq_ignore_ascii_case("table") || t.eq_ignore_ascii_case("chart") || t.eq_ignore_ascii_case("chapter") || t.eq_ignore_ascii_case("review")
     });
-    if has_en {
-        Locale::En
-    } else {
-        Locale::Id
-    }
+    if has_en { Locale::En } else { Locale::Id }
 }
 
 /// "ID / EN" -> Some(("ID", "EN")). None when there is no `" / "`.
@@ -149,11 +130,7 @@ pub fn split_pair(s: &str) -> Option<(&str, &str)> {
 
 /// Two-line table title: ("ID", Some("EN")) or ("ID", None).
 pub fn split_table_title(s: &str) -> (String, Option<String>) {
-    if let Some((id, en)) = split_pair(s) {
-        (id.to_string(), Some(en.to_string()))
-    } else {
-        (s.trim().to_string(), None)
-    }
+    if let Some((id, en)) = split_pair(s) { (id.to_string(), Some(en.to_string())) } else { (s.trim().to_string(), None) }
 }
 
 /// Chart title parts with exact character spans for italicization.
@@ -202,11 +179,7 @@ pub fn split_chart_title_parts(s: &str) -> ChartTitleParts {
     let middle_tokens: Vec<&str> = middle.split_whitespace().collect();
     let en_kicker = middle_tokens.first().copied().unwrap_or("").to_string();
     let number = middle_tokens.get(1).copied().unwrap_or("").to_string();
-    let id_subtitle = if middle_tokens.len() > 2 {
-        middle_tokens[2..].join(" ")
-    } else {
-        String::new()
-    };
+    let id_subtitle = if middle_tokens.len() > 2 { middle_tokens[2..].join(" ") } else { String::new() };
 
     // Third part: "<EN subtitle>, <year>" or everything after second " / "
     let third = parts[2..].join(" / ");
@@ -247,16 +220,7 @@ pub fn split_chart_title_parts(s: &str) -> ChartTitleParts {
         italic_ranges.push((sub_start, sub_end));
     }
 
-    ChartTitleParts {
-        id_kicker,
-        en_kicker: Some(en_kicker),
-        number,
-        id_subtitle,
-        en_subtitle: Some(en_subtitle),
-        suffix,
-        display,
-        italic_ranges,
-    }
+    ChartTitleParts { id_kicker, en_kicker: Some(en_kicker), number, id_subtitle, en_subtitle: Some(en_subtitle), suffix, display, italic_ranges }
 }
 
 /// Convert char offsets [start, end) into UTF-8 byte offsets in `text`.
@@ -290,12 +254,7 @@ pub fn char_to_byte_range(text: &str, char_start: usize, char_end: usize) -> (us
 ///
 /// Converts char offsets to byte offsets for `text.select`, then dispatches
 /// `type.char` with fontStyle: "Bold Italic" (preserving bold headings).
-pub fn italicize_ranges(
-    app: &mut crate::DesignApp,
-    story: u64,
-    text: &str,
-    ranges: &[(usize, usize)],
-) {
+pub fn italicize_ranges(app: &mut crate::DesignApp, story: u64, text: &str, ranges: &[(usize, usize)]) {
     for &(char_start, char_end) in ranges {
         let (byte_start, byte_end) = char_to_byte_range(text, char_start, char_end);
         if byte_start >= byte_end {
@@ -334,14 +293,8 @@ mod tests {
 
     #[test]
     fn test_split_table_title() {
-        assert_eq!(
-            split_table_title("Banyaknya Desa / Number of Villages"),
-            ("Banyaknya Desa".to_string(), Some("Number of Villages".to_string()))
-        );
-        assert_eq!(
-            split_table_title("Puskesmas/Posyandu"),
-            ("Puskesmas/Posyandu".to_string(), None)
-        );
+        assert_eq!(split_table_title("Banyaknya Desa / Number of Villages"), ("Banyaknya Desa".to_string(), Some("Number of Villages".to_string())));
+        assert_eq!(split_table_title("Puskesmas/Posyandu"), ("Puskesmas/Posyandu".to_string(), None));
     }
 
     #[test]
