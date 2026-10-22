@@ -141,6 +141,41 @@ Wiring:
 - Also add `"Header/Footer…"` to the Pages panel page context menu
   (`crates/ui-egui/src/panels/pages.rs` `page_menu()`), beside "Numbering & Section Options…".
 
+## Pubgen Quick Actions shortcut
+
+Card 3 (`crates/ui-egui/src/panels/pubgen.rs:3823`, `card3_quick_actions_ui`) already switches
+Single-/Double-sided via `layout.documentSetup` and runs `layout.section` for renumbering — but it
+has no route to either new dialog. Add one row of two `outline_button`s there, below the existing
+Facing/Add Blank Page pair (`pubgen.rs:3846-3870`), reusing the same `hw` half-width layout:
+
+```rust
+ui.horizontal(|ui| {
+    ui.spacing_mut().item_spacing.x = 10.0;
+    if outline_button(ui, crate::i18n::tr(&app.ui.language, "Header/Footer…"), hw)
+        .on_hover_text("Edit the page header/footer frames for this publication")
+        .clicked()
+    {
+        app.ui.dialog = Some(crate::dialogs::Dialog::new("headerFooter", json!({})));
+    }
+    if outline_button(ui, crate::i18n::tr(&app.ui.language, "Table Options…"), hw)
+        .on_hover_text("Set header/footer rows and repeat-on-break for the table under the caret")
+        .clicked()
+    {
+        app.ui.dialog = Some(crate::dialogs::Dialog::new("tableOptions", json!({})));
+    }
+});
+```
+
+Open the dialog directly rather than through `app.run("ui:…")`: `Dialogs::new` reads live engine
+state, and the `ui:app.*` ids in `menus.rs` exist only to give the menu paths something to
+dispatch to. Pass no params so the dialog bodies seed from `layout.headerFooter.get` /
+`table.get` themselves (same contract as `textFrameOptions` at `menus.rs:2527`).
+
+Table Options is caret-gated already; when there is no table under the caret the dialog's own body
+must show its "place the cursor in a table" status rather than the button disabling, so the card
+needs no extra guard. The Facing-pages button in the same card is the natural sibling for
+Header/Footer: both act on the whole publication, which is why the pair belongs here.
+
 ## Table Options dialog
 
 New dialog id `"tableOptions"` (same file or `crates/ui-egui/src/table_options.rs`), seeded from
@@ -158,10 +193,11 @@ before the `Cell Options` submenu.
 ## i18n
 
 New strings fall back to English automatically (`crates/ui-egui/src/i18n.rs:4462`). Add rows to the
-shared `TABLE` (`i18n.rs:40`) for the core labels (Header/Footer…, Single-sided, Double-sided,
-Header Rows, Footer Rows, Repeat Header Rows, Repeat Footer Rows, Preset, Page Scope) and to
-`crates/ui-egui/src/i18n/id.rs` for Indonesian, matching the branch's bilingual direction. No
-completeness requirement.
+shared `TABLE` (`i18n.rs:40`) for the core labels (Header/Footer…, Table Options…, Single-sided,
+Double-sided, Header Rows, Footer Rows, Repeat Header Rows, Repeat Footer Rows, Preset, Page Scope)
+— the two Quick Actions buttons read the same keys, so one row serves both surfaces — and add
+matching rows to `crates/ui-egui/src/i18n/id.rs` for Indonesian, matching the branch's bilingual
+direction. No completeness requirement.
 
 ## Verification
 
@@ -178,10 +214,12 @@ completeness requirement.
    `{"id":1,"method":"engine.execute","params":{"command":"layout.headerFooter.apply","params":{...}}}`
    and `{"id":2,"method":"ui.screenshot","params":{"path":"/tmp/hf.png"}}`; read the PNG and compare
    the header/footer placement against `plan/indesign/02-ui-ux.md`.
-4. Table: place caret in a table, open `Table ▸ Table Options…`, set header rows to 2 and toggle
+4. Pubgen card: open the Pubgen panel, confirm Card 3's Header/Footer… and Table Options…
+   buttons open the same dialogs as the menus, with the same seeded state.
+5. Table: place caret in a table, open `Table ▸ Table Options…`, set header rows to 2 and toggle
    repeat; verify `table.get` reports the new values and that a table breaking across frames repeats
    the header (`crates/compose/src/table.rs:330-335`).
-5. Docs: add a parity-checklist row for Header/Footer frames, update `docs/gaps.md:141` (remove the
+6. Docs: add a parity-checklist row for Header/Footer frames, update `docs/gaps.md:141` (remove the
    Edit Header/Footer gap for pages; keep the table Cell Options gap), add a `ROADMAP.md` progress
    line.
 
