@@ -435,6 +435,12 @@ Anda tetap bisa mengubahnya. Penyaring ini tersimpan di dalam dokumen, sehingga 
 ulasan bab dari lembar `RXX`) di tingkat pertama, lalu paragraf `Heading 1` dan `Heading 2` dari isi setiap bab di
 bawahnya. Tidak ada halaman lain — tabel, grafik, pembatas, maupun keterangan publikasi — yang ikut terdaftar.
 Baris halaman naratif memuat kedua kotak teksnya, sehingga barisnya berbunyi `BAB 01 Geografi ......... 2`.
+Lembar `GXX` yang tidak punya baris judul (hanya tautan RTF) menaruh RTF di bagian atas halaman, jadi baris
+pertama RTF itu sendiri yang menjadi judul halaman dan dipakai sebagai baris daftar.
+
+Setiap daftar memakai gaya paragrafnya sendiri: `TOC Level 1…n` untuk daftar isi, `TOC Table Level 1…n` untuk
+daftar tabel, dan `TOC Chart Level 1…n` untuk daftar grafik. Gaya itu membawa posisi tab dan indentasi daftar
+tersebut, sehingga membuat atau membangun ulang satu daftar tidak lagi menggeser baris daftar yang lain.
 
 **Include TOC page in TOC entries** mendaftarkan halaman daftar isi itu sendiri di dalam daftarnya — untuk semua
 jenis daftar, termasuk daftar paragraf yang bertingkat.

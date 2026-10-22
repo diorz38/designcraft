@@ -536,7 +536,12 @@ the title. The filter is stored in the document, so **Rebuild TOC** and *Layout 
 sheets and the chapter reviews from the `RXX` sheets) at the first level, the `Heading 1` and `Heading 2`
 paragraphs of their bodies below them. No other page — a table, a chart, a divider or a publication note —
 is listed. A narrative page's entry carries both of its text boxes: the chapter line and the title read
-`BAB 01 Geografi ......... 2`.
+`BAB 01 Geografi ......... 2`. A `GXX` sheet with no title row (only the RTF link) puts the RTF at the top of
+the page, so the RTF's own first line is the page's title and the page is listed with it.
+
+Each list keeps the paragraph styles its rows use: `TOC Level 1…n` for the contents, `TOC Table Level 1…n`
+for the Tables list and `TOC Chart Level 1…n` for the Charts list. The styles carry the list's tab stop and
+indent, so generating or rebuilding one list never moves the rows of another.
 
 **Include TOC page in TOC entries** lists the table of contents itself in the list it makes — for every TOC
 style, the nested paragraph list included.

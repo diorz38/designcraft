@@ -4719,6 +4719,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 if let Ok(applied_info) = apply_res {
                     let mut table_placeholder_id = None;
                     let mut story_ids_to_tag = Vec::new();
+                    let mut body_story_ids = Vec::new();
                     let mut image_slot_ids = Vec::new();
                     if let Some(items) = applied_info.get("items").and_then(Value::as_array) {
                         if let Some(active) = app.session.active() {
@@ -4738,6 +4739,10 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                                             && let Some(tf) = item.text_frame()
                                         {
                                             story_ids_to_tag.push(tf.story);
+                                        } else if item.label.starts_with("#slot:story:")
+                                            && let Some(tf) = item.text_frame()
+                                        {
+                                            body_story_ids.push(tf.story);
                                         } else if item.label.contains("image") || item.label.contains("photo") || item.label.contains("hero") {
                                             image_slot_ids.push(it_id);
                                         }
@@ -4767,6 +4772,15 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                                         p.style = title_style.clone();
                                     }
                                 }
+                            }
+                        }
+
+                        // A sheet with no title line puts the RTF at the top of the page, so the
+                        // RTF opens with it: that paragraph is the page's title for the paragraph
+                        // table of contents.
+                        if title_val.trim().is_empty() && (is_narrative_row || type_val.eq_ignore_ascii_case("Note")) {
+                            for sid in body_story_ids {
+                                tag_first_paragraph(app, sid, TOC_NARRATIVE_STYLE);
                             }
                         }
                     }
@@ -5187,6 +5201,11 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     let rtf_path_str = rtf_file.to_string_lossy().to_string();
                     if execute_page_from_rtf(app, &mut st_copy, &rtf_path_str).is_ok() {
                         inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
+                        // No title line on the page, so the RTF opens with it: that paragraph is
+                        // the page's title for the paragraph table of contents.
+                        if !has_header && let Some(sid) = story_of_frame(app, fid) {
+                            tag_first_paragraph(app, sid, TOC_NARRATIVE_STYLE);
+                        }
                     }
                 }
             }
@@ -5493,6 +5512,32 @@ fn ensure_para_style(app: &mut DesignApp, name: &str) {
     if !exists {
         let _ = app.run("style.paragraph.create", json!({"name": name}));
     }
+}
+
+/// Give the first paragraph of `sid` the paragraph style `style`. A `Note`/`G` page whose sheet
+/// gave no title opens with the RTF's own title line — Word writes that as direct formatting, so
+/// no `Heading n` arrives — and the paragraph table of contents names the page with it.
+fn tag_first_paragraph(app: &mut DesignApp, sid: designcraft_doc::StoryId, style: &str) {
+    ensure_para_style(app, style);
+    let _ = app.session.edit(|doc, _| {
+        let story = doc.story_mut(sid).ok_or(designcraft_doc::DocError::NoStory(sid))?;
+        let first = story.para_ranges().first().cloned();
+        if let Some(r) = first
+            && story.text.get(r.clone()).is_some_and(|t| !t.trim().is_empty())
+        {
+            // Only the style: the RTF's own centring and boldness stay on the paragraph.
+            story.format_paras(r.start..r.start, |f| f.style = style.to_string());
+        }
+        Ok(serde_json::Value::Null)
+    });
+}
+
+/// The story of the text frame `fid`, as the document has it now.
+fn story_of_frame(app: &DesignApp, fid: u64) -> Option<designcraft_doc::StoryId> {
+    let active = app.session.active()?;
+    let id = designcraft_doc::ItemId(fid);
+    let item = active.doc.spreads.iter().flat_map(|s| s.items.iter()).find(|i| i.id == id)?;
+    item.text_frame().map(|tf| tf.story)
 }
 
 /// Create a text frame and tag its paragraph with the TOC paragraph style, so `toc.generate`
@@ -6699,6 +6744,18 @@ impl TocPlan {
         self.levels.first().is_some_and(|l| l.style == TOC_NARRATIVE_STYLE)
     }
 
+    /// The paragraph styles this list's entries take: the contents list owns `TOC Level n`, and
+    /// the Tables and Charts lists get a family of their own. The styles carry each list's tab
+    /// stop and indent, so sharing them would let regenerating one list restyle the pages of
+    /// another (a table list's rows moved when the contents list was rebuilt).
+    fn entry_prefix(&self) -> &'static str {
+        match self.kind() {
+            1 => "TOC Table Level",
+            2 => "TOC Chart Level",
+            _ => "TOC Level",
+        }
+    }
+
     /// Documents whose pages predate the narrative style keep their chapters: the card's TOC style
     /// on pages that open with "BAB" still lists them (with the chapter line, as a new page's),
     /// and a `pageTitle` filter keeps table and chart pages out. Only used while the document has
@@ -6727,11 +6784,18 @@ impl TocPlan {
 
     /// The `toc.generate` entries that list this plan's pages.
     fn entries_json(&self) -> Value {
+        let prefix = self.entry_prefix();
         Value::Array(
             self.levels
                 .iter()
                 .map(|l| {
-                    let mut e = json!({"style": l.style, "level": l.level, "pageNumber": "after", "separator": "\t"});
+                    let mut e = json!({
+                        "style": l.style,
+                        "level": l.level,
+                        "entryStyle": format!("{prefix} {}", l.level),
+                        "pageNumber": "after",
+                        "separator": "\t"
+                    });
                     if !l.words.is_empty() {
                         e["pageTitle"] = json!(l.words);
                     }
@@ -7019,7 +7083,8 @@ fn enrich_toc_story(
     });
 }
 
-fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hanging_indent: f64, layout_style: usize) {
+fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hanging_indent: f64, layout_style: usize, prefix: &str) {
+    let level_one = format!("{prefix} 1");
     let _ = app.session.edit(|d, _| {
         let tab_stop = designcraft_doc::TabStop {
             position: width.max(36.0),
@@ -7043,7 +7108,7 @@ fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hangin
             let mut found_hdr = false;
 
             for style in &mut d.styles_mut().paragraph {
-                if style.name == "TOC Level 1" {
+                if style.name == level_one {
                     found_level1 = true;
                     style.para.left_indent = li;
                     style.para.first_line_indent = fi;
@@ -7077,7 +7142,7 @@ fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hangin
             let st = d.styles_mut();
             if !found_level1 {
                 st.paragraph.push(designcraft_doc::ParagraphStyle {
-                    name: "TOC Level 1".to_string(),
+                    name: level_one.clone(),
                     based_on: Some(designcraft_doc::story::BASIC_PARAGRAPH.into()),
                     next_style: None,
                     para: designcraft_doc::ParaAttrs {
@@ -7131,25 +7196,24 @@ fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hangin
                 });
             }
         } else {
-            let style_name = "TOC Level 1";
             let mut found = false;
             for style in &mut d.styles_mut().paragraph {
-                if style.name.starts_with("TOC Level") {
-                    found = true;
-                    let level_idx: usize = style.name.strip_prefix("TOC Level ").and_then(|s| s.parse().ok()).unwrap_or(1);
-                    let base_indent = (level_idx.saturating_sub(1) as f64) * 12.0;
-                    let (li, fi) = if hanging { (Some(base_indent + hanging_indent), Some(-hanging_indent)) } else { (Some(base_indent), Some(0.0)) };
-                    style.para.left_indent = li;
-                    style.para.first_line_indent = fi;
-                    style.para.tabs = Some(vec![tab_stop.clone()]);
-                }
+                let Some(idx) = style.name.strip_prefix(prefix).and_then(|rest| rest.strip_prefix(' ')).and_then(|n| n.parse::<usize>().ok()) else {
+                    continue;
+                };
+                found = true;
+                let base_indent = (idx.saturating_sub(1) as f64) * 12.0;
+                let (li, fi) = if hanging { (Some(base_indent + hanging_indent), Some(-hanging_indent)) } else { (Some(base_indent), Some(0.0)) };
+                style.para.left_indent = li;
+                style.para.first_line_indent = fi;
+                style.para.tabs = Some(vec![tab_stop.clone()]);
             }
 
             if !found {
                 let (left_ind, first_ind) = if hanging { (Some(hanging_indent), Some(-hanging_indent)) } else { (Some(0.0), Some(0.0)) };
                 let st = d.styles_mut();
                 st.paragraph.push(designcraft_doc::ParagraphStyle {
-                    name: style_name.to_string(),
+                    name: level_one.clone(),
                     based_on: Some(designcraft_doc::story::BASIC_PARAGRAPH.into()),
                     next_style: None,
                     para: designcraft_doc::ParaAttrs {
@@ -7262,12 +7326,13 @@ fn apply_toc_post_process(
         add_toc_self_entry(app, sid, plan, target_page);
     }
 
+    let entry_style = format!("{} 1", plan.entry_prefix());
     let _ = app.session.edit(|doc, _| {
         if let Some(story) = doc.story_mut(sid) {
             let ranges = story.para_ranges();
             for (pi, r) in ranges.into_iter().enumerate() {
                 let para_text = story.text[r.clone()].trim();
-                let style_name = if plan.layout == 1 {
+                let style_name: String = if plan.layout == 1 {
                     if pi == 0
                         && !plan.title.trim().is_empty()
                         && (para_text == plan.title.trim()
@@ -7277,16 +7342,18 @@ fn apply_toc_post_process(
                             || para_text.eq_ignore_ascii_case("daftar grafik")
                             || para_text.eq_ignore_ascii_case("daftar chart"))
                     {
-                        "TOC Title"
+                        "TOC Title".to_string()
                     } else if is_toc_header_line(para_text) {
-                        "TOC TablePage Header"
+                        "TOC TablePage Header".to_string()
                     } else if para_text.split('\t').count() == 2 {
-                        "TOC Section Header"
+                        "TOC Section Header".to_string()
                     } else {
-                        "TOC Level 1"
+                        entry_style.clone()
                     }
+                } else if pi == 0 {
+                    "TOC Title".to_string()
                 } else {
-                    if pi == 0 { "TOC Title" } else { "TOC Level 1" }
+                    entry_style.clone()
                 };
 
                 // A paragraph list keeps each entry's own "TOC Level n" from `toc.generate`;
@@ -7298,7 +7365,7 @@ fn apply_toc_post_process(
                 // The Tables and Charts lists center their title line.
                 let center = pi == 0 && style_name == "TOC Title" && plan.kind() != 0;
                 story.format_paras(r.start..r.start, |f| {
-                    *f = designcraft_doc::ParaFormat { style: style_name.to_string(), ..Default::default() };
+                    *f = designcraft_doc::ParaFormat { style: style_name.clone(), ..Default::default() };
                     if center {
                         f.para.align = Some(designcraft_doc::Align::Center);
                     }
@@ -7308,7 +7375,7 @@ fn apply_toc_post_process(
         Ok(serde_json::Value::Null)
     });
 
-    ensure_toc_entry_style(app, width, plan.hanging, hanging_indent, plan.layout);
+    ensure_toc_entry_style(app, width, plan.hanging, hanging_indent, plan.layout, plan.entry_prefix());
 
     if let Ok(af_res) = app.run("text.autoflow", json!({"story": sid.0, "maxPages": 50}))
         && let Some(extra) = af_res.get("pagesAdded").and_then(Value::as_u64)
@@ -7547,7 +7614,7 @@ fn generate_toc(app: &mut DesignApp, st: &PubgenState, page: usize, plan: &TocPl
     for level in &plan.levels {
         ensure_para_style(app, &level.style);
     }
-    ensure_toc_entry_style(app, width, plan.hanging, hanging_indent, plan.layout);
+    ensure_toc_entry_style(app, width, plan.hanging, hanging_indent, plan.layout, plan.entry_prefix());
 
     let res = app.run(
         "toc.generate",
@@ -10472,6 +10539,142 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     }
 
     #[test]
+    fn test_execute_generate_pages_g_sheet_without_title_names_its_rtf_title() {
+        // The `GXX` sheets carry no title row, only the RTF link, so the page opens with the
+        // RTF's own title line. Word writes that line as direct formatting (bold, caps, centred),
+        // not as a `Heading 1`, so the paragraph table of contents has to take the page's first
+        // paragraph as its title or the page is missing from the list.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G02.rtf");
+        let rtf = concat!(
+            r"{\rtf1\ansi\deff0{\fonttbl{\f0 Arial;}}{\stylesheet{\s0 Normal;}}",
+            r"\pard\plain\s0\qc\b\caps\fs30 DAFTAR SINGKATAN/list of Abbreviation\par",
+            r"\pard\plain\s0\fs24 SI : Stasiun Iklim/Climate Station\par}"
+        );
+        std::fs::write(&rtf_path, rtf.as_bytes()).unwrap();
+        let catalog_path = temp_dir.path().join("G02_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nG,02,,\"{escaped}\"\n")).unwrap();
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        st.card1_preset = 0;
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        execute_generate_pages(&mut app, &st).expect("generate pages");
+
+        let active = app.session.active().unwrap();
+        let body = active.doc.stories.values().find(|s| s.text.contains("DAFTAR SINGKATAN")).expect("placed RTF");
+        assert_eq!(body.paras[0].style, TOC_NARRATIVE_STYLE, "the RTF's title line is the page's title");
+        assert_eq!(body.paras[1].style, designcraft_doc::story::BASIC_PARAGRAPH, "the body keeps its own style");
+        assert_eq!(body.paras[0].para.align, Some(designcraft_doc::Align::Center), "the title keeps the RTF's centring");
+
+        let plan = TocPlan::from_state(&PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() });
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+        assert_eq!(rows, [(1, "DAFTAR SINGKATAN/list of Abbreviation".to_string())], "the paragraph list names the page at its own level: {rows:?}");
+    }
+
+    #[test]
+    fn test_execute_generate_pages_g_sheet_without_title_in_template_mode() {
+        // The template flow fills its title slot with the sheet's title: empty for these sheets,
+        // so the RTF's own first line is the page's title there too.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G01.rtf");
+        let rtf = concat!(
+            r"{\rtf1\ansi\deff0{\fonttbl{\f0 Arial;}}{\stylesheet{\s0 Normal;}}",
+            r"\pard\plain\s0\qc\b\caps\fs30 Penjelasan Umum/Explanatory Notes\par",
+            r"\pard\plain\s0\fs24 The publication covers the regency.\par}"
+        );
+        std::fs::write(&rtf_path, rtf.as_bytes()).unwrap();
+        let catalog_path = temp_dir.path().join("G01_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nG,01,,\"{escaped}\"\n")).unwrap();
+
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        st.card1_preset = 6;
+        st.card1_template_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/templates/front_matter/001_publication_note.designcraft").into();
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        execute_generate_pages(&mut app, &st).expect("generate pages");
+
+        let active = app.session.active().unwrap();
+        let body = active.doc.stories.values().find(|s| s.text.contains("Penjelasan Umum")).expect("placed RTF");
+        assert_eq!(body.paras[0].style, TOC_NARRATIVE_STYLE, "the RTF's title line is the page's title");
+
+        let plan = TocPlan::from_state(&PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() });
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+        assert_eq!(rows, [(1, "Penjelasan Umum/Explanatory Notes".to_string())], "the paragraph list names the page: {rows:?}");
+    }
+
+    #[test]
+    fn test_generating_the_paragraph_toc_leaves_the_table_toc_alone() {
+        // Each list keeps its own entry styles now: the Tables list hangs its rows differently
+        // from the Contents list, and the styles they used to share carried the tab stop and
+        // indent of whichever list was generated last — regenerating the Contents moved the
+        // Tables page's rows.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        for name in ["TOC Entry", TOC_NARRATIVE_STYLE] {
+            ensure_para_style(&mut app, name);
+        }
+        add_page_text_at(&mut app, 0, "BAB 01 Geografi", TOC_NARRATIVE_STYLE, 0.0);
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        add_page_text_at(&mut app, 1, "Tabel 01.01 Jarak Antar Kecamatan", "TOC Entry", 0.0);
+        app.run("layout.pages.insert", json!({"count": 2})).unwrap();
+
+        let table_state = PubgenState {
+            toc_kind: 1,
+            toc_style: "TOC Entry".into(),
+            toc_title: "Daftar Tabel".into(),
+            toc_hanging_indent: false,
+            ..Default::default()
+        };
+        let para_state = PubgenState {
+            toc_kind: 3,
+            toc_style: "TOC Entry".into(),
+            toc_title: "Daftar Isi".into(),
+            toc_hanging_indent: true,
+            ..Default::default()
+        };
+        let table_plan = TocPlan::from_state(&table_state);
+        let para_plan = TocPlan::from_state(&para_state);
+        generate_toc(&mut app, &table_state, 2, &table_plan, false).expect("table toc");
+        let table_text = toc_text_on_page(&app, 2).expect("the Tables list on page 2");
+        assert!(table_text.contains("Tabel 01.01"), "the Tables list names the table page: {table_text:?}");
+
+        generate_toc(&mut app, &para_state, 3, &para_plan, false).expect("paragraph toc");
+
+        assert_eq!(toc_text_on_page(&app, 2).as_deref(), Some(table_text.as_str()), "the Tables list is untouched");
+        let active = app.session.active().unwrap();
+        let table_style = active.doc.styles.para("TOC Table Level 1").expect("the Tables list's own style");
+        assert_eq!(table_style.para.left_indent, Some(0.0), "the Tables list keeps its (unhung) indent");
+        assert_eq!(table_style.para.first_line_indent, Some(0.0));
+        let contents_style = active.doc.styles.para("TOC Level 1").expect("the Contents list's style");
+        assert_eq!(contents_style.para.left_indent, Some(toc_hanging_indent(&para_state, 0)), "the Contents list hangs its rows");
+        let table_entry = active
+            .doc
+            .tocs
+            .iter()
+            .find(|t| toc_story_page(&app, t.story) == Some(2))
+            .and_then(|t| active.doc.story(t.story))
+            .and_then(|s| s.paras.get(1).map(|p| p.style.clone()))
+            .unwrap_or_default();
+        assert_eq!(table_entry, "TOC Table Level 1", "the Tables list's entry takes its own style");
+    }
+
+    #[test]
     fn test_execute_page_from_rtf_sample_file() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
@@ -11183,6 +11386,13 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let end = text.chars().count().max(1) as u64;
         app.run("text.select", json!({"story": sid, "anchor": 0, "focus": end})).expect("text.select");
         app.run("style.paragraph.apply", json!({"name": style})).expect("style.paragraph.apply");
+    }
+
+    /// The text of the table of contents whose first frame sits on `page`.
+    fn toc_text_on_page(app: &DesignApp, page: usize) -> Option<String> {
+        let active = app.session.active()?;
+        let toc = active.doc.tocs.iter().find(|t| toc_story_page(app, t.story) == Some(page))?;
+        active.doc.story(toc.story).map(|s| s.text.clone())
     }
 
     /// Four content pages (chapter, two headings, a table) plus a blank page for the TOC.
