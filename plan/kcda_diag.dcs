@@ -1,0 +1,2 @@
+# A: plain text header
+layout.headerFooter.apply {"sided":"single","header":{"single":"PLAIN"},"scope":{"range":[9,9]},"objects":{"headerRule":false,"footerRule":false,"topAccentBar":false},"margins":{"top":70,"bottom":57,"inside":57,"outside":43}}

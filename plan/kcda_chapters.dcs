@@ -1,0 +1,6 @@
+# Bab 01: pages 8-11 (section runs until the next section starts)
+layout.section {"page": 8, "marker": "Bab 01 Geografi"}
+# Bab 02: pages 12-18 (runs to end of document)
+layout.section {"page": 12, "marker": "Bab 02 Pemerintahan"}
+# footer with the chapter marker on pages 8-18 only
+layout.headerFooter.apply {"sided":"single","footer":{"single":"{section}"},"scope":{"range":[8,18]},"objects":{"headerRule":false,"footerRule":false,"topAccentBar":false}}

@@ -1,0 +1,2 @@
+file.new {"preset":"A4","pages":4,"margins":57}
+layout.headerFooter.apply {"sided":"single","header":{"single":"HEADER TEXT"},"footer":{"single":"FOOTER TEXT"},"scope":"all","objects":{"headerRule":false,"footerRule":false,"topAccentBar":false}}
