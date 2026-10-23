@@ -6578,6 +6578,21 @@ pub fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<Str
     execute_insert_table_matrix(app, st, None, None)
 }
 
+/// One table cell of the tab-delimited text `table.convertFromText` reads. A paragraph break would
+/// split the cell into extra rows and a tab into extra columns, so an Excel line break becomes the
+/// story's forced line break (U+2028), which the table cell keeps on multiple lines.
+fn table_cell_text(cell: &str) -> String {
+    let normalized = cell.replace("\r\n", "\n").replace('\r', "\n");
+    let mut out = String::with_capacity(normalized.len());
+    for (i, line) in normalized.split('\n').enumerate() {
+        if i > 0 {
+            out.push(designcraft_doc::FORCED_LINE_BREAK);
+        }
+        out.push_str(line.replace('\t', " ").trim());
+    }
+    out
+}
+
 #[allow(clippy::needless_range_loop)]
 pub fn execute_insert_table_matrix(
     app: &mut DesignApp,
@@ -6676,7 +6691,7 @@ pub fn execute_insert_table_matrix(
                 if c_idx > 0 {
                     table_text.push('\t');
                 }
-                table_text.push_str(cell);
+                table_text.push_str(&table_cell_text(cell));
             }
         }
 
@@ -6698,7 +6713,7 @@ pub fn execute_insert_table_matrix(
                 if c_idx > 0 {
                     table_text.push('\t');
                 }
-                table_text.push_str(cell.trim());
+                table_text.push_str(&table_cell_text(cell));
             }
         }
     } else {
@@ -6720,7 +6735,7 @@ pub fn execute_insert_table_matrix(
                 if c_idx > 0 {
                     table_text.push('\t');
                 }
-                table_text.push_str(cell.trim());
+                table_text.push_str(&table_cell_text(cell));
             }
             // If column numbers row is enabled with header, insert immediately after header row (r_idx == 0)
             if st.card2_col_numbers && st.card2_first_row_header && r_idx == 0 {
@@ -9592,6 +9607,41 @@ mod tests {
 
         // Row 3 is data row
         assert_eq!(table.cell(3, 0).unwrap().text.text.trim(), "A4 Coated Art Paper");
+    }
+
+    #[test]
+    fn test_multiline_csv_header_cells_stay_in_one_table_row() {
+        // Excel wraps long header cells; the generated CSV quotes the line break. It must not
+        // become extra table rows when the CSV is converted to a table.
+        let csv = concat!(
+            "Desa/Kelurahan / Village/Subdistric,\"Luas / Total Area\n(km2 / sq.km)\",",
+            "\"Persentase terhadap Luas Kecamatan\n/ Percentage to District Area\"\n",
+            "Warungbambu,1.65,21.32\n",
+        );
+        let matrix = parse_csv_content(csv);
+        assert_eq!(matrix.len(), 2);
+        assert!(matrix[0][1].contains('\n'));
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: matrix,
+            card2_first_row_header: true,
+            card2_col_numbers: false,
+            card2_placement: 1,
+            card2_style: 3,
+            ..Default::default()
+        };
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "multiline header table should insert: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let table = active.doc.stories.values().find_map(|s| s.tables.values().next()).expect("Table should exist in story");
+        assert_eq!(table.rows.len(), 2, "one header row + one data row");
+        assert_eq!(table.header_rows(), 1);
+        assert_eq!(table.cell(0, 1).unwrap().text.text.trim(), "Luas / Total Area\u{2028}(km2 / sq.km)", "the header keeps its Excel line break");
+        assert_eq!(table.cell(0, 2).unwrap().text.text.trim(), "Persentase terhadap Luas Kecamatan\u{2028}/ Percentage to District Area");
     }
 
     #[test]
