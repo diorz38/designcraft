@@ -942,7 +942,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "arboard",
  "designcraft-engine",
@@ -964,7 +968,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-cli"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "designcraft-color",
  "designcraft-compose",
@@ -980,7 +988,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-color"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "craft-cms",
  "kurbo",
@@ -992,7 +1004,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-compose"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "designcraft-color",
  "designcraft-doc",
@@ -1012,7 +1028,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-doc"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "chrono",
  "designcraft-color",
@@ -1025,7 +1045,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-engine"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "caseless",
  "craft-atomic",
@@ -1064,7 +1088,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-epub"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "chrono",
  "designcraft-color",
@@ -1074,7 +1102,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-fonts"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "core-text",
  "harfrust 0.13.3",
@@ -1087,7 +1119,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-format"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "designcraft-doc",
  "designcraft-images",
@@ -1099,7 +1135,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-geom"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "flo_curves",
  "kurbo",
@@ -1112,7 +1152,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-idml"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "designcraft-color",
  "designcraft-compose",
@@ -1127,7 +1171,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-images"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "craft-cms",
  "designcraft-color",
@@ -1142,7 +1190,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-mcp"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "designcraft-engine",
  "designcraft-geom",
@@ -1155,7 +1207,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-pdf"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "chrono",
  "craft-pdf",
@@ -1178,7 +1234,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-pptx"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "chrono",
  "designcraft-color",
@@ -1196,7 +1256,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-render"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "craft-pdf",
  "designcraft-color",
@@ -1215,7 +1279,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-textimport"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "designcraft-doc",
  "quick-xml",
@@ -1224,7 +1292,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-tools"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "designcraft-color",
  "designcraft-compose",
@@ -1236,7 +1308,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-ui-egui"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "craft-ui",
  "designcraft-color",
@@ -1264,7 +1340,11 @@ dependencies = [
 
 [[package]]
 name = "designcraft-web"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "designcraft-engine",
  "designcraft-format",
@@ -5815,7 +5895,11 @@ checksum = "9440ea3e5aeabb0ac63af70daf835274065238cdd0cec83418f417eae38bacee"
 
 [[package]]
 name = "xtask"
+<<<<<<< HEAD
 version = "0.11.0-pubgen.0.4.0"
+=======
+version = "0.12.0"
+>>>>>>> origin/main
 dependencies = [
  "serde_json",
 ]
