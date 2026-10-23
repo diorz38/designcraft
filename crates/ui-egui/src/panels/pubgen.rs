@@ -374,6 +374,16 @@ pub struct PubgenState {
     pub hf_custom_name: String,
     #[serde(default)]
     pub hf_sided: usize,
+    /// 0 = all pages, 1 = one section, 2 = a page range.
+    #[serde(default)]
+    pub hf_scope: usize,
+    /// 0-based index into the document's sections (engine expects the index, UI shows 1-based).
+    #[serde(default)]
+    pub hf_scope_section: usize,
+    #[serde(default)]
+    pub hf_scope_start: usize,
+    #[serde(default)]
+    pub hf_scope_end: usize,
     #[serde(default = "default_hf_offset")]
     pub hf_header_offset: f64,
     #[serde(default = "default_hf_offset")]
@@ -495,6 +505,10 @@ impl Default for PubgenState {
             hf_style: default_hf_style(),
             hf_custom_name: String::new(),
             hf_sided: 0,
+            hf_scope: 0,
+            hf_scope_section: 0,
+            hf_scope_start: 1,
+            hf_scope_end: 1,
             hf_header_offset: default_hf_offset(),
             hf_footer_offset: default_hf_offset(),
             hf_header_single: String::new(),
@@ -2076,6 +2090,54 @@ fn card_header_footer_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState,
             .on_hover_text("Footer offset from bottom of page");
     });
 
+    // 2b. Scope: which pages this template applies to (all, one section, or a page range).
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Scope:").size(11.0).color(t.text));
+        let (page_count, sections) = app
+            .session
+            .active()
+            .map(|a| (a.doc.page_count(), a.doc.sections.iter().map(|s| (s.prefix.clone(), s.start)).collect::<Vec<_>>()))
+            .unwrap_or((1, Vec::new()));
+        let scope_options = ["All Pages", "Section", "Pages"];
+        let cur_scope = scope_options.get(st.hf_scope).copied().unwrap_or("All Pages");
+        egui::ComboBox::from_id_salt("pubgen_hf_scope").selected_text(cur_scope).width(85.0).show_ui(ui, |ui| {
+            ui.selectable_value(&mut st.hf_scope, 0, "All Pages");
+            ui.selectable_value(&mut st.hf_scope, 1, "Section");
+            ui.selectable_value(&mut st.hf_scope, 2, "Pages");
+        });
+        match st.hf_scope {
+            1 => {
+                if st.hf_scope_section >= sections.len() {
+                    st.hf_scope_section = 0;
+                }
+                let sec_label = |i: usize, s: &(String, usize)| {
+                    if s.0.is_empty() { format!("Section {} (page {})", i + 1, s.1 + 1) } else { format!("{} (page {})", s.0, s.1 + 1) }
+                };
+                let cur_sec = sections
+                    .get(st.hf_scope_section)
+                    .map_or_else(|| format!("Section {}", st.hf_scope_section + 1), |s| sec_label(st.hf_scope_section, s));
+                egui::ComboBox::from_id_salt("pubgen_hf_scope_section").selected_text(cur_sec).width(130.0).show_ui(ui, |ui| {
+                    for (i, s) in sections.iter().enumerate() {
+                        if ui.selectable_label(st.hf_scope_section == i, sec_label(i, s)).clicked() {
+                            st.hf_scope_section = i;
+                        }
+                    }
+                });
+            }
+            2 => {
+                let start = st.hf_scope_start.clamp(1, page_count.max(1));
+                let end = st.hf_scope_end.clamp(start, page_count.max(1));
+                (st.hf_scope_start, st.hf_scope_end) = (start, end);
+                ui.add(egui::DragValue::new(&mut st.hf_scope_start).range(1..=page_count.max(1)).prefix("From: "));
+                ui.add(egui::DragValue::new(&mut st.hf_scope_end).range(st.hf_scope_start..=page_count.max(1)).prefix("To: "));
+            }
+            _ => {}
+        }
+        if ui.button(RichText::new("Sections…").size(10.5).color(t.text_dim)).clicked() {
+            crate::menus::activate(app, "layout.section", &Value::Null);
+        }
+    });
+
     // 3. Header Text Fields
     if st.hf_sided == 0 {
         // Double-sided headers
@@ -2218,9 +2280,20 @@ fn card_header_footer_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState,
 }
 
 pub fn execute_apply_header_footer(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
+    // Same shapes the Header/Footer… dialog sends: "all", {"section": 0-based index}, {"range": [first, last]}.
+    let scope = match st.hf_scope {
+        1 => json!({ "section": st.hf_scope_section }),
+        2 => {
+            let start = st.hf_scope_start.max(1) as u64;
+            let end = (st.hf_scope_end as u64).max(start);
+            json!({ "range": [start, end] })
+        }
+        _ => json!("all"),
+    };
     let mut params = json!({
         "preset": st.hf_style,
         "sided": if st.hf_sided == 1 { "single" } else { "double" },
+        "scope": scope,
         "headerOffset": st.hf_header_offset,
         "footerOffset": st.hf_footer_offset,
         "header": {
@@ -15010,6 +15083,40 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(rem_res.is_ok());
         let doc_after = &app.session.active().unwrap().doc;
         assert!(doc_after.header_footer.is_none());
+    }
+
+    #[test]
+    fn test_execute_apply_header_footer_scopes_to_range_and_section() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({ "pages": 11 })).unwrap();
+        // A section starting at page 5: section 0 covers pages 1-4, section 1 pages 5-11.
+        app.run("layout.section", json!({ "page": 5, "startNumber": 1, "style": "arabic" })).unwrap();
+
+        // Range scope: the template's parent lands on pages 5-8 only.
+        let st = PubgenState { hf_scope: 2, hf_scope_start: 5, hf_scope_end: 8, ..Default::default() };
+        execute_apply_header_footer(&mut app, &st).unwrap_or_else(|e| panic!("range apply: {e}"));
+        {
+            let doc = &app.session.active().unwrap().doc;
+            let hf = doc.header_footer.as_ref().expect("header_footer present");
+            assert_eq!(hf.scope, designcraft_doc::HfScope::Range { first: 5, last: 8 });
+            let parent = hf.parent;
+            let on_page = |i: usize| doc.page(i).is_some_and(|p| p.parent == parent);
+            assert!((4..=7).all(on_page), "pages 5-8 carry the header/footer parent");
+            assert!((0..4).all(|i| !on_page(i)) && (8..11).all(|i| !on_page(i)), "pages outside the range do not");
+        }
+
+        // Section scope: re-apply scoped to section index 1 (pages 5-11).
+        let st = PubgenState { hf_scope: 1, hf_scope_section: 1, ..Default::default() };
+        execute_apply_header_footer(&mut app, &st).unwrap_or_else(|e| panic!("section apply: {e}"));
+        {
+            let doc = &app.session.active().unwrap().doc;
+            let hf = doc.header_footer.as_ref().expect("header_footer present");
+            assert_eq!(hf.scope, designcraft_doc::HfScope::Section(1));
+            let parent = hf.parent;
+            let on_page = |i: usize| doc.page(i).is_some_and(|p| p.parent == parent);
+            assert!((4..11).all(on_page), "section pages carry the parent");
+            assert!((0..4).all(|i| !on_page(i)), "pages before the section do not");
+        }
     }
 
     #[test]
