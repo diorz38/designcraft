@@ -10775,6 +10775,20 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         }
         assert!((starts_at(first)).abs() < 0.6, "the abbreviation stays at the margin");
 
+        // The last two rows (`TDP`, `API`) carry a far `\tx4000` stop besides `\tx1530`; their
+        // definitions must still start at the hanging indent, like the rows above them.
+        for (abbreviation, definition) in [("TDP", "Tanda Daftar Perusahaan"), ("API", "Angka Pengenal Importir")] {
+            let story = &active.doc.stories[&sid];
+            let label = story.text.find(abbreviation).expect("the abbreviation");
+            let para = story.para_at(label);
+            let definition_byte = story.text.find(definition).expect("its definition");
+            let (frame, line) =
+                lines.iter().find(|(_, line)| line.para == para && line.first_in_para).copied().expect("the abbreviation's first line");
+            let col = frame.columns[line.column as usize];
+            let x = line.glyphs.iter().find(|g| g.byte == definition_byte && g.len > 0).map(|g| g.x - col.x0).expect("the definition text");
+            assert!((x - 85.5).abs() < 0.6, "{abbreviation}'s definition starts at the hanging indent, not {x}");
+        }
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

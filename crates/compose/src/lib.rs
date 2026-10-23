@@ -3198,10 +3198,12 @@ fn tab_after_label(glyphs: &[Glyph], i: usize) -> bool {
 ///
 /// The left indent is an implicit left stop of its own: in a hanging indent a tab with no explicit
 /// stop past it reaches the indent. That is where wrapped lines begin, so the text after the tab
-/// lines up with them (Word's behaviour for e.g. `\li1710\fi-1710\tx1530`). Before a bullet or
-/// number (`after_label`) the indent also wins over an explicit stop past it. A tab after other
-/// text still reaches the next explicit stop even past the indent, so a table of contents entry
-/// whose text is shorter than the hanging indent keeps its right tab.
+/// lines up with them (Word's behaviour for e.g. `\li1710\fi-1710\tx1530`). The indent is nearer
+/// than a plain left stop beyond it, so it wins over one too — `\li1710\fi-1710\tx1530\tx4000`
+/// keeps every definition at the indent instead of jumping the last paragraphs to the far stop.
+/// Before a bullet or number (`after_label`) the indent wins over any explicit stop past it. A
+/// right, centre or character stop past the indent is a deliberate target, so it still wins, and
+/// a table of contents entry whose text is shorter than the hanging indent keeps its right tab.
 fn tab_advance<'a>(
     tabs: &'a [designcraft_doc::TabStop],
     left_indent: f64,
@@ -3210,7 +3212,12 @@ fn tab_advance<'a>(
     after_label: bool,
 ) -> (f64, Option<&'a designcraft_doc::TabStop>) {
     let indent_ahead = left_indent > abs + 0.01;
-    let stop = tabs.iter().find(|t| t.position > abs + 0.01).filter(|t| !after_label || !indent_ahead || t.position <= left_indent);
+    // A stop at or before the indent is the next one; past the indent only a right, centre or
+    // character stop (never a left stop after a label) stands before the indent's own stop.
+    let stop = tabs
+        .iter()
+        .find(|t| t.position > abs + 0.01)
+        .filter(|t| !indent_ahead || t.position <= left_indent || (!after_label && t.align != TabAlign::Left));
     let (pos, align) = match stop {
         Some(t) => (t.position, t.align),
         None if indent_ahead => (left_indent, TabAlign::Left),
