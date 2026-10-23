@@ -22,6 +22,7 @@ pub use find::same_find_domain;
 pub(crate) mod flex;
 mod fonts;
 pub(crate) mod guides;
+pub mod header_footer;
 mod index;
 mod inspect;
 mod interactive;
@@ -212,6 +213,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(load_styles::specs());
         v.extend(table::specs());
         v.extend(layout::specs());
+        v.extend(header_footer::specs());
         v.extend(overrides::specs());
         v.extend(prefs::specs());
         v.extend(inspect::specs());

@@ -3863,6 +3863,26 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
         }
     });
 
+    let hf_text = crate::i18n::tr(&app.ui.language, "Header/Footer…");
+    let tbl_text = crate::i18n::tr(&app.ui.language, "Table Options…");
+
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+
+        let tip_hf = "Configure page running headers, footers, page numbering, and section titles";
+        let resp_hf = outline_button(ui, hf_text, hw).on_hover_text(tip_hf);
+        if resp_hf.clicked() {
+            let _ = crate::header_footer::open(app);
+        }
+
+        let tip_tbl = "Configure table header/footer rows and repeating continuation rows";
+        let resp_tbl = outline_button(ui, tbl_text, hw).on_hover_text(tip_tbl);
+        if resp_tbl.clicked() {
+            let _ = crate::dialogs::open_table_options(app);
+        }
+    });
+
     // TOC: build a table of contents on the selected page from the TOC paragraph style.
     ui.horizontal(|ui| {
         ui.label(RichText::new("TOC title:").size(11.0).color(t.text));
@@ -9405,6 +9425,22 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         // Insert another page after page 0
         app.run("layout.pages.insert", json!({"after": 0, "count": 1})).unwrap();
         assert_eq!(app.session.active().unwrap().doc.page_count(), 3);
+    }
+
+    #[test]
+    fn test_quick_actions_header_footer_and_table_options() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // 1. Header/Footer quick action opens headerFooter dialog
+        crate::header_footer::open(&mut app).unwrap();
+        assert_eq!(app.ui.dialog.as_ref().unwrap().id, "headerFooter");
+        app.ui.dialog = None;
+
+        // 2. Table Options quick action opens tableOptions dialog
+        crate::dialogs::open_table_options(&mut app).unwrap();
+        assert_eq!(app.ui.dialog.as_ref().unwrap().id, "tableOptions");
+        assert_eq!(app.ui.dialog.as_ref().unwrap().b("inTable"), false);
     }
 
     #[test]

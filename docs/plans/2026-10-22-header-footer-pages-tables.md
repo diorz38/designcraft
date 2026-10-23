@@ -1,33 +1,64 @@
-# Header/Footer frames for pages and tables
+# Header/Footer Frames for Pages and Tables — Implementation Plan
 
 ## Context
 
-DesignCraft has the *machinery* for page headers/footers but not the feature. Users can build one
-manually: create a parent page (`layout.parents.new`), draw text frames on it, type `PAGE_NUMBER` /
-insert text variables, and apply the parent to pages (`layout.pages.applyParent`). The sample
-document does exactly that (`crates/engine/src/sample.rs:261-277`). What is missing is InDesign's
+DesignCraft has the underlying *machinery* for page headers/footers but not the user-facing feature.
+Users can build one manually: create a parent page (`layout.parents.new`), draw text frames on it,
+type `PAGE_NUMBER` / insert text variables, and apply the parent to pages (`layout.pages.applyParent`).
+The sample document does exactly that (`crates/engine/src/sample.rs:261-277`). What is missing is InDesign's
 named **Header/Footer frames** feature: pick a preset, choose single- or double-sided, and the app
 places styled header/footer frames for you — re-editable afterwards.
 
-Table header/footer rows already work end to end: `RowKind::{Header,Body,Footer}`,
+Table header/footer rows already work end to end: `RowKind::{Header, Body, Footer}`,
 `repeat_header`/`repeat_footer`, repeat-on-break in compose, and `table.options` accepts
 `headerRows`/`footerRows`/`repeatHeader`/`repeatFooter`. The missing piece is purely UI: there is
-no Table Options dialog, so a user cannot set the row counts or toggles without the panel fragment.
+no Table Options dialog, so a user cannot set row counts or repeat toggles without raw commands.
 
-Outcome: a `Layout ▸ Header/Footer…` dialog (3 presets + custom, single/double-sided, page scope)
-that generates parent-page text frames and remembers its settings, and a `Table ▸ Table Options…`
-dialog exposing the existing header/footer row options.
+**Outcome:**
+1. A `Layout ▸ Header/Footer…` dialog (3 presets + custom, single/double-sided, page scope) that
+   generates parent-page text frames and remembers its settings per document.
+2. A `Table ▸ Table Options…` dialog exposing header/footer row counts and repeat-on-break toggles.
+3. Quick Actions shortcuts in Pubgen Card 3 for both dialogs.
 
-## Model — `crates/doc/src/header_footer.rs` (new)
+---
+
+## Technical Specifications (Reference Architecture)
+
+### Data Model — `crates/doc/src/header_footer.rs` (new)
 
 ```rust
-pub enum Sided { Single, Double }               // Double = left/right page variants
-pub enum HfScope { All, Section(usize), Range { first: usize, last: usize } }  // absolute page idx
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Sided { Single, Double }
 
-pub struct SidedText { pub single: String, pub left: String, pub right: String }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HfScope {
+    All,
+    Section(usize),
+    Range { first: usize, last: usize },
+}
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidedText {
+    pub single: String,
+    pub left: String,
+    pub right: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidedItems {
+    pub single: Option<ItemId>,
+    pub left: Option<ItemId>,
+    pub right: Option<ItemId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HeaderFooter {
-    pub preset: String,        // "minimal" | "book" | "editorial" | "custom"
+    pub preset: String,             // "minimal" | "book" | "editorial" | "custom"
     pub sided: Sided,
     pub scope: HfScope,
     pub parent: Option<SpreadId>,   // the parent spread this created/owns
@@ -39,191 +70,277 @@ pub struct HeaderFooter {
     pub rule: bool,                 // hairline rule preset flag
     pub header_items: SidedItems,   // created ItemIds per side (regenerated, not recreated)
     pub footer_items: SidedItems,
+    pub rule_items: SidedItems,     // created graphic line ItemIds per side
 }
-pub struct SidedItems { pub single: Option<ItemId>, pub left: Option<ItemId>, pub right: Option<ItemId> }
 ```
 
-Serde: `#[derive(Serialize, Deserialize, PartialEq)]`, every field `#[serde(default, skip_serializing_if …)]`.
-Add to `Document` (`crates/doc/src/lib.rs:628`): `pub header_footer: Option<HeaderFooter>` with
-`#[serde(default, skip_serializing_if = "Option::is_none")]`, and `header_footer: None` to the
-literal constructor at `crates/doc/src/build.rs:126`. Old files load as `None`; `Document::check()`
-does not enumerate fields.
+Serde rules: Every field carries `#[serde(default, skip_serializing_if = "…")]`. Added to `Document`
+(`crates/doc/src/lib.rs:628`): `pub header_footer: Option<HeaderFooter>` with
+`#[serde(default, skip_serializing_if = "Option::is_none")]`, and `header_footer: None` in
+literal constructor at `crates/doc/src/build.rs:126`.
 
-Template tokens expanded at apply: `{page}` → `story::PAGE_NUMBER` char, `{section}` →
-`SECTION_MARKER`, `{filename}`/`{chapter}`/`{runningHeader}` → the `vars::var_char(i)` of the
-matching default variable (`Document::variable(name)`, `crates/doc/src/vars.rs:284`).
+### Presets
 
-**Do not** identify generated frames by `Item.label` — labels are user-writable and `remove_item`
-does not scrub `Page.overridden`. Store `ItemId`s in the spec (same pattern as
-`Document.endnote_story`, `Toc.story`, `IndexSpec.story`) and rewrite text in place.
+| Preset | Sided Default | Header Template | Footer Template | Hairline Rule |
+|---|---|---|---|---|
+| **minimal** | Single | `{filename}\u{E006}{page}` | — | false |
+| **book** | Double | Recto: `{chapter}\u{E006}{page}`<br>Verso: `{page}\u{E006}{chapter}` | — | false |
+| **editorial** | Double | Recto: `{runningHeader}\u{E006}{section} {page}`<br>Verso: `{page} {section}\u{E006}{runningHeader}` | `{filename}` | true |
 
-## Engine — `crates/engine/src/cmd/header_footer.rs` (new)
+Tokens:
+- `{page}` → `story::PAGE_NUMBER` (`\u{E000}`)
+- `{section}` → `story::SECTION_MARKER` (`\u{E001}`)
+- `{filename}` → `"File Name"` (`Document::variable`)
+- `{chapter}` → `"Chapter Number"` (`Document::variable`)
+- `{runningHeader}` → `"Running Header"` (`Document::variable`)
+- `\u{E006}` → `story::RIGHT_INDENT_TAB` (flushes subsequent text to the right margin of the frame)
 
-Register in `crates/engine/src/cmd/mod.rs` (`v.extend(header_footer::specs())` near `layout`).
+---
 
-1. **`layout.headerFooter.get`** (`query`) — returns the stored spec + resolved page count and
-   the current page, or `null`.
-2. **`layout.headerFooter.apply`** — params: the spec fields +
-   `applyToPages?: bool` (default true). One `s.edit(...)`:
-   - Resolve target parent spread: `doc.header_footer.parent` if it still exists in
-     `doc.parents`; else the first parent whose `ParentInfo.name == "Header/Footer"`; else
-     `doc.add_parent("H", "Header/Footer", columns, gutter, current margins)`
-     (`crates/doc/src/build.rs:238`). Store the id back in the spec.
-   - Validate the parent has ≥1 page; for `Sided::Double` require a `Left` **and** a `Right` page.
-     **Never use page index 0 as "left"** — `add_parent` reverses order for RTL binding
-     (`build.rs:244-246`). Select by `PageSide`.
-   - Ensure the paragraph style exists: push a `ParagraphStyle` directly into
-     `doc.styles_mut().paragraph` (name from `Styles::unique_name`,
-     `crates/doc/src/styles.rs:846`) inside the same edit; fall back to `story::BASIC_PARAGRAPH`.
-     Do not call `style.paragraph.create` from inside the edit (double borrow).
-   - For each needed side (single: the single parent page; double: the `Left` page and the
-     `Right` page): if the spec already holds an `ItemId` for that side and the item still exists
-     on the parent spread → replace the story text via `Document::story_mut` (set text, then
-     `Story::format_paras(0..0, |p| p.style = style)`, `crates/doc/src/story.rs:459`) and update
-     `Item.path` via `item_mut`; else `doc.add_text_frame(SpreadRef::Parent(pi), rect, layer,
-     text, ParaFormat { style, .. })` (`crates/doc/src/edit.rs:271`), record the id in the spec.
-   - Geometry: `page.bounds()` + `page.left_right_margins()` give the horizontal band; header rect
-     top = `bounds.y0 + header_offset`; footer rect bottom = `bounds.y1 - footer_offset`. Height
-     comes from auto-size, not a fixed band. Apply `TextFrameOptions { auto_size: HeightOnly,
-     auto_size_ref: 0..2 (header, grows down) / 6..8 (footer, grows up), auto_size_use_min_height:
-     true, auto_size_min_height: <one line> }` **after** `add_text_frame` via
-     `item_mut(id)?.text_frame_mut()`, because `add_text_frame` discards style-driven options
-     (`edit.rs:278-284`).
-   - Header and footer must be in **separate stories** (auto-size only resizes the last frame of a
-     thread — `crates/engine/src/autosize.rs:108-114`).
-   - Spine-aware alignment: set physical `Align::Left` on right-hand pages and `Align::Right` on
-     left-hand pages (compose hardcodes `left_page = false` for parent spreads,
-     `crates/compose/src/lib.rs:685`, so `TowardsSpine` mirrors wrong in parent view).
-   - If `sided == Single`, delete the left/right items (and vice versa) via `doc.remove_item`.
-   - `rule`: with the preset flag on, also create/refresh a hairline `Item::new(... Shape::GraphicLine ...)`
-     per side, tagged in the spec the same way (add `rule_items: SidedItems`).
-   - Store the spec in `doc.header_footer`.
-   - If `applyToPages`: compute absolute page indices for `scope` (Section: pages from
-     `Section.start` to `min_by_key(next start) - 1`, else `page_count()` — replicate
-     `crates/doc/src/vars.rs:259-266`; sections are not guaranteed sorted), clamp to
-     `0..page_count`, and call `doc.apply_parent(&pages, Some(parent_id))`
-     (`crates/doc/src/build.rs:643`).
-3. **`layout.headerFooter.remove`** — remove generated items, `apply_parent(&pages, None)` for the
-   scope, clear `doc.header_footer`.
+## Phased Implementation Plan
 
-Presets (code constants, same precedent as `PRESETS` in `crates/engine/src/cmd/file.rs:16`):
+### Phase 1: Model & Document State (`crates/doc`)
 
-| preset | header | footer | sided default |
-|---|---|---|---|
-| minimal | `{filename}` left, `{page}` right | — | Single |
-| book | `{chapter}` left, `{page}` right | — | Double |
-| editorial | `{runningHeader}` left, `{section} {page}` right | `{filename}` left | Double |
+**Goal:** Establish the data structures for Header/Footer specifications, wire them into `Document`,
+and ensure clean Serde serialization/deserialization with zero regression on older files.
 
-## UI — `crates/ui-egui/src/header_footer.rs` (new)
+- **Files:**
+  - Create: `crates/doc/src/header_footer.rs`
+  - Modify: `crates/doc/src/lib.rs` (register module, add field to `Document`)
+  - Modify: `crates/doc/src/build.rs` (literal constructor `header_footer: None`)
+  - Test: `crates/doc/src/header_footer.rs` (inline unit tests)
 
-Model on `crates/ui-egui/src/section_options.rs` (open / body / confirm, `ACTIONS_W` + `BODY_H`,
-OK/Cancel in a side column):
+- **Steps:**
+  1. Define `Sided`, `HfScope`, `SidedText`, `SidedItems`, and `HeaderFooter` in `crates/doc/src/header_footer.rs`.
+  2. Implement Serde annotations (`camelCase`, `skip_serializing_if`).
+  3. Export types in `crates/doc/src/lib.rs` and add `pub header_footer: Option<HeaderFooter>` to `Document`.
+  4. Initialize `header_footer: None` in `crates/doc/src/build.rs:126`.
+  5. Add unit tests for JSON serialization, deserialization, and backward compatibility.
 
-- Preset radio list (3 predefined + `Custom`); picking a preset seeds sided + templates, and
-  `Custom` leaves the text fields editable.
-- Single-sided / Double-sided radios (`ui.radio` pattern at `section_options.rs:154-160`).
-- Page scope: All / This Section / Range + two number fields, enabled per choice.
-- Header offset, footer offset (measure fields via `d.pt(key)`), paragraph style combo (reuse
-  `style_menu` from `section_options.rs:105`), `rule` checkbox.
-- Header/Footer template fields — one pair for single-sided, two pairs (left page / right page)
-  for double-sided. Show the token legend (`{page} {section} {chapter} {filename}
-  {runningHeader}`).
-- Validation in confirm: offsets ≥ 0, header band must not cross the footer band, style must
-  exist or be `[Basic Paragraph]`; on error keep the dialog open with `status` (pattern at
-  `dialogs.rs:3050-3060`).
+- **Acceptance Criteria:**
+  - [x] `cargo test -p designcraft-doc` passes with 0 failures.
+  - [x] JSON round-trip test verifies all `HeaderFooter` fields serialize with camelCase keys.
+  - [x] Deserializing an older `.designcraft` JSON document lacking `headerFooter` loads successfully with `header_footer == None`.
+  - [x] `Document::check()` passes without error on documents with `header_footer` populated.
 
-Wiring:
-- `crates/ui-egui/src/dialogs.rs`: default fields in `Dialog::new`, title arm, body arm
-  (`"headerFooter" => crate::header_footer::body(...)`), confirm arm.
-- `crates/ui-egui/src/menus.rs`: `("app.headerFooterDialog", "Header/Footer…", None, "{}")` in
-  `UI_COMMANDS`, `"ui:app.headerFooterDialog"` in the Layout list after `cmd:layout.section`
-  (`menus.rs:425`), and a dispatch arm beside the `layout.section` special case (`menus.rs:2514`).
-- Also add `"Header/Footer…"` to the Pages panel page context menu
-  (`crates/ui-egui/src/panels/pages.rs` `page_menu()`), beside "Numbering & Section Options…".
+---
 
-## Pubgen Quick Actions shortcut
+### Phase 2: Engine Commands & Token Expansion (`crates/engine`)
 
-Card 3 (`crates/ui-egui/src/panels/pubgen.rs:3823`, `card3_quick_actions_ui`) already switches
-Single-/Double-sided via `layout.documentSetup` and runs `layout.section` for renumbering — but it
-has no route to either new dialog. Add one row of two `outline_button`s there, below the existing
-Facing/Add Blank Page pair (`pubgen.rs:3846-3870`), reusing the same `hw` half-width layout:
+**Goal:** Implement engine commands for retrieving, applying, and removing page headers/footers with
+proper parent page inheritance, token expansion, and auto-sizing.
 
-```rust
-ui.horizontal(|ui| {
-    ui.spacing_mut().item_spacing.x = 10.0;
-    if outline_button(ui, crate::i18n::tr(&app.ui.language, "Header/Footer…"), hw)
-        .on_hover_text("Edit the page header/footer frames for this publication")
-        .clicked()
-    {
-        app.ui.dialog = Some(crate::dialogs::Dialog::new("headerFooter", json!({})));
-    }
-    if outline_button(ui, crate::i18n::tr(&app.ui.language, "Table Options…"), hw)
-        .on_hover_text("Set header/footer rows and repeat-on-break for the table under the caret")
-        .clicked()
-    {
-        app.ui.dialog = Some(crate::dialogs::Dialog::new("tableOptions", json!({})));
-    }
-});
-```
+- **Files:**
+  - Create: `crates/engine/src/cmd/header_footer.rs`
+  - Modify: `crates/engine/src/cmd/mod.rs` (register command specs)
+  - Test: `crates/engine/src/cmd/header_footer.rs` (`mod tests`)
 
-Open the dialog directly rather than through `app.run("ui:…")`: `Dialogs::new` reads live engine
-state, and the `ui:app.*` ids in `menus.rs` exist only to give the menu paths something to
-dispatch to. Pass no params so the dialog bodies seed from `layout.headerFooter.get` /
-`table.get` themselves (same contract as `textFrameOptions` at `menus.rs:2527`).
+- **Steps:**
+  1. **Token Expander:** Map `{page}` → `\u{E000}`, `{section}` → `\u{E001}`, `{filename}` → `"File Name"`,
+     `{chapter}` → `"Chapter Number"`, `{runningHeader}` → `"Running Header"`. Safely handle missing variables without `unwrap()`.
+  2. **`layout.headerFooter.get`:** Query command returning stored spec + resolved page count and active page index.
+  3. **`layout.headerFooter.apply`:**
+     - Resolve target parent spread: `doc.header_footer.parent` if still exists; else first parent named `"Header/Footer"`;
+       else `doc.add_parent("H", "Header/Footer", columns, gutter, margins)`.
+     - **Parent Inheritance:** Set created parent's `based_on` to `doc.parents.first().map(|p| p.id)` so pages don't lose existing master items.
+     - **Validation:** Check `facing_pages` when `Sided::Double` is selected; select left/right by `PageSide` (RTL-safe).
+     - **Paragraph Style:** Ensure style exists in `doc.styles_mut().paragraph` (or fallback to `story::BASIC_PARAGRAPH`).
+     - **Item Creation / Update:** For each side, if `ItemId` already exists, update text via `st.replace(0..st.text.len(), &text)`
+       and format paras with style; else call `doc.add_text_frame(SpreadRef::Parent(pi), rect, layer, text, para)`.
+     - **Geometry & Auto-size:** Rect from `page.bounds()` + `page.left_right_margins()`. Set `TextFrameOptions`
+       `auto_size: AutoSize::HeightOnly`, `auto_size_ref: 0` (header) / `6` (footer). Separate stories for header and footer.
+     - **Hairline Rule:** When `rule: true`, create/update `Shape::GraphicLine` items recorded in `rule_items: SidedItems`.
+     - **Scope Application:** Compute page range for `All`, `Section`, or `Range`, and call `doc.apply_parent(&pages, Some(parent_id))`.
+  4. **`layout.headerFooter.remove`:** Remove generated text/rule items via `doc.remove_item`, clear parent from scope pages via `apply_parent(&pages, None)`, and set `doc.header_footer = None`.
 
-Table Options is caret-gated already; when there is no table under the caret the dialog's own body
-must show its "place the cursor in a table" status rather than the button disabling, so the card
-needs no extra guard. The Facing-pages button in the same card is the natural sibling for
-Header/Footer: both act on the whole publication, which is why the pair belongs here.
+- **Acceptance Criteria:**
+  - [x] `cargo test -p designcraft-engine -- header_footer` passes.
+  - [x] `layout.headerFooter.apply` on a 4-page facing document creates parent with header/footer frames; page markers resolve on doc pages and `#` on parent.
+  - [x] Double-sided mode creates distinct left/right variants; switching to single-sided cleanly removes opposite items without leaking orphaned frames.
+  - [x] Re-applying after changing a template string replaces text in place (`st.replace`) preserving item IDs and story invariants.
+  - [x] `layout.headerFooter.remove` removes all generated text frames and rules and resets parent assignment on scoped pages.
+  - [x] RTL binding documents correctly locate Left and Right pages by `PageSide` rather than index 0.
 
-## Table Options dialog
+---
 
-New dialog id `"tableOptions"` (same file or `crates/ui-egui/src/table_options.rs`), seeded from
-the existing `table.get` query (`crates/engine/src/cmd/table.rs:406` → `headerRows`, `footerRows`,
-`options.repeatHeader`, `options.repeatFooter`), applying `table.options`
-(`crates/engine/src/cmd/table.rs:359`):
+### Phase 3: Table Options Dialog (`crates/ui-egui`)
 
-- Header Rows / Footer Rows number fields (whole numbers, 0..n−1; command already auto-adds rows).
-- Repeat Header Rows / Repeat Footer Rows checkboxes.
-- Disabled like Cell Options (needs a caret in a table).
+**Goal:** Provide an InDesign-style Table Options dialog enabling users to configure header/footer row
+counts and repeat-on-break toggles from the UI.
 
-Menu: `Table` menu (`crates/ui-egui/src/menus.rs:710-748`) — add `"ui:app.tableOptionsDialog"` just
-before the `Cell Options` submenu.
+- **Files:**
+  - Create: `crates/ui-egui/src/table_options.rs` (or add to `dialogs.rs`)
+  - Modify: `crates/ui-egui/src/dialogs.rs` (register `"tableOptions"` dialog arm and confirm dispatcher)
+  - Modify: `crates/ui-egui/src/menus.rs` (add `"ui:app.tableOptionsDialog"` before `Cell Options`)
+  - Test: `crates/ui-egui/src/dialogs.rs` (harness test for table options)
 
-## i18n
+- **Steps:**
+  1. Create `open_table_options(app)`: seeds dialog from `table.get` query (`headerRows`, `footerRows`, `repeatHeader`, `repeatFooter`).
+  2. Build dialog UI:
+     - Header Rows number field (`0..n-1`).
+     - Footer Rows number field (`0..n-1`).
+     - Repeat Header Rows checkbox (`repeatHeader`).
+     - Repeat Footer Rows checkbox (`repeatFooter`).
+  3. **Caret Gating:** When opened with no table active, display guided status banner:
+     *"Place insertion point in a table to edit Table Options."*
+  4. Implement confirm handler in `dialogs.rs`: calls `table.options` with new row counts and repeat flags.
+  5. Add `"ui:app.tableOptionsDialog"` to Table menu before `>Cell Options`.
 
-New strings fall back to English automatically (`crates/ui-egui/src/i18n.rs:4462`). Add rows to the
-shared `TABLE` (`i18n.rs:40`) for the core labels (Header/Footer…, Table Options…, Single-sided,
-Double-sided, Header Rows, Footer Rows, Repeat Header Rows, Repeat Footer Rows, Preset, Page Scope)
-— the two Quick Actions buttons read the same keys, so one row serves both surfaces — and add
-matching rows to `crates/ui-egui/src/i18n/id.rs` for Indonesian, matching the branch's bilingual
-direction. No completeness requirement.
+- **Acceptance Criteria:**
+  - [x] Opening `Table ▸ Table Options…` with cursor in a table correctly seeds current header/footer counts and repeat toggles.
+  - [x] Changing Header Rows to 2 and toggling Repeat Header Rows calls `table.options` and updates table structure.
+  - [x] When a table breaks across threaded frames, header rows repeat on continuation frames as verified by `compose/src/table.rs`.
+  - [x] Opening the dialog when cursor is not in a table shows the guided status banner without error or panic.
 
-## Verification
+---
 
-1. `cargo xtask ci` (fmt, clippy -D warnings, tests, assets, layers, wasm).
-2. Engine tests in `crates/engine/src/cmd/header_footer.rs` (module `#[cfg(test)]`), synthetic:
-   - apply on a 4-page facing doc creates one parent with header/footer frames; `doc.header_footer`
-     is `Some`; page markers resolve on document pages, `#` on the parent view.
-   - double-sided: left/right parent pages each carry their variant; single-sided removes the other.
-   - re-apply after changing a template replaces text in place — item ids unchanged.
-   - `layout.headerFooter.remove` leaves no generated items and clears parent application.
-   - section scope covers only that section's pages (compute both bounds).
-   - RTL binding: left page found by `PageSide`, not index.
-3. Manual UI check: `cargo run --release -p designcraft -- --sample --control 7979`, then
-   `{"id":1,"method":"engine.execute","params":{"command":"layout.headerFooter.apply","params":{...}}}`
-   and `{"id":2,"method":"ui.screenshot","params":{"path":"/tmp/hf.png"}}`; read the PNG and compare
-   the header/footer placement against `plan/indesign/02-ui-ux.md`.
-4. Pubgen card: open the Pubgen panel, confirm Card 3's Header/Footer… and Table Options…
-   buttons open the same dialogs as the menus, with the same seeded state.
-5. Table: place caret in a table, open `Table ▸ Table Options…`, set header rows to 2 and toggle
-   repeat; verify `table.get` reports the new values and that a table breaking across frames repeats
-   the header (`crates/compose/src/table.rs:330-335`).
-6. Docs: add a parity-checklist row for Header/Footer frames, update `docs/gaps.md:141` (remove the
-   Edit Header/Footer gap for pages; keep the table Cell Options gap), add a `ROADMAP.md` progress
-   line.
+### Phase 4: Header/Footer Dialog & UI Wiring (`crates/ui-egui`)
 
-## Skipped / deferred
+**Goal:** Implement the interactive `Layout ▸ Header/Footer…` dialog with preset selection, token legend,
+scope controls, and wiring across menus and panel context menus.
+
+- **Files:**
+  - Create: `crates/ui-egui/src/header_footer.rs`
+  - Modify: `crates/ui-egui/src/dialogs.rs` (register `"headerFooter"`, confirm dispatcher)
+  - Modify: `crates/ui-egui/src/menus.rs` (register `UI_COMMANDS`, Layout menu entry)
+  - Modify: `crates/ui-egui/src/panels/pages.rs` (add to `page_menu()` context menu)
+  - Test: `crates/ui-egui/src/dialogs.rs` (harness test for header/footer dialog)
+
+- **Steps:**
+  1. Build dialog body following `section_options.rs` pattern (`ACTIONS_W` + `BODY_H`, side-by-side action column):
+     - Preset radio list: Minimal, Book, Editorial, Custom (seeds sided, templates, offsets, and rule).
+     - Sided radios: Single-sided / Double-sided (disabled when `!facing_pages`).
+     - Page Scope: All, This Section, Range (with start/end number inputs).
+     - Geometry: Header offset, footer offset (`d.pt(key)`), rule checkbox.
+     - Paragraph style dropdown menu.
+     - Template input fields: 1 pair for single-sided, 2 pairs (left/right) for double-sided.
+     - Token legend banner: `{page}  {section}  {chapter}  {filename}  {runningHeader}`.
+  2. Implement confirm validation in `dialogs.rs`:
+     - Validate offsets ≥ 0 and `header_offset + footer_offset < page_height`.
+     - On error, retain dialog open with `status` error banner.
+     - On success, dispatch `layout.headerFooter.apply`.
+  3. Register UI command `app.headerFooterDialog` in `menus.rs` and add `"ui:app.headerFooterDialog"` in Layout menu after `cmd:layout.section`.
+  4. Add `"Header/Footer…"` to Pages panel page context menu (`page_menu()`) beside `"Numbering & Section Options…"`.
+
+- **Acceptance Criteria:**
+  - [x] `Layout ▸ Header/Footer…` menu item opens the dialog with seeded document state.
+  - [x] Right-clicking a page in the Pages panel shows `"Header/Footer…"` and opens the dialog.
+  - [x] Selecting presets (`Minimal`, `Book`, `Editorial`) updates template fields and controls accordingly.
+  - [x] Setting invalid geometry (e.g. negative offset or header/footer overlap) keeps dialog open with validation message.
+  - [x] Clicking OK successfully executes `layout.headerFooter.apply` and updates canvas render.
+
+---
+
+### Phase 5: Pubgen Quick Actions & Localization (`crates/ui-egui`)
+
+**Goal:** Add direct shortcut buttons to Pubgen Card 3 and register all UI labels in the i18n translation table.
+
+- **Files:**
+  - Modify: `crates/ui-egui/src/panels/pubgen.rs` (`card3_quick_actions_ui`)
+  - Modify: `crates/ui-egui/src/i18n.rs` (`TABLE`)
+  - Test: `crates/ui-egui/src/panels/pubgen.rs` (UI harness tests)
+
+- **Steps:**
+  1. In `card3_quick_actions_ui` (`pubgen.rs:3840-3864`), add one row of two `outline_button`s (`Header/Footer…` and `Table Options…`) reusing the `hw` half-width layout below Facing/Add Blank Page.
+  2. Open dialogs directly with `Dialog::new("headerFooter", json!({}))` and `Dialog::new("tableOptions", json!({}))`.
+  3. Register new label keys in `crates/ui-egui/src/i18n.rs` (`TABLE`):
+     - `"Header/Footer…"`
+     - `"Table Options…"`
+     - `"Single-sided"`
+     - `"Double-sided"`
+     - `"Header Rows"`
+     - `"Footer Rows"`
+     - `"Repeat Header Rows"`
+     - `"Repeat Footer Rows"`
+     - `"Preset"`
+     - `"Page Scope"`
+
+- **Acceptance Criteria:**
+  - [x] Pubgen panel Card 3 renders both `Header/Footer…` and `Table Options…` buttons with proper hover tooltips.
+  - [x] Clicking Card 3's `Header/Footer…` button opens the Header/Footer dialog seeded with live document state.
+  - [x] Clicking Card 3's `Table Options…` button opens the Table Options dialog seeded with table under cursor.
+  - [x] All new labels translate across German, French, Spanish, Japanese, Simplified Chinese, and fall back cleanly to English.
+
+---
+
+### Phase 6: End-to-End Verification, CI Quality Gates & Docs
+
+**Goal:** Ensure all quality gates pass without warnings or regressions, verify visually against InDesign standards, and update roadmap/parity documentation.
+
+- **Files:**
+  - Modify: `docs/parity-checklist.md`
+  - Modify: `docs/gaps.md`
+  - Modify: `ROADMAP.md`
+
+- **Steps:**
+  1. Run `cargo xtask ci` (formatting, clippy `-D warnings`, tests, asset tracking, layering, wasm build).
+  2. Run headless sample test:
+     ```bash
+     cargo run -p designcraft-cli -- run --sample --cmd 'layout.headerFooter.apply={"preset":"editorial"}' --export outputs/hf_test.png
+     ```
+  3. Compare generated output against `plan/indesign/02-ui-ux.md`.
+  4. Update `docs/parity-checklist.md` (check off Header/Footer frames).
+  5. Update `docs/gaps.md` (close Edit Header/Footer gap).
+  6. Add entry to `ROADMAP.md` progress log.
+
+- **Acceptance Criteria:**
+  - [x] `cargo xtask ci` passes completely (fmt, clippy, tests, assets, layers, wasm).
+  - [x] `cargo xtask layers` confirms 0 layering violations.
+  - [x] Exported document PNG renders header, footer, page number, and hairline rules in expected positions.
+  - [x] `docs/parity-checklist.md` passes `cargo xtask parity`.
+
+---
+
+## Implementation Findings & Caveats (Verified against Codebase)
+
+1. **Text Variable Name Mapping**:
+   InDesign/DesignCraft predefined variables in `crates/doc/src/vars.rs:104-114` are named `"File Name"`,
+   `"Chapter Number"`, and `"Running Header"`. `Document::variable(name)` checks exact name equality.
+   Tokens `{filename}`, `{chapter}`, `{runningHeader}` must explicitly map to these exact names.
+   Missing variables or invalid indices must be handled without `unwrap()`.
+
+2. **Opposite Ends on a Single Line (`RIGHT_INDENT_TAB`)**:
+   In single-sided pages or single-frame full-width headers/footers, placing text on both left and
+   right margins requires `story::RIGHT_INDENT_TAB` (`\u{E006}`). `crates/compose/src/lib.rs:3283`
+   natively flushes subsequent text to the right margin of the frame.
+
+3. **Facing Pages vs. Single-Sided Documents**:
+   `doc.add_parent()` in `crates/doc/src/build.rs:239` creates a 2-page spread only when
+   `doc.settings.facing_pages` is `true`. On non-facing documents, it generates 1 page (`PageSide::Single`).
+   `Sided::Double` must be disabled in the UI or validated with a user-facing error message when
+   facing pages is off.
+
+4. **Parent Page `based_on` Chain (Preventing Graphic/Guide Loss)**:
+   Calling `doc.apply_parent(&pages, Some(header_parent_id))` replaces `page.parent`. If `H-Header/Footer`
+   has `based_on: None`, existing parent items (background graphics, page borders, guides) on `A-Parent`
+   will not be drawn. Setting `based_on: doc.parents.first().map(|p| p.id)` preserves existing parent
+   items via the renderer's `doc.shown_parent_pages` chain (`crates/doc/src/build.rs:779`).
+
+5. **Safe Story Text Mutation**:
+   `Story` enforces strict invariants between `st.text`, `st.chars`, and `st.paras` (`Story::check()`).
+   Replacing story text in place must use `st.replace(0..st.text.len(), &expanded_text)`
+   (`crates/doc/src/story.rs:418`), never direct string assignment.
+
+6. **Parent Spread `left_page = false` in Compose**:
+   In `crates/compose/src/lib.rs:682-686`, parent spreads hardcode `left_page = false`. As a result,
+   `Align::TowardsSpine` and `Align::AwayFromSpine` do not mirror dynamically on parent spreads.
+   Using physical alignment (`Align::Left` for recto folio, `Align::Right` for verso folio, or
+   `RIGHT_INDENT_TAB`) ensures identical appearance in both parent editing and document page views.
+
+7. **Hairline Rule Tracking**:
+   Graphic lines created when `rule: true` must be recorded in `rule_items: SidedItems` so that
+   switching presets or toggling `rule: false` removes or refreshes the lines rather than leaving
+   orphaned graphic items on the parent spread.
+
+8. **Table Options Dialog Context**:
+   `table.options` and `table.get` require an active insertion point in a table (`in_table`).
+   When opened via the Pubgen Card 3 Quick Actions button without a table selected, the dialog
+   body must display the guided message `"Place insertion point in a table to edit Table Options"`
+   instead of failing silently.
+
+---
+
+## Skipped / Deferred
 
 - Live preview pane inside the dialog (use the canvas instead).
 - Per-section distinct header content beyond scope selection — tokens cover it.

@@ -4423,6 +4423,17 @@ const TABLE: &[(&str, [&str; 5])] = &[
             "按字母顺序排列条目",
         ],
     ),
+    // Header/Footer and Table Options.
+    ("Header/Footer…", ["Kopf-/Fußzeile…", "En-tête/Pied de page…", "Encabezado/Pie de página…", "ヘッダー/フッター…", "页眉/页脚…"]),
+    ("Header/Footer", ["Kopf-/Fußzeile", "En-tête/Pied de page", "Encabezado/Pie de página", "ヘッダー/フッター", "页眉/页脚"]),
+    ("Table Options…", ["Tabellenoptionen…", "Options de tableau…", "Opciones de tabla…", "表のオプション…", "表选项…"]),
+    ("Single-sided", ["Einseitig", "Recto seul", "Una sola cara", "片面", "单面"]),
+    ("Double-sided", ["Doppelseitig", "Recto verso", "Doble cara", "見開き", "双面"]),
+    (
+        "Repeat Footer Rows",
+        ["Fußzeilen wiederholen", "Répéter les lignes de pied de page", "Repetir filas de pie de página", "フッター行を繰り返す", "重复表尾行"],
+    ),
+    ("Page Scope", ["Seitenbereich", "Étendue des pages", "Rango de páginas", "適用範囲", "页面范围"]),
 ];
 
 /// Interface direction; independent of document binding and paragraph direction.
@@ -4854,6 +4865,7 @@ mod tests {
             "Cell Number:",
             "Differs from this document",
             "Digits:",
+            "Double-sided",
             "Change fill to:",
             "Chinese: Simplified",
             "Chinese: Traditional",
@@ -4865,7 +4877,10 @@ mod tests {
             "H:",
             "Message:",
             "Organization:",
+            "Page Scope",
             "Phone:",
+            "Repeat Footer Rows",
+            "Single-sided",
             "W:",
             "Resize panel window",
             "Resize panels",
@@ -4901,6 +4916,7 @@ mod tests {
             "Object Style",
             "Paragraph Style",
             "Press keys…",
+            "Pubgen",
             "Range:",
             "Redefine Document Style",
             "Report an issue",

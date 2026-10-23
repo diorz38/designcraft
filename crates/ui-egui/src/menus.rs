@@ -93,6 +93,8 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ),
     ("app.findChange", "Find/Change…", Some("Cmd+F"), "{}"),
     ("app.insertTableDialog", "Create Table…", None, "{} — Insert Table dialog (body/header/footer rows, columns)"),
+    ("app.tableOptionsDialog", "Table Options…", None, "{} — Table Options dialog (header/footer rows, repeat header/footer)"),
+    ("app.headerFooterDialog", "Header/Footer…", None, "{} — Header/Footer dialog for parent spread and pages"),
     (
         "app.cellOptionsDialog",
         "Strokes and Fills…",
@@ -429,6 +431,7 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "ui:view.goToPage",
             "-",
             "cmd:layout.section",
+            "ui:app.headerFooterDialog",
             "cmd:toc.generate",
             "cmd:toc.update",
             ">Index",
@@ -736,6 +739,9 @@ pub const MENUS: &[(&str, &[&str])] = &[
             "cmd:table.selectTable",
             "<",
             "-",
+            ">Table Options",
+            "ui:app.tableOptionsDialog|Table Setup…",
+            "<",
             ">Cell Options",
             "ui:app.cellOptionsDialog",
             "<",
@@ -1113,6 +1119,8 @@ fn run_ui_inner(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value
             Ok(Value::Null)
         }
         "app.cellOptionsDialog" => crate::dialogs::open_cell_options(app),
+        "app.tableOptionsDialog" => crate::dialogs::open_table_options(app),
+        "app.headerFooterDialog" => crate::header_footer::open(app),
         "window.hideMenuItem" => {
             let Some(item) = p.get("item").and_then(Value::as_str) else { return Some(Err("missing item".into())) };
             let hide = p.get("hidden").and_then(Value::as_bool).unwrap_or(true);

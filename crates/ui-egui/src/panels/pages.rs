@@ -743,6 +743,10 @@ fn page_menu(app: &mut DesignApp, ui: &mut egui::Ui, doc: &designcraft_doc::Docu
         crate::menus::activate(app, "layout.section", &serde_json::Value::Null);
         ui.close();
     }
+    if item(ui, "Header/Footer…") {
+        crate::menus::activate(app, "app.headerFooterDialog", &serde_json::Value::Null);
+        ui.close();
+    }
     ui.separator();
     let mut shuffle = doc.spreads.get(si).is_none_or(|sp| sp.allow_shuffle);
     if ui.checkbox(&mut shuffle, crate::rtl::widget(ui, tr("Allow Selected Spread to Shuffle"))).clicked() {

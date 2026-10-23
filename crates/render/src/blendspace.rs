@@ -113,6 +113,7 @@ fn same_document(old: &Document, new: &Document) -> bool {
         modified,
         next_id,
         font_scope,
+        header_footer,
     } = new;
     let same_spreads = |a: &[std::sync::Arc<designcraft_doc::Spread>], b: &[std::sync::Arc<designcraft_doc::Spread>]| {
         a.len() == b.len() && a.iter().zip(b).all(|(a, b)| std::sync::Arc::ptr_eq(a, b))
@@ -151,6 +152,7 @@ fn same_document(old: &Document, new: &Document) -> bool {
         && old.modified == *modified
         && old.next_id == *next_id
         && old.font_scope == *font_scope
+        && old.header_footer == *header_footer
 }
 
 fn supported(mode: DcBlend) -> bool {
