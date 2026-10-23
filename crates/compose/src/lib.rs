@@ -3196,10 +3196,12 @@ fn tab_after_label(glyphs: &[Glyph], i: usize) -> bool {
 /// explicit tab stop it reaches (none: the left indent or the next default stop, left aligned).
 /// Right, centre and character alignment look at the text up to the next tab or forced break.
 ///
-/// The left indent is a left stop of its own: in a hanging indent, the tab after a bullet or
-/// number (`after_label`) reaches it unless an explicit stop comes first. A tab later in the line
-/// reaches the next explicit stop even past the indent, so a table of contents entry whose text is
-/// shorter than the hanging indent still reaches its right tab.
+/// The left indent is an implicit left stop of its own: in a hanging indent a tab with no explicit
+/// stop past it reaches the indent. That is where wrapped lines begin, so the text after the tab
+/// lines up with them (Word's behaviour for e.g. `\li1710\fi-1710\tx1530`). Before a bullet or
+/// number (`after_label`) the indent also wins over an explicit stop past it. A tab after other
+/// text still reaches the next explicit stop even past the indent, so a table of contents entry
+/// whose text is shorter than the hanging indent keeps its right tab.
 fn tab_advance<'a>(
     tabs: &'a [designcraft_doc::TabStop],
     left_indent: f64,
@@ -3207,8 +3209,8 @@ fn tab_advance<'a>(
     after: &[Glyph],
     after_label: bool,
 ) -> (f64, Option<&'a designcraft_doc::TabStop>) {
-    let indent_ahead = after_label && left_indent > abs + 0.01;
-    let stop = tabs.iter().find(|t| t.position > abs + 0.01).filter(|t| !indent_ahead || t.position <= left_indent);
+    let indent_ahead = left_indent > abs + 0.01;
+    let stop = tabs.iter().find(|t| t.position > abs + 0.01).filter(|t| !after_label || !indent_ahead || t.position <= left_indent);
     let (pos, align) = match stop {
         Some(t) => (t.position, t.align),
         None if indent_ahead => (left_indent, TabAlign::Left),

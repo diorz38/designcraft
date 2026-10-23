@@ -10699,6 +10699,86 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     }
 
     #[test]
+    fn test_excel_g02_page_keeps_the_rtf_abbreviation_list_hanging_indent() {
+        // The `G02` sheet only links `G02.rtf`, whose entries are Word hanging indents
+        // (`\li1710\fi-1710\tx1530`): "SI\t:\tStasiun …". The tab after the colon has no explicit
+        // stop past it, so it must reach the hanging indent (85.5 pt), where wrapped lines start,
+        // and not the next default half-inch stop — otherwise every wrapped line sits to the left
+        // of the definition it belongs to.
+        let sample_xlsx = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("plan").join("pubgen").join("samples").join("BAB_01_2025.xlsx"))
+            .unwrap_or_default();
+        if !sample_xlsx.exists() || !sample_xlsx.parent().is_some_and(|dir| dir.join("G02.rtf").is_file()) {
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("dc-pubgen-g02-indent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let workbook = dir.join("BAB_01_2025.xlsx");
+        std::fs::copy(&sample_xlsx, &workbook).unwrap();
+        // The workbook's `file` cells carry the authoring machine's paths; place the sidecars
+        // beside the copy so its file-name fallback finds them here.
+        if let Some(samples) = sample_xlsx.parent() {
+            for sidecar in ["A02.rtf", "B01.rtf", "B01_pict1.jpg", "B01_pict2.png", "G00.rtf", "G01.rtf", "G02.rtf", "R01.rtf"] {
+                if samples.join(sidecar).is_file() {
+                    let _ = std::fs::copy(samples.join(sidecar), dir.join(sidecar));
+                }
+            }
+        }
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let mut st = PubgenState::default();
+        let converted = execute_excel_to_csvs(&mut st, workbook.to_str().unwrap());
+        assert!(converted.is_ok(), "the workbook converts to CSV data: {converted:?}");
+
+        // Keep only the G02 page so the test does not need every other sheet's assets.
+        let g02 = st
+            .card1_records
+            .iter()
+            .position(|row| row.get(3).is_some_and(|file| file.to_lowercase().ends_with("g02.rtf")))
+            .expect("the G02 sheet becomes a catalog row");
+        st.card1_records = vec![st.card1_records[g02].clone()];
+        st.card1_range_all = true;
+        st.card1_auto_insert_tables = false;
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "Page from CSV generates the G02 page: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let sid = active
+            .doc
+            .stories
+            .iter()
+            .find(|(_, story)| story.text.contains("Stasiun Meterologi") && story.text.contains("SMPK"))
+            .map(|(id, _)| *id)
+            .expect("the G02 RTF is placed as a page");
+        let (smpk, description) = {
+            let story = &active.doc.stories[&sid];
+            (story.text.find("SMPK").expect("SMPK"), story.text.find("Stasiun Meterologi").expect("its definition"))
+        };
+        let para = active.doc.stories[&sid].para_at(smpk);
+        let cs = designcraft_compose::compose_story(&active.doc, sid, &Default::default());
+        let lines: Vec<_> = cs.frames.iter().flat_map(|frame| frame.lines.iter().map(move |line| (frame, line))).collect();
+        let (frame, first) = lines.iter().find(|(_, line)| line.para == para && line.first_in_para).copied().expect("the SMPK line");
+        let col = frame.columns[first.column as usize];
+        let starts_at = |line: &designcraft_compose::Line| line.glyphs.iter().find(|g| g.len > 0 && g.visible).map(|g| g.x - col.x0).expect("text");
+        let description_x = first.glyphs.iter().find(|g| g.byte == description).map(|g| g.x - col.x0).expect("the definition text");
+        assert!((description_x - 85.5).abs() < 0.6, "the definition starts at the hanging indent, not {description_x}");
+        let continuations: Vec<_> = lines.iter().filter(|(_, line)| line.para == para && !line.first_in_para).map(|(_, line)| *line).collect();
+        assert!(!continuations.is_empty(), "SMPK's definition wraps");
+        for line in continuations {
+            let x = starts_at(line);
+            assert!((x - 85.5).abs() < 0.6, "the wrapped line starts with its definition at 85.5, not {x}");
+        }
+        assert!((starts_at(first)).abs() < 0.6, "the abbreviation stays at the margin");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn test_execute_excel_and_generate_when_disabled_only_converts() {
         let sample_xlsx = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
