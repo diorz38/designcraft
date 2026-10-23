@@ -88,6 +88,7 @@ pub fn open(app: &mut DesignApp) -> Result<Value, String> {
 
     let pstyles = got.get("paragraphStyles").cloned().unwrap_or(json!([]));
     let sections = got.get("sections").cloned().unwrap_or(json!([]));
+    let templates = got.get("templates").cloned().unwrap_or(json!([]));
 
     let fields = json!({
         "preset": preset,
@@ -111,6 +112,7 @@ pub fn open(app: &mut DesignApp) -> Result<Value, String> {
         "activePage": active_page,
         "paragraphStyles": pstyles,
         "sections": sections,
+        "templates": templates,
         "status": "",
     });
 
@@ -120,7 +122,44 @@ pub fn open(app: &mut DesignApp) -> Result<Value, String> {
 
 /// Applies preset templates and values to dialog fields.
 fn apply_preset(d: &mut Dialog, preset: &str, facing: bool) {
+    let tpl_opt = d
+        .fields
+        .get("templates")
+        .and_then(Value::as_array)
+        .and_then(|arr| arr.iter().find(|t| t.get("name").and_then(Value::as_str) == Some(preset)).cloned());
+
     d.fields.insert("preset".into(), json!(preset));
+
+    if let Some(tpl) = tpl_opt {
+        let sided = tpl.get("sided").and_then(Value::as_str).unwrap_or(if facing { "double" } else { "single" });
+        d.fields.insert("sided".into(), json!(sided));
+        if let Some(ho) = tpl.get("headerOffset").and_then(Value::as_f64) {
+            d.fields.insert("headerOffset".into(), json!(format!("{ho:.1}")));
+        }
+        if let Some(fo) = tpl.get("footerOffset").and_then(Value::as_f64) {
+            d.fields.insert("footerOffset".into(), json!(format!("{fo:.1}")));
+        }
+        if let Some(h) = tpl.get("header") {
+            d.fields.insert("headerSingle".into(), json!(h.get("single").and_then(Value::as_str).unwrap_or("")));
+            d.fields.insert("headerLeft".into(), json!(h.get("left").and_then(Value::as_str).unwrap_or("")));
+            d.fields.insert("headerRight".into(), json!(h.get("right").and_then(Value::as_str).unwrap_or("")));
+        }
+        if let Some(f) = tpl.get("footer") {
+            d.fields.insert("footerSingle".into(), json!(f.get("single").and_then(Value::as_str).unwrap_or("")));
+            d.fields.insert("footerLeft".into(), json!(f.get("left").and_then(Value::as_str).unwrap_or("")));
+            d.fields.insert("footerRight".into(), json!(f.get("right").and_then(Value::as_str).unwrap_or("")));
+        }
+        if let Some(objs) = tpl.get("objects") {
+            let hr = objs.get("headerRule").and_then(Value::as_bool).unwrap_or(false);
+            d.fields.insert("rule".into(), json!(hr));
+            d.fields.insert("objects".into(), objs.clone());
+        }
+        if let Some(cols) = tpl.get("colors") {
+            d.fields.insert("colors".into(), cols.clone());
+        }
+        return;
+    }
+
     match preset {
         "minimal" => {
             d.fields.insert("sided".into(), json!("single"));
@@ -204,7 +243,7 @@ pub fn confirm(app: &mut DesignApp, d: &Dialog) -> Result<Value, String> {
         _ => json!("all"),
     };
 
-    let params = json!({
+    let mut params = json!({
         "preset": preset,
         "sided": sided,
         "scope": scope_val,
@@ -223,6 +262,12 @@ pub fn confirm(app: &mut DesignApp, d: &Dialog) -> Result<Value, String> {
             "right": d.s("footerRight"),
         },
     });
+    if let Some(objs) = d.fields.get("objects") {
+        params["objects"] = objs.clone();
+    }
+    if let Some(cols) = d.fields.get("colors") {
+        params["colors"] = cols.clone();
+    }
 
     app.run("layout.headerFooter.apply", params)
 }
@@ -288,11 +333,32 @@ pub fn body(app: &mut DesignApp, ui: &mut Ui, d: &mut Dialog) {
     // 1. Preset Selection
     row(ui, rtl, |ui| {
         caption(ui, rtl, tr("Preset:"));
-        for (id, label) in PRESETS {
-            let is_sel = current_preset == id;
-            if ui.radio(is_sel, crate::rtl::widget(ui, tr(label))).clicked() && !is_sel {
-                apply_preset(d, id, facing);
+        let mut picked_preset: Option<String> = None;
+        let templates = d.fields.get("templates").and_then(Value::as_array);
+        if let Some(tpls) = templates {
+            let cur_label = if current_preset.is_empty() { "Custom" } else { &current_preset };
+            egui::ComboBox::from_id_salt("hf_dialog_preset").selected_text(cur_label).width(180.0).show_ui(ui, |ui| {
+                for t in tpls {
+                    if let Some(name) = t.get("name").and_then(Value::as_str)
+                        && ui.selectable_label(current_preset == name, name).clicked()
+                    {
+                        picked_preset = Some(name.to_string());
+                    }
+                }
+                if ui.selectable_label(current_preset == "custom", tr("Custom")).clicked() {
+                    picked_preset = Some("custom".to_string());
+                }
+            });
+        } else {
+            for (id, label) in PRESETS {
+                let is_sel = current_preset == id;
+                if ui.radio(is_sel, crate::rtl::widget(ui, tr(label))).clicked() && !is_sel {
+                    picked_preset = Some(id.to_string());
+                }
             }
+        }
+        if let Some(p) = picked_preset {
+            apply_preset(d, &p, facing);
         }
     });
 

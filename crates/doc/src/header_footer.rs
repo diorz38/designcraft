@@ -49,6 +49,203 @@ pub struct SidedItems {
     pub right: Option<ItemId>,
 }
 
+/// Decorative objects and geometric rules for header/footer templates.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct HeaderFooterObjects {
+    pub header_rule: bool,
+    pub header_rule_weight: f64,
+    pub footer_rule: bool,
+    pub footer_rule_weight: f64,
+    pub top_accent_bar: bool,
+    pub top_accent_bar_height: f64,
+    pub top_accent_bar_bleed: bool,
+}
+
+impl Default for HeaderFooterObjects {
+    fn default() -> Self {
+        Self {
+            header_rule: true,
+            header_rule_weight: 0.5,
+            footer_rule: false,
+            footer_rule_weight: 0.5,
+            top_accent_bar: false,
+            top_accent_bar_height: 4.0,
+            top_accent_bar_bleed: true,
+        }
+    }
+}
+
+/// Color theme palette for header/footer templates.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct HeaderFooterColors {
+    pub primary: String,
+    pub accent: String,
+    pub dark: String,
+    pub rule_color: String,
+    pub text_color: String,
+}
+
+impl Default for HeaderFooterColors {
+    fn default() -> Self {
+        Self {
+            primary: "#0072bc".into(),
+            accent: "#f5ab19".into(),
+            dark: "#122647".into(),
+            rule_color: "[Black]".into(),
+            text_color: "[Black]".into(),
+        }
+    }
+}
+
+/// Unified Header & Footer Template bundling header, footer, decorative objects, and colors.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct HeaderFooterTemplate {
+    pub name: String,
+    pub description: String,
+    pub sided: Sided,
+    pub header_offset: f64,
+    pub footer_offset: f64,
+    pub header: SidedText,
+    pub footer: SidedText,
+    pub style: String,
+    pub objects: HeaderFooterObjects,
+    pub colors: HeaderFooterColors,
+}
+
+impl Default for HeaderFooterTemplate {
+    fn default() -> Self {
+        Self {
+            name: "Modern Minimal".into(),
+            description: "Clean single-line header with hairline rule and subtle folio footer.".into(),
+            sided: Sided::Double,
+            header_offset: 36.0,
+            footer_offset: 36.0,
+            header: SidedText {
+                single: "{section}\u{e006}{page}".into(),
+                left: "{page}\u{e006}{section}".into(),
+                right: "{section}\u{e006}{page}".into(),
+            },
+            footer: SidedText { single: "{filename}".into(), left: "{filename}".into(), right: "{filename}".into() },
+            style: "[Basic Paragraph]".into(),
+            objects: HeaderFooterObjects {
+                header_rule: true,
+                header_rule_weight: 0.5,
+                footer_rule: false,
+                footer_rule_weight: 0.5,
+                top_accent_bar: false,
+                top_accent_bar_height: 4.0,
+                top_accent_bar_bleed: true,
+            },
+            colors: HeaderFooterColors {
+                primary: "#0072bc".into(),
+                accent: "#f5ab19".into(),
+                dark: "#122647".into(),
+                rule_color: "[Black]".into(),
+                text_color: "[Black]".into(),
+            },
+        }
+    }
+}
+
+impl HeaderFooterTemplate {
+    /// Returns the 3 predefined templates: Modern Minimal, Editorial Book, and Corporate Report.
+    pub fn built_in_templates() -> Vec<Self> {
+        vec![
+            Self::default(),
+            Self {
+                name: "Editorial Book".into(),
+                description: "Literary spread layout with running headers, chapter numbers, and elegant rules.".into(),
+                sided: Sided::Double,
+                header_offset: 32.0,
+                footer_offset: 32.0,
+                header: SidedText {
+                    single: "{page}\u{e006}{runningHeader}".into(),
+                    left: "{page}\u{e006}{section}".into(),
+                    right: "{runningHeader}\u{e006}{page}".into(),
+                },
+                footer: SidedText { single: "{filename}".into(), left: "{filename}".into(), right: "".into() },
+                style: "[Basic Paragraph]".into(),
+                objects: HeaderFooterObjects {
+                    header_rule: true,
+                    header_rule_weight: 0.5,
+                    footer_rule: true,
+                    footer_rule_weight: 0.25,
+                    top_accent_bar: false,
+                    top_accent_bar_height: 4.0,
+                    top_accent_bar_bleed: true,
+                },
+                colors: HeaderFooterColors {
+                    primary: "#1e293b".into(),
+                    accent: "#b45309".into(),
+                    dark: "#0f172a".into(),
+                    rule_color: "[Black]".into(),
+                    text_color: "[Black]".into(),
+                },
+            },
+            Self {
+                name: "Corporate Report".into(),
+                description: "Institutional publication styling with colored top accent bar and agency branding footer.".into(),
+                sided: Sided::Double,
+                header_offset: 40.0,
+                footer_offset: 36.0,
+                header: SidedText {
+                    single: "{section}  |  {runningHeader}\u{e006}{page}".into(),
+                    left: "{page}\u{e006}{runningHeader}  |  {section}".into(),
+                    right: "{section}  |  {runningHeader}\u{e006}{page}".into(),
+                },
+                footer: SidedText {
+                    single: "{filename}\u{e006}Badan Pusat Statistik".into(),
+                    left: "Badan Pusat Statistik\u{e006}{filename}".into(),
+                    right: "{filename}\u{e006}Badan Pusat Statistik".into(),
+                },
+                style: "[Basic Paragraph]".into(),
+                objects: HeaderFooterObjects {
+                    header_rule: true,
+                    header_rule_weight: 0.75,
+                    footer_rule: true,
+                    footer_rule_weight: 0.5,
+                    top_accent_bar: true,
+                    top_accent_bar_height: 4.0,
+                    top_accent_bar_bleed: true,
+                },
+                colors: HeaderFooterColors {
+                    primary: "#0072bc".into(),
+                    accent: "#f5ab19".into(),
+                    dark: "#122647".into(),
+                    rule_color: "[Black]".into(),
+                    text_color: "[Black]".into(),
+                },
+            },
+        ]
+    }
+
+    /// Converts this template into an active `HeaderFooter` specification.
+    pub fn to_header_footer(&self, scope: HfScope) -> HeaderFooter {
+        HeaderFooter {
+            preset: self.name.clone(),
+            sided: self.sided,
+            scope,
+            parent: None,
+            header_offset: self.header_offset,
+            footer_offset: self.footer_offset,
+            header: self.header.clone(),
+            footer: self.footer.clone(),
+            style: self.style.clone(),
+            rule: self.objects.header_rule,
+            objects: self.objects.clone(),
+            colors: self.colors.clone(),
+            header_items: SidedItems::default(),
+            footer_items: SidedItems::default(),
+            rule_items: SidedItems::default(),
+            accent_bar_items: SidedItems::default(),
+            footer_rule_items: SidedItems::default(),
+        }
+    }
+}
+
 /// Stored Header/Footer specification.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -76,6 +273,12 @@ pub struct HeaderFooter {
     /// Hairline separator rule flag.
     #[serde(default)]
     pub rule: bool,
+    /// Decorative objects (hairline rules, accent bars).
+    #[serde(default)]
+    pub objects: HeaderFooterObjects,
+    /// Color theme and swatches.
+    #[serde(default)]
+    pub colors: HeaderFooterColors,
     /// Generated header text frame ItemIds.
     #[serde(default)]
     pub header_items: SidedItems,
@@ -85,6 +288,30 @@ pub struct HeaderFooter {
     /// Generated hairline rule ItemIds.
     #[serde(default)]
     pub rule_items: SidedItems,
+    /// Generated top accent bar ItemIds.
+    #[serde(default)]
+    pub accent_bar_items: SidedItems,
+    /// Generated footer rule ItemIds.
+    #[serde(default)]
+    pub footer_rule_items: SidedItems,
+}
+
+impl HeaderFooter {
+    /// Extracts a template definition from this `HeaderFooter` specification.
+    pub fn to_template(&self, name: impl Into<String>, description: impl Into<String>) -> HeaderFooterTemplate {
+        HeaderFooterTemplate {
+            name: name.into(),
+            description: description.into(),
+            sided: self.sided,
+            header_offset: self.header_offset,
+            footer_offset: self.footer_offset,
+            header: self.header.clone(),
+            footer: self.footer.clone(),
+            style: self.style.clone(),
+            objects: self.objects.clone(),
+            colors: self.colors.clone(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -108,9 +335,13 @@ mod tests {
             footer: SidedText { single: String::new(), left: "{filename}".into(), right: String::new() },
             style: "Folio".into(),
             rule: true,
+            objects: HeaderFooterObjects::default(),
+            colors: HeaderFooterColors::default(),
             header_items: SidedItems { single: None, left: Some(ItemId(101)), right: Some(ItemId(102)) },
             footer_items: SidedItems { single: None, left: Some(ItemId(103)), right: None },
             rule_items: SidedItems { single: None, left: Some(ItemId(104)), right: Some(ItemId(105)) },
+            accent_bar_items: SidedItems::default(),
+            footer_rule_items: SidedItems::default(),
         };
 
         let json = serde_json::to_string(&hf).unwrap();
@@ -135,9 +366,13 @@ mod tests {
             footer: SidedText::default(),
             style: "[Basic Paragraph]".into(),
             rule: false,
+            objects: HeaderFooterObjects::default(),
+            colors: HeaderFooterColors::default(),
             header_items: SidedItems::default(),
             footer_items: SidedItems::default(),
             rule_items: SidedItems::default(),
+            accent_bar_items: SidedItems::default(),
+            footer_rule_items: SidedItems::default(),
         };
 
         let json = serde_json::to_string(&hf).unwrap();
@@ -169,10 +404,28 @@ mod tests {
             footer: SidedText::default(),
             style: "[Basic Paragraph]".into(),
             rule: false,
+            objects: HeaderFooterObjects::default(),
+            colors: HeaderFooterColors::default(),
             header_items: SidedItems::default(),
             footer_items: SidedItems::default(),
             rule_items: SidedItems::default(),
+            accent_bar_items: SidedItems::default(),
+            footer_rule_items: SidedItems::default(),
         });
         assert!(doc.check().is_ok());
+    }
+
+    #[test]
+    fn built_in_templates_serde_roundtrip() {
+        let templates = HeaderFooterTemplate::built_in_templates();
+        assert_eq!(templates.len(), 3);
+        assert_eq!(templates[0].name, "Modern Minimal");
+        assert_eq!(templates[1].name, "Editorial Book");
+        assert_eq!(templates[2].name, "Corporate Report");
+        assert!(templates[2].objects.top_accent_bar);
+
+        let json = serde_json::to_string(&templates).unwrap();
+        let de: Vec<HeaderFooterTemplate> = serde_json::from_str(&json).unwrap();
+        assert_eq!(templates, de);
     }
 }

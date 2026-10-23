@@ -4426,6 +4426,16 @@ const TABLE: &[(&str, [&str; 5])] = &[
     // Header/Footer and Table Options.
     ("Header/Footer…", ["Kopf-/Fußzeile…", "En-tête/Pied de page…", "Encabezado/Pie de página…", "ヘッダー/フッター…", "页眉/页脚…"]),
     ("Header/Footer", ["Kopf-/Fußzeile", "En-tête/Pied de page", "Encabezado/Pie de página", "ヘッダー/フッター", "页眉/页脚"]),
+    (
+        "Header & Footer Template",
+        [
+            "Kopf- und Fußzeilenvorlage",
+            "Modèle d'en-tête et pied de page",
+            "Plantilla de encabezado y pie de página",
+            "ヘッダーとフッターのテンプレート",
+            "页眉和页脚模板",
+        ],
+    ),
     ("Table Options…", ["Tabellenoptionen…", "Options de tableau…", "Opciones de tabla…", "表のオプション…", "表选项…"]),
     ("Single-sided", ["Einseitig", "Recto seul", "Una sola cara", "片面", "单面"]),
     ("Double-sided", ["Doppelseitig", "Recto verso", "Doble cara", "見開き", "双面"]),
