@@ -432,13 +432,32 @@ Pubgen dapat memindai seluruh judul halaman di dokumen Anda dan menyusun Daftar 
 #### Jenis Daftar Isi (TOC style)
 | Jenis | Isinya | Judul otomatis |
 |---|---|---|
-| **TOC Entry** | semua halaman yang judulnya memakai gaya penanda TOC (perilaku awal) | *sesuai yang Anda ketik* |
+| **TOC Entry** | semua halaman yang judulnya memakai gaya penanda TOC, ditambah halaman naratif (perilaku awal) | *sesuai yang Anda ketik* |
 | **TOC Table** | hanya halaman yang **kotak teks pertamanya** diawali `Tabel` atau `Table` (tidak peka huruf besar/kecil) | `Daftar Table` |
 | **TOC Chart** | hanya halaman yang **kotak teks pertamanya** diawali `Grafik` atau `Chart` (tidak peka huruf besar/kecil) | `Daftar Grafik` |
+| **TOC Paragraph** | halaman naratif (lembar `GXX` dan `RXX`) beserta judul-judul di bawahnya, bertingkat | `Daftar Isi` |
 
 Memilih **TOC Table** atau **TOC Chart** akan mengisi kolom Judul secara otomatis dan menengahkan baris judulnya;
 Anda tetap bisa mengubahnya. Penyaring ini tersimpan di dalam dokumen, sehingga **Rebuild TOC** dan menu
 *Layout ▸ Update Table of Contents* tetap mempertahankannya.
+
+**TOC Paragraph** adalah daftar bertingkat khas sebuah publikasi: halaman naratif (prakata dari lembar `GXX` dan
+ulasan bab dari lembar `RXX`) di tingkat pertama, lalu paragraf `Heading 1` dan `Heading 2` dari isi setiap bab di
+bawahnya. Tidak ada halaman lain — tabel, grafik, pembatas, maupun keterangan publikasi — yang ikut terdaftar.
+Baris halaman naratif memuat baris bab dan judulnya, sehingga barisnya berbunyi `BAB 01 Geografi ......... 2`;
+baris bab hanya dihitung kalau kotaknya sendiri berada di atas judul, jadi halaman yang dibuka baris lain di kotak
+judulnya tetap memakai teksnya sendiri. Lembar `GXX` yang tidak punya baris judul (hanya tautan RTF) menaruh RTF di
+bagian atas halaman, sehingga judul halaman adalah baris **paling besar yang ditengahkan** di antara paragraf-paragraf
+awal RTF — yaitu judulnya, yang ditulis sebagai heading Word di sebagian lembar dan sebagai format langsung di
+lembar lain. Dengan begitu baris ISSN di atasnya (rata kanan) dan judul publikasi di bawahnya (huruf lebih kecil)
+tidak ikut terpakai, dan paragraf kosong di awal RTF pun tidak mengganggu.
+
+Setiap daftar memakai gaya paragrafnya sendiri: `TOC Level 1…n` untuk daftar isi, `TOC Table Level 1…n` untuk
+daftar tabel, dan `TOC Chart Level 1…n` untuk daftar grafik. Gaya itu membawa posisi tab dan indentasi daftar
+tersebut, sehingga membuat atau membangun ulang satu daftar tidak lagi menggeser baris daftar yang lain.
+
+**Include TOC page in TOC entries** mendaftarkan halaman daftar isi itu sendiri di dalam daftarnya — untuk semua
+jenis daftar, termasuk daftar paragraf yang bertingkat.
 
 Satu dokumen boleh memuat beberapa daftar sekaligus — misalnya *Daftar Table* dan *Daftar Grafik* berdampingan.
 **Add TOC** membuat daftar di halaman yang sedang dibuka dan menggantikan daftar yang sudah ada di halaman itu

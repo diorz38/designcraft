@@ -79,6 +79,11 @@ fn default_toc_style() -> String {
 /// The Quick Actions "TOC style" choices: what the table of contents lists.
 pub const TOC_KINDS: [&str; 4] = ["TOC Entry", "TOC Table", "TOC Chart", "TOC Paragraph"];
 
+/// The paragraph style of a narrative page's title: the pages the `GXX` and `RXX` sheets produce.
+/// The paragraph table of contents lists these pages and nothing else, so a table, chart, divider
+/// or publication-note page never shows up in it.
+pub const TOC_NARRATIVE_STYLE: &str = "TOC Chapter";
+
 /// The words the first text box on a page must start with for each TOC style; none lists every
 /// paragraph of the tagged style (the original behaviour). A paragraph list takes chapter pages
 /// only: `RXX` and `BXX` pages open with their "BAB 01" line, table and chart pages don't.
@@ -3936,7 +3941,7 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
     ui.horizontal(|ui| {
         ui.label(RichText::new("TOC style:").size(11.0).color(t.text));
         let cur = TOC_KINDS.get(st.toc_kind).copied().unwrap_or(TOC_KINDS[0]);
-        let tip = "TOC Entry: every page whose title carries the TOC tag style\nTOC Table: only pages whose first text box starts with \"Tabel\" or \"Table\"\nTOC Chart: only pages whose first text box starts with \"Grafik\" or \"Chart\"";
+        let tip = "TOC Entry: every page whose title carries the TOC tag style, plus the narrative pages\nTOC Table: only pages whose first text box starts with \"Tabel\" or \"Table\"\nTOC Chart: only pages whose first text box starts with \"Grafik\" or \"Chart\"\nTOC Paragraph: the narrative pages (the GXX and RXX sheets) with their Heading 1 and Heading 2 paragraphs nested under them";
         let before = st.toc_kind;
         egui::ComboBox::from_id_salt("pubgen_toc_kind")
             .selected_text(cur)
@@ -4611,9 +4616,13 @@ fn post_process_template_applied_page(
     applied_info: &Value,
     is_cover_or_div: bool,
     doc_margins: designcraft_doc::Margins,
+    is_narrative_row: bool,
+    title_val: &str,
+    type_val: &str,
 ) -> Option<u64> {
     let mut table_placeholder_id = None;
     let mut story_ids_to_tag = Vec::new();
+    let mut body_story_ids = Vec::new();
     let mut image_slot_ids = Vec::new();
     if let Some(items) = applied_info.get("items").and_then(Value::as_array) {
         if let Some(active) = app.session.active() {
@@ -4633,6 +4642,10 @@ fn post_process_template_applied_page(
                             && let Some(tf) = item.text_frame()
                         {
                             story_ids_to_tag.push(tf.story);
+                        } else if item.label.starts_with("#slot:story:")
+                            && let Some(tf) = item.text_frame()
+                        {
+                            body_story_ids.push(tf.story);
                         } else if item.label.contains("image") || item.label.contains("photo") || item.label.contains("hero") {
                             image_slot_ids.push(it_id);
                         }
@@ -4652,13 +4665,24 @@ fn post_process_template_applied_page(
         if !story_ids_to_tag.is_empty()
             && let Some(active) = app.session.active_mut()
         {
+            // A narrative page (the G and Ulasan sheets) carries the narrative style, so the
+            // paragraph table of contents lists it and nothing else.
+            let title_style = if is_narrative_row { TOC_NARRATIVE_STYLE.to_string() } else { st.toc_style.clone() };
             let doc = std::sync::Arc::make_mut(&mut active.doc);
             for sid in story_ids_to_tag {
                 if let Some(story) = doc.story_mut(sid) {
                     for p in &mut story.paras {
-                        p.style = st.toc_style.clone();
+                        p.style = title_style.clone();
                     }
                 }
+            }
+        }
+
+        // A sheet with no title line puts the RTF at the top of the page, so the page's title is
+        // the RTF's own heading: tag that paragraph for the paragraph table of contents.
+        if title_val.trim().is_empty() && (is_narrative_row || type_val.eq_ignore_ascii_case("Note")) {
+            for sid in body_story_ids {
+                tag_page_title(app, sid, TOC_NARRATIVE_STYLE);
             }
         }
     }
@@ -4745,8 +4769,10 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     let mut inserted_images_count = 0usize;
 
     // Every preset tags its title (or the combined TOC line) with the TOC paragraph style, so the
-    // Quick Actions "Add TOC" lists one entry per generated page.
+    // Quick Actions "Add TOC" lists one entry per generated page. The narrative pages (the G and
+    // Ulasan sheets) carry the narrative style instead, so the paragraph list names them alone.
     ensure_para_style(app, &st.toc_style);
+    ensure_para_style(app, TOC_NARRATIVE_STYLE);
 
     let doc_margins = {
         let active = app.session.active().ok_or("No active document")?;
@@ -4772,6 +4798,9 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         let has_chapter_prefix = clean_id_title.split_whitespace().next().is_some_and(|w| w.eq_ignore_ascii_case("bab"));
         let is_div = is_divider_type(type_val);
         let is_cover_or_div = is_div || type_val.eq_ignore_ascii_case("COVER");
+        // The narrative sheets: `GXX` (the front matter) and `RXX` (the chapter reviews). Their
+        // pages are the ones the paragraph table of contents lists.
+        let is_narrative_row = type_val.eq_ignore_ascii_case("Ulasan") || type_val.eq_ignore_ascii_case("G");
 
         let row_tpl_spec = template_col.and_then(|c| row.get(c)).map(String::as_str).unwrap_or("").trim();
         let explicit_tpl_path = if !row_tpl_spec.is_empty() { resolve_template_path_spec(&st.card1_path, row_tpl_spec) } else { None };
@@ -4912,7 +4941,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         inserted_images_count = inserted_images_count.saturating_add(1);
                     }
                 } else {
-                    let (id_title, en_title_opt) = excel::split_and_harmonize_table_title(title_val, if title_en_val.is_empty() { None } else { Some(title_en_val) });
+                    let (id_title, en_title_opt) =
+                        excel::split_and_harmonize_table_title(title_val, if title_en_val.is_empty() { None } else { Some(title_en_val) });
                     let formatted_num = excel::format_table_number(num_val, file_val);
                     if st.bilingual_output || en_title_opt.is_some() {
                         let kind_en = format!("{} {}", locale::words(locale::Locale::En).table, formatted_num);
@@ -4956,7 +4986,16 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 let apply_res = app.run("template.page.apply", apply_params);
 
                 if let Ok(applied_info) = apply_res {
-                    let table_placeholder_id = post_process_template_applied_page(app, st, &applied_info, is_cover_or_div, doc_margins);
+                    let table_placeholder_id = post_process_template_applied_page(
+                        app,
+                        st,
+                        &applied_info,
+                        is_cover_or_div,
+                        doc_margins,
+                        is_narrative_row,
+                        title_val,
+                        type_val,
+                    );
                     generated_count = generated_count.saturating_add(1);
 
                     // Auto-insert table from CSV if enabled and present
@@ -5027,7 +5066,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         }
 
                         if let Ok(en_applied) = app.run("template.page.apply", en_apply_params) {
-                            post_process_template_applied_page(app, st, &en_applied, false, doc_margins);
+                            post_process_template_applied_page(app, st, &en_applied, false, doc_margins, is_narrative_row, title_val, type_val);
                             let en_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
                             italicize_page_stories(app, en_page_idx, en_page_idx);
                             inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
@@ -5083,13 +5122,13 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             // Ulasan / Editorial Chapter layout:
             // Split title "BAB 01 Pemerintahan" into "BAB 01" and "Pemerintahan"
             let (ch_line, title_line) = split_chapter_title(clean_id_title, num_val);
-            let resolved_en_rtf = if st.bilingual_output && !file_en_val.is_empty() {
-                resolve_catalog_related_file(&st.card1_path, file_en_val, "rtf")
-            } else {
-                None
-            };
+            let resolved_en_rtf =
+                if st.bilingual_output && !file_en_val.is_empty() { resolve_catalog_related_file(&st.card1_path, file_en_val, "rtf") } else { None };
 
-            if st.bilingual_output && has_chapter_prefix && let Some(en_rtf_file) = resolved_en_rtf {
+            if st.bilingual_output
+                && has_chapter_prefix
+                && let Some(en_rtf_file) = resolved_en_rtf
+            {
                 // Bilingual Review Chapter (RXX):
                 // 3-Line Header on Page 1:
                 // Line 1: "BAB 01" (Arial Black, 24.0)
@@ -5107,6 +5146,9 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         None,
                     );
                 }
+                // 2nd Textbox: "Pemerintahan" (font Arial Black, size 20.0) -> second row
+                // Tag with the narrative style so the paragraph table of contents lists this
+                // chapter (and only the narrative pages).
                 if !title_line.is_empty() {
                     frame_with_font_full(
                         app,
@@ -5116,7 +5158,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         "Arial Black",
                         None,
                         20.0,
-                        Some(&st.toc_style),
+                        Some(TOC_NARRATIVE_STYLE),
                     );
                 }
                 let en_header_text = if !clean_en_title.is_empty() {
@@ -5200,8 +5242,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     );
                     if let Ok(val) = res {
                         let sid = val.get("story").and_then(Value::as_u64).map(designcraft_doc::StoryId);
-                        id_over = val.get("overset").and_then(Value::as_bool).unwrap_or(false)
-                            || sid.is_some_and(|s| story_is_overset(app, s));
+                        id_over = val.get("overset").and_then(Value::as_bool).unwrap_or(false) || sid.is_some_and(|s| story_is_overset(app, s));
                         inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
                     }
                 }
@@ -5219,8 +5260,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     if let Ok(val) = res {
                         en_story_id = val.get("story").and_then(Value::as_u64);
                         let sid = en_story_id.map(designcraft_doc::StoryId);
-                        en_over = val.get("overset").and_then(Value::as_bool).unwrap_or(false)
-                            || sid.is_some_and(|s| story_is_overset(app, s));
+                        en_over = val.get("overset").and_then(Value::as_bool).unwrap_or(false) || sid.is_some_and(|s| story_is_overset(app, s));
                         inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
                     }
                 }
@@ -5282,8 +5322,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         if let Ok(val) = res {
                             cur_left_fid = val.get("to").and_then(Value::as_u64);
                             let sid = val.get("story").and_then(Value::as_u64).map(designcraft_doc::StoryId);
-                            id_over = val.get("overset").and_then(Value::as_bool).unwrap_or(false)
-                                || sid.is_some_and(|s| story_is_overset(app, s));
+                            id_over = val.get("overset").and_then(Value::as_bool).unwrap_or(false) || sid.is_some_and(|s| story_is_overset(app, s));
                         } else {
                             id_over = false;
                         }
@@ -5304,8 +5343,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         if let Ok(val) = res {
                             cur_right_fid = val.get("to").and_then(Value::as_u64);
                             let sid = val.get("story").and_then(Value::as_u64).map(designcraft_doc::StoryId);
-                            en_over = val.get("overset").and_then(Value::as_bool).unwrap_or(false)
-                                || sid.is_some_and(|s| story_is_overset(app, s));
+                            en_over = val.get("overset").and_then(Value::as_bool).unwrap_or(false) || sid.is_some_and(|s| story_is_overset(app, s));
                         } else {
                             en_over = false;
                         }
@@ -5336,7 +5374,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         );
                     }
                     // 2nd Textbox: "Pemerintahan" (font Arial Black, size 20.0) -> second row
-                    // Tag with TOC style so TOC lists this chapter
+                    // Tag with the narrative style so the paragraph table of contents lists this
+                    // chapter (and only the narrative pages).
                     if !title_line.is_empty() {
                         frame_with_font_and_style(
                             app,
@@ -5345,7 +5384,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                             &title_line,
                             "Arial Black",
                             20.0,
-                            Some(&st.toc_style),
+                            Some(TOC_NARRATIVE_STYLE),
                         );
                     }
                 } else if !clean_id_title.is_empty() {
@@ -5357,7 +5396,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         &clean_id_title.to_uppercase(),
                         "Arial",
                         12.0,
-                        Some(&st.toc_style),
+                        Some(TOC_NARRATIVE_STYLE),
                     ) {
                         let _ = app.run("text.select", json!({"story": sid, "anchor": 0, "focus": clean_id_title.chars().count() as u64}));
                         let _ = app.run("type.alignCenter", json!({}));
@@ -5517,8 +5556,16 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         inserted_images_count = inserted_images_count.saturating_add(1);
                     };
                     let (mw, mh) = (en_margin.x1 - en_margin.x0, en_margin.y1 - en_margin.y0);
-                    place_en("image1", [en_margin.x0, en_margin.y0 + mh * 0.254, en_margin.x0 + mw * 0.335, en_margin.y0 + mh * 0.528], "boundingBox");
-                    place_en("image2", [en_margin.x1 - mw * 0.244, en_margin.y0 + mh * 0.354, en_margin.x1 - mw * 0.044, en_margin.y0 + mh * 0.464], "none");
+                    place_en(
+                        "image1",
+                        [en_margin.x0, en_margin.y0 + mh * 0.254, en_margin.x0 + mw * 0.335, en_margin.y0 + mh * 0.528],
+                        "boundingBox",
+                    );
+                    place_en(
+                        "image2",
+                        [en_margin.x1 - mw * 0.244, en_margin.y0 + mh * 0.354, en_margin.x1 - mw * 0.044, en_margin.y0 + mh * 0.464],
+                        "none",
+                    );
 
                     crate::canvas::go_to_page(app, en_page_idx);
                     let rtf_y0 = en_margin.y0 + en_header_h;
@@ -5751,7 +5798,9 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let has_header = !title_val.trim().is_empty();
             if has_header {
                 let title_rect = [margin.x0, margin.y0, margin.x1, margin.y0 + 36.0];
-                frame_with_centered_arial(app, spread_idx, title_rect, title_val.trim());
+                // Tag the title with the narrative style so the paragraph table of contents names
+                // the page, as the template flow does for its title slot.
+                frame_with_centered_arial(app, spread_idx, title_rect, title_val.trim(), Some(TOC_NARRATIVE_STYLE));
             }
 
             if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
@@ -5780,6 +5829,11 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     let rtf_path_str = rtf_file.to_string_lossy().to_string();
                     if execute_page_from_rtf(app, &mut st_copy, &rtf_path_str).is_ok() {
                         inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
+                        // No title line on the page, so the page's title is the RTF's own
+                        // heading: tag that paragraph for the paragraph table of contents.
+                        if !has_header && let Some(sid) = story_of_frame(app, fid) {
+                            tag_page_title(app, sid, TOC_NARRATIVE_STYLE);
+                        }
                     }
                 }
             }
@@ -5841,11 +5895,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         }
                     }
 
-                    let formatted_num = if is_table {
-                        excel::format_table_number(num_val, file_val)
-                    } else {
-                        num_val.to_string()
-                    };
+                    let formatted_num = if is_table { excel::format_table_number(num_val, file_val) } else { num_val.to_string() };
 
                     if !formatted_num.is_empty() {
                         let _ = app.run(
@@ -5861,7 +5911,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     }
 
                     if !title_val.is_empty() {
-                        let (id_t, en_t_opt) = excel::split_and_harmonize_table_title(title_val, if title_en_val.is_empty() { None } else { Some(title_en_val) });
+                        let (id_t, en_t_opt) =
+                            excel::split_and_harmonize_table_title(title_val, if title_en_val.is_empty() { None } else { Some(title_en_val) });
 
                         if let Some(en_t) = en_t_opt {
                             let full_title = format!("{id_t}{}{en_t}", designcraft_doc::story::FORCED_LINE_BREAK);
@@ -6038,11 +6089,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     }
 
                     // Col 2: Number (Fit tightly to content)
-                    let formatted_num = if is_table {
-                        excel::format_table_number(num_val, file_val)
-                    } else {
-                        num_val.to_string()
-                    };
+                    let formatted_num = if is_table { excel::format_table_number(num_val, file_val) } else { num_val.to_string() };
 
                     if !formatted_num.is_empty() {
                         let c2_w = estimate_text_width(&formatted_num, false);
@@ -6068,7 +6115,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         let max_x1 = (margin.x1 - end_space).max(c3_x0 + 40.0);
                         let c3_x1 = max_x1.min(margin.x1);
 
-                        let (id_t, en_t_opt) = excel::split_and_harmonize_table_title(title_val, if title_en_val.is_empty() { None } else { Some(title_en_val) });
+                        let (id_t, en_t_opt) =
+                            excel::split_and_harmonize_table_title(title_val, if title_en_val.is_empty() { None } else { Some(title_en_val) });
 
                         if let Some(en_t) = en_t_opt {
                             let full_title = format!("{id_t}{}{en_t}", designcraft_doc::story::FORCED_LINE_BREAK);
@@ -6175,6 +6223,82 @@ fn ensure_para_style(app: &mut DesignApp, name: &str) {
     }
 }
 
+/// How many of a page's opening paragraphs the title search weighs.
+const TITLE_SCAN: usize = 12;
+
+/// The paragraph that reads as the page's title: the largest centred line among the page's opening
+/// paragraphs (the first one on a tie).
+///
+/// A `Note`/`G` sheet gives no title, so the page opens with the RTF's own heading. Word writes
+/// that heading as a `Heading n`, as the `Pendahuluan` style or as direct formatting (bold,
+/// capitals, coloured, centred) from sheet to sheet, so the search goes by how it looks rather
+/// than by its name. On the compilers' page that leaves out the ISSN line above it (right-aligned)
+/// and the publication's title below it (set smaller), and takes "TIM PENYUSUN/COMPILERS".
+fn page_title_index(doc: &designcraft_doc::Document, sid: designcraft_doc::StoryId) -> Option<usize> {
+    let story = doc.story(sid)?;
+    let mut seen = 0;
+    let mut sized: Vec<(usize, f64, bool)> = Vec::new(); // paragraph, text size, centred
+    for (i, r) in story.para_ranges().iter().enumerate() {
+        if !story.text.get(r.clone()).is_some_and(|t| !t.trim().is_empty()) {
+            continue;
+        }
+        seen += 1;
+        if seen > TITLE_SCAN {
+            break;
+        }
+        let mut size: Option<f64> = None;
+        for (run, format) in story.runs() {
+            if run.start >= r.end {
+                break;
+            }
+            if run.end <= r.start {
+                continue;
+            }
+            if let Some(s) = format.over.size {
+                size = Some(size.map_or(s, |m: f64| m.max(s)));
+            }
+        }
+        let size = size.or_else(|| story.paras.get(i).and_then(|p| doc.styles.para(&p.style)).and_then(|s| s.chars.size)).unwrap_or(0.0);
+        let centred = story.paras.get(i).is_some_and(|p| p.para.align == Some(designcraft_doc::Align::Center));
+        sized.push((i, size, centred));
+    }
+    let largest = |centred_only: bool| {
+        sized
+            .iter()
+            .filter(|(_, _, centred)| !centred_only || *centred)
+            .fold(None::<(usize, f64)>, |best, &(i, size, _)| match best {
+                Some((_, b)) if b >= size => best,
+                _ => Some((i, size)),
+            })
+            .map(|(i, _)| i)
+    };
+    largest(true).or_else(|| largest(false))
+}
+
+/// Tag the paragraph that reads as a title-less `Note`/`G` page's title with `style`, so the
+/// paragraph table of contents names the page. Only the style changes: the RTF's own centring,
+/// boldness and size stay on the paragraph.
+fn tag_page_title(app: &mut DesignApp, sid: designcraft_doc::StoryId, style: &str) {
+    ensure_para_style(app, style);
+    let _ = app.session.edit(|doc, _| {
+        if let Some(i) = page_title_index(doc, sid)
+            && let Some(story) = doc.story_mut(sid)
+            && let Some(r) = story.para_ranges().get(i).cloned()
+        {
+            story.format_paras(r.start..r.start, |f| f.style = style.to_string());
+        }
+        Ok(serde_json::Value::Null)
+    });
+}
+
+/// The story of the text frame `fid`, as the document has it now.
+fn story_of_frame(app: &DesignApp, fid: u64) -> Option<designcraft_doc::StoryId> {
+    let active = app.session.active()?;
+    let id = designcraft_doc::ItemId(fid);
+    let item = active.doc.spreads.iter().flat_map(|s| s.items.iter()).find(|i| i.id == id)?;
+    item.text_frame().map(|tf| tf.story)
+}
+
 /// Create a text frame and tag its paragraph with the TOC paragraph style, so `toc.generate`
 /// lists the frame's text as an entry (one entry per generated page).
 fn frame_with_style(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], text: &str, style: &str) -> Option<u64> {
@@ -6241,11 +6365,7 @@ fn italicize_story(app: &mut DesignApp, story_id: u64) {
         if let Some(story) = doc.story_mut(designcraft_doc::StoryId(story_id)) {
             for run in &mut story.chars {
                 let cur = run.format.over.font_style.as_deref().unwrap_or("Regular");
-                let next = if cur.eq_ignore_ascii_case("bold") || cur.eq_ignore_ascii_case("bold italic") {
-                    "Bold Italic"
-                } else {
-                    "Italic"
-                };
+                let next = if cur.eq_ignore_ascii_case("bold") || cur.eq_ignore_ascii_case("bold italic") { "Bold Italic" } else { "Italic" };
                 run.format.over.font_style = Some(next.to_string());
             }
         }
@@ -6271,11 +6391,8 @@ fn italicize_page_stories(app: &mut DesignApp, start_page: usize, end_page: usiz
                     if let Some(story) = doc.story_mut(sid) {
                         for run in &mut story.chars {
                             let cur = run.format.over.font_style.as_deref().unwrap_or("Regular");
-                            let next = if cur.eq_ignore_ascii_case("bold") || cur.eq_ignore_ascii_case("bold italic") {
-                                "Bold Italic"
-                            } else {
-                                "Italic"
-                            };
+                            let next =
+                                if cur.eq_ignore_ascii_case("bold") || cur.eq_ignore_ascii_case("bold italic") { "Bold Italic" } else { "Italic" };
                             run.format.over.font_style = Some(next.to_string());
                         }
                     }
@@ -6342,12 +6459,15 @@ fn frame_with_centered_bold_title(app: &mut DesignApp, spread_idx: usize, rect: 
 }
 
 /// Centred Arial title in a 100 % transparent text box (no fill, no stroke).
-fn frame_with_centered_arial(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], text: &str) -> Option<u64> {
+fn frame_with_centered_arial(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], text: &str, style: Option<&str>) -> Option<u64> {
     let res = app.run("frame.create", json!({"spread": spread_idx, "rect": rect, "content": "text", "text": text, "caret": false})).ok()?;
     let fid = res.get("id").and_then(Value::as_u64)?;
     let story = res.get("story").and_then(Value::as_u64)?;
     let end = text.len().max(1) as u64;
     let _ = app.run("text.select", json!({"story": story, "anchor": 0, "focus": end}));
+    if let Some(style) = style {
+        let _ = app.run("style.paragraph.apply", json!({"name": style}));
+    }
     let _ = app.run("type.char", json!({"fontFamily": "Arial", "size": 11.0}));
     let _ = app.run("selection.set", json!({"ids": [fid]}));
     let _ = app.run("type.alignCenter", json!({}));
@@ -7400,8 +7520,12 @@ struct TocLevel {
     level: u8,
     /// `pageTitle` filter: list a page only when its first text box starts with one of these.
     words: Vec<String>,
+    /// Prefix the entry with the page's first text box (the chapter line): a narrative page's
+    /// title reads "BAB 01 Geografi" instead of "Geografi".
+    chapter_number: bool,
 }
 
+#[derive(Clone, Debug)]
 pub struct TocPlan {
     /// The styles the table of contents lists, outermost level first.
     levels: Vec<TocLevel>,
@@ -7417,14 +7541,22 @@ impl TocPlan {
     /// The plan the panel's TOC controls describe. A paragraph list nests chapter titles over
     /// the headings the imported RTF files carry.
     fn from_state(st: &PubgenState) -> Self {
+        let level = |style: String, words: Vec<String>, chapter_number: bool| TocLevel { style, level: 1, words, chapter_number };
         let levels = if st.toc_kind == 3 {
+            // The narrative pages (the G and Ulasan sheets) and the headings they carry.
             vec![
-                TocLevel { style: st.toc_style.clone(), level: 1, words: toc_kind_words(3).iter().map(|w| (*w).to_string()).collect() },
-                TocLevel { style: "Heading 1".into(), level: 2, words: Vec::new() },
-                TocLevel { style: "Heading 2".into(), level: 3, words: Vec::new() },
+                level(TOC_NARRATIVE_STYLE.to_string(), Vec::new(), true),
+                TocLevel { style: "Heading 1".into(), level: 2, words: Vec::new(), chapter_number: false },
+                TocLevel { style: "Heading 2".into(), level: 3, words: Vec::new(), chapter_number: false },
+            ]
+        } else if st.toc_kind == 0 {
+            // The plain list: every tagged page title plus the narrative pages.
+            vec![
+                level(st.toc_style.clone(), toc_kind_words(0).iter().map(|w| (*w).to_string()).collect(), false),
+                level(TOC_NARRATIVE_STYLE.to_string(), Vec::new(), false),
             ]
         } else {
-            vec![TocLevel { style: st.toc_style.clone(), level: 1, words: toc_kind_words(st.toc_kind).iter().map(|w| (*w).to_string()).collect() }]
+            vec![level(st.toc_style.clone(), toc_kind_words(st.toc_kind).iter().map(|w| (*w).to_string()).collect(), false)]
         };
         Self {
             levels,
@@ -7438,9 +7570,16 @@ impl TocPlan {
     /// The plan a stored table of contents rebuilds with: its own styles, levels, title and
     /// filters, with the panel's layout and indentation options.
     fn from_toc(st: &PubgenState, toc: &designcraft_doc::Toc) -> Self {
-        let levels: Vec<TocLevel> =
-            toc.entries.iter().map(|e| TocLevel { style: e.style.clone(), level: e.level, words: e.page_title.clone() }).collect();
-        let levels = if levels.is_empty() { vec![TocLevel { style: st.toc_style.clone(), level: 1, words: Vec::new() }] } else { levels };
+        let levels: Vec<TocLevel> = toc
+            .entries
+            .iter()
+            .map(|e| TocLevel { style: e.style.clone(), level: e.level, words: e.page_title.clone(), chapter_number: e.chapter_number })
+            .collect();
+        let levels = if levels.is_empty() {
+            vec![TocLevel { style: st.toc_style.clone(), level: 1, words: Vec::new(), chapter_number: false }]
+        } else {
+            levels
+        };
         Self {
             levels,
             title: toc.title.trim().to_string(),
@@ -7456,8 +7595,37 @@ impl TocPlan {
     }
 
     /// A list of chapter titles over their headings, regenerated with each entry's own level.
+    /// The narrative list leads with the narrative pages; the plain list leads with the tagged
+    /// page titles and adds the narrative pages as a second level of the same depth.
     fn is_paragraph_toc(&self) -> bool {
-        self.levels.len() > 1
+        self.levels.first().is_some_and(|l| l.style == TOC_NARRATIVE_STYLE)
+    }
+
+    /// The paragraph styles this list's entries take: the contents list owns `TOC Level n`, and
+    /// the Tables and Charts lists get a family of their own. The styles carry each list's tab
+    /// stop and indent, so sharing them would let regenerating one list restyle the pages of
+    /// another (a table list's rows moved when the contents list was rebuilt).
+    fn entry_prefix(&self) -> &'static str {
+        match self.kind() {
+            1 => "TOC Table Level",
+            2 => "TOC Chart Level",
+            _ => "TOC Level",
+        }
+    }
+
+    /// Documents whose pages predate the narrative style keep their chapters: the card's TOC style
+    /// on pages that open with "BAB" still lists them (with the chapter line, as a new page's),
+    /// and a `pageTitle` filter keeps table and chart pages out. Only used while the document has
+    /// no narrative-styled paragraph at all, so regenerated pages never take this path.
+    fn with_legacy_chapters(&self, st: &PubgenState) -> Self {
+        let mut plan = self.clone();
+        plan.levels.push(TocLevel {
+            style: st.toc_style.clone(),
+            level: 1,
+            words: toc_kind_words(3).iter().map(|w| (*w).to_string()).collect(),
+            chapter_number: true,
+        });
+        plan
     }
 
     /// Whether the table of contents writes a title line (an empty field writes none, which the
@@ -7473,13 +7641,23 @@ impl TocPlan {
 
     /// The `toc.generate` entries that list this plan's pages.
     fn entries_json(&self) -> Value {
+        let prefix = self.entry_prefix();
         Value::Array(
             self.levels
                 .iter()
                 .map(|l| {
-                    let mut e = json!({"style": l.style, "level": l.level, "pageNumber": "after", "separator": "\t"});
+                    let mut e = json!({
+                        "style": l.style,
+                        "level": l.level,
+                        "entryStyle": format!("{prefix} {}", l.level),
+                        "pageNumber": "after",
+                        "separator": "\t"
+                    });
                     if !l.words.is_empty() {
                         e["pageTitle"] = json!(l.words);
+                    }
+                    if l.chapter_number {
+                        e["chapterNumber"] = json!(true);
                     }
                     e
                 })
@@ -7762,7 +7940,8 @@ fn enrich_toc_story(
     });
 }
 
-fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hanging_indent: f64, layout_style: usize) {
+fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hanging_indent: f64, layout_style: usize, prefix: &str) {
+    let level_one = format!("{prefix} 1");
     let _ = app.session.edit(|d, _| {
         let tab_stop = designcraft_doc::TabStop {
             position: width.max(36.0),
@@ -7786,7 +7965,7 @@ fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hangin
             let mut found_hdr = false;
 
             for style in &mut d.styles_mut().paragraph {
-                if style.name == "TOC Level 1" {
+                if style.name == level_one {
                     found_level1 = true;
                     style.para.left_indent = li;
                     style.para.first_line_indent = fi;
@@ -7820,7 +7999,7 @@ fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hangin
             let st = d.styles_mut();
             if !found_level1 {
                 st.paragraph.push(designcraft_doc::ParagraphStyle {
-                    name: "TOC Level 1".to_string(),
+                    name: level_one.clone(),
                     based_on: Some(designcraft_doc::story::BASIC_PARAGRAPH.into()),
                     next_style: None,
                     para: designcraft_doc::ParaAttrs {
@@ -7874,25 +8053,24 @@ fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hangin
                 });
             }
         } else {
-            let style_name = "TOC Level 1";
             let mut found = false;
             for style in &mut d.styles_mut().paragraph {
-                if style.name.starts_with("TOC Level") {
-                    found = true;
-                    let level_idx: usize = style.name.strip_prefix("TOC Level ").and_then(|s| s.parse().ok()).unwrap_or(1);
-                    let base_indent = (level_idx.saturating_sub(1) as f64) * 12.0;
-                    let (li, fi) = if hanging { (Some(base_indent + hanging_indent), Some(-hanging_indent)) } else { (Some(base_indent), Some(0.0)) };
-                    style.para.left_indent = li;
-                    style.para.first_line_indent = fi;
-                    style.para.tabs = Some(vec![tab_stop.clone()]);
-                }
+                let Some(idx) = style.name.strip_prefix(prefix).and_then(|rest| rest.strip_prefix(' ')).and_then(|n| n.parse::<usize>().ok()) else {
+                    continue;
+                };
+                found = true;
+                let base_indent = (idx.saturating_sub(1) as f64) * 12.0;
+                let (li, fi) = if hanging { (Some(base_indent + hanging_indent), Some(-hanging_indent)) } else { (Some(base_indent), Some(0.0)) };
+                style.para.left_indent = li;
+                style.para.first_line_indent = fi;
+                style.para.tabs = Some(vec![tab_stop.clone()]);
             }
 
             if !found {
                 let (left_ind, first_ind) = if hanging { (Some(hanging_indent), Some(-hanging_indent)) } else { (Some(0.0), Some(0.0)) };
                 let st = d.styles_mut();
                 st.paragraph.push(designcraft_doc::ParagraphStyle {
-                    name: style_name.to_string(),
+                    name: level_one.clone(),
                     based_on: Some(designcraft_doc::story::BASIC_PARAGRAPH.into()),
                     next_style: None,
                     para: designcraft_doc::ParaAttrs {
@@ -7940,6 +8118,53 @@ fn compute_detected_prefix_width(st: &PubgenState) -> f64 {
     }
 }
 
+/// The entry that lists the table of contents itself ("Daftar Isi .... 5").
+///
+/// The flat lists get it from `enrich_toc_story`, which rewrites their text; a paragraph list
+/// keeps the engine's own level styles, so its entry is added as a paragraph of its own.
+fn add_toc_self_entry(app: &mut DesignApp, sid: designcraft_doc::StoryId, plan: &TocPlan, toc_page: usize) {
+    if !plan.include_self {
+        return;
+    }
+    let title = plan.title_or_contents().to_string();
+    let _ = app.session.edit(|doc, _| {
+        let page_label = doc.page_name(toc_page);
+        let Some(story) = doc.story_mut(sid) else {
+            return Ok(serde_json::Value::Null);
+        };
+        // Already listed (a rebuild starts from the engine's fresh story, but a second call on the
+        // same story must not add the entry twice). The title line is not an entry.
+        let ranges = story.para_ranges();
+        let listed =
+            ranges.iter().skip(1).any(|r| story.text[r.clone()].split('\t').next().unwrap_or_default().trim().eq_ignore_ascii_case(title.trim()));
+        if listed {
+            return Ok(serde_json::Value::Null);
+        }
+        // Where it belongs in page order, like the entries around it: before the first entry whose
+        // page number is higher. A label that isn't plain digits (roman front matter) or a table
+        // without numbered entries keeps it at the top, right after the title.
+        let page_no = page_label.trim().parse::<u64>().ok();
+        let mut at = ranges.last().map_or_else(|| story.len(), |r| r.end);
+        for r in ranges.iter().skip(1) {
+            let label = story.text[r.clone()].rsplit('\t').next().unwrap_or_default().trim().to_string();
+            let higher = match (page_no, label.parse::<u64>().ok()) {
+                (Some(page), Some(other)) => other > page,
+                (None, Some(_)) => true,
+                _ => false,
+            };
+            if higher {
+                at = r.start;
+                break;
+            }
+        }
+        let entry = if at >= story.len() { format!("\n{title}\t{page_label}") } else { format!("{title}\t{page_label}\n") };
+        let start = if at >= story.len() { at + 1 } else { at };
+        story.insert(at, &entry);
+        story.format_paras(start..start, |f| *f = designcraft_doc::ParaFormat { style: "TOC Level 1".to_string(), ..Default::default() });
+        Ok(serde_json::Value::Null)
+    });
+}
+
 fn apply_toc_post_process(
     app: &mut DesignApp,
     st: &PubgenState,
@@ -7952,12 +8177,19 @@ fn apply_toc_post_process(
 ) -> u64 {
     enrich_toc_story(app, sid, st, plan, width, hanging_indent, target_page);
 
+    // A paragraph list keeps the engine's own level styles, so the entry that lists the table of
+    // contents itself is added here: `enrich_toc_story` rewrites the flat lists and skips them.
+    if plan.is_paragraph_toc() {
+        add_toc_self_entry(app, sid, plan, target_page);
+    }
+
+    let entry_style = format!("{} 1", plan.entry_prefix());
     let _ = app.session.edit(|doc, _| {
         if let Some(story) = doc.story_mut(sid) {
             let ranges = story.para_ranges();
             for (pi, r) in ranges.into_iter().enumerate() {
                 let para_text = story.text[r.clone()].trim();
-                let style_name = if plan.layout == 1 {
+                let style_name: String = if plan.layout == 1 {
                     if pi == 0
                         && !plan.title.trim().is_empty()
                         && (para_text == plan.title.trim()
@@ -7967,16 +8199,18 @@ fn apply_toc_post_process(
                             || para_text.eq_ignore_ascii_case("daftar grafik")
                             || para_text.eq_ignore_ascii_case("daftar chart"))
                     {
-                        "TOC Title"
+                        "TOC Title".to_string()
                     } else if is_toc_header_line(para_text) {
-                        "TOC TablePage Header"
+                        "TOC TablePage Header".to_string()
                     } else if para_text.split('\t').count() == 2 {
-                        "TOC Section Header"
+                        "TOC Section Header".to_string()
                     } else {
-                        "TOC Level 1"
+                        entry_style.clone()
                     }
+                } else if pi == 0 {
+                    "TOC Title".to_string()
                 } else {
-                    if pi == 0 { "TOC Title" } else { "TOC Level 1" }
+                    entry_style.clone()
                 };
 
                 // A paragraph list keeps each entry's own "TOC Level n" from `toc.generate`;
@@ -7988,7 +8222,7 @@ fn apply_toc_post_process(
                 // The Tables and Charts lists center their title line.
                 let center = pi == 0 && style_name == "TOC Title" && plan.kind() != 0;
                 story.format_paras(r.start..r.start, |f| {
-                    *f = designcraft_doc::ParaFormat { style: style_name.to_string(), ..Default::default() };
+                    *f = designcraft_doc::ParaFormat { style: style_name.clone(), ..Default::default() };
                     if center {
                         f.para.align = Some(designcraft_doc::Align::Center);
                     }
@@ -7998,7 +8232,7 @@ fn apply_toc_post_process(
         Ok(serde_json::Value::Null)
     });
 
-    ensure_toc_entry_style(app, width, plan.hanging, hanging_indent, plan.layout);
+    ensure_toc_entry_style(app, width, plan.hanging, hanging_indent, plan.layout, plan.entry_prefix());
 
     if let Ok(af_res) = app.run("text.autoflow", json!({"story": sid.0, "maxPages": 50}))
         && let Some(extra) = af_res.get("pagesAdded").and_then(Value::as_u64)
@@ -8218,14 +8452,26 @@ fn toc_hanging_indent(st: &PubgenState, layout: usize) -> f64 {
 
 /// Generate (or regenerate) one table of contents on `page` and run the panel's post-process
 /// (type/number merging, title styles, continuation pages and headers).
+/// Whether any paragraph of the document carries `style` (the panel's own marker styles are only
+/// present once a page has been generated with them).
+fn document_uses_style(app: &DesignApp, style: &str) -> bool {
+    app.session.active().is_some_and(|a| a.doc.stories.values().any(|s| s.paras.iter().any(|p| p.style == style)))
+}
+
 fn generate_toc(app: &mut DesignApp, st: &PubgenState, page: usize, plan: &TocPlan, replace: bool) -> Result<(u64, u64), String> {
     let width = page_margin_width(app, page)?;
     let hanging_indent = toc_hanging_indent(st, plan.layout);
 
+    // A document whose pages were made before the narrative style existed still lists its
+    // chapters, rather than coming up empty until its pages are generated again.
+    let legacy = plan.clone();
+    let plan = if plan.is_paragraph_toc() && !document_uses_style(app, TOC_NARRATIVE_STYLE) { legacy.with_legacy_chapters(st) } else { legacy };
+    let plan = &plan;
+
     for level in &plan.levels {
         ensure_para_style(app, &level.style);
     }
-    ensure_toc_entry_style(app, width, plan.hanging, hanging_indent, plan.layout);
+    ensure_toc_entry_style(app, width, plan.hanging, hanging_indent, plan.layout, plan.entry_prefix());
 
     let res = app.run(
         "toc.generate",
@@ -10122,8 +10368,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             let s2 = active.doc.story(f2.story).unwrap();
             let s3 = active.doc.story(f3.story).unwrap();
 
-            // 1st textbox contains: "TABEL" (correct value)
-            assert_eq!(s1.text.trim(), "TABEL");
+            // 1st textbox contains the localized "Tabel"
+            assert_eq!(s1.text.trim(), "Tabel");
             // 2nd textbox contains: "02.01" (correct value)
             assert_eq!(s2.text.trim(), "02.01");
             // 3rd textbox contains ONLY title, NOT including type and number!
@@ -10252,7 +10498,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let text = &active.doc.story(toc.story).unwrap().text;
 
         assert!(
-            text.contains("Tabel 01.01. Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006"),
+            text.contains("Tabel 01.01 Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006"),
             "Fallback should extract type and number from page frames: {text}"
         );
     }
@@ -10899,6 +11145,99 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     }
 
     #[test]
+    fn test_toc_paragraph_lists_a_generated_review_page_with_its_chapter_line() {
+        // The whole way: an RXX row becomes a page with two text boxes (the chapter line and the
+        // title), and the paragraph list names it "BAB 01 Geografi".
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card1_records: vec![vec!["Ulasan".into(), "01".into(), "BAB 01 Geografi".into()]],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 0,
+            toc_kind: 3,
+            toc_style: "TOC Entry".into(),
+            toc_title: "Daftar Isi".into(),
+            ..Default::default()
+        };
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        crate::canvas::go_to_page(&mut app, 0);
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "{res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().expect("table of contents");
+        let text = active.doc.story(toc.story).expect("TOC story").text.clone();
+        assert!(text.contains("BAB 01 Geografi"), "the review page reads chapter line and title: {text}");
+    }
+
+    #[test]
+    fn test_toc_paragraph_lists_a_legacy_chapter_page_until_its_pages_are_regenerated() {
+        // A page made before the narrative style existed: the chapter line in a plain box, the
+        // title below it tagged with the card's TOC style.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        ensure_para_style(&mut app, "TOC Entry");
+        let (si, pi) = app.session.active().unwrap().doc.page_loc(0).unwrap();
+        let b = app.session.active().unwrap().doc.spreads[si].pages[pi].bounds();
+        for (text, style, dy) in [("BAB 01", None, 0.0_f64), ("Geografi", Some("TOC Entry"), 40.0_f64)] {
+            let rect = [b.x0 + 36.0, b.y0 + 36.0 + dy, b.x1 - 36.0, b.y0 + 76.0 + dy];
+            let res =
+                app.run("frame.create", json!({"spread": si, "rect": rect, "content": "text", "text": text, "caret": false})).expect("frame.create");
+            if let Some(style) = style {
+                let sid = res["story"].as_u64().expect("story");
+                app.run("text.select", json!({"story": sid, "anchor": 0, "focus": text.chars().count() as u64})).expect("text.select");
+                app.run("style.paragraph.apply", json!({"name": style})).expect("style.paragraph.apply");
+            }
+        }
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+
+        let mut st = PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), toc_title: "Daftar Isi".into(), ..Default::default() };
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "{res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().expect("table of contents");
+        let text = active.doc.story(toc.story).expect("TOC story").text.clone();
+        assert!(text.contains("BAB 01 Geografi"), "an older document still lists its chapter: {text}");
+    }
+
+    #[test]
+    fn test_toc_table_list_names_itself_when_include_self_is_on() {
+        // The Tables list gets the self entry like the plain list does.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card1_records: vec![vec!["Tabel".into(), "02.01.".into(), "Jumlah Rukun Warga (RW)".into()]],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 5,
+            toc_kind: 1,
+            toc_style: "TOC Entry".into(),
+            toc_title: "Daftar Tabel".into(),
+            toc_include_self: true,
+            ..Default::default()
+        };
+        execute_generate_pages(&mut app, &st).unwrap();
+        crate::canvas::go_to_page(&mut app, 0);
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "{res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().expect("table of contents");
+        let first_frame = active.doc.story(toc.story).expect("TOC story").frames.first().copied().expect("frame");
+        let toc_pg = active.doc.page_of_item(first_frame).expect("page");
+        let label = app.session.page_label(toc_pg);
+        let text = active.doc.story(toc.story).expect("TOC story").text.clone();
+        assert!(text.contains(&format!("Daftar Tabel\t{label}")), "the tables list names itself: {text}");
+    }
+
+    #[test]
     fn test_tablepage_toc_layout_style_generates_header_and_standalone_number_column() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
@@ -11074,6 +11413,234 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     }
 
     #[test]
+    fn test_execute_generate_pages_g_sheet_without_title_names_its_rtf_title() {
+        // The `GXX` sheets carry no title row, only the RTF link, so the page opens with the
+        // RTF's own title line. Word writes that line as direct formatting (bold, caps, centred),
+        // not as a `Heading 1`, so the paragraph table of contents has to read the page's heading
+        // off how it looks or the page is missing from the list.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G02.rtf");
+        let rtf = concat!(
+            r"{\rtf1\ansi\deff0{\fonttbl{\f0 Arial;}}{\stylesheet{\s0 Normal;}}",
+            r"\pard\plain\s0\qc\b\caps\fs30 DAFTAR SINGKATAN/list of Abbreviation\par",
+            r"\pard\plain\s0\fs24 SI : Stasiun Iklim/Climate Station\par}"
+        );
+        std::fs::write(&rtf_path, rtf.as_bytes()).unwrap();
+        let catalog_path = temp_dir.path().join("G02_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nG,02,,\"{escaped}\"\n")).unwrap();
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        st.card1_preset = 0;
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        execute_generate_pages(&mut app, &st).expect("generate pages");
+
+        let active = app.session.active().unwrap();
+        let body = active.doc.stories.values().find(|s| s.text.contains("DAFTAR SINGKATAN")).expect("placed RTF");
+        assert_eq!(body.paras[0].style, TOC_NARRATIVE_STYLE, "the RTF's title line is the page's title");
+        assert_eq!(body.paras[1].style, designcraft_doc::story::BASIC_PARAGRAPH, "the body keeps its own style");
+        assert_eq!(body.paras[0].para.align, Some(designcraft_doc::Align::Center), "the title keeps the RTF's centring");
+
+        let plan = TocPlan::from_state(&PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() });
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+        assert_eq!(rows, [(1, "DAFTAR SINGKATAN/list of Abbreviation".to_string())], "the paragraph list names the page at its own level: {rows:?}");
+    }
+
+    #[test]
+    fn test_execute_generate_pages_g_sheet_without_title_in_template_mode() {
+        // The template flow fills its title slot with the sheet's title: empty for these sheets,
+        // so the RTF's own first line is the page's title there too.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G01.rtf");
+        let rtf = concat!(
+            r"{\rtf1\ansi\deff0{\fonttbl{\f0 Arial;}}{\stylesheet{\s0 Normal;}}",
+            r"\pard\plain\s0\qc\b\caps\fs30 Penjelasan Umum/Explanatory Notes\par",
+            r"\pard\plain\s0\fs24 The publication covers the regency.\par}"
+        );
+        std::fs::write(&rtf_path, rtf.as_bytes()).unwrap();
+        let catalog_path = temp_dir.path().join("G01_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nG,01,,\"{escaped}\"\n")).unwrap();
+
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        st.card1_preset = 6;
+        st.card1_template_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/templates/front_matter/001_publication_note.designcraft").into();
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        execute_generate_pages(&mut app, &st).expect("generate pages");
+
+        let active = app.session.active().unwrap();
+        let body = active.doc.stories.values().find(|s| s.text.contains("Penjelasan Umum")).expect("placed RTF");
+        assert_eq!(body.paras[0].style, TOC_NARRATIVE_STYLE, "the RTF's title line is the page's title");
+
+        let plan = TocPlan::from_state(&PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() });
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+        assert_eq!(rows, [(1, "Penjelasan Umum/Explanatory Notes".to_string())], "the paragraph list names the page: {rows:?}");
+    }
+
+    #[test]
+    fn test_generating_the_paragraph_toc_leaves_the_table_toc_alone() {
+        // Each list keeps its own entry styles now: the Tables list hangs its rows differently
+        // from the Contents list, and the styles they used to share carried the tab stop and
+        // indent of whichever list was generated last — regenerating the Contents moved the
+        // Tables page's rows.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        for name in ["TOC Entry", TOC_NARRATIVE_STYLE] {
+            ensure_para_style(&mut app, name);
+        }
+        add_page_text_at(&mut app, 0, "BAB 01 Geografi", TOC_NARRATIVE_STYLE, 0.0);
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        add_page_text_at(&mut app, 1, "Tabel 01.01 Jarak Antar Kecamatan", "TOC Entry", 0.0);
+        app.run("layout.pages.insert", json!({"count": 2})).unwrap();
+
+        let table_state = PubgenState {
+            toc_kind: 1,
+            toc_style: "TOC Entry".into(),
+            toc_title: "Daftar Tabel".into(),
+            toc_hanging_indent: false,
+            ..Default::default()
+        };
+        let para_state = PubgenState {
+            toc_kind: 3,
+            toc_style: "TOC Entry".into(),
+            toc_title: "Daftar Isi".into(),
+            toc_hanging_indent: true,
+            ..Default::default()
+        };
+        let table_plan = TocPlan::from_state(&table_state);
+        let para_plan = TocPlan::from_state(&para_state);
+        generate_toc(&mut app, &table_state, 2, &table_plan, false).expect("table toc");
+        let table_text = toc_text_on_page(&app, 2).expect("the Tables list on page 2");
+        assert!(table_text.contains("Tabel 01.01"), "the Tables list names the table page: {table_text:?}");
+
+        generate_toc(&mut app, &para_state, 3, &para_plan, false).expect("paragraph toc");
+
+        assert_eq!(toc_text_on_page(&app, 2).as_deref(), Some(table_text.as_str()), "the Tables list is untouched");
+        let active = app.session.active().unwrap();
+        let table_style = active.doc.styles.para("TOC Table Level 1").expect("the Tables list's own style");
+        assert_eq!(table_style.para.left_indent, Some(0.0), "the Tables list keeps its (unhung) indent");
+        assert_eq!(table_style.para.first_line_indent, Some(0.0));
+        let contents_style = active.doc.styles.para("TOC Level 1").expect("the Contents list's style");
+        assert_eq!(contents_style.para.left_indent, Some(toc_hanging_indent(&para_state, 0)), "the Contents list hangs its rows");
+        let table_entry = active
+            .doc
+            .tocs
+            .iter()
+            .find(|t| toc_story_page(&app, t.story) == Some(2))
+            .and_then(|t| active.doc.story(t.story))
+            .and_then(|s| s.paras.get(1).map(|p| p.style.clone()))
+            .unwrap_or_default();
+        assert_eq!(table_entry, "TOC Table Level 1", "the Tables list's entry takes its own style");
+    }
+
+    #[test]
+    fn test_g_sheet_title_skips_the_issn_line_and_the_book_title() {
+        // The compilers' page (a `G` sheet that links only its RTF): a right-aligned ISSN line, a
+        // few empty lines, then the page's own title in the largest centred type, with the
+        // publication's title set smaller below it. Naming the page after its first paragraph
+        // listed the ISSN line; naming it after its largest centred line lists the page.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G00.rtf");
+        let rtf = concat!(
+            r"{\rtf1\ansi\deff0{\fonttbl{\f0 Arial;}}{\stylesheet{\s0 Normal;}}",
+            r"\pard\plain\s0\qr\fs24 ISSN: 2828-7346\par",
+            r"\pard\plain\s0\par",
+            r"\pard\plain\s0\par",
+            r"\pard\plain\s0\par",
+            r"\pard\plain\s0\qc\b\fs28 TIM PENYUSUN/COMPILERS\par",
+            r"\pard\plain\s0\qc\b\fs22 Kecamatan Karawang Timur Dalam Angka 2025\par",
+            r"\pard\plain\s0\qc\fs22 Karawang Timur District in Figures 2025\par}",
+        );
+        std::fs::write(&rtf_path, rtf.as_bytes()).unwrap();
+        let catalog_path = temp_dir.path().join("G00_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nG,00,,\"{escaped}\"\n")).unwrap();
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        st.card1_preset = 0;
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        execute_generate_pages(&mut app, &st).expect("generate pages");
+
+        let active = app.session.active().unwrap();
+        let body = active.doc.stories.values().find(|s| s.text.contains("TIM PENYUSUN")).expect("placed RTF");
+        let style_of = |needle: &str| {
+            let i = body.para_ranges().iter().position(|r| body.text.get(r.clone()).is_some_and(|t| t.contains(needle))).expect("paragraph");
+            body.paras[i].style.clone()
+        };
+        assert_eq!(style_of("TIM PENYUSUN"), TOC_NARRATIVE_STYLE, "the page's title names the page");
+        assert_eq!(style_of("ISSN"), designcraft_doc::story::BASIC_PARAGRAPH, "the ISSN line stays out of the list");
+        assert_eq!(style_of("Kecamatan Karawang"), designcraft_doc::story::BASIC_PARAGRAPH, "so does the publication's title");
+
+        let plan = TocPlan::from_state(&PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() });
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+        assert_eq!(rows, [(1, "TIM PENYUSUN/COMPILERS".to_string())], "the paragraph list names the page once, at its own level: {rows:?}");
+    }
+
+    #[test]
+    fn test_g_sheet_title_skips_an_empty_opening_paragraph() {
+        // The explanatory-notes sheet (G01) opens with an empty paragraph and carries its title
+        // next: searching for the first non-empty paragraph's look finds the title where taking
+        // the very first paragraph found nothing, so the page was missing from the list.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G01.rtf");
+        let rtf = concat!(
+            r"{\rtf1\ansi\deff0{\fonttbl{\f0 Arial;}}{\stylesheet{\s0 Normal;}}",
+            r"\pard\plain\s0\par",
+            r"\pard\plain\s0\qc\b\fs30 Penjelasan Umum/Explanatory Notes\par",
+            r"\pard\plain\s0\ql\fs24 The publication covers the regency and its subdistricts.\par}",
+        );
+        std::fs::write(&rtf_path, rtf.as_bytes()).unwrap();
+        let catalog_path = temp_dir.path().join("G01_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nG,01,,\"{escaped}\"\n")).unwrap();
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        st.card1_preset = 0;
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        execute_generate_pages(&mut app, &st).expect("generate pages");
+
+        let active = app.session.active().unwrap();
+        let body = active.doc.stories.values().find(|s| s.text.contains("Penjelasan Umum")).expect("placed RTF");
+        let ranges = body.para_ranges();
+        let title = ranges.iter().position(|r| body.text.get(r.clone()).is_some_and(|t| t.contains("Penjelasan Umum"))).expect("title paragraph");
+        assert_eq!(body.paras[title].style, TOC_NARRATIVE_STYLE, "the RTF's title line is the page's title");
+        assert_eq!(body.paras[0].para.align, None, "the empty opening paragraph keeps its own look");
+
+        let plan = TocPlan::from_state(&PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() });
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+        assert_eq!(rows, [(1, "Penjelasan Umum/Explanatory Notes".to_string())], "the paragraph list names the page: {rows:?}");
+    }
+
+    #[test]
     fn test_execute_page_from_rtf_sample_file() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
@@ -11224,6 +11791,39 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(active.doc.stories.values().any(|s| s.text.contains("Hello DesignCraft Note!")), "RTF text should be placed on the generated page");
     }
 
+    #[test]
+    fn test_execute_generate_pages_g_sheet_tags_its_title_for_the_paragraph_toc() {
+        // `GXX` sheet rows (front matter such as the compiler page, the explanatory notes or the
+        // abbreviations) keep the narrative style on their title, so a paragraph table of contents
+        // names them beside the chapter reviews. The template flow tagged its title slot; the
+        // preset flow left it plain.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G00.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Hello DesignCraft G00 Narrative!}"#).unwrap();
+        let catalog_path = temp_dir.path().join("G00_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nG,00,TIM PENYUSUN/COMPILERS,\"{escaped}\"\n")).unwrap();
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        st.card1_preset = 0;
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        execute_generate_pages(&mut app, &st).expect("generate pages");
+
+        let active = app.session.active().unwrap();
+        let title_story = active.doc.stories.values().find(|s| s.text.contains("TIM PENYUSUN/COMPILERS")).expect("title story");
+        assert_eq!(title_story.paras[0].style, TOC_NARRATIVE_STYLE, "the page title carries the narrative style");
+
+        let plan = TocPlan::from_state(&PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() });
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+        assert_eq!(rows, [(1, "TIM PENYUSUN/COMPILERS".to_string())], "the paragraph list names the page with its title alone: {rows:?}");
+    }
     #[test]
     fn test_execute_generate_pages_note_or_g_sheet_single_row_no_header() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
@@ -11726,12 +12326,18 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let plan = TocPlan::from_state(&st);
         assert!(plan.is_paragraph_toc());
         let levels: Vec<(&str, u8)> = plan.levels.iter().map(|l| (l.style.as_str(), l.level)).collect();
-        assert_eq!(levels, [("TOC Entry", 1), ("Heading 1", 2), ("Heading 2", 3)]);
+        assert_eq!(levels, [(TOC_NARRATIVE_STYLE, 1), ("Heading 1", 2), ("Heading 2", 3)]);
         let json = plan.entries_json();
         let arr = json.as_array().expect("entries array");
         assert_eq!(arr.len(), 3);
-        assert_eq!(arr[0]["pageTitle"], json!(["BAB"]));
+        assert_eq!(arr[0]["chapterNumber"], json!(true), "the narrative entry carries the chapter line");
+        assert!(arr[0].get("pageTitle").is_none(), "the narrative style alone picks the narrative pages");
         assert!(arr[1].get("pageTitle").is_none(), "heading levels list every paragraph of the style");
+
+        // The plain list keeps the tagged page titles and adds the narrative pages.
+        let st = PubgenState { toc_kind: 0, toc_style: "TOC Entry".into(), ..Default::default() };
+        let plan = TocPlan::from_state(&st);
+        assert_eq!(plan.entries_json().as_array().map(Vec::len), Some(2));
 
         // A single-level kind still emits one entry.
         let st = PubgenState { toc_kind: 1, toc_style: "TOC Entry".into(), ..Default::default() };
@@ -11743,9 +12349,15 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
     /// Add a text frame on absolute `page` and tag its paragraphs with `style`.
     fn add_page_text(app: &mut DesignApp, page: usize, text: &str, style: &str) {
+        add_page_text_at(app, page, text, style, 0.0);
+    }
+
+    /// The same, `dy` points below the top margin: a page with two text boxes (the chapter line
+    /// and the title below it).
+    fn add_page_text_at(app: &mut DesignApp, page: usize, text: &str, style: &str, dy: f64) {
         let (si, pi) = app.session.active().expect("document").doc.page_loc(page).expect("page");
         let b = app.session.active().expect("document").doc.spreads[si].pages[pi].bounds();
-        let rect = [b.x0 + 36.0, b.y0 + 36.0, b.x1 - 36.0, b.y0 + 140.0];
+        let rect = [b.x0 + 36.0, b.y0 + 36.0 + dy, b.x1 - 36.0, b.y0 + 140.0 + dy];
         let res =
             app.run("frame.create", json!({"spread": si, "rect": rect, "content": "text", "text": text, "caret": false})).expect("frame.create");
         let sid = res["story"].as_u64().expect("story");
@@ -11754,13 +12366,22 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         app.run("style.paragraph.apply", json!({"name": style})).expect("style.paragraph.apply");
     }
 
+    /// The text of the table of contents whose first frame sits on `page`.
+    fn toc_text_on_page(app: &DesignApp, page: usize) -> Option<String> {
+        let active = app.session.active()?;
+        let toc = active.doc.tocs.iter().find(|t| toc_story_page(app, t.story) == Some(page))?;
+        active.doc.story(toc.story).map(|s| s.text.clone())
+    }
+
     /// Four content pages (chapter, two headings, a table) plus a blank page for the TOC.
     fn paragraph_toc_doc(app: &mut DesignApp) {
         app.run("file.new", json!({})).unwrap();
-        for name in ["TOC Entry", "Heading 1", "Heading 2"] {
+        for name in ["TOC Entry", TOC_NARRATIVE_STYLE, "Heading 1", "Heading 2"] {
             ensure_para_style(app, name);
         }
-        add_page_text(app, 0, "BAB 01", "TOC Entry");
+        // A narrative page: the chapter line in its own text box, the title below it.
+        add_page_text_at(app, 0, "BAB 01", "TOC Entry", 0.0);
+        add_page_text_at(app, 0, "Geografi", TOC_NARRATIVE_STYLE, 40.0);
         app.run("layout.pages.insert", json!({"count": 1})).unwrap();
         add_page_text(app, 1, "Pendahuluan", "Heading 1");
         app.run("layout.pages.insert", json!({"count": 1})).unwrap();
@@ -11788,8 +12409,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         assert_eq!(
             rows.iter().map(|(l, t)| (*l, t.as_str())).collect::<Vec<_>>(),
-            [(1, "BAB 01"), (2, "Pendahuluan"), (3, "Latar Belakang")],
-            "chapter at level 1, headings nested under it, table page excluded by `pageTitle: [BAB]`: {rows:?}"
+            [(1, "BAB 01 Geografi"), (2, "Pendahuluan"), (3, "Latar Belakang")],
+            "the narrative page at level 1 with its chapter line, the headings nested under it, the table page left out: {rows:?}"
         );
     }
 
@@ -11807,6 +12428,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let toc = active.doc.tocs.last().expect("table of contents");
         let story = active.doc.story(toc.story).expect("TOC story");
         assert!(story.text.starts_with("Daftar Isi"), "the title line: {}", story.text);
+        assert!(story.text.contains("BAB 01 Geografi"), "the narrative entry reads chapter line and title: {}", story.text);
         assert!(story.text.contains("Pendahuluan") && story.text.contains("Latar Belakang"), "{}", story.text);
         assert!(!story.text.contains("Tabel 01.01"), "table pages stay out of a paragraph list: {}", story.text);
 
@@ -11816,6 +12438,70 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             ["TOC Title", "TOC Level 1", "TOC Level 2", "TOC Level 3"],
             "each entry keeps its own level style instead of being flattened: {styles:?}"
         );
+    }
+
+    #[test]
+    fn test_toc_include_self_lists_the_toc_page_in_a_paragraph_list() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        paragraph_toc_doc(&mut app);
+
+        let mut st =
+            PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), toc_title: "Daftar Isi".into(), toc_include_self: true, ..Default::default() };
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "{res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().expect("table of contents");
+        let first_frame = active.doc.story(toc.story).expect("TOC story").frames.first().copied().expect("frame");
+        let toc_page = active.doc.page_of_item(first_frame).expect("page");
+        let label = app.session.page_label(toc_page);
+        let text = active.doc.story(toc.story).expect("TOC story").text.clone();
+        assert!(text.contains(&format!("Daftar Isi\t{label}")), "the list names the table of contents itself: {text}");
+
+        // Without the option the entry is gone again.
+        st.toc_include_self = false;
+        assert!(execute_rebuild_toc(&mut app, &mut st).is_ok());
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().expect("table of contents");
+        let text = active.doc.story(toc.story).expect("TOC story").text.clone();
+        assert!(!text.contains(&format!("Daftar Isi\t{label}")), "the entry is gone when the option is off: {text}");
+    }
+
+    #[test]
+    fn test_toc_self_entry_sits_in_page_order() {
+        // The entry that lists the table of contents itself falls where its page falls among the
+        // entries: first when the table opens the document, last when it closes it.
+        let cases = [(0_usize, "Daftar Isi\t1\nBAB 01 Geografi\t3"), (4, "Pendahuluan\t4\nDaftar Isi\t5")];
+        for (toc_page, expected) in cases {
+            let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({})).unwrap();
+            ensure_para_style(&mut app, "TOC Entry");
+            app.run("layout.pages.insert", json!({"count": 4})).unwrap();
+            let (si, pi) = app.session.active().unwrap().doc.page_loc(0).unwrap();
+            let b = app.session.active().unwrap().doc.spreads[si].pages[pi].bounds();
+            let rect = [b.x0 + 36.0, b.y0 + 36.0, b.x1 - 36.0, b.y0 + 200.0];
+            let res = app
+                .run(
+                    "frame.create",
+                    json!({"spread": si, "rect": rect, "content": "text", "caret": false, "text": "Daftar Isi\nBAB 01 Geografi\t3\nPendahuluan\t4"}),
+                )
+                .expect("frame.create");
+            let sid = designcraft_doc::StoryId(res["story"].as_u64().expect("story"));
+            let st = PubgenState {
+                toc_kind: 3,
+                toc_style: "TOC Entry".into(),
+                toc_title: "Daftar Isi".into(),
+                toc_include_self: true,
+                ..Default::default()
+            };
+            let plan = TocPlan::from_state(&st);
+            add_toc_self_entry(&mut app, sid, &plan, toc_page);
+
+            let active = app.session.active().unwrap();
+            let text = active.doc.story(sid).expect("story").text.clone();
+            assert!(text.contains(expected), "on page {}: {text}", toc_page + 1);
+            assert_eq!(text.split('\n').count(), 4, "one paragraph per entry: {text}");
+        }
     }
 
     #[test]
@@ -12168,7 +12854,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(!texts.iter().any(|t| t.contains("BAB 01")), "A title without a BAB prefix gets no chapter-number box, found: {texts:?}");
         assert!(texts.iter().any(|t| t.eq_ignore_ascii_case("Kata Pengantar")), "Page should contain 'Kata Pengantar', found: {texts:?}");
         let title_para = stories.iter().find(|s| s.text.contains("KATA PENGANTAR")).and_then(|s| s.paras.first()).expect("the centered title frame");
-        assert_eq!(title_para.style, "TOC Entry", "the title frame must carry the TOC style so the chapter is listed");
+        assert_eq!(title_para.style, TOC_NARRATIVE_STYLE, "the title frame must carry the narrative style so the paragraph list names the page");
         assert_eq!(title_para.para.align, Some(designcraft_doc::Align::Center), "the front-matter title is centered on the margin");
         assert!(texts.iter().any(|t| t.contains("Kata pengantar untuk laporan ini")), "Page should contain the placed RTF body, found: {texts:?}");
     }
@@ -12608,7 +13294,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert_eq!(active.doc.page_count(), 2);
 
         let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
-        assert!(texts.iter().any(|t| t.contains("1.1")), "Stories should contain table number: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("01.01")), "Stories should contain table number: {texts:?}");
         assert!(texts.iter().any(|t| t.contains("Luas Wilayah")), "Stories should contain table title: {texts:?}");
 
         let has_table = active.doc.stories.values().any(|s| !s.tables.is_empty());
@@ -12685,14 +13371,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         );
 
         let (id_harmonized, en_harmonized_opt) = excel::split_and_harmonize_table_title(&title, None);
-        assert_eq!(
-            id_harmonized,
-            "Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025"
-        );
-        assert_eq!(
-            en_harmonized_opt.as_deref(),
-            Some("Land Area by Village/Sub-district in East Karawang District, 2025")
-        );
+        assert_eq!(id_harmonized, "Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025");
+        assert_eq!(en_harmonized_opt.as_deref(), Some("Land Area by Village/Sub-district in East Karawang District, 2025"));
 
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
@@ -13361,16 +14041,17 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(!en_story.chars.is_empty());
         for run in &en_story.chars {
             let style = run.format.over.font_style.as_deref().unwrap_or("Regular");
-            assert!(style.eq_ignore_ascii_case("italic") || style.eq_ignore_ascii_case("bold italic"),
-                "All English story runs should be italic, got: {style}");
+            assert!(
+                style.eq_ignore_ascii_case("italic") || style.eq_ignore_ascii_case("bold italic"),
+                "All English story runs should be italic, got: {style}"
+            );
         }
 
         let id_story = active.doc.stories.get(&id_story_id.unwrap()).unwrap();
         assert!(!id_story.chars.is_empty());
         for run in &id_story.chars {
             let style = run.format.over.font_style.as_deref().unwrap_or("Regular");
-            assert!(!style.eq_ignore_ascii_case("italic"),
-                "Indonesian story runs should NOT be converted to italic, got: {style}");
+            assert!(!style.eq_ignore_ascii_case("italic"), "Indonesian story runs should NOT be converted to italic, got: {style}");
         }
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -13396,7 +14077,9 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         let mut en_body = String::from(r#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 "#);
         for i in 0..40 {
-            en_body.push_str(&format!(r#"English narrative paragraph number {i} describing in detail the spatial planning and governance of East Karawang.\par "#));
+            en_body.push_str(&format!(
+                r#"English narrative paragraph number {i} describing in detail the spatial planning and governance of East Karawang.\par "#
+            ));
         }
         en_body.push('}');
         std::fs::write(&en_rtf, en_body.as_bytes()).unwrap();
@@ -13467,8 +14150,10 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
                     // Verify English story runs on continuation page remain italic
                     for run in &story.chars {
                         let style = run.format.over.font_style.as_deref().unwrap_or("Regular");
-                        assert!(style.eq_ignore_ascii_case("italic") || style.eq_ignore_ascii_case("bold italic"),
-                            "English runs on continuation page should be italic, got: {style}");
+                        assert!(
+                            style.eq_ignore_ascii_case("italic") || style.eq_ignore_ascii_case("bold italic"),
+                            "English runs on continuation page should be italic, got: {style}"
+                        );
                     }
                 }
             }
@@ -13480,4 +14165,3 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
-

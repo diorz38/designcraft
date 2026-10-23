@@ -9,7 +9,8 @@
 
 use designcraft_compose::{ComposeOptions, caret, compose_story};
 use designcraft_doc::{
-    Align, Document, NO_CHAR_STYLE, ParaAttrs, ParaFormat, ParagraphStyle, SpreadRef, StoryId, TabAlign, TabStop, Toc, TocEntry, TocPageNumber,
+    Align, Document, ItemId, NO_CHAR_STYLE, ParaAttrs, ParaFormat, ParagraphStyle, SpreadRef, StoryId, TabAlign, TabStop, Toc, TocEntry,
+    TocPageNumber,
 };
 use designcraft_geom::Rect;
 use serde_json::{Value, json};
@@ -24,7 +25,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Table of Contents…",
             ["Layout"],
             None,
-            "{entries: [{style, level?: 1 (1-9), entryStyle?: paragraph style of its entries (default \"TOC Level n\"), pageNumber?: \"after\"|\"before\"|\"none\", separator?: text between entry and number (default a tab), pageNumberStyle?: character style of the page number, separatorStyle?: character style of the separator, sort?: bool (Sort Entries in Alphabetical Order: among their siblings, each with the entries under it), pageTitle?: [words] (list only paragraphs whose page's first text box starts with one of these, e.g. [\"Tabel\", \"Table\"])}] | styles: [names] (levels 1, 2, …), title?: \"Contents\", titleStyle?: paragraph style of the title (default \"TOC Title\"), pageNumbers?: true, replace?: true (regenerate the table of contents on the target page in place; false makes a new frame), page?: 1-based page for a new frame (its margins), rect?: [x0,y0,x1,y1] (spread coords)} → {story, entries, tocs}",
+            "{entries: [{style, level?: 1 (1-9), entryStyle?: paragraph style of its entries (default \"TOC Level n\"), pageNumber?: \"after\"|\"before\"|\"none\", separator?: text between entry and number (default a tab), pageNumberStyle?: character style of the page number, separatorStyle?: character style of the separator, sort?: bool (Sort Entries in Alphabetical Order: among their siblings, each with the entries under it), pageTitle?: [words] (list only paragraphs whose page's first text box starts with one of these, e.g. [\"Tabel\", \"Table\"]), chapterNumber?: bool (prefix the entry with the page's first text box when that is a chapter line in its own box above the entry, \"BAB 01\" before \"Geografi\")}] | styles: [names] (levels 1, 2, …), title?: \"Contents\", titleStyle?: paragraph style of the title (default \"TOC Title\"), pageNumbers?: true, replace?: true (regenerate the table of contents on the target page in place; false makes a new frame), page?: 1-based page for a new frame (its margins), rect?: [x0,y0,x1,y1] (spread coords)} → {story, entries, tocs}",
             has_doc,
             generate
         ),
@@ -199,8 +200,8 @@ pub struct Found {
 /// tables of contents generate (never listed as entries).
 pub fn collect(d: &Document, entries: &[TocEntry], skip: &[StoryId]) -> Vec<Found> {
     let mut out = Vec::new();
-    // Page → its first text box's text, for `page_title` filters (one lookup per page).
-    let mut page_titles: std::collections::HashMap<usize, Option<String>> = std::collections::HashMap::new();
+    // Page → its first text box, for `page_title` filters and the chapter line (one lookup per page).
+    let mut page_titles: std::collections::HashMap<usize, Option<(ItemId, String)>> = std::collections::HashMap::new();
     for (sid, st) in &d.stories {
         if skip.contains(sid) || !st.paras.iter().any(|f| entries.iter().any(|e| e.style == f.style)) {
             continue;
@@ -230,12 +231,26 @@ pub fn collect(d: &Document, entries: &[TocEntry], skip: &[StoryId]) -> Vec<Foun
             let in_spread = d.spreads[si].page_at_x(b.center().x).unwrap_or(0);
             let abs = d.first_page_of_spread(si) + in_spread;
             // "Tabel"/"Table" and "Grafik"/"Chart" lists test the first text box of the page.
+            let first = page_titles.entry(abs).or_insert_with(|| page_first_box(d, abs));
             if !e.page_title.is_empty() {
-                let title = page_titles.entry(abs).or_insert_with(|| page_first_text(d, abs));
-                if !title.as_deref().is_some_and(|t| title_matches(t, &e.page_title)) {
+                let title = first.as_ref().map(|(_, t)| t.as_str());
+                if !title.is_some_and(|t| title_matches(t, &e.page_title)) {
                     continue;
                 }
             }
+            // The chapter line: the page's first text box ("BAB 01") before the entry's own text
+            // ("Geografi" → "BAB 01 Geografi"). The line has its own box above the title, so a
+            // page whose first text box *is* the entry's own frame (a front-matter sheet that
+            // opens with its ISSN line, say) keeps its own text alone.
+            let text = if e.chapter_number {
+                let own_box = first.as_ref().is_none_or(|(frame, _)| *frame == ft.frame);
+                match first.as_ref().map(|(_, t)| t.trim()).filter(|p| !p.is_empty() && !own_box) {
+                    Some(p) if !p.eq_ignore_ascii_case(&text) => format!("{p} {text}"),
+                    _ => text,
+                }
+            } else {
+                text
+            };
             out.push(Found {
                 level: e.level,
                 text,
@@ -249,12 +264,12 @@ pub fn collect(d: &Document, entries: &[TocEntry], skip: &[StoryId]) -> Vec<Foun
     out
 }
 
-/// The text of the first text box on absolute page `abs`: the topmost, then leftmost, text frame
-/// whose center sits on that page. `None` when the page has no text box.
-fn page_first_text(d: &Document, abs: usize) -> Option<String> {
+/// The topmost, then leftmost, text box whose center sits on absolute page `abs`, with the first
+/// line of its story. `None` when the page has no text box.
+fn page_first_box(d: &Document, abs: usize) -> Option<(ItemId, String)> {
     let (si, _) = d.page_loc(abs)?;
     let spread = d.spreads.get(si)?;
-    let mut best: Option<(i64, i64, StoryId)> = None;
+    let mut best: Option<(i64, i64, ItemId, StoryId)> = None;
     for it in &spread.items {
         let Some(tf) = it.text_frame() else { continue };
         if d.page_of_item(it.id) != Some(abs) {
@@ -265,12 +280,13 @@ fn page_first_text(d: &Document, abs: usize) -> Option<String> {
             continue;
         }
         let key = ((b.y0 * 10.0) as i64, (b.x0 * 10.0) as i64);
-        if best.is_none_or(|(y, x, _)| key < (y, x)) {
-            best = Some((key.0, key.1, tf.story));
+        if best.is_none_or(|(y, x, _, _)| key < (y, x)) {
+            best = Some((key.0, key.1, it.id, tf.story));
         }
     }
-    let story = d.story(best?.2)?;
-    Some(story.text.lines().next().unwrap_or("").trim().to_string())
+    let (_, _, frame, story) = best?;
+    let story = d.story(story)?;
+    Some((frame, story.text.lines().next().unwrap_or("").trim().to_string()))
 }
 
 /// Whether `text` starts with one of `words` (case-insensitive, whole-word-ish: the text box reads
@@ -568,6 +584,58 @@ mod tests {
             s.execute("style.paragraph.apply", &json!({"name": style})).unwrap();
         }
         (s, pages.len() + 1)
+    }
+
+    #[test]
+    fn chapter_number_prefixes_the_entry_with_the_page_s_first_text_box() {
+        // A narrative page: the chapter line in its own text box, the title below it.
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"pages": 2, "facingPages": false})).unwrap();
+        for n in ["TOC Entry", "TOC Chapter"] {
+            s.execute("style.paragraph.create", &json!({"name": n})).unwrap();
+        }
+        for (text, style, top) in [("BAB 01", "TOC Entry", 36.0_f64), ("Geografi", "TOC Chapter", 120.0_f64)] {
+            let r =
+                s.execute("frame.create", &json!({"spread": 0, "rect": [36.0, top, 576.0, top + 60.0], "content": "text", "text": text})).unwrap();
+            s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 0})).unwrap();
+            s.execute("style.paragraph.apply", &json!({"name": style})).unwrap();
+        }
+        let entries = json!({"entries": [{"style": "TOC Chapter", "chapterNumber": true}]});
+        assert_eq!(s.execute("toc.entries", &entries).unwrap(), json!([{"level": 1, "text": "BAB 01 Geografi", "page": "1"}]));
+        // Without the flag the entry is the title on its own.
+        assert_eq!(
+            s.execute("toc.entries", &json!({"entries": [{"style": "TOC Chapter"}]})).unwrap(),
+            json!([{"level": 1, "text": "Geografi", "page": "1"}])
+        );
+        // A page whose first text box is the entry itself keeps its own text.
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"pages": 2, "facingPages": false})).unwrap();
+        s.execute("style.paragraph.create", &json!({"name": "TOC Chapter"})).unwrap();
+        let r =
+            s.execute("frame.create", &json!({"spread": 0, "rect": [36, 36, 576, 96], "content": "text", "text": "Keterangan Publikasi"})).unwrap();
+        s.execute("text.select", &json!({"story": r["story"], "anchor": 0, "focus": 0})).unwrap();
+        s.execute("style.paragraph.apply", &json!({"name": "TOC Chapter"})).unwrap();
+        assert_eq!(
+            s.execute("toc.entries", &json!({"entries": [{"style": "TOC Chapter", "chapterNumber": true}]})).unwrap(),
+            json!([{"level": 1, "text": "Keterangan Publikasi", "page": "1"}])
+        );
+        // A front-matter page opens with its ISSN line in the same box as its title: the line is
+        // not a chapter line above the entry, so the entry keeps its own text.
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"pages": 2, "facingPages": false})).unwrap();
+        s.execute("style.paragraph.create", &json!({"name": "TOC Chapter"})).unwrap();
+        let first = "ISSN: 2828-7346";
+        let title = "TIM PENYUSUN/COMPILERS";
+        let r = s
+            .execute("frame.create", &json!({"spread": 0, "rect": [36, 36, 576, 200], "content": "text", "text": format!("{first}\n{title}")}))
+            .unwrap();
+        let at = first.len() + 1;
+        s.execute("text.select", &json!({"story": r["story"], "anchor": at, "focus": at + title.len()})).unwrap();
+        s.execute("style.paragraph.apply", &json!({"name": "TOC Chapter"})).unwrap();
+        assert_eq!(
+            s.execute("toc.entries", &json!({"entries": [{"style": "TOC Chapter", "chapterNumber": true}]})).unwrap(),
+            json!([{"level": 1, "text": "TIM PENYUSUN/COMPILERS", "page": "1"}])
+        );
     }
 
     #[test]

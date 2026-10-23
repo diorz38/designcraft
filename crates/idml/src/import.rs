@@ -1529,7 +1529,18 @@ impl<'r> Importer<'r> {
                 let page_number_style = known_chars(e.get("PageNumberStyle"));
                 let separator_style = known_chars(e.get("SeparatorStyle"));
                 let sort = e.get("Sort").is_some_and(|v| v.trim() == "true");
-                Some(TocEntry { style, level, entry_style, page_number, separator, page_number_style, separator_style, sort, page_title: Vec::new() })
+                Some(TocEntry {
+                    style,
+                    level,
+                    entry_style,
+                    page_number,
+                    separator,
+                    page_number_style,
+                    separator_style,
+                    sort,
+                    page_title: Vec::new(),
+                    chapter_number: false,
+                })
             })
             .take(64)
             .collect();

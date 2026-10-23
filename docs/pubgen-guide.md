@@ -534,12 +534,31 @@ Pubgen scans your document's text frames and builds a Table of Contents with pag
 #### TOC Style (what the list contains)
 | TOC style | Lists | Title filled in when picked |
 |---|---|---|
-| **TOC Entry** | every page whose title carries the tag style (the original behaviour) | *left as typed* |
+| **TOC Entry** | every page whose title carries the tag style, plus the narrative pages (the original behaviour) | *left as typed* |
 | **TOC Table** | only pages whose **first text box** starts with `Tabel` or `Table` (case-insensitive) | `Daftar Table` |
 | **TOC Chart** | only pages whose **first text box** starts with `Grafik` or `Chart` (case-insensitive) | `Daftar Grafik` |
+| **TOC Paragraph** | the narrative pages (the `GXX` and `RXX` sheets) with the headings under them, nested | `Daftar Isi` |
 
 Picking **TOC Table** or **TOC Chart** fills the Title field for you and centres the title line; you can still edit
 the title. The filter is stored in the document, so **Rebuild TOC** and *Layout ▸ Update Table of Contents* keep it.
+
+**TOC Paragraph** is the nested list of a publication: the narrative pages (the front matter from the `GXX`
+sheets and the chapter reviews from the `RXX` sheets) at the first level, the `Heading 1` and `Heading 2`
+paragraphs of their bodies below them. No other page — a table, a chart, a divider or a publication note —
+is listed. A narrative page's entry carries its chapter line and its title, both of its text boxes reading
+`BAB 01 Geografi ......... 2`; the chapter line only counts when it has its own box above the title, so a page
+that opens with another line in the title's box keeps its own text. A `GXX` sheet with no title row (only the
+RTF link) puts the RTF at the top of the page, so the page's title is the largest centred line among the RTF's
+opening paragraphs — the heading, written as a Word heading in some sheets and as direct formatting in others.
+That leaves out the ISSN line above it (right-aligned) and the publication's title below it (set smaller), and
+copes with an empty opening paragraph.
+
+Each list keeps the paragraph styles its rows use: `TOC Level 1…n` for the contents, `TOC Table Level 1…n`
+for the Tables list and `TOC Chart Level 1…n` for the Charts list. The styles carry the list's tab stop and
+indent, so generating or rebuilding one list never moves the rows of another.
+
+**Include TOC page in TOC entries** lists the table of contents itself in the list it makes — for every TOC
+style, the nested paragraph list included.
 
 A document can hold several lists at once — a *Daftar Table* and a *Daftar Grafik* side by side, for example.
 **Add TOC** makes a list on the page in view, replacing the one already there (one page holds one list).
