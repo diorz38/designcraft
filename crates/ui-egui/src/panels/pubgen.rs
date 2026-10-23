@@ -612,6 +612,22 @@ pub fn execute_set_page_margins(app: &mut DesignApp) -> Result<String, String> {
         Ok(serde_json::Value::Null)
     });
 
+    // If a header/footer is already applied to the document, re-apply it so its geometry,
+    // frames, and hairline rules immediately follow the new page margins.
+    if app.session.active().and_then(|s| s.doc.header_footer.as_ref()).is_some() {
+        let _ = app.run(
+            "layout.headerFooter.apply",
+            json!({
+                "margins": {
+                    "top": top_pt,
+                    "bottom": bottom_pt,
+                    "inside": inside_pt,
+                    "outside": outside_pt
+                }
+            }),
+        );
+    }
+
     Ok("Page margins set: Top 20.20 mm, Bottom 20 mm, Inside 19 mm, Outside 15 mm".to_string())
 }
 
@@ -2152,7 +2168,7 @@ fn card_header_footer_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState,
 }
 
 pub fn execute_apply_header_footer(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
-    let params = json!({
+    let mut params = json!({
         "preset": st.hf_style,
         "sided": if st.hf_sided == 1 { "single" } else { "double" },
         "headerOffset": st.hf_header_offset,
@@ -2184,6 +2200,21 @@ pub fn execute_apply_header_footer(app: &mut DesignApp, st: &PubgenState) -> Res
             "textColor": st.hf_color_text,
         }
     });
+
+    let doc_margins = app.session.active().map(|s| detect_document_margins(&s.doc));
+    if let Some(m) = doc_margins
+        && let Some(obj) = params.as_object_mut()
+    {
+        obj.insert(
+            "margins".to_string(),
+            json!({
+                "top": m.top,
+                "bottom": m.bottom,
+                "inside": m.inside,
+                "outside": m.outside,
+            }),
+        );
+    }
 
     app.run("layout.headerFooter.apply", params)?;
     Ok(format!("Header & footer template '{}' applied successfully", st.hf_style))
@@ -13306,6 +13337,16 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(hf.objects.top_accent_bar);
         assert!(hf.accent_bar_items.left.is_some());
         assert!(hf.accent_bar_items.right.is_some());
+
+        // Now set custom page margins and verify header_footer parent spread is synchronized
+        let set_m_res = execute_set_page_margins(&mut app);
+        assert!(set_m_res.is_ok());
+
+        let doc_with_m = &app.session.active().unwrap().doc;
+        let hf_with_m = doc_with_m.header_footer.as_ref().unwrap();
+        let parent_sp = doc_with_m.parents.iter().find(|p| Some(p.id) == hf_with_m.parent).unwrap();
+        assert!((parent_sp.pages[0].margins.inside - 19.0 * 72.0 / 25.4).abs() < 1e-3);
+        assert!((parent_sp.pages[0].margins.outside - 15.0 * 72.0 / 25.4).abs() < 1e-3);
 
         let rem_res = execute_remove_header_footer(&mut app);
         assert!(rem_res.is_ok());

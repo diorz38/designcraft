@@ -62,7 +62,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Header/Footer…",
             ["Layout"],
             None,
-            "{preset?, template?, sided?, scope?, headerOffset?, footerOffset?, header?, footer?, style?, objects?, colors?, rule?}",
+            "{preset?, template?, sided?, scope?, headerOffset?, footerOffset?, header?, footer?, style?, objects?, colors?, rule?, margins?}",
             has_doc,
             apply
         ),
@@ -560,6 +560,15 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad(CMD, "double-sided header/footer requires facing pages"));
     }
 
+    let explicit_margins: Option<Margins> = match p.get("margins") {
+        None => None,
+        Some(Value::Number(n)) => n.as_f64().map(Margins::uniform),
+        Some(v) => serde_json::from_value(v.clone()).ok(),
+    };
+    if explicit_margins.is_some_and(|m| ![m.top, m.bottom, m.inside, m.outside].iter().all(|v| v.is_finite() && (0.0..=15552.0).contains(v))) {
+        return Err(bad(CMD, "margins: 0 to 216 in"));
+    }
+
     s.edit(|d, _| {
         // Ensure paragraph style exists
         let style_to_use = if d.styles.para(&hf.style).is_some() { hf.style.clone() } else { story::BASIC_PARAGRAPH.to_string() };
@@ -570,11 +579,39 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
         let rule_swatch = resolve_or_create_swatch(d, "HF Rule", &hf.colors.rule_color);
         let text_swatch = (!hf.colors.text_color.trim().is_empty()).then(|| resolve_or_create_swatch(d, "HF Text", &hf.colors.text_color));
 
+        // Compute scope pages and detect canonical geometry
+        let target_pages = compute_scope_pages(d, &hf.scope);
+        let (doc_cols, doc_gutter, doc_margins) = detect_doc_geometry(d, &target_pages, explicit_margins);
+
         // Resolve or create parent spread
-        let parent_id = resolve_parent_spread(d)?;
+        let parent_id = resolve_parent_spread(d, doc_cols, doc_gutter, doc_margins)?;
         hf.parent = Some(parent_id);
 
         let parent_idx = d.parent_index(parent_id).ok_or_else(|| bad(CMD, "parent index missing"))?;
+
+        // Synchronize parent spread pages with document margins
+        let new_page_id = designcraft_doc::PageId(d.alloc());
+        if let Some(sp) = d.parents.get_mut(parent_idx) {
+            let sp = Arc::make_mut(sp);
+            if d.settings.facing_pages
+                && sp.pages.len() < 2
+                && let Some(first) = sp.pages.first().cloned()
+            {
+                let mut second = first;
+                second.id = new_page_id;
+                second.side = PageSide::Right;
+                second.margins = doc_margins;
+                second.columns.count = doc_cols;
+                second.columns.gutter = doc_gutter;
+                sp.pages.push(second);
+            }
+            for pg in &mut sp.pages {
+                pg.margins = doc_margins;
+                pg.columns.count = doc_cols;
+                pg.columns.gutter = doc_gutter;
+            }
+            sp.relayout();
+        }
 
         // Geometry: rects for single, left, right pages on the parent spread
         let parent_pages = d.parents.get(parent_idx).ok_or_else(|| bad(CMD, "parent spread missing"))?.pages.clone();
@@ -770,7 +807,6 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
         }
 
         // Apply parent to scoped pages
-        let target_pages = compute_scope_pages(d, &hf.scope);
         let fallback_parent = d.parents.first().filter(|p| p.id != parent_id).map(|p| p.id);
 
         // Clear parent from pages previously assigned to header/footer parent that are no longer in scope
@@ -859,34 +895,97 @@ fn compute_scope_pages(d: &Document, scope: &HfScope) -> Vec<usize> {
 }
 
 /// Resolves or creates the parent spread ("H-Header/Footer") with inheritance.
-fn resolve_parent_spread(d: &mut Document) -> Result<SpreadId> {
+fn resolve_parent_spread(d: &mut Document, columns: u32, gutter: f64, margins: Margins) -> Result<SpreadId> {
+    let base_parent = d.parents.iter().find(|p| p.parent.as_ref().is_some_and(|pi| pi.name != "Header/Footer")).map(|p| p.id);
+
     // 1. Existing parent recorded in doc.header_footer
     if let Some(pid) = d.header_footer.as_ref().and_then(|hf| hf.parent).filter(|&pid| d.parent_index(pid).is_some()) {
+        if let Some(pi) = d.parents.iter_mut().find(|p| p.id == pid).and_then(|sp| Arc::make_mut(sp).parent.as_mut())
+            && pi.based_on.is_none()
+        {
+            pi.based_on = base_parent;
+        }
         return Ok(pid);
     }
 
     // 2. Existing parent named "Header/Footer"
-    if let Some(existing) = d.parents.iter().find(|p| p.parent.as_ref().is_some_and(|pi| pi.name == "Header/Footer")) {
-        return Ok(existing.id);
+    if let Some(existing_id) = d.parents.iter().find(|p| p.parent.as_ref().is_some_and(|pi| pi.name == "Header/Footer")).map(|p| p.id) {
+        if let Some(pi) = d.parents.iter_mut().find(|p| p.id == existing_id).and_then(|sp| Arc::make_mut(sp).parent.as_mut())
+            && pi.based_on.is_none()
+        {
+            pi.based_on = base_parent;
+        }
+        return Ok(existing_id);
     }
 
     // 3. Create fresh parent "H-Header/Footer"
-    let src = d.page(0).cloned();
-    let (columns, gutter, margins) =
-        src.as_ref().map_or_else(|| (1, 12.0, Margins::uniform(36.0)), |p| (p.columns.count, p.columns.gutter, p.margins));
-
     let prefix =
         if d.parents.iter().any(|p| p.parent.as_ref().is_some_and(|pi| pi.prefix == "H")) { d.next_parent_prefix() } else { "H".to_string() };
 
     let parent_id = d.add_parent(&prefix, "Header/Footer", columns, gutter, margins);
 
     // Parent inheritance: set based_on to first existing parent so artwork/guides from A-Parent are kept
-    let base_parent = d.parents.iter().find(|p| p.id != parent_id).map(|p| p.id);
     if let Some(pi) = d.parents.iter_mut().find(|p| p.id == parent_id).and_then(|sp| Arc::make_mut(sp).parent.as_mut()) {
         pi.based_on = base_parent;
     }
 
     Ok(parent_id)
+}
+
+/// Resolves the canonical column count, gutter, and margins from the document:
+/// 1. From explicit parameters if provided
+/// 2. From scoped pages with non-zero margins
+/// 3. From any spread page with non-zero margins (excluding 0-margin covers/dividers)
+/// 4. From any existing parent spread (e.g. A-Parent) with non-zero margins
+/// 5. From page 0 if non-zero
+/// 6. Fallback: Margins::uniform(36.0)
+fn detect_doc_geometry(d: &Document, target_pages: &[usize], explicit_margins: Option<Margins>) -> (u32, f64, Margins) {
+    if let Some(m) = explicit_margins {
+        let (cols, gutter) = d.page(0).map_or((1, 12.0), |p| (p.columns.count, p.columns.gutter));
+        return (cols, gutter, m);
+    }
+
+    let is_non_zero = |m: &Margins| m.top > 0.0 || m.bottom > 0.0 || m.inside > 0.0 || m.outside > 0.0;
+
+    // 1. Check pages in target scope
+    for &idx in target_pages {
+        if let Some(pg) = d.page(idx)
+            && is_non_zero(&pg.margins)
+        {
+            return (pg.columns.count, pg.columns.gutter, pg.margins);
+        }
+    }
+
+    // 2. Check any spread page
+    for sp in &d.spreads {
+        for pg in &sp.pages {
+            if is_non_zero(&pg.margins) {
+                return (pg.columns.count, pg.columns.gutter, pg.margins);
+            }
+        }
+    }
+
+    // 3. Check any existing parent spread (other than Header/Footer)
+    for p in &d.parents {
+        if p.parent.as_ref().is_some_and(|pi| pi.name == "Header/Footer") {
+            continue;
+        }
+        for pg in &p.pages {
+            if is_non_zero(&pg.margins) {
+                return (pg.columns.count, pg.columns.gutter, pg.margins);
+            }
+        }
+    }
+
+    // 4. Check page 0 if non-zero
+    if let Some(pg) = d.page(0)
+        && is_non_zero(&pg.margins)
+    {
+        return (pg.columns.count, pg.columns.gutter, pg.margins);
+    }
+
+    // 5. Default fallback
+    (1, 12.0, Margins::uniform(36.0))
 }
 
 /// Calculates header rect, footer rect, header rule line, footer rule line, and top accent bar rect coordinates for a given parent page.
@@ -1358,5 +1457,91 @@ mod tests {
         let doc_after = &s.doc().unwrap().doc;
         assert_eq!(doc_after.header_footer, None);
         assert!(doc_after.item(left_bar_id).is_none());
+    }
+
+    #[test]
+    fn test_header_footer_follows_custom_page_margins() {
+        let mut s = session_with_doc(true, 4);
+
+        // Page 0 is a cover page with 0 margins
+        s.edit(|d, _| {
+            let first_id = d.spreads.first().map(|sp| sp.id);
+            if let Some(pg) = d.spreads.first_mut().and_then(|sp| Arc::make_mut(sp).pages.first_mut()) {
+                pg.margins = Margins::uniform(0.0);
+            }
+            // Other pages have custom asymmetric margins (e.g., inside 53.86, outside 42.52)
+            let custom_m = Margins { top: 57.26, bottom: 56.69, inside: 53.86, outside: 42.52 };
+            for sp in &mut d.spreads {
+                let sp = Arc::make_mut(sp);
+                for (i, pg) in sp.pages.iter_mut().enumerate() {
+                    if Some(sp.id) == first_id && i == 0 {
+                        continue;
+                    }
+                    pg.margins = custom_m;
+                }
+            }
+            Ok(())
+        })
+        .unwrap();
+
+        // Apply Corporate Report (facing pages)
+        s.execute("layout.headerFooter.apply", &json!({ "preset": "Corporate Report" })).unwrap();
+
+        let (rh_id, right_pg_x, right_pg_width) = {
+            let doc = &s.doc().unwrap().doc;
+            let hf = doc.header_footer.as_ref().unwrap();
+            let parent_id = hf.parent.unwrap();
+            let parent_sp = doc.parents.iter().find(|p| p.id == parent_id).expect("parent spread");
+
+            // Verify parent spread pages synchronized to custom margins
+            let left_pg = &parent_sp.pages[0];
+            let right_pg = &parent_sp.pages[1];
+            assert_eq!(left_pg.margins.inside, 53.86);
+            assert_eq!(left_pg.margins.outside, 42.52);
+            assert_eq!(right_pg.margins.inside, 53.86);
+            assert_eq!(right_pg.margins.outside, 42.52);
+
+            // Verify right page header text frame starts at inside margin and ends at outside margin
+            let rh_id = hf.header_items.right.unwrap();
+            let rh_bounds = doc.item(rh_id).unwrap().bounds();
+            let (right_inside, right_outside) = (right_pg.margins.inside, right_pg.margins.outside);
+            let expected_rh_x0 = right_pg.x + right_inside;
+            let expected_rh_x1 = right_pg.x + right_pg.width - right_outside;
+            assert!((rh_bounds.x0 - expected_rh_x0).abs() < 1e-4, "right header x0 ({}) should be {}", rh_bounds.x0, expected_rh_x0);
+            assert!((rh_bounds.x1 - expected_rh_x1).abs() < 1e-4, "right header x1 ({}) should be {}", rh_bounds.x1, expected_rh_x1);
+
+            // Verify left page header text frame starts at outside margin and ends at inside margin
+            let lh_id = hf.header_items.left.unwrap();
+            let lh_bounds = doc.item(lh_id).unwrap().bounds();
+            let (left_outside, left_inside) = (left_pg.margins.outside, left_pg.margins.inside);
+            let expected_lh_x0 = left_pg.x + left_outside;
+            let expected_lh_x1 = left_pg.x + left_pg.width - left_inside;
+            assert!((lh_bounds.x0 - expected_lh_x0).abs() < 1e-4, "left header x0 ({}) should be {}", lh_bounds.x0, expected_lh_x0);
+            assert!((lh_bounds.x1 - expected_lh_x1).abs() < 1e-4, "left header x1 ({}) should be {}", lh_bounds.x1, expected_lh_x1);
+
+            (rh_id, right_pg.x, right_pg.width)
+        };
+
+        // Verify re-applying with new explicit margins adjusts header coordinates
+        let new_m = Margins { top: 40.0, bottom: 40.0, inside: 60.0, outside: 30.0 };
+        s.execute(
+            "layout.headerFooter.apply",
+            &json!({
+                "margins": {
+                    "top": new_m.top,
+                    "bottom": new_m.bottom,
+                    "inside": new_m.inside,
+                    "outside": new_m.outside,
+                }
+            }),
+        )
+        .unwrap();
+
+        let doc2 = &s.doc().unwrap().doc;
+        let rh_bounds2 = doc2.item(rh_id).unwrap().bounds();
+        let expected_rh_x0_new = right_pg_x + 60.0;
+        let expected_rh_x1_new = right_pg_x + right_pg_width - 30.0;
+        assert!((rh_bounds2.x0 - expected_rh_x0_new).abs() < 1e-4, "updated rh x0: {}", rh_bounds2.x0);
+        assert!((rh_bounds2.x1 - expected_rh_x1_new).abs() < 1e-4, "updated rh x1: {}", rh_bounds2.x1);
     }
 }
