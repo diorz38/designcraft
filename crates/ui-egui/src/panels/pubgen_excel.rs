@@ -146,11 +146,7 @@ pub fn format_table_number(num_val: &str, sheet_name: &str) -> String {
         }
     }
 
-    if !n.is_empty() {
-        n.to_string()
-    } else {
-        sheet_name.to_string()
-    }
+    if !n.is_empty() { n.to_string() } else { sheet_name.to_string() }
 }
 
 /// Check if a sheet is named `XX_XX` (e.g. 01_01, 02_03, etc.).
@@ -373,9 +369,7 @@ pub fn extract_field_for_keys(row: &[String], expected_keys: &[&str]) -> Option<
         }
     }
     let non_empty: Vec<&str> = row.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-    if non_empty.len() >= 2
-        && key_matches(non_empty[0], expected_keys)
-    {
+    if non_empty.len() >= 2 && key_matches(non_empty[0], expected_keys) {
         let val = non_empty[1].trim_matches('"').trim().to_string();
         if !val.is_empty() {
             return Some(val);

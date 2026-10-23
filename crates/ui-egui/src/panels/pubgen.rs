@@ -13090,15 +13090,15 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
                 let sp = std::sync::Arc::make_mut(sp);
                 for it in &mut sp.items {
                     let it = std::sync::Arc::make_mut(it);
-                    if let designcraft_doc::Content::Text(tf) = &it.content {
-                        if let Some(story) = doc.stories.get(&tf.story) {
-                            if story.text.contains("BAB 1") {
-                                it.label = "#slot:text:chapter_num".to_string();
-                            } else if story.text.contains("GEOGRAFI") {
-                                it.label = "#slot:text:chapter_title".to_string();
-                            } else {
-                                it.label = "#slot:story:narrative_body".to_string();
-                            }
+                    if let designcraft_doc::Content::Text(tf) = &it.content
+                        && let Some(story) = doc.stories.get(&tf.story)
+                    {
+                        if story.text.contains("BAB 1") {
+                            it.label = "#slot:text:chapter_num".to_string();
+                        } else if story.text.contains("GEOGRAFI") {
+                            it.label = "#slot:text:chapter_title".to_string();
+                        } else {
+                            it.label = "#slot:story:narrative_body".to_string();
                         }
                     }
                 }
@@ -13178,13 +13178,13 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
                 let sp = std::sync::Arc::make_mut(sp);
                 for it in &mut sp.items {
                     let it = std::sync::Arc::make_mut(it);
-                    if let designcraft_doc::Content::Text(tf) = &it.content {
-                        if let Some(story) = doc.stories.get(&tf.story) {
-                            if story.text.contains("KATA PENGANTAR") {
-                                it.label = "#slot:text:title".to_string();
-                            } else {
-                                it.label = "#slot:story:note_body".to_string();
-                            }
+                    if let designcraft_doc::Content::Text(tf) = &it.content
+                        && let Some(story) = doc.stories.get(&tf.story)
+                    {
+                        if story.text.contains("KATA PENGANTAR") {
+                            it.label = "#slot:text:title".to_string();
+                        } else {
+                            it.label = "#slot:story:note_body".to_string();
                         }
                     }
                 }
@@ -13785,9 +13785,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
     #[test]
     fn test_toc_header_line_uses_locale_words() {
-        let mut st = PubgenState::default();
-        st.card1_records = vec![vec!["Tabel".into(), "01.01".into(), "Penduduk".into()]];
-        st.locale = Locale::Id;
+        let mut st =
+            PubgenState { card1_records: vec![vec!["Tabel".into(), "01.01".into(), "Penduduk".into()]], locale: Locale::Id, ..Default::default() };
         let plan_table = TocPlan::from_state(&st);
         assert_eq!(toc_header_line(&plan_table, &st), "Tabel\thalaman");
 
