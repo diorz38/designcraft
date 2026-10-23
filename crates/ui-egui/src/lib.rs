@@ -19,6 +19,7 @@ pub mod dock;
 #[path = "dock_extended.rs"]
 pub mod dock;
 pub mod effects_dialog;
+pub mod header_footer;
 pub mod i18n;
 pub mod icons;
 pub mod menus;

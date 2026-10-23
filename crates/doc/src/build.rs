@@ -158,6 +158,7 @@ impl Document {
             text_variables: crate::vars::defaults(),
             footnote_options: Default::default(),
             xref_formats: crate::xref::default_formats(),
+            header_footer: None,
             index: None,
             created: crate::vars::now(),
             modified: 0,

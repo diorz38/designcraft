@@ -34,6 +34,8 @@ impl Dialog {
             "goToPage" => json!({"page": "1"}),
             "qrCode" => json!({"type": "url", "content": "https://", "color": "[Black]"}),
             "insertTable" => json!({"bodyRows": 4, "columns": 4, "headerRows": 0, "footerRows": 0}),
+            "tableOptions" => json!({"inTable": false, "headerRows": "0", "footerRows": "0", "repeatHeader": true, "repeatFooter": false}),
+            "headerFooter" => json!({}),
             "insertXref" => json!({"linkTo": "paragraph", "style": "", "target": "", "format": ""}),
             "findChange" => json!({"find": "", "change": "", "grep": false, "caseSensitive": false, "wholeWord": false, "scope": "document"}),
             "documentSetup" => json!({}),
@@ -111,7 +113,7 @@ impl Dialog {
         }
     }
     /// A measure in points ("6", "6 pt", "0p6", "2 mm").
-    fn pt(&self, k: &str) -> Option<f64> {
+    pub(crate) fn pt(&self, k: &str) -> Option<f64> {
         match self.fields.get(k) {
             Some(Value::Number(n)) => n.as_f64(),
             Some(Value::String(s)) => parse_measure(s, Unit::Points).ok(),
@@ -2045,6 +2047,8 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "frameSize" => crate::i18n::tr(&app.ui.language, "Rectangle"),
         "goToPage" => crate::i18n::tr(&app.ui.language, "Go to Page"),
         "insertTable" => crate::i18n::tr(&app.ui.language, "Create Table"),
+        "tableOptions" => crate::i18n::tr(&app.ui.language, "Table Options"),
+        "headerFooter" => crate::i18n::tr(&app.ui.language, "Header/Footer"),
         "cellOptions" => crate::i18n::tr(&app.ui.language, "Cell Options"),
         "createGuides" => crate::i18n::tr(&app.ui.language, "Create Guides"),
         "marginsAndColumns" => crate::i18n::tr(&app.ui.language, "Margins and Columns"),
@@ -2110,6 +2114,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
             "closeDocument" | "updateLink" | "deletePages" | "newWorkspace" | "pagesPanelOptions" => 380.0,
             "newDocument" => 960.0,
             "numberingSection" => 560.0,
+            "headerFooter" => 640.0,
             crate::effects_dialog::ID => 720.0,
             _ => 640.0,
         };
@@ -2137,7 +2142,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         // forms remain reachable at large UI scales, without shrinking their text.
         // Numbering & Section Options keeps OK and Cancel in a column beside the options, as
         // InDesign does; other dialogs have them in a footer.
-        let side_actions = d.id == "numberingSection";
+        let side_actions = matches!(d.id.as_str(), "numberingSection" | "headerFooter");
         let footer_height = if side_actions {
             0.0
         } else {
@@ -2168,7 +2173,12 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         }
         // A centred window only offers its body last frame's height: let this one grow to its
         // options' height (the screen still caps it).
-        let min_body = if side_actions { body_height.min(crate::section_options::BODY_H) } else { 1.0 };
+        let min_body = if side_actions {
+            let h = if d.id == "headerFooter" { crate::header_footer::BODY_H } else { crate::section_options::BODY_H };
+            body_height.min(h)
+        } else {
+            1.0
+        };
         egui::ScrollArea::both()
             .id_salt(("dialog_body", &d.id))
             .min_scrolled_width(1.0)
@@ -2788,6 +2798,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                             ui.end_row();
                         });
                     }
+                    "tableOptions" => table_options_dialog(app, ui, &mut d),
                     "cellOptions" => cell_options(app, ui, &mut d),
                     "createGuides" => create_guides_dialog(app, ui, &mut d),
                     "marginsAndColumns" => margins_and_columns_dialog(app, ui, &mut d),
@@ -2804,6 +2815,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                         }
                     }
                     "numberingSection" => crate::section_options::body(app, ui, &mut d),
+                    "headerFooter" => crate::header_footer::body(app, ui, &mut d),
                     "pdfExport" => pdf_export(app, ui, &mut d),
                     "alert" => {
                         let file = d.s("file");
@@ -2891,6 +2903,65 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
 /// Cell Options keys (`table.getCellStroke` names) and whether each belongs to the stroke.
 const CELL_OPTION_KEYS: [(&str, bool); 8] =
     [("weight", true), ("type", true), ("color", true), ("tint", true), ("gapColor", true), ("gapTint", true), ("fill", false), ("fillTint", false)];
+
+/// Table ▸ Table Options… for the table under the insertion point.
+pub fn open_table_options(app: &mut DesignApp) -> Result<Value, String> {
+    let got = app.session.execute("table.get", &json!({})).ok();
+    let (in_table, header_rows, footer_rows, repeat_header, repeat_footer) = if let Some(t) = got {
+        let hr = t.get("headerRows").and_then(Value::as_u64).unwrap_or(0);
+        let fr = t.get("footerRows").and_then(Value::as_u64).unwrap_or(0);
+        let opts = t.get("options");
+        let rep_h = opts.and_then(|o| o.get("repeatHeader")).and_then(Value::as_bool).unwrap_or(true);
+        let rep_f = opts.and_then(|o| o.get("repeatFooter")).and_then(Value::as_bool).unwrap_or(false);
+        (true, hr, fr, rep_h, rep_f)
+    } else {
+        (false, 0, 0, true, false)
+    };
+
+    let fields = json!({
+        "inTable": in_table,
+        "headerRows": header_rows.to_string(),
+        "footerRows": footer_rows.to_string(),
+        "repeatHeader": repeat_header,
+        "repeatFooter": repeat_footer,
+    });
+    app.ui.dialog = Some(Dialog::new("tableOptions", fields));
+    Ok(Value::Null)
+}
+
+fn table_options_dialog(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
+    let lang = &app.ui.language;
+    if !d.b("inTable") {
+        ui.add_space(8.0);
+        crate::rtl::label(
+            ui,
+            egui::RichText::new(crate::i18n::tr(lang, "Place insertion point in a table to edit Table Options."))
+                .color(crate::theme::Tokens::get(ui.ctx()).text_dim),
+        );
+        ui.add_space(8.0);
+        return;
+    }
+
+    crate::rtl::label(ui, egui::RichText::new(crate::i18n::tr(lang, "Headers and Footers")).font(semibold(12.0)));
+    ui.add_space(6.0);
+    egui::Grid::new("tbl_opts_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+        crate::rtl::label(ui, crate::i18n::tr(lang, "Header Rows:"));
+        text_field(ui, d, "headerRows", 60.0);
+        ui.end_row();
+
+        crate::rtl::label(ui, "");
+        check(ui, d, "repeatHeader", crate::i18n::tr(lang, "Repeat Header Rows"));
+        ui.end_row();
+
+        crate::rtl::label(ui, crate::i18n::tr(lang, "Footer Rows:"));
+        text_field(ui, d, "footerRows", 60.0);
+        ui.end_row();
+
+        crate::rtl::label(ui, "");
+        check(ui, d, "repeatFooter", crate::i18n::tr(lang, "Repeat Footer Rows"));
+        ui.end_row();
+    });
+}
 
 /// Table › Cell Options › Strokes and Fills… for the target cells. The fields start from the
 /// cells' values (`seed`); OK applies the fields that differ from it.
@@ -3104,10 +3175,36 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             json!({"rows": d.n("bodyRows").unwrap_or(4.0).max(1.0) as u64, "cols": d.n("columns").unwrap_or(4.0).max(1.0) as u64,
                 "headerRows": d.n("headerRows").unwrap_or(0.0).max(0.0) as u64, "footerRows": d.n("footerRows").unwrap_or(0.0).max(0.0) as u64}),
         ),
+        "tableOptions" => {
+            if !d.b("inTable") {
+                return Ok(Value::Null);
+            }
+            let hr = d.n("headerRows").unwrap_or(0.0).max(0.0) as u64;
+            let fr = d.n("footerRows").unwrap_or(0.0).max(0.0) as u64;
+            app.run(
+                "table.options",
+                json!({
+                    "headerRows": hr,
+                    "footerRows": fr,
+                    "repeatHeader": d.b("repeatHeader"),
+                    "repeatFooter": d.b("repeatFooter"),
+                }),
+            )
+        }
         "numberingSection" => {
             // On an error the dialog stays open to be corrected.
             let r = crate::section_options::confirm(app, &d);
             if let Err(e) = &r {
+                app.status(e.clone());
+                app.ui.dialog = Some(d);
+            }
+            r
+        }
+        "headerFooter" => {
+            let r = crate::header_footer::confirm(app, &d);
+            if let Err(e) = &r {
+                let mut d = d;
+                d.fields.insert("status".into(), json!(e));
                 app.status(e.clone());
                 app.ui.dialog = Some(d);
             }
@@ -9986,5 +10083,92 @@ mod tests {
         ctl(&mut app, "ui.dialog.set", json!({"field": "c.digits", "value": "farsi"}));
         assert_eq!(ctl(&mut app, "ui.dialog.confirm", json!({}))["ok"], true);
         assert_eq!(char_style(&app, "Emphasis").unwrap().chars.digits, Some(designcraft_doc::Digits::Farsi));
+    }
+
+    #[test]
+    fn table_options_dialog_opens_and_applies_header_footer_rows_and_repeats() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // 1. Outside table: inTable is false
+        app.run("app.tableOptionsDialog", json!({})).unwrap();
+        let d = app.ui.dialog.as_ref().unwrap();
+        assert_eq!(d.id, "tableOptions");
+        assert!(!d.b("inTable"));
+        // Confirming outside table is a no-op
+        confirm(&mut app).unwrap();
+
+        // 2. Inside table: inTable is true and seeds table geometry
+        app.run("frame.create", json!({"rect": [72, 72, 400, 400], "content": "text", "caret": true})).unwrap();
+        let tid = app.run("table.insert", json!({"rows": 5, "cols": 3, "headerRows": 1, "footerRows": 1})).unwrap()["table"].as_u64().unwrap();
+        app.run("table.select", json!({"what": "table"})).unwrap();
+
+        app.run("app.tableOptionsDialog", json!({})).unwrap();
+        let d = app.ui.dialog.as_mut().unwrap();
+        assert_eq!(d.id, "tableOptions");
+        assert!(d.b("inTable"));
+        assert_eq!(d.fields["headerRows"], json!("1"));
+        assert_eq!(d.fields["footerRows"], json!("1"));
+
+        // Change values: 2 header rows, 2 footer rows, repeatHeader=true, repeatFooter=true
+        d.fields.insert("headerRows".into(), json!("2"));
+        d.fields.insert("footerRows".into(), json!("2"));
+        d.fields.insert("repeatHeader".into(), json!(true));
+        d.fields.insert("repeatFooter".into(), json!(true));
+
+        confirm(&mut app).unwrap();
+
+        // Verify table in story
+        let st = app.session.active().unwrap();
+        let t = st.doc.stories.values().find_map(|s| s.tables.get(&tid)).unwrap();
+        assert_eq!(t.header_rows(), 2);
+        assert_eq!(t.footer_rows(), 2);
+        assert!(t.options.repeat_header);
+        assert!(t.options.repeat_footer);
+    }
+
+    #[test]
+    fn header_footer_dialog_opens_seeds_validates_and_applies() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"pages": 3, "facing": true})).unwrap();
+
+        // 1. Open dialog: seeded with defaults
+        app.run("app.headerFooterDialog", json!({})).unwrap();
+        let d = app.ui.dialog.as_mut().unwrap();
+        assert_eq!(d.id, "headerFooter");
+        assert!(d.b("facingPages"));
+        assert_eq!(d.s("preset"), "minimal");
+
+        // 2. Switching to book preset
+        d.fields.insert("preset".into(), json!("book"));
+        d.fields.insert("headerLeft".into(), json!("{page}{tab}{runningHeader}"));
+        d.fields.insert("headerRight".into(), json!("{runningHeader}{tab}{page}"));
+        d.fields.insert("sided".into(), json!("double"));
+        d.fields.insert("headerOffset".into(), json!("36.0"));
+        d.fields.insert("footerOffset".into(), json!("36.0"));
+
+        // 3. Invalid geometry validation: offset >= page_height keeps dialog open
+        d.fields.insert("headerOffset".into(), json!("1000.0"));
+        d.fields.insert("footerOffset".into(), json!("1000.0"));
+        let err = confirm(&mut app);
+        assert!(err.is_err(), "offsets exceeding page height must return Err");
+        assert!(app.ui.dialog.is_some());
+        let cur_d = app.ui.dialog.as_mut().unwrap();
+        assert!(!cur_d.s("status").is_empty());
+
+        // 4. Valid geometry: applies successfully
+        cur_d.fields.insert("headerOffset".into(), json!("36.0"));
+        cur_d.fields.insert("footerOffset".into(), json!("36.0"));
+        confirm(&mut app).unwrap();
+
+        // 5. Verify document model has header_footer and dedicated parent spread
+        let st = app.session.active().unwrap();
+        let hf = st.doc.header_footer.as_ref().unwrap();
+        assert_eq!(hf.preset, "book");
+        assert_eq!(hf.sided, designcraft_doc::header_footer::Sided::Double);
+        let parent_id = hf.parent.unwrap();
+        let pspread = st.doc.parents.iter().find(|p| p.id == parent_id).unwrap();
+        assert_eq!(pspread.parent.as_ref().unwrap().prefix, "H");
+        assert_eq!(pspread.parent.as_ref().unwrap().name, "Header/Footer");
     }
 }
