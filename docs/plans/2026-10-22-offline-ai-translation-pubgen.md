@@ -1,9 +1,9 @@
-# Offline AI Translation for Pubgen (NLLB-200 distilled 600M) — Implementation Plan
+# AI Translation for Pubgen — offline NLLB-200 distilled 600M or online Groq — Implementation Plan
 
 > **Status:** PROPOSED
 > **Date:** 2026-10-22
 > **Branch:** `feature/pubgen-bilingual-id-en`
-> **Scope:** new `crates/translate`, `crates/ui-egui/src/panels/pubgen.rs`, engine `Prefs`, feature wiring, docs
+> **Scope:** new `crates/translate`, `crates/ui-egui/src/panels/pubgen.rs`, engine `Prefs`, feature wiring, docs, online provider alternative (Groq free tier)
 > **Reference:** `docs/plans/2026-10-22-bilingual-id-en-pubgen.md` (bilingual phases 1–7)
 
 ---
@@ -30,8 +30,15 @@ Confirmed decisions (user, 2026-10-22):
 | UX | Background worker + progress + cancel |
 | Model files | User-supplied folder path, **plus an in-app model picker that downloads** |
 | Target hardware | Must work on an **8 GB RAM PC with no GPU/VRAM** |
+| Alternative backend | **Online provider — Groq free tier** — offered in the same setup dialog; user logs in with a free account and translates without any local model |
 
-Licence note that must reach the UI: **NLLB-200 is CC-BY-NC-4.0 — non-commercial.**
+Licence note that must reach the UI: **NLLB-200 is CC-BY-NC-4.0 — non-commercial.** (Applies to the
+offline path only; the online path has no NLLB involvement.)
+
+**Why the alternative exists:** the offline model must fit the 8 GB target (§1.1) and a 600M MT
+model is mediocre on narrative prose. Groq's free tier removes the RAM budget entirely and an
+instruction-tuned LLM translates Indonesian→English noticeably better. Cost, stated honestly in
+the dialog: catalog text leaves the machine (privacy), and free-tier rate limits cap throughput.
 
 ## Current state that constrains the design
 
@@ -200,12 +207,62 @@ per_paragraph_secs ≈ 60.0 / tokens_per_sec * 1.6            // ~90 tokens aver
 per_page_secs ≈ per_paragraph_secs * 1.8                    // title + chrome + ~0.8 body
 ```
 
-### 2. Preferences — two fields
+### 1.3 Alternative backend — online provider (Groq free tier)
 
-`crates/engine/src/lib.rs` `Prefs`: add `pub translation_model_dir: String` (default `""`) and
-`pub translation_model_id: String` (default `"nllb600-int8"`), and extend the `prefs.set` params
-doc in `crates/engine/src/cmd/prefs.rs:52-55` with `translationModelDir?: path,
-translationModelId?: id`. `merge` already accepts new keys; `tests_params.rs` polices the doc.
+Same crate, same `translate` shape, no ML deps. Feature `groq` adds only `serde_json` (already a
+workspace dependency) and shares `ureq` with the `download` feature
+(`groq = ["dep:ureq", "dep:serde_json"]`). Compiled as a stub in the default build exactly like
+`nllb`; the wasm target keeps the feature off so `cargo xtask wasm` stays green.
+
+```rust
+pub enum Provider { Offline, Groq }
+
+pub struct OnlineTranslator { agent: ureq::Agent, key: String, model: String }
+
+impl OnlineTranslator {
+    pub fn new(key: &str, model: &str) -> Self;
+    pub fn list_models(agent: &ureq::Agent, key: &str) -> Result<Vec<String>, TranslateError>;
+    pub fn translate(&mut self, texts: &[String], src: Lang, tgt: Lang, cancel: &AtomicBool,
+                     progress: &mut dyn FnMut(usize, usize)) -> Result<Vec<String>, TranslateError>;
+}
+
+pub enum Backend { Offline(Translator), Online(OnlineTranslator) }  // one `translate`; panel + job code provider-blind
+pub fn online_available() -> bool;                                  // cfg!(feature = "groq")
+```
+
+Protocol — Groq is OpenAI-compatible: `POST https://api.groq.com/openai/v1/chat/completions`,
+`Authorization: Bearer <key>`. Batch 10–20 collected units per request, `temperature: 0`, system
+prompt pins the contract: *translate each array item from Indonesian to English; return a JSON
+array of the same length and order; keep numbers, proper nouns and formatting unchanged.* Parse
+`choices[0].message.content` (strip a ```` ```json ```` fence if present) with `serde_json`. A
+length mismatch is an error naming the batch — never silent reordering. Non-JSON output retries
+that batch once item-by-item; still bad → `TranslateError::Provider`.
+
+Free-tier realities, all handled in code:
+
+| Concern | Handling |
+|---|---|
+| per-minute / per-day request caps | small batches (≤ 20 units), one progress tick per request |
+| HTTP 429 | sleep `Retry-After` (clamped 1–30 s), retry twice, then error; `cancel` checked before each sleep |
+| network hang | 30 s agent timeout per request, so Cancel and failure stay responsive |
+| model ids churn | never hardcoded: the dialog fills the model picker from `GET /openai/v1/models` (first `llama-3.3` entry preselected); the chosen id persists in `Prefs` |
+| key secrecy | key lives only in the `Authorization` header; never logged, never in error strings, never written into the document |
+
+Secrets note: the key is stored in `Prefs`, which is plaintext on disk
+(`translation_groq_api_key`). The dialog says so in one line ("Key is stored locally in
+DesignCraft settings"). `ponytail:` OS keychain (DPAPI / Keychain) is the upgrade path if keys
+beyond a hobby account ever matter.
+
+### 2. Preferences — five fields
+
+`crates/engine/src/lib.rs` `Prefs`: add `pub translation_model_dir: String` (default `""`),
+`pub translation_model_id: String` (default `"nllb600-int8"`), `pub translation_provider: String`
+(default `"offline"`; `"groq"` selects the online backend), `pub translation_groq_api_key: String`
+(default `""`), `pub translation_groq_model: String` (default `""`, resolved via `list_models` on
+first use), and extend the `prefs.set` params doc in `crates/engine/src/cmd/prefs.rs:52-55` with
+`translationModelDir?: path, translationModelId?: id, translationProvider?: "offline"|"groq",
+translationGroqApiKey?: string, translationGroqModel?: id`. `merge` already accepts new keys;
+`tests_params.rs` polices the doc.
 
 ### 3. Panel state and UI
 
@@ -234,7 +291,7 @@ enum JobMsg { Progress(usize, usize), Done(Vec<(String, String)>), Failed(String
 Header band (`pubgen.rs:513-547`), directly under the Single/Dual Lang button:
 
 ```rust
-let can_ai = st.bilingual_output && translate::is_available();
+let can_ai = st.bilingual_output && (translate::is_available() || translate::online_available());
 let mut on = st.translate_with_ai;
 let resp = ui.add_enabled(can_ai, egui::Checkbox::new(&mut on, "Translate with AI"));
 if resp.changed() && on && !st.ai_setup_done {
@@ -255,8 +312,20 @@ re-run whenever the model folder or model id in `Prefs` changes.
 ### 3.1 Setup dialog — `AiSetupDialog`
 
 A `dialogs::Dialog`-style modal owned by the panel (`ai_dialog: Option<AiSetupDialog>` in
-`PubgenState`, rendered from `show()` like the existing pubgen modals). Four states in one window,
+`PubgenState`, rendered from `show()` like the existing pubgen modals). Five states in one window,
 top to bottom:
+
+**0. Provider** — two radio cards; everything below switches on the choice:
+
+- **Offline on this computer** → states 1–4 below (hardware, verdict, model list, actions).
+- **Online — Groq (free account)** → a compact pane instead of 1–2: a `Password` field for the API
+  key with a **Get a free key** hyperlink to `console.groq.com/keys`, a model picker filled by
+  `OnlineTranslator::list_models` with a Refresh button (id remembered in `Prefs`), and two honest
+  lines — *"Catalog text is sent to Groq's cloud"* and *"Free-tier limits: big jobs run slower,
+  not blocked"*. The hardware probe, fit banners and model download never run on this path.
+  `Use AI` enables on a non-empty key and persists provider + key + model through
+  `prefs.set` (§2). `TranslateJob` (§4) then runs a `Backend::Online`; the collect/generate flow
+  and all EN injection sites are unchanged.
 
 **1. Hardware readout** — filled synchronously when the dialog opens (the probe is a few
 microseconds; no thread needed):
@@ -466,8 +535,10 @@ counts (i.e. U+2028 did not split a row) and that each paired cell's text contai
 ### 5. Feature wiring
 
 - `crates/ui-egui/Cargo.toml`: `designcraft-translate = { workspace = true }`;
-  feature `ai-translate = ["designcraft-translate/nllb"]`.
-- `apps/designcraft/Cargo.toml`: `ai-translate = ["designcraft-ui-egui/ai-translate"]`.
+  feature `ai-translate = ["designcraft-translate/nllb"]`,
+  feature `ai-translate-online = ["designcraft-translate/groq"]`.
+- `apps/designcraft/Cargo.toml`: `ai-translate = ["designcraft-ui-egui/ai-translate"]`,
+  `ai-translate-online = ["designcraft-ui-egui/ai-translate-online"]`.
 - Root `Cargo.toml`: add the `designcraft-translate` path dependency.
 - Default build stays a stub and wasm-safe; `cargo xtask ci` unchanged and green.
 - Document `cargo run --release -p designcraft --features pubgen,ai-translate` in
@@ -477,10 +548,10 @@ counts (i.e. U+2028 did not split a row) and that each paired cell's text contai
 
 | File | Work |
 |---|---|
-| `crates/translate/Cargo.toml`, `src/lib.rs`, `src/nllb.rs`, `src/system.rs`, `src/models.rs`, `src/download.rs` | new crate: errors, stub, ort inference, tokenizer, segmentation, memory probe, model catalogue + speed estimate, downloader |
-| `crates/translate/tests/` | segmentation, dedupe, RTF escaping, `fit()` thresholds, `estimate_speed` monotonicity (model not needed) |
-| `crates/engine/src/lib.rs`, `crates/engine/src/cmd/prefs.rs` | `translation_model_dir`, `translation_model_id` + params doc |
-| `crates/ui-egui/src/panels/pubgen.rs` | state, setup dialog, job, collect pass, `en_text`, 8 lookup sites, RTF writer |
+| `crates/translate/Cargo.toml`, `src/lib.rs`, `src/nllb.rs`, `src/online.rs`, `src/system.rs`, `src/models.rs`, `src/download.rs` | new crate: errors, stub, ort inference, tokenizer, segmentation, memory probe, model catalogue + speed estimate, downloader, Groq client (chat completions, 429 backoff, model list) |
+| `crates/translate/tests/` | segmentation, dedupe, RTF escaping, `fit()` thresholds, `estimate_speed` monotonicity, online prompt/parse/429 tests (model and network not needed) |
+| `crates/engine/src/lib.rs`, `crates/engine/src/cmd/prefs.rs` | `translation_model_dir`, `translation_model_id`, `translation_provider`, `translation_groq_api_key`, `translation_groq_model` + params doc |
+| `crates/ui-egui/src/panels/pubgen.rs` | state, setup dialog (provider radio + Groq pane), job, collect pass, `en_text`, 8 lookup sites, RTF writer |
 | `crates/ui-egui/Cargo.toml`, `apps/designcraft/Cargo.toml`, root `Cargo.toml` | deps + features |
 | `xtask/src/layers.rs` | register `translate` at L3 |
 | `docs/pubgen-guide.md`, `docs/pubgen-guide_id.md`, `ROADMAP.md` | usage, licence, progress line |
@@ -508,8 +579,15 @@ counts (i.e. U+2028 did not split a row) and that each paired cell's text contai
 8. `TooSmall` path is testable without a small machine: a `#[cfg(test)]` override of
    `memory_info()` (test hook) feeds a 2 GB `MemoryInfo` and asserts the red banner, disabled
    radio options and disabled `Use AI`.
+9. Online path without network flake in CI: unit tests for prompt build, fence strip, JSON parse,
+   count-mismatch error, and 429 + `Retry-After` backoff against a local canned TCP listener;
+   `groq` feature stays off on the wasm target (`cargo xtask wasm` green).
+10. Online smoke with a real free key (manual, not CI): tick Online, paste key, pick a model, run a
+    5-row range — EN halves populated, key absent from logs/errors/undo, Cancel between batches
+    aborts with the document untouched.
 
 ## Non-goals
 
-No downloader, no GPU, no other language pair (the `Lang` enum makes adding one a one-line
-mapping), no translation outside Pubgen, no changes to `template.page.apply`.
+No GPU, no other language pair (the `Lang` enum makes adding one a one-line mapping), no online
+provider besides Groq (the OpenAI-compatible call means a second provider is config, not code),
+no streaming/chat UX, no translation outside Pubgen, no changes to `template.page.apply`.
