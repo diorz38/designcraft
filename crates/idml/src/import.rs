@@ -1540,6 +1540,8 @@ impl<'r> Importer<'r> {
                     sort,
                     page_title: Vec::new(),
                     chapter_number: false,
+                    pair_columns: false,
+                    pair_separator: None,
                 })
             })
             .take(64)

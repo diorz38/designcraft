@@ -560,6 +560,17 @@ indent, so generating or rebuilding one list never moves the rows of another.
 **Include TOC page in TOC entries** lists the table of contents itself in the list it makes — for every TOC
 style, the nested paragraph list included.
 
+**Pair bilingual headings (ID / EN)** merges the left-column and right-column headings of a Dual Lang
+page (`RXX` with `file_en`) into one row, joined like bilingual table titles:
+
+    Proporsi fisik daratan / Physical proportions of the landmass ........ 4
+
+Pairing follows each column's own vertical order (top heading with top heading, second with second) and
+needs the two-column Dual Lang layout: rows whose frames overlap — a full-width heading, a table or chart
+page — stay their own rows, and a heading without its twin keeps its own row too. The pair reads at the
+Indonesian heading's level, whatever styles the two RTFs gave the twins. The option is stored in
+the list's definition, so **Rebuild TOC** keeps pairing; with the checkbox off nothing changes.
+
 A document can hold several lists at once — a *Daftar Table* and a *Daftar Grafik* side by side, for example.
 **Add TOC** makes a list on the page in view, replacing the one already there (one page holds one list).
 

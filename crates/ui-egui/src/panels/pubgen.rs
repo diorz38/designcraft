@@ -84,6 +84,12 @@ pub const TOC_KINDS: [&str; 4] = ["TOC Entry", "TOC Table", "TOC Chart", "TOC Pa
 /// or publication-note page never shows up in it.
 pub const TOC_NARRATIVE_STYLE: &str = "TOC Chapter";
 
+/// The English twin title of a Dual Lang narrative page ("Chapter 01 Geography"): tagged with
+/// this style at generation, so the paragraph TOC pairs it with the Indonesian chapter row
+/// ("BAB 01 Geografi / Geography") instead of listing it as a page of its own. Only tagged when
+/// the pairing checkbox is on with the Dual Lang toggle.
+pub const TOC_CHAPTER_EN_STYLE: &str = "TOC Chapter EN";
+
 /// The words the first text box on a page must start with for each TOC style; none lists every
 /// paragraph of the tagged style (the original behaviour). A paragraph list takes chapter pages
 /// only: `RXX` and `BXX` pages open with their "BAB 01" line, table and chart pages don't.
@@ -284,6 +290,9 @@ pub struct PubgenState {
     pub toc_title: String,
     #[serde(default = "default_false")]
     pub toc_include_self: bool,
+    /// Pair bilingual headings (ID / EN) of the same style on a Dual Lang page into one TOC row.
+    #[serde(default)]
+    pub toc_pair_bilingual: bool,
     #[serde(default)]
     pub toc_layout_style: usize,
     /// Quick Actions "TOC style": 0 TOC Entry (every tagged paragraph, the original behaviour),
@@ -471,6 +480,7 @@ impl Default for PubgenState {
             toc_style: default_toc_style(),
             toc_title: default_toc_title(),
             toc_include_self: false,
+            toc_pair_bilingual: false,
             toc_layout_style: 0,
             toc_kind: 0,
             card3_renumber_start: 1,
@@ -4693,6 +4703,9 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
     });
     ui.checkbox(&mut st.toc_hanging_indent, "Indent wrapped TOC entries (hanging indent)");
     ui.checkbox(&mut st.toc_include_self, "Include TOC page in TOC entries");
+    ui
+        .checkbox(&mut st.toc_pair_bilingual, "Pair bilingual headings (ID / EN)")
+        .on_hover_text("Merge the same style's left-column and right-column headings on a Dual Lang page into one row (\"Indonesian / English\"). Only active with the Dual Lang toggle on and needs the two-column Dual Lang layout; full-width headings never pair.");
 
     let hw_toc = (ui.available_width() - 4.0) * 0.5;
     ui.horizontal(|ui| {
@@ -5511,6 +5524,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             (title_val, title_en_val)
         };
         let has_chapter_prefix = clean_id_title.split_whitespace().next().is_some_and(|w| w.eq_ignore_ascii_case("bab"));
+        // The preface stays single-language: it is not processed in Dual Lang Mode.
+        let is_preface = title_val.eq_ignore_ascii_case("preface") || clean_id_title.eq_ignore_ascii_case("preface");
         let is_div = is_divider_type(type_val);
         let is_cover_or_div = is_div || type_val.eq_ignore_ascii_case("COVER");
         // The narrative sheets: `GXX` (the front matter) and `RXX` (the chapter reviews). Their
@@ -5598,8 +5613,10 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     text_slots.insert("title".into(), json!(final_title));
                     text_slots.insert("rest".into(), json!(final_title));
                     text_slots.insert("title_rest".into(), json!(final_title));
-                    text_slots.insert("title_en".into(), json!(title_en));
-                    text_slots.insert("chapter_title_en".into(), json!(title_en));
+                    if !is_preface {
+                        text_slots.insert("title_en".into(), json!(title_en));
+                        text_slots.insert("chapter_title_en".into(), json!(title_en));
+                    }
 
                     // Shape with color #e5007e is placeholder for image in col image
                     if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
@@ -5732,9 +5749,11 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         }
                     }
 
-                    // Sequential EN spread for Ulasan
+                    // Sequential EN spread for Ulasan — the preface is not processed in Dual
+                    // Lang Mode.
                     if st.bilingual_output
                         && !file_en_val.is_empty()
+                        && !is_preface
                         && is_ulasan_type(type_val)
                         && let Some(en_rtf_file) = resolve_catalog_related_file(&st.card1_path, file_en_val, "rtf")
                     {
@@ -5837,8 +5856,11 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             // Ulasan / Editorial Chapter layout:
             // Split title "BAB 01 Pemerintahan" into "BAB 01" and "Pemerintahan"
             let (ch_line, title_line) = split_chapter_title(clean_id_title, num_val);
-            let resolved_en_rtf =
-                if st.bilingual_output && !file_en_val.is_empty() { resolve_catalog_related_file(&st.card1_path, file_en_val, "rtf") } else { None };
+            let resolved_en_rtf = if st.bilingual_output && !file_en_val.is_empty() && !is_preface {
+                resolve_catalog_related_file(&st.card1_path, file_en_val, "rtf")
+            } else {
+                None
+            };
 
             if st.bilingual_output
                 && has_chapter_prefix
@@ -8253,6 +8275,8 @@ struct TocLevel {
     /// Prefix the entry with the page's first text box (the chapter line): a narrative page's
     /// title reads "BAB 01 Geografi" instead of "Geografi".
     chapter_number: bool,
+    /// Pair bilingual headings (ID / EN) of this style into one row on Dual Lang pages.
+    pair: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -8271,13 +8295,16 @@ impl TocPlan {
     /// The plan the panel's TOC controls describe. A paragraph list nests chapter titles over
     /// the headings the imported RTF files carry.
     fn from_state(st: &PubgenState) -> Self {
-        let level = |style: String, words: Vec<String>, chapter_number: bool| TocLevel { style, level: 1, words, chapter_number };
+        // Pairing only makes sense when the Dual Lang toggle is on: without it the pages carry no
+        // second language at all, so the checkbox stays inert.
+        let pair = st.toc_pair_bilingual && st.bilingual_output;
+        let level = |style: String, words: Vec<String>, chapter_number: bool| TocLevel { style, level: 1, words, chapter_number, pair };
         let levels = if st.toc_kind == 3 {
             // The narrative pages (the G and Ulasan sheets) and the headings they carry.
             vec![
                 level(TOC_NARRATIVE_STYLE.to_string(), Vec::new(), true),
-                TocLevel { style: "Heading 1".into(), level: 2, words: Vec::new(), chapter_number: false },
-                TocLevel { style: "Heading 2".into(), level: 3, words: Vec::new(), chapter_number: false },
+                TocLevel { style: "Heading 1".into(), level: 2, words: Vec::new(), chapter_number: false, pair },
+                TocLevel { style: "Heading 2".into(), level: 3, words: Vec::new(), chapter_number: false, pair },
             ]
         } else if st.toc_kind == 0 {
             // The plain list: every tagged page title plus the narrative pages.
@@ -8303,10 +8330,16 @@ impl TocPlan {
         let levels: Vec<TocLevel> = toc
             .entries
             .iter()
-            .map(|e| TocLevel { style: e.style.clone(), level: e.level, words: e.page_title.clone(), chapter_number: e.chapter_number })
+            .map(|e| TocLevel {
+                style: e.style.clone(),
+                level: e.level,
+                words: e.page_title.clone(),
+                chapter_number: e.chapter_number,
+                pair: e.pair_columns,
+            })
             .collect();
         let levels = if levels.is_empty() {
-            vec![TocLevel { style: st.toc_style.clone(), level: 1, words: Vec::new(), chapter_number: false }]
+            vec![TocLevel { style: st.toc_style.clone(), level: 1, words: Vec::new(), chapter_number: false, pair: false }]
         } else {
             levels
         };
@@ -8354,6 +8387,7 @@ impl TocPlan {
             level: 1,
             words: toc_kind_words(3).iter().map(|w| (*w).to_string()).collect(),
             chapter_number: true,
+            pair: st.toc_pair_bilingual && st.bilingual_output,
         });
         plan
     }
@@ -8388,6 +8422,9 @@ impl TocPlan {
                     }
                     if l.chapter_number {
                         e["chapterNumber"] = json!(true);
+                    }
+                    if l.pair {
+                        e["pairColumns"] = json!(true);
                     }
                     e
                 })
@@ -12047,6 +12084,63 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let toc = active.doc.tocs.last().expect("table of contents");
         let text = active.doc.story(toc.story).expect("TOC story").text.clone();
         assert!(text.contains("BAB 01 Geografi"), "the review page reads chapter line and title: {text}");
+    }
+
+    #[test]
+    fn test_toc_paragraph_pairs_bilingual_column_headings_on_a_dual_lang_page() {
+        // A Dual Lang RXX page: the Indonesian RTF flows into the left column frame, the English
+        // into the right one; both carry `Heading 1`. With the pairing checkbox on, the paragraph
+        // list shows one row per heading pair.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        ensure_para_style(&mut app, "Heading 1");
+        ensure_para_style(&mut app, TOC_NARRATIVE_STYLE);
+        let (si, _) = app.session.active().unwrap().doc.page_loc(0).unwrap();
+        for (x0, x1, text) in [(36.0, 300.0, "Proporsi fisik daratan"), (312.0, 576.0, "Physical proportions of the landmass")] {
+            let res = app
+                .run("frame.create", json!({"spread": si, "rect": [x0, 120.0, x1, 240.0], "content": "text", "text": text, "caret": false}))
+                .expect("frame.create");
+            let sid = res["story"].as_u64().expect("story");
+            app.run("text.select", json!({"story": sid, "anchor": 0, "focus": 0})).expect("text.select");
+            app.run("style.paragraph.apply", json!({"name": "Heading 1"})).expect("style.paragraph.apply");
+        }
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        let pages = app.session.active().unwrap().doc.page_count();
+        crate::canvas::go_to_page(&mut app, pages - 1);
+
+        let mut st = PubgenState {
+            toc_kind: 3,
+            toc_style: "TOC Entry".into(),
+            toc_title: "Daftar Isi".into(),
+            toc_pair_bilingual: true,
+            ..Default::default()
+        };
+        // The checkbox alone does nothing: pairing fires only with the Dual Lang toggle on.
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "{res:?}");
+        {
+            let active = app.session.active().unwrap();
+            let toc = active.doc.tocs.last().expect("table of contents");
+            let text = active.doc.story(toc.story).expect("TOC story").text.clone();
+            assert!(!text.contains(" / "), "single lang mode never pairs: {text}");
+        }
+
+        st.bilingual_output = true;
+        let res = execute_rebuild_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "{res:?}");
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().expect("table of contents");
+        let text = active.doc.story(toc.story).expect("TOC story").text.clone();
+        assert!(text.contains("Proporsi fisik daratan / Physical proportions of the landmass"), "the pair merges into one row: {text}");
+        assert!(!text.lines().filter(|l| l.contains("Proporsi")).any(|l| !l.contains(" / ")), "no unpaired Indonesian row: {text}");
+        // The stored definition keeps the option, so Rebuild TOC pairs again.
+        assert!(toc.entries.iter().any(|e| e.pair_columns), "{:?}", toc.entries);
+        let res = execute_rebuild_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "{res:?}");
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().expect("table of contents");
+        let text = active.doc.story(toc.story).expect("TOC story").text.clone();
+        assert!(text.contains("Proporsi fisik daratan / Physical proportions of the landmass"), "the rebuild keeps the pairing: {text}");
     }
 
     #[test]

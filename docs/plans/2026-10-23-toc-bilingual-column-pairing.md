@@ -1,6 +1,7 @@
 # TOC Bilingual Column Pairing (ID / EN on one row) — Implementation Plan
 
 > **Date:** 2026-10-23
+> **Status:** implemented 2026-10-23 (Phases 1–3 + guide/ROADMAP; `pairSeparator` stored but UI-less as planned)
 > **Scope:** `crates/doc/src/lib.rs` (TocEntry), `crates/engine/src/cmd/toc.rs` (collect/pair), `crates/ui-egui/src/panels/pubgen.rs` (state, TocPlan, TOC card), docs
 > **Reference:** `docs/plans/2026-10-22-bilingual-id-en-pubgen.md` (bilingual RXX layout), `crates/engine/src/cmd/toc.rs` (TOC engine)
 
@@ -178,7 +179,10 @@ row before styling and sorting.
 - **Pairing is geometry-based** (frame columns), not style- or language-based: ID and EN RTFs share
   heading style names, and text content matching is fragile. The horizontal-disjoint guard is what
   keeps other TOC kinds and full-width frames safe.
-- **k-th with k-th per (page, level)** is the pairing semantic; a missing twin stays a single row.
+- **k-th with k-th per page** is the pairing semantic (relaxed from per (page, level) during
+  implementation: the DUAL_LANG samples style the twins "heading 2" / "heading 1", so twins never share
+  a level); a missing twin stays a single row. The merged row keeps the **left** row's level, entry and
+  position, so sorting, continuation headers and hanging-indent behaviour are unchanged.
 - **Merged row keeps the left row's position data**, so sorting, continuation headers and
   hanging-indent behaviour are unchanged.
 - `pairSeparator` ships as a stored-but-UI-less option (engine accepts it; no control yet) — add a

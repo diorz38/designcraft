@@ -351,3 +351,19 @@ fn placed_pdf_without_a_crop_choice_loads_with_the_crop_box() {
     // A box with no area shows the whole page.
     assert_eq!(Asset { pdf_box: Some([0.5, 0.5, 0.5, 0.9]), ..back }.shown_box(), None);
 }
+
+#[test]
+fn toc_entry_pairing_options_roundtrip_and_default_to_nothing() {
+    let mut e = TocEntry::new("Heading 1", 2);
+    e.pair_columns = true;
+    e.pair_separator = Some(" — ".into());
+    let back: TocEntry = serde_json::from_value(serde_json::to_value(&e).unwrap()).unwrap();
+    assert_eq!(back, e);
+    let json = serde_json::to_string(&e).unwrap();
+    assert!(json.contains("pairColumns") && json.contains("pairSeparator"), "{json}");
+    // Old documents and old TOC JSON parse unchanged: the defaults serialize to nothing.
+    let old: TocEntry = serde_json::from_str(r#"{"style": "Heading 1", "level": 2}"#).unwrap();
+    assert!(!old.pair_columns && old.pair_separator.is_none());
+    let minimal = serde_json::to_string(&TocEntry::new("Heading 1", 2)).unwrap();
+    assert!(!minimal.contains("pair"), "{minimal}");
+}

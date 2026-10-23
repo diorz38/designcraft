@@ -776,6 +776,13 @@ pub struct TocEntry {
     /// reads "BAB 01 Geografi" instead of "Geografi".
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub chapter_number: bool,
+    /// Pair this style's left-column and right-column headings on one page into one row
+    /// ("Indonesian / English"). Rows whose frames overlap horizontally never pair.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pair_columns: bool,
+    /// Text between the paired halves; `None` is " / ".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pair_separator: Option<String>,
 }
 
 impl TocEntry {
@@ -791,6 +798,8 @@ impl TocEntry {
             sort: false,
             page_title: Vec::new(),
             chapter_number: false,
+            pair_columns: false,
+            pair_separator: None,
         }
     }
 }
