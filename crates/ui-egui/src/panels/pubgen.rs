@@ -705,12 +705,11 @@ fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
             st.bilingual_output = !st.bilingual_output;
             let mode_str = if st.bilingual_output { "Dual Lang (Bilingual)" } else { "Single Lang" };
             st.header_status = Some((format!("Mode: {mode_str}"), true));
-            if let Some(old_title) = toc_kind_title(st.toc_kind, was_bilingual) {
-                if st.toc_title.trim().is_empty() || st.toc_title.trim() == old_title {
-                    if let Some(new_title) = toc_kind_title(st.toc_kind, st.bilingual_output) {
-                        st.toc_title = new_title.to_string();
-                    }
-                }
+            if let Some(old_title) = toc_kind_title(st.toc_kind, was_bilingual)
+                && (st.toc_title.trim().is_empty() || st.toc_title.trim() == old_title)
+                && let Some(new_title) = toc_kind_title(st.toc_kind, st.bilingual_output)
+            {
+                st.toc_title = new_title.to_string();
             }
         }
     });
@@ -6175,46 +6174,18 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     }
                 }
 
-                // Images of a front-matter sheet: `image1` wraps tight around the text (Word "Tight"),
-                // `image2` floats over it (Word "In front of Text": placed last, no wrap).
+                let (mw, mh) = (margin.x1 - margin.x0, margin.y1 - margin.y0);
+                // Images of a front-matter sheet: `image1` (official photo) wraps tight around the text (Word "Tight")
+                // placed before RTF placement; `image2` (signature) is anchored dynamically to the signatory block.
                 if !has_chapter_prefix {
-                    let col = |key: &str| -> Option<String> {
-                        let idx = st.card1_headers.iter().position(|h| h.trim().eq_ignore_ascii_case(key))?;
-                        let v = row.get(idx).map(|s| s.trim()).filter(|s| !s.is_empty())?;
-                        Some(v.to_string())
-                    };
-                    let mut place = |key: &str, rect: [f64; 4], wrap: &str| {
-                        let Some(file_str) = col(key) else { return };
-                        let Some(img) = resolve_catalog_related_file(&st.card1_path, &file_str, "png")
-                            .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str.as_str(), "jpg"))
-                            .or_else(|| resolve_catalog_related_file(&st.card1_path, &file_str, "jpeg"))
-                        else {
-                            return;
-                        };
-                        let Some(fid) = app
-                            .run("frame.create", json!({"spread": spread_idx, "rect": rect, "content": "graphic"}))
-                            .ok()
-                            .and_then(|r| r.get("id").and_then(Value::as_u64))
-                        else {
-                            return;
-                        };
-                        let _ = app.run("selection.set", json!({"ids": [fid]}));
-                        let _ = app.run("file.place", json!({"path": img.to_string_lossy(), "frame": fid}));
-                        let _ = app.run("object.fit", json!({"mode": "fitProportionally", "ids": [fid]}));
-                        if wrap != "none" {
-                            // ponytail: `boundingBox` is the closest wrap to Word's "Tight" — contour
-                            // edge detection is out of scope until a publication needs it.
-                            let _ = app.run("object.textWrap", json!({"mode": wrap, "offset": 6.0, "ids": [fid]}));
-                        }
+                    let img1_rect = [margin.x0, margin.y0 + mh * 0.254, margin.x0 + mw * 0.335, margin.y0 + mh * 0.528];
+                    if place_catalog_image(app, st, row, "image1", spread_idx, img1_rect, "boundingBox").is_some() {
                         inserted_images_count = inserted_images_count.saturating_add(1);
-                    };
-                    // Picture positions measured from the `daftar_isi` page style, scaled to the margin box.
-                    let (mw, mh) = (margin.x1 - margin.x0, margin.y1 - margin.y0);
-                    place("image1", [margin.x0, margin.y0 + mh * 0.254, margin.x0 + mw * 0.335, margin.y0 + mh * 0.528], "boundingBox");
-                    place("image2", [margin.x1 - mw * 0.244, margin.y0 + mh * 0.354, margin.x1 - mw * 0.044, margin.y0 + mh * 0.464], "none");
+                    }
                 }
 
                 // Place RTF narrative body into a frame below the headers
+                let mut placed_rtf_fid: Option<u64> = None;
                 if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty()) {
                     let resolved_rtf = resolve_catalog_related_file(&st.card1_path, file_str, "rtf");
 
@@ -6242,8 +6213,20 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                             let rtf_path_str = rtf_file.to_string_lossy().to_string();
                             if execute_page_from_rtf(app, &mut st_copy, &rtf_path_str).is_ok() {
                                 inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
+                                placed_rtf_fid = Some(fid);
                             }
                         }
+                    }
+                }
+
+                // Dynamically anchor image2 (signature) around the signatory name line in the RTF
+                if !has_chapter_prefix {
+                    let default_img2_rect = [margin.x1 - mw * 0.244, margin.y0 + mh * 0.354, margin.x1 - mw * 0.044, margin.y0 + mh * 0.464];
+                    let (target_spread, img2_rect) = placed_rtf_fid
+                        .map(|fid| compute_signature_placement(app, fid, default_img2_rect, spread_idx, margin))
+                        .unwrap_or((spread_idx, default_img2_rect));
+                    if place_catalog_image(app, st, row, "image2", target_spread, img2_rect, "none").is_some() {
+                        inserted_images_count = inserted_images_count.saturating_add(1);
                     }
                 }
 
@@ -6299,45 +6282,12 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         let _ = app.run("type.alignCenter", json!({}));
                     }
 
-                    let col = |key: &str| -> Option<String> {
-                        let idx = st.card1_headers.iter().position(|h| h.trim().eq_ignore_ascii_case(key))?;
-                        let v = row.get(idx).map(|s| s.trim()).filter(|s| !s.is_empty())?;
-                        Some(v.to_string())
-                    };
-                    let mut place_en = |key: &str, rect: [f64; 4], wrap: &str| {
-                        let Some(file_str) = col(key) else { return };
-                        let Some(img) = resolve_catalog_related_file(&st.card1_path, &file_str, "png")
-                            .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str.as_str(), "jpg"))
-                            .or_else(|| resolve_catalog_related_file(&st.card1_path, &file_str, "jpeg"))
-                        else {
-                            return;
-                        };
-                        let Some(fid) = app
-                            .run("frame.create", json!({"spread": en_spread_idx, "rect": rect, "content": "graphic"}))
-                            .ok()
-                            .and_then(|r| r.get("id").and_then(Value::as_u64))
-                        else {
-                            return;
-                        };
-                        let _ = app.run("selection.set", json!({"ids": [fid]}));
-                        let _ = app.run("file.place", json!({"path": img.to_string_lossy(), "frame": fid}));
-                        let _ = app.run("object.fit", json!({"mode": "fitProportionally", "ids": [fid]}));
-                        if wrap != "none" {
-                            let _ = app.run("object.textWrap", json!({"mode": wrap, "offset": 6.0, "ids": [fid]}));
-                        }
-                        inserted_images_count = inserted_images_count.saturating_add(1);
-                    };
                     let (mw, mh) = (en_margin.x1 - en_margin.x0, en_margin.y1 - en_margin.y0);
-                    place_en(
-                        "image1",
-                        [en_margin.x0, en_margin.y0 + mh * 0.254, en_margin.x0 + mw * 0.335, en_margin.y0 + mh * 0.528],
-                        "boundingBox",
-                    );
-                    place_en(
-                        "image2",
-                        [en_margin.x1 - mw * 0.244, en_margin.y0 + mh * 0.354, en_margin.x1 - mw * 0.044, en_margin.y0 + mh * 0.464],
-                        "none",
-                    );
+                    // Place image1 before English RTF text so textWrap: "boundingBox" wraps body text around it.
+                    let img1_rect = [en_margin.x0, en_margin.y0 + mh * 0.254, en_margin.x0 + mw * 0.335, en_margin.y0 + mh * 0.528];
+                    if place_catalog_image(app, st, row, "image1", en_spread_idx, img1_rect, "boundingBox").is_some() {
+                        inserted_images_count = inserted_images_count.saturating_add(1);
+                    }
 
                     crate::canvas::go_to_page(app, en_page_idx);
                     let rtf_y0 = en_margin.y0 + en_header_h;
@@ -6355,16 +6305,29 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         .ok()
                         .and_then(|res| res.get("id").and_then(Value::as_u64));
 
+                    let mut placed_en_rtf_fid: Option<u64> = None;
                     if let Some(fid) = created_fid {
                         let _ = app.run("selection.set", json!({"ids": [fid]}));
                         let mut st_copy = st.clone();
                         let rtf_path_str = en_rtf_file.to_string_lossy().to_string();
                         if execute_page_from_rtf(app, &mut st_copy, &rtf_path_str).is_ok() {
                             inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
+                            placed_en_rtf_fid = Some(fid);
                         }
                     }
                     let end_page = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(en_page_idx);
                     italicize_page_stories(app, en_page_idx, end_page);
+
+                    // Dynamically anchor image2 (signature) around the signatory name line in the English Preface
+                    let default_img2_rect =
+                        [en_margin.x1 - mw * 0.244, en_margin.y0 + mh * 0.354, en_margin.x1 - mw * 0.044, en_margin.y0 + mh * 0.464];
+                    let (target_spread, img2_rect) = placed_en_rtf_fid
+                        .map(|fid| compute_signature_placement(app, fid, default_img2_rect, en_spread_idx, en_margin))
+                        .unwrap_or((en_spread_idx, default_img2_rect));
+                    if place_catalog_image(app, st, row, "image2", target_spread, img2_rect, "none").is_some() {
+                        inserted_images_count = inserted_images_count.saturating_add(1);
+                    }
+
                     generated_count = generated_count.saturating_add(1);
                 }
             }
@@ -7217,6 +7180,144 @@ fn italicize_page_stories(app: &mut DesignApp, start_page: usize, end_page: usiz
         }
         Ok(serde_json::Value::Null)
     });
+}
+
+/// Helper to place a catalog image (e.g. "image1", "image2") on `spread_idx` with `rect` and `wrap`.
+fn place_catalog_image(
+    app: &mut DesignApp,
+    st: &PubgenState,
+    row: &[String],
+    key: &str,
+    spread_idx: usize,
+    rect: [f64; 4],
+    wrap: &str,
+) -> Option<u64> {
+    let col = |key: &str| -> Option<String> {
+        let idx = st.card1_headers.iter().position(|h| h.trim().eq_ignore_ascii_case(key))?;
+        let v = row.get(idx).map(|s| s.trim()).filter(|s| !s.is_empty())?;
+        Some(v.to_string())
+    };
+    let file_str = col(key)?;
+    let img = resolve_catalog_related_file(&st.card1_path, &file_str, "png")
+        .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str.as_str(), "jpg"))
+        .or_else(|| resolve_catalog_related_file(&st.card1_path, &file_str, "jpeg"))?;
+    let res = app.run("frame.create", json!({"spread": spread_idx, "rect": rect, "content": "graphic"})).ok()?;
+    let fid = res.get("id").and_then(Value::as_u64)?;
+    let _ = app.run("selection.set", json!({"ids": [fid]}));
+    let _ = app.run("file.place", json!({"path": img.to_string_lossy(), "frame": fid}));
+    let _ = app.run("object.fit", json!({"mode": "fitProportionally", "ids": [fid]}));
+    if wrap != "none" {
+        let _ = app.run("object.textWrap", json!({"mode": wrap, "offset": 6.0, "ids": [fid]}));
+    }
+    Some(fid)
+}
+
+/// Computes the dynamic placement rect for the signature (`image2`) anchored to the signatory
+/// block at the end of the narrative text (e.g. Kata Pengantar / Preface).
+/// Returns `(target_spread_idx, [x0, y0, x1, y1])`.
+fn compute_signature_placement(
+    app: &DesignApp,
+    fid: u64,
+    default_rect: [f64; 4],
+    default_spread: usize,
+    margin: designcraft_geom::Rect,
+) -> (usize, [f64; 4]) {
+    let Some(sid) = story_of_frame(app, fid) else {
+        return (default_spread, default_rect);
+    };
+    let Some(active) = app.session.active() else {
+        return (default_spread, default_rect);
+    };
+    let cs = designcraft_compose::compose_story(&active.doc, sid, &Default::default());
+
+    // Find the last frame containing non-whitespace text lines.
+    let mut found = None;
+    for frame in cs.frames.iter().rev() {
+        let non_empty: Vec<&designcraft_compose::Line> =
+            frame.lines.iter().filter(|l| l.glyphs.iter().any(|g| g.visible && !g.rendered_char.is_whitespace())).collect();
+        if !non_empty.is_empty() {
+            let last_line = non_empty.last().copied();
+            let prev_line = if non_empty.len() >= 2 { non_empty.get(non_empty.len().saturating_sub(2)).copied() } else { None };
+            if let Some(ll) = last_line {
+                found = Some((frame.frame, ll, prev_line));
+                break;
+            }
+        }
+    }
+
+    let Some((target_frame_id, last_line, prev_line)) = found else {
+        return (default_spread, default_rect);
+    };
+
+    let Some(frame_item) = active.doc.item(target_frame_id) else {
+        return (default_spread, default_rect);
+    };
+
+    let target_spread_idx = active.doc.spreads.iter().position(|s| s.items.iter().any(|it| it.id == target_frame_id)).unwrap_or(default_spread);
+
+    let last_visible: Vec<_> = last_line.glyphs.iter().filter(|g| g.visible && !g.rendered_char.is_whitespace()).collect();
+    if last_visible.is_empty() {
+        return (default_spread, default_rect);
+    }
+
+    let line_min_x = last_visible.iter().map(|g| g.x).fold(f64::INFINITY, f64::min);
+    let line_max_x = last_visible.iter().map(|g| g.x + g.adv).fold(f64::NEG_INFINITY, f64::max);
+    let center_x = (line_min_x + line_max_x) / 2.0;
+
+    let spread_center_pt = frame_item.xf * designcraft_geom::Point::new(center_x, last_line.baseline);
+    let spread_center_x = spread_center_pt.x;
+    let spread_last_baseline_y = spread_center_pt.y;
+
+    let prev_baseline_y = prev_line.map(|pl| (frame_item.xf * designcraft_geom::Point::new(0.0, pl.baseline)).y);
+
+    let mw = margin.x1 - margin.x0;
+    let img_w = (mw * 0.22).clamp(80.0, 110.0);
+
+    let (y0, y1) = if let Some(pby) = prev_baseline_y {
+        let gap = spread_last_baseline_y - pby;
+        if gap > 35.0 {
+            let h = (gap * 0.95).clamp(50.0, 75.0);
+            let bottom = spread_last_baseline_y - 6.0;
+            (bottom - h, bottom)
+        } else {
+            let h = 65.0;
+            let bottom = spread_last_baseline_y - 6.0;
+            (bottom - h, bottom)
+        }
+    } else {
+        let h = 65.0;
+        let bottom = spread_last_baseline_y - 6.0;
+        (bottom - h, bottom)
+    };
+
+    let mut x0 = spread_center_x - img_w / 2.0;
+    let mut x1 = spread_center_x + img_w / 2.0;
+
+    if x1 > margin.x1 {
+        let shift = x1 - margin.x1;
+        x0 -= shift;
+        x1 -= shift;
+    }
+    if x0 < margin.x0 {
+        let shift = margin.x0 - x0;
+        x0 += shift;
+        x1 += shift;
+    }
+
+    let mut final_y0 = y0;
+    let mut final_y1 = y1;
+    if final_y1 > margin.y1 {
+        let shift = final_y1 - margin.y1;
+        final_y0 -= shift;
+        final_y1 -= shift;
+    }
+    if final_y0 < margin.y0 {
+        let shift = margin.y0 - final_y0;
+        final_y0 += shift;
+        final_y1 += shift;
+    }
+
+    (target_spread_idx, [x0, final_y0, x1, final_y1])
 }
 
 /// Split title like "BAB 01 Pemerintahan" into ("BAB 01", "Pemerintahan")
@@ -9070,11 +9171,7 @@ fn wrap_paragraph_title(clean_title: &str, max_line_w: f64) -> String {
 /// Early wrapping for paragraph TOC entries so that long headings wrap cleanly before the
 /// page number column, while maintaining character styling (such as italic for English halves
 /// in bilingual paired headings).
-fn enrich_paragraph_toc_story(
-    app: &mut DesignApp,
-    sid: designcraft_doc::StoryId,
-    width: f64,
-) {
+fn enrich_paragraph_toc_story(app: &mut DesignApp, sid: designcraft_doc::StoryId, width: f64) {
     let _ = app.session.edit(|doc, _| {
         let story = doc.story_mut(sid).ok_or(designcraft_doc::DocError::NoStory(sid))?;
         let ranges = story.para_ranges();
@@ -9250,16 +9347,16 @@ fn apply_toc_post_process(
                     }
                 });
 
-                if style_name == "TOC TablePage Header" {
-                    if let Some(pos) = story.text[r.clone()].find(designcraft_doc::story::FORCED_LINE_BREAK) {
-                        let second_line_start = r.start + pos + designcraft_doc::story::FORCED_LINE_BREAK.len_utf8();
-                        let second_line_end = r.end;
-                        if second_line_start < second_line_end {
-                            story.format_chars(second_line_start..second_line_end, |f| {
-                                f.style = "TOC English".to_string();
-                                f.over.font_style = Some("Italic".to_string());
-                            });
-                        }
+                if style_name == "TOC TablePage Header"
+                    && let Some(pos) = story.text[r.clone()].find(designcraft_doc::story::FORCED_LINE_BREAK)
+                {
+                    let second_line_start = r.start + pos + designcraft_doc::story::FORCED_LINE_BREAK.len_utf8();
+                    let second_line_end = r.end;
+                    if second_line_start < second_line_end {
+                        story.format_chars(second_line_start..second_line_end, |f| {
+                            f.style = "TOC English".to_string();
+                            f.over.font_style = Some("Italic".to_string());
+                        });
                     }
                 }
             }
@@ -9432,16 +9529,16 @@ fn sync_toc_continuation_headers(app: &mut DesignApp, st: &PubgenState, sid: des
                             it.label = TOC_CONTINUATION_HEADER_LABEL.to_string();
                             it.name = "TOC Continuation Header".to_string();
                         }
-                        if let Some(hdr_story) = doc.story_mut(hdr_sid) {
-                            if let Some(pos) = hdr_story.text.find(designcraft_doc::story::FORCED_LINE_BREAK) {
-                                let start = pos + designcraft_doc::story::FORCED_LINE_BREAK.len_utf8();
-                                let end = hdr_story.len();
-                                if start < end {
-                                    hdr_story.format_chars(start..end, |f| {
-                                        f.style = "TOC English".to_string();
-                                        f.over.font_style = Some("Italic".to_string());
-                                    });
-                                }
+                        if let Some(hdr_story) = doc.story_mut(hdr_sid)
+                            && let Some(pos) = hdr_story.text.find(designcraft_doc::story::FORCED_LINE_BREAK)
+                        {
+                            let start = pos + designcraft_doc::story::FORCED_LINE_BREAK.len_utf8();
+                            let end = hdr_story.len();
+                            if start < end {
+                                hdr_story.format_chars(start..end, |f| {
+                                    f.style = "TOC English".to_string();
+                                    f.over.font_style = Some("Italic".to_string());
+                                });
                             }
                         }
                     }
@@ -12477,16 +12574,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         // Verify style indentation for TOC Level 3 (Heading 2)
         let style = active.doc.styles.para("TOC Level 3").expect("TOC Level 3 style");
-        assert_eq!(
-            style.para.left_indent,
-            Some(24.0),
-            "TOC Level 3 left_indent must equal base_indent (24.0) without unnecessary hanging indent"
-        );
-        assert_eq!(
-            style.para.first_line_indent,
-            Some(0.0),
-            "TOC Level 3 first_line_indent must be 0.0 so continuation lines align with first line"
-        );
+        assert_eq!(style.para.left_indent, Some(24.0), "TOC Level 3 left_indent must equal base_indent (24.0) without unnecessary hanging indent");
+        assert_eq!(style.para.first_line_indent, Some(0.0), "TOC Level 3 first_line_indent must be 0.0 so continuation lines align with first line");
 
         // Verify the long paired heading was wrapped early using FORCED_LINE_BREAK
         assert!(
@@ -13126,6 +13215,43 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         // The RTF note is placed on the same page below the title.
         assert!(active.doc.stories.values().any(|s| s.text.contains("Hello DesignCraft Note!")), "RTF text should be placed on the generated page");
+    }
+
+    #[test]
+    fn test_kata_pengantar_dynamic_signature_placement() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let margin = designcraft_geom::Rect::new(36.0, 36.0, 559.0, 806.0);
+        let (mw, mh) = (margin.x1 - margin.x0, margin.y1 - margin.y0);
+        let default_img2_rect = [margin.x1 - mw * 0.244, margin.y0 + mh * 0.354, margin.x1 - mw * 0.044, margin.y0 + mh * 0.464];
+
+        // Create a text frame for the Kata Pengantar RTF
+        let rtf_rect = [margin.x0, margin.y0 + 50.0, margin.x1, margin.y1];
+        let res = app.run("frame.create", json!({"spread": 0, "rect": rtf_rect, "content": "text", "caret": false})).unwrap();
+        let fid = res.get("id").and_then(Value::as_u64).unwrap();
+        let _ = app.run("selection.set", json!({"ids": [fid]}));
+
+        let mut st = PubgenState::default();
+        let rtf_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plan/pubgen/samples/DUAL_LANG/B01.rtf");
+        if std::path::Path::new(rtf_path).exists() {
+            let place_res = execute_page_from_rtf(&mut app, &mut st, rtf_path);
+            assert!(place_res.is_ok(), "execute_page_from_rtf should place B01.rtf: {place_res:?}");
+
+            let (target_spread, img2_rect) = compute_signature_placement(&app, fid, default_img2_rect, 0, margin);
+            assert_eq!(target_spread, 0);
+
+            // The dynamic signature rect must be anchored down near the signatory block at the bottom
+            // of the text, significantly lower than the default static position (~308pt).
+            assert!(
+                img2_rect[1] > default_img2_rect[1] + 50.0,
+                "Dynamic signature y0 ({}) should be anchored lower than default ({})",
+                img2_rect[1],
+                default_img2_rect[1]
+            );
+            assert!(img2_rect[1] >= margin.y0 && img2_rect[3] <= margin.y1);
+            assert!(img2_rect[0] >= margin.x0 && img2_rect[2] <= margin.x1);
+        }
     }
 
     #[test]
@@ -14814,14 +14940,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
                 "".into(),
                 "Chart 02.01 Road Length in East Karawang District, 2025".into(),
             ]],
-            card1_headers: vec![
-                "type".into(),
-                "number".into(),
-                "title".into(),
-                "file".into(),
-                "template".into(),
-                "title_en".into(),
-            ],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into(), "title_en".into()],
             card1_type_col: 0,
             card1_num_col: 1,
             card1_title_col: 2,
@@ -14834,12 +14953,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(res.is_ok(), "3-line bilingual chart generation should succeed: {res:?}");
 
         let active = app.session.active().unwrap();
-        let chart_story = active
-            .doc
-            .stories
-            .values()
-            .find(|s| s.text.contains("Grafik 02.01"))
-            .expect("Chart story must exist");
+        let chart_story = active.doc.stories.values().find(|s| s.text.contains("Grafik 02.01")).expect("Chart story must exist");
 
         // Verify 3 lines separated by FORCED_LINE_BREAK
         let lines: Vec<&str> = chart_story.text.split(designcraft_doc::story::FORCED_LINE_BREAK).collect();
@@ -15402,12 +15516,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(texts.iter().any(|t| t.contains("GEOGRAPHY AND CLIMATE")), "Stories should contain English title: {texts:?}");
 
         // Dual Lang Mode: the title_en textbox is 22 pt italic, black stroke behind the fill.
-        let en_story = active
-            .doc
-            .stories
-            .values()
-            .find(|s| s.text.contains("GEOGRAPHY AND CLIMATE"))
-            .expect("EN title story exists");
+        let en_story = active.doc.stories.values().find(|s| s.text.contains("GEOGRAPHY AND CLIMATE")).expect("EN title story exists");
         assert!(!en_story.chars.is_empty(), "EN title story has runs");
         for run in &en_story.chars {
             assert_eq!(run.format.over.size, Some(22.0), "title_en run size: {run:?}");
