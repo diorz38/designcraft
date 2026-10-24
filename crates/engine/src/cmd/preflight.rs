@@ -354,18 +354,15 @@ mod placed_vector_tests {
         s.execute("file.place", &json!({"base64": base64_encode(&png), "name": "photo.jpg", "x": 72, "y": 72, "width": 20})).unwrap();
         let doc = std::sync::Arc::make_mut(&mut s.doc_mut().unwrap().doc);
         let asset = doc.assets.values_mut().next().unwrap();
-        let link = "/definitely/missing dir/photo.jpg";
-        std::sync::Arc::make_mut(asset).link = Some(link.into());
+        // The temporary folder is an absolute path with the default settings on Windows, macOS and Linux. On Windows,
+        // `/x` names no drive, so `document_path` refuses it when the document has no path.
+        let link = std::env::temp_dir().join(format!("dc-preflight-missing-{} dir", std::process::id())).join("photo.jpg");
+        let link = link.to_string_lossy().into_owned();
+        std::sync::Arc::make_mut(asset).link = Some(link.clone());
         let r = s.execute("preflight.run", &json!({})).unwrap();
         let missing: Vec<&str> =
             r["issues"].as_array().unwrap().iter().filter(|i| i["kind"] == "missingLink").map(|i| i["message"].as_str().unwrap()).collect();
-        // A `/`-rooted link has no drive on Windows, so Preflight names the path as unfollowable:
-        // the message carries the path either way.
-        let expected = match crate::io::document_path(link, None).err() {
-            Some(why) => format!("Missing link: {link} ({why})"),
-            None => format!("Missing link: {link}"),
-        };
-        assert_eq!(missing, [expected.as_str()]);
+        assert_eq!(missing, [format!("Missing link: {link}")]);
     }
 }
 
