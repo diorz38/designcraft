@@ -421,7 +421,7 @@ pub fn collect_translation_units(st: &PubgenState) -> Vec<(String, String)> {
 
     let mut seen: HashMap<String, ()> = HashMap::new();
     let mut out: Vec<(String, String)> = Vec::new();
-    let mut push = |out: &mut Vec<(String, String)>, seen: &mut HashMap<String, ()>, text: &str| {
+    let push = |out: &mut Vec<(String, String)>, seen: &mut HashMap<String, ()>, text: &str| {
         let t = text.trim();
         if t.is_empty() || !translatable_cell(t) || seen.contains_key(t) {
             return;
