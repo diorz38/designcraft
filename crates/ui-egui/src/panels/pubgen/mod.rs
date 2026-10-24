@@ -3108,69 +3108,6 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
         }
     });
 
-    // Helper: Page from RTF
-    divider(ui);
-    ui.horizontal(|ui| {
-        let w = (ui.available_width() - 65.0).max(80.0);
-        ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.rtf_path).hint_text("Path to .rtf file…"));
-        if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
-            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
-        {
-            st.rtf_path = path;
-        }
-    });
-    let tip_rtf = format!("Import RTF document to Page {cur_label} (auto-flows to new pages if needed)");
-    if outline_button(ui, "Page from RTF", full_width(ui)).on_hover_text(tip_rtf).clicked() {
-        if st.rtf_path.trim().is_empty()
-            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
-        {
-            st.rtf_path = path;
-        }
-        let path = st.rtf_path.trim().to_string();
-        let res = execute_page_from_rtf(app, st, &path);
-        st.card3_status = Some(match res {
-            Ok(msg) => (msg, true),
-            Err(e) => (e, false),
-        });
-    }
-
-    // Helper: Page from Image
-    divider(ui);
-    ui.horizontal(|ui| {
-        let w = (ui.available_width() - 65.0).max(80.0);
-        ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.image_path).hint_text("Path to image file…"));
-        if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
-            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
-        {
-            st.image_path = path;
-        }
-    });
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("As:").size(11.0).color(t.text));
-        ui.radio_value(&mut st.image_as_background, false, "Image object")
-            .on_hover_text("Create an image object fitted inside the page margins of the selected page");
-        ui.radio_value(&mut st.image_as_background, true, "Page background")
-            .on_hover_text("Fit image proportionally to full page, keeping aspect ratio (sent to the back, behind all items)");
-    });
-    let tip_img = if st.image_as_background {
-        format!("Apply image as page background to Page {cur_label} (proportional, sent to back)")
-    } else {
-        format!("Place image fitted inside the page margins of Page {cur_label}")
-    };
-    if outline_button(ui, "Page from Image", full_width(ui)).on_hover_text(tip_img).clicked() {
-        if st.image_path.trim().is_empty()
-            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
-        {
-            st.image_path = path;
-        }
-        let path = st.image_path.trim().to_string();
-        let res = execute_page_from_image(app, st, &path);
-        st.card3_status = Some(match res {
-            Ok(msg) => (msg, true),
-            Err(e) => (e, false),
-        });
-    }
-
     // Helper: Excel (.xlsx) to CSV Data
     divider(ui);
     let tip_excel = "Convert a multi-sheet Excel file (.xlsx) into 1 catalog CSV for Page from CSV + individual table CSVs (with auto-merged headers). \
