@@ -31,6 +31,7 @@ designcraft-tools = { path = "crates/tools" }
 designcraft-engine = { path = "crates/engine" }
 designcraft-ui-egui = { path = "crates/ui-egui" }
 designcraft-mcp = { path = "crates/mcp" }
+designcraft-translate = { path = "crates/translate" }
 designcraft-testkit = { path = "crates/testkit" }
 
 # foundation

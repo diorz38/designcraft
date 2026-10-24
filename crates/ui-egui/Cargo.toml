@@ -20,6 +20,7 @@ designcraft-render = { workspace = true }
 designcraft-tools = { workspace = true }
 designcraft-textimport = { workspace = true }
 designcraft-engine = { workspace = true }
+designcraft-translate = { workspace = true }
 unicode-bidi = { workspace = true }
 unicode-bidi-mirroring = { workspace = true }
 unicode-segmentation = { workspace = true }
@@ -44,3 +45,6 @@ toml = "1"
 
 [features]
 pubgen = []
+# AI translation backends for the Pubgen panel (see docs/plans/2026-10-22-offline-ai-translation-pubgen.md).
+ai-translate = ["designcraft-translate/nllb"]
+ai-translate-online = ["designcraft-translate/groq"]

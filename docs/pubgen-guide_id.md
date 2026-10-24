@@ -84,6 +84,17 @@ Di bilah tajuk atas panel Pubgen, Anda dapat beralih antara **Single Lang** (def
   - **Tabel Statistik (`XX_XX`)**: Menggunakan tajuk 2 baris (`Tabel` / `Table` miring) dan judul 2 baris dengan teks Inggris dicetak miring.
   - **Grafik (`CXX_XX`)**: Memformat judul dan subjudul dwi bahasa dengan perlakuan cetak miring presisi pada bagian bahasa Inggris.
 
+### Terjemah dengan AI (Groq, fitur opsional)
+Jika sumber Anda murni bahasa Indonesia — tanpa kolom `title_en` / `file_en` dan tanpa pasangan `" / "` — kotak centang **Translate with AI** (di sebelah tombol Dual Lang) mengisi setengah bahasa Inggris untuk Anda. Memerlukan build dengan fitur terjemahan online (`cargo run --release -p designcraft --features pubgen,ai-translate-online`).
+
+1. Centang **Translate with AI** — dialog pengaturan terbuka.
+2. Pilih **Online — Groq (akun gratis)**, tempel kunci API dari [console.groq.com/keys](https://console.groq.com/keys), lalu pilih model (Refresh mengisi daftar dari akun Anda).
+3. Tekan **Use AI**, lalu **Generate Pages** seperti biasa.
+
+Yang terjadi di belakang: Pubgen mengumpulkan seluruh teks Indonesia (judul baris, judul sampul, isi tabel, paragraf narasi), menerjemahkannya di latar belakang dengan bilah kemajuan dan tombol Cancel yang berfungsi, lalu membuat halaman dengan bagian Inggris terisi. Generate kedua atas baris yang sama memakai hasil terjemahan dan selesai seketika.
+
+Dua kalimat jujur dari dialog: **teks katalog dikirim ke cloud Groq**, dan batas kuota gratis membuat pekerjaan besar lebih lambat, tidak diblokir. Kunci API disimpan lokal di pengaturan DesignCraft. Model offline (NLLB-200 distilled 600M, ONNX) direncanakan pada dialog yang sama; lisensinya **CC-BY-NC-4.0 — non-komersial**.
+
 ---
 
 ## 3. Bagian 1: Publication Cover (Pembuat Halaman Sampul Otomatis)

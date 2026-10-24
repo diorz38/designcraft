@@ -53,4 +53,6 @@ fmv-macos-events = "=0.1.0"
 
 [features]
 pubgen = ["designcraft-ui-egui/pubgen"]
+ai-translate = ["designcraft-ui-egui/ai-translate"]
+ai-translate-online = ["designcraft-ui-egui/ai-translate-online"]
 

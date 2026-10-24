@@ -5,7 +5,8 @@
 //!    multi-page layouts using geometric templates.
 //! 2. "Table from CSV": Ingests tabular CSV matrix data and constructs native styled tables.
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use egui::{Color32, RichText, Sense, Ui, pos2, vec2};
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,8 @@ pub mod excel;
 #[path = "locale.rs"]
 pub mod locale;
 pub use locale::Locale;
+
+pub mod ai;
 
 mod cover_art;
 
@@ -261,6 +264,38 @@ pub struct PubgenState {
     pub card1_title_en_col: usize,
     #[serde(default = "default_file_en_col")]
     pub card1_file_en_col: usize,
+    // AI translation (docs/plans/2026-10-22-offline-ai-translation-pubgen.md).
+    /// Translate the Indonesian half with AI when no `title_en`/`file_en` exists.
+    #[serde(default)]
+    pub translate_with_ai: bool,
+    /// The setup dialog was accepted this session.
+    #[serde(skip)]
+    pub ai_setup_done: bool,
+    /// Some(..) = the setup modal is open.
+    #[serde(skip)]
+    pub ai_dialog: Option<ai::AiSetupDialog>,
+    /// A running background translation over the collected units.
+    #[serde(skip)]
+    pub translate_job: Option<ai::TranslateJob>,
+    /// Indonesian source text -> English (session cache; a re-run does no inference).
+    #[serde(skip)]
+    pub translations: HashMap<String, String>,
+    /// Source RTF -> temp translated RTF (for the EN narrative spread).
+    #[serde(skip)]
+    pub translated_bodies: HashMap<String, PathBuf>,
+    /// Signature of the slice the finished job translated; a mismatch re-collects.
+    #[serde(skip)]
+    pub translations_slice_key: String,
+    /// Targeted translation: only RXX/BXX review pages (narrative), tables and other
+    /// page kinds stay Indonesian. Useful under tight provider token limits.
+    #[serde(default)]
+    pub ai_only_reviews: bool,
+    /// When the AI job finishes, auto-run the Excel convert+generate with this workbook.
+    #[serde(skip)]
+    pub ai_pending_excel_path: String,
+    /// Page-targeted translation: the page awaiting the AI result.
+    #[serde(skip)]
+    pub ai_page_target: Option<ai::PageTarget>,
     pub card1_preset: usize,
     pub card1_range_all: bool,
     pub card1_range_from: usize,
@@ -487,6 +522,16 @@ impl Default for PubgenState {
             card1_template_col: 4,
             card1_title_en_col: 5,
             card1_file_en_col: 6,
+            translate_with_ai: false,
+            ai_setup_done: false,
+            ai_dialog: None,
+            translate_job: None,
+            translations: HashMap::new(),
+            translated_bodies: HashMap::new(),
+            translations_slice_key: String::new(),
+            ai_only_reviews: false,
+            ai_pending_excel_path: String::new(),
+            ai_page_target: None,
             card1_preset: 0,
             card1_range_all: true,
             card1_range_from: 1,
@@ -746,6 +791,39 @@ fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
                 st.toc_title = new_title.to_string();
             }
         }
+
+        // Page-targeted AI translation: the selected RXX review page translated in place.
+        let page_idx = app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app));
+        let target = page_idx.and_then(|p| ai::detect_page_target(app, p));
+        let backend_ready = ai::backend_from_prefs(app).is_some();
+        let can_page_ai = target.is_some() && backend_ready;
+        let page_btn = ui
+            .add_enabled(can_page_ai, egui::Button::new("Translate with AI"))
+            .on_hover_text(
+                "Translate the selected RXX review page in place: the chapter title (textbox 3) and the right-column body are replaced with English.",
+            )
+            .on_disabled_hover_text(if target.is_none() {
+                "Select a generated RXX review page (BAB NN / title / Chapter NN + two body columns)."
+            } else {
+                "Configure the AI backend first: tick Translate with AI in the Excel card and press Use AI."
+            });
+        if page_btn.clicked()
+            && let Some(target) = target
+        {
+            let mut units = ai::collect_page_units(app, &target);
+            units.retain(|(k, _)| !st.translations.contains_key(k));
+            if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
+                st.ai_page_target = Some(target);
+                st.translate_job = Some(ai::TranslateJob::spawn(&provider, &key, &model, units, ui.ctx().clone()));
+                st.header_status = Some(("Translating page with AI…".into(), true));
+            } else if units.is_empty() {
+                // Everything cached: re-apply from the map.
+                ai::apply_page_result(app, st, &target);
+                st.header_status = Some(("Page translated from cache.".into(), true));
+            } else {
+                st.header_status = Some(("AI translation: no backend configured — tick Translate with AI in the Excel card.".into(), false));
+            }
+        }
     });
     rule(ui);
 
@@ -769,6 +847,45 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
     ui.spacing_mut().item_spacing = vec2(6.0, 5.0);
     let state_id = egui::Id::new(PANEL_ID);
     let mut st: PubgenState = ui.data(|d| d.get_temp(state_id)).unwrap_or_default();
+
+    // AI setup modal + background job poll (progress and Done both land here).
+    if let Some(mut job) = st.translate_job.take() {
+        let ok = job.poll(&mut st);
+        if job.finished {
+            st.translate_job = None;
+            if ok {
+                // Page-targeted job: write the results into the page's own textboxes.
+                if let Some(target) = st.ai_page_target.take() {
+                    ai::apply_page_result(app, &st, &target);
+                    st.header_status = Some(("Page translated with AI.".into(), true));
+                    ui.data_mut(|d| d.insert_temp(state_id, st));
+                    return;
+                }
+                st.card1_status = Some(("AI translation ready — generating…".into(), true));
+                // Excel flow: the full convert+generate runs with the translated maps.
+                let res = if st.ai_pending_excel_path.is_empty() {
+                    execute_generate_pages(app, &st)
+                } else {
+                    let path = std::mem::take(&mut st.ai_pending_excel_path);
+                    execute_excel_and_generate(app, &mut st, &path)
+                };
+                st.card1_status = Some(match res {
+                    Ok(msg) => (msg, true),
+                    Err(err) => (err, false),
+                });
+                ui.data_mut(|d| d.insert_temp(state_id, st));
+                return;
+            }
+            // Stopped (cancel/error): keep the partial translations, clear the slice
+            // signature so the next Generate collects and translates only the rest.
+            st.translations_slice_key.clear();
+            st.ai_pending_excel_path.clear();
+            st.ai_page_target = None;
+        } else {
+            st.translate_job = Some(job);
+        }
+    }
+    ai::dialog_ui(app, &mut st, ui);
 
     pubgen_header_band(app, ui, &mut st, &t);
 
@@ -902,9 +1019,36 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
 
     ui.checkbox(&mut st.card1_append, "Append to document");
 
-    // Action button
+    // Action button. With AI translation on, generation is two-phase: the first click
+    // collects the Indonesian units and spawns the worker; when the job finishes (polled
+    // in show()), the same click path generates with the EN maps filled.
     let can_gen = !st.card1_records.is_empty();
     if ui.add_enabled(can_gen, egui::Button::new("Generate Pages")).clicked() {
+        if st.bilingual_output && st.translate_with_ai {
+            let key = ai::slice_signature(st);
+            if st.translate_job.is_some() {
+                st.card1_status = Some(("Still translating with AI…".into(), true));
+                return;
+            }
+            if st.translations_slice_key != key {
+                // Smart resume: drop units already translated (done or from a stopped run).
+                let mut units = ai::collect_translation_units(st);
+                units.retain(|(k, _)| !st.translations.contains_key(k));
+                if units.is_empty() {
+                    // Everything already translated: nothing to do, generate directly.
+                    st.translations_slice_key = key;
+                } else {
+                    if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
+                        st.translate_job = Some(ai::TranslateJob::spawn(&provider, &key, &model, units, ui.ctx().clone()));
+                        st.translations_slice_key = key;
+                        st.card1_status = Some(("Translating with AI…".to_string(), true));
+                        return;
+                    }
+                    st.card1_status = Some(("AI translation: no backend configured — open Configure…".into(), false));
+                    return;
+                }
+            }
+        }
         let res = execute_generate_pages(app, st);
         st.card1_status = Some(match res {
             Ok(msg) => (msg, true),
@@ -2626,6 +2770,11 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         text_slots.insert("title#2".into(), json!(title2_text));
         if st.bilingual_output && !st.cover_title_en.trim().is_empty() {
             text_slots.insert("title_en".into(), json!(st.cover_title_en.trim()));
+        } else if st.bilingual_output
+            && st.translate_with_ai
+            && let Some(en) = st.translations.get(title_text.trim()).map(String::as_str).filter(|s| !s.is_empty())
+        {
+            text_slots.insert("title_en".into(), json!(en));
         }
         text_slots.insert("year".into(), json!(year_text));
         text_slots.insert("volume".into(), json!(volume_text));
@@ -3009,10 +3158,60 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
         A sheet named COVER supplies the Publication Cover values (style, title1, title2, year, volume, no_catalogue, ISSN, office_name, image_1, image_lanscape, office_logo)";
     ui.checkbox(&mut st.excel_auto_generate, "Auto-generate pages, tables & cover from sheets")
         .on_hover_text("When checked, picking an Excel file automatically runs 'Page from CSV', inserts each sheet's table with default options, and generates the cover page before Page 1 from the COVER sheet");
+
+    // Translate with AI (needs Dual Lang): fills the English half when the sheets carry
+    // no title_en/file_en. Ticking opens the setup dialog; Use AI arms it.
+    let can_ai = st.bilingual_output && (designcraft_translate::is_available() || designcraft_translate::online_available());
+    let mut ai_on = st.translate_with_ai;
+    let ai_tip = "Fills the English half when the sheets have no title_en/file_en columns.\n\
+                  Requires Dual Lang mode. Offline model licence: CC-BY-NC-4.0 (non-commercial).";
+    let ai_resp = ui.add_enabled(can_ai, egui::Checkbox::new(&mut ai_on, "Translate with AI")).on_hover_text(ai_tip).on_disabled_hover_text(
+        if !st.bilingual_output {
+            "Switch to Dual Lang first (header band) — AI fills the English half."
+        } else {
+            "This build has no AI translation compiled in. Run with --features pubgen,ai-translate-online."
+        },
+    );
+    if ai_resp.changed() {
+        if ai_on && !st.ai_setup_done {
+            st.ai_dialog = Some(ai::AiSetupDialog::open(app));
+        } else {
+            st.translate_with_ai = ai_on;
+        }
+    }
+    if st.translate_with_ai {
+        ui.checkbox(&mut st.ai_only_reviews, "Reviews only (RXX / BXX pages)").on_hover_text(
+            "Targeted translation: only the narrative review pages (and their titles) get English. \
+                 Tables, charts and the cover stay Indonesian. Good under tight provider token limits.",
+        );
+    }
+    if st.translate_with_ai && st.ai_setup_done {
+        ai::header_status_row(app, st, ui);
+    }
     let resp_excel = outline_button(ui, "Excel to CSV Data…", full_width(ui)).on_hover_text(tip_excel);
     if resp_excel.clicked()
         && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
     {
+        // AI: convert first (so the records exist to collect from), translate in the
+        // background, then run the full convert+generate when the job finishes.
+        if st.bilingual_output && st.translate_with_ai {
+            match execute_excel_to_csvs(st, &path) {
+                Ok(conv_msg) => {
+                    let mut units = ai::collect_translation_units(st);
+                    units.retain(|(k, _)| !st.translations.contains_key(k));
+                    if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
+                        st.ai_pending_excel_path = path.clone();
+                        st.translate_job = Some(ai::TranslateJob::spawn(&provider, &key, &model, units, ui.ctx().clone()));
+                        st.translations_slice_key.clear();
+                        st.card3_status = Some((format!("{conv_msg} — translating with AI…"), true));
+                        return;
+                    }
+                    st.card3_status = Some(("AI translation: no backend configured — open Configure…".into(), false));
+                }
+                Err(e) => st.card3_status = Some((e, false)),
+            }
+            return;
+        }
         let res = execute_excel_and_generate(app, st, &path);
         st.card3_status = Some(match res {
             Ok(msg) => (msg, true),
@@ -3259,13 +3458,34 @@ fn find_named_col(headers: &[String], patterns: &[&str], fallback: usize) -> usi
     fallback
 }
 
+/// Header names the Page-from-CSV machinery knows. Used to detect when a legacy
+/// fallback position is occupied by a *different* column (e.g. `image2` sitting where
+/// `file_en` would be in the 7-column layout).
+const KNOWN_CSV_HEADERS: &[&str] = &[
+    "type", "category", "kicker", "kind", "number", "no", "num", "id", "#", "title", "name", "headline", "chapter", "file", "filename", "template",
+    "title_en", "titleen", "file_en", "fileen", "image1", "image2",
+];
+
 /// The effective column for a named Page-from-CSV column: the stored index when its header
 /// still matches, else re-resolved by name (records set without `load_card1_csv`, e.g. by the
 /// Excel conversion path), else the legacy fixed position.
 fn effective_col(stored: usize, headers: &[String], patterns: &[&str], fallback: usize) -> usize {
-    match headers.get(stored) {
-        Some(h) if patterns.contains(&h.trim().to_lowercase().as_str()) => stored,
-        _ => find_named_col(headers, patterns, fallback),
+    if let Some(h) = headers.get(stored)
+        && patterns.contains(&h.trim().to_lowercase().as_str())
+    {
+        return stored;
+    }
+    let found = find_named_col(headers, patterns, usize::MAX);
+    if found != usize::MAX {
+        return found;
+    }
+    match headers.get(fallback) {
+        None => usize::MAX,
+        Some(h) => {
+            let l = h.trim().to_lowercase();
+            let known_other = KNOWN_CSV_HEADERS.iter().any(|k| !patterns.contains(k) && l == *k);
+            if known_other { usize::MAX } else { fallback }
+        }
     }
 }
 
@@ -3770,6 +3990,15 @@ fn row_template_slots(
         let title_en = if st.bilingual_output {
             if !title_en_val.is_empty() {
                 title_en_val.to_string()
+            } else if let Some(en) = st
+                .translations
+                .get(final_title.trim())
+                .or_else(|| st.translations.get(title_val.trim()))
+                .map(String::as_str)
+                .filter(|s| !s.is_empty())
+            {
+                // AI translation (plan §4): explicit title_en always wins, then the map.
+                en.to_string()
             } else if let Some((id_t, en_t)) = locale::split_pair(&final_title) {
                 let (id_s, en_s) = (id_t.to_string(), en_t.to_string());
                 final_title = id_s;
@@ -3842,6 +4071,12 @@ fn row_template_slots(
         if st.bilingual_output && !title_en_val.is_empty() {
             text.insert("chart_title_en".into(), json!(title_en_val));
             text.insert("title_en".into(), json!(title_en_val));
+        } else if st.bilingual_output
+            && let Some(en) =
+                st.translations.get(title_line.trim()).or_else(|| st.translations.get(title_val.trim())).map(String::as_str).filter(|s| !s.is_empty())
+        {
+            text.insert("chart_title_en".into(), json!(en));
+            text.insert("title_en".into(), json!(en));
         }
         if let Some(file_str) = file_opt
             && let Some(img_file) = resolve_image_file(&st.card1_path, file_str, &["png", "jpg", "jpeg"])
@@ -3853,6 +4088,12 @@ fn row_template_slots(
     } else {
         let (id_title, en_title_opt) =
             excel::split_and_harmonize_table_title(title_val, if title_en_val.is_empty() { None } else { Some(title_en_val) });
+        // AI translation (plan §4): an explicit ` / ` pair wins, else the session map.
+        let en_title_opt = match en_title_opt {
+            Some(en) => Some(en),
+            None if st.bilingual_output => st.translations.get(id_title.trim()).map(String::as_str).filter(|s| !s.is_empty()).map(str::to_string),
+            None => None,
+        };
         let formatted_num = excel::format_table_number(num_val, file_val);
         if st.bilingual_output || en_title_opt.is_some() {
             let kind_en = format!("{} {}", locale::words(locale::Locale::En).table, formatted_num);
@@ -4007,20 +4248,31 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         let delim = detect_delimiter(&content);
                         let tbl_matrix = parse_csv_content_with_delim(&content, delim);
                         if !tbl_matrix.is_empty() {
+                            // Dual Lang + AI: one table, two lines per cell (id\u{2028}en);
+                            // skipped cells (numbers, aliases) stay single-line (plan §4.1).
+                            let display_matrix =
+                                if st.bilingual_output && st.translate_with_ai { ai::pair_cells(&tbl_matrix, &st.translations) } else { tbl_matrix };
                             let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
-                            if execute_insert_table_matrix(app, st, Some(&tbl_matrix), Some(cur_page_idx)).is_ok() {
+                            if execute_insert_table_matrix(app, st, Some(&display_matrix), Some(cur_page_idx)).is_ok() {
                                 inserted_tables_count = inserted_tables_count.saturating_add(1);
                             }
                         }
                     }
 
                     // Sequential EN spread for Ulasan — the preface is not processed in Dual
-                    // Lang Mode.
+                    // Lang Mode. With AI translation, a missing file_en uses the temp RTF
+                    // built from the translated paragraphs (plan §4).
+                    let en_rtf_resolved = if !file_en_val.is_empty() {
+                        resolve_catalog_related_file(&st.card1_path, file_en_val, "rtf")
+                    } else if st.translate_with_ai && !file_val.is_empty() {
+                        ai::translated_body_rtf(st, file_val)
+                    } else {
+                        None
+                    };
                     if st.bilingual_output
-                        && !file_en_val.is_empty()
                         && !is_preface
                         && is_ulasan_type(type_val)
-                        && let Some(en_rtf_file) = resolve_catalog_related_file(&st.card1_path, file_en_val, "rtf")
+                        && let Some(en_rtf_file) = en_rtf_resolved
                     {
                         let (en_ch_line, en_title_line) = if has_chapter_prefix {
                             if !clean_en_title.is_empty() {
@@ -4174,6 +4426,16 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     }
                 } else if !title_en_val.is_empty() {
                     title_en_val.to_string()
+                } else if let Some(en) = st.translations.get(title_val.trim()).map(String::as_str).filter(|s| !s.is_empty()) {
+                    // AI: the English half of the row title ("Bab 01 Geografi" -> ...).
+                    let t = en.trim();
+                    if t.to_lowercase().starts_with("chapter") {
+                        t.to_string()
+                    } else if !num_val.is_empty() {
+                        format!("Chapter {num_val} {t}")
+                    } else {
+                        t.to_string()
+                    }
                 } else {
                     format!("Chapter {num_val} {title_line}")
                 };
@@ -4242,6 +4504,9 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                             "autoflow": false,
                         }),
                     );
+                    if let Err(e) = &res {
+                        eprintln!("pubgen ai: EN body place failed: {e}");
+                    }
                     if let Ok(val) = res {
                         let sid = val.get("story").and_then(Value::as_u64).map(designcraft_doc::StoryId);
                         id_over = val.get("overset").and_then(Value::as_bool).unwrap_or(false) || sid.is_some_and(|s| story_is_overset(app, s));
@@ -4259,6 +4524,9 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                             "autoflow": false,
                         }),
                     );
+                    if let Err(e) = &res {
+                        eprintln!("pubgen ai: EN body place failed: {e}");
+                    }
                     if let Ok(val) = res {
                         en_story_id = val.get("story").and_then(Value::as_u64);
                         let sid = en_story_id.map(designcraft_doc::StoryId);
@@ -4321,6 +4589,9 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                                 "autoflow": false,
                             }),
                         );
+                        if let Err(e) = &res {
+                            eprintln!("pubgen ai: EN body place failed: {e}");
+                        }
                         if let Ok(val) = res {
                             cur_left_fid = val.get("to").and_then(Value::as_u64);
                             let sid = val.get("story").and_then(Value::as_u64).map(designcraft_doc::StoryId);
@@ -4342,6 +4613,9 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                                 "autoflow": false,
                             }),
                         );
+                        if let Err(e) = &res {
+                            eprintln!("pubgen ai: EN body place failed: {e}");
+                        }
                         if let Ok(val) = res {
                             cur_right_fid = val.get("to").and_then(Value::as_u64);
                             let sid = val.get("story").and_then(Value::as_u64).map(designcraft_doc::StoryId);
@@ -4470,7 +4744,11 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     && !has_chapter_prefix
                     && let Some(en_rtf_file) = resolve_catalog_related_file(&st.card1_path, file_en_val, "rtf")
                 {
-                    let en_title_line = if !clean_en_title.is_empty() { clean_en_title.to_string() } else { clean_id_title.to_string() };
+                    let en_title_line = if !clean_en_title.is_empty() {
+                        clean_en_title.to_string()
+                    } else {
+                        st.translations.get(title_val.trim()).map(String::as_str).filter(|s| !s.is_empty()).unwrap_or(clean_id_title).to_string()
+                    };
 
                     let _ = app.run("layout.pages.insert", json!({"count": 1}));
                     let en_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
@@ -5170,8 +5448,10 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     let delim = detect_delimiter(&content);
                     let tbl_matrix = parse_csv_content_with_delim(&content, delim);
                     if !tbl_matrix.is_empty() {
+                        let display_matrix =
+                            if st.bilingual_output && st.translate_with_ai { ai::pair_cells(&tbl_matrix, &st.translations) } else { tbl_matrix };
                         let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
-                        if execute_insert_table_matrix(app, st, Some(&tbl_matrix), Some(cur_page_idx)).is_ok() {
+                        if execute_insert_table_matrix(app, st, Some(&display_matrix), Some(cur_page_idx)).is_ok() {
                             inserted_tables_count = inserted_tables_count.saturating_add(1);
                         }
                     }
@@ -13082,9 +13362,10 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let headers6: Vec<String> = ["type", "number", "title", "file", "template", "file_en"].into_iter().map(String::from).collect();
         assert_eq!(effective_col(6, &headers6, &["file_en", "fileen"], 6), 5, "stale default re-resolves");
         assert_eq!(effective_col(4, &headers6, &["template"], 4), 4, "matching stored column is kept");
-        // Missing header keeps the legacy position.
+        // Missing header reads as absent: MAX (row.get(MAX) is None, i.e. empty text —
+        // identical behaviour to reading past the end of the row).
         let headers4: Vec<String> = ["type", "number", "title", "file"].into_iter().map(String::from).collect();
-        assert_eq!(effective_col(6, &headers4, &["file_en", "fileen"], 6), 6);
+        assert_eq!(effective_col(6, &headers4, &["file_en", "fileen"], 6), usize::MAX);
     }
 
     #[test]
@@ -13116,6 +13397,21 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert_eq!(s.text.get("table_title"), Some(&json!("Luas Wilayah")));
         assert_eq!(s.text.get("table_title_en"), Some(&json!("Area")));
         assert!(s.text.get("table_kind_en").is_some());
+    }
+
+    #[test]
+    fn test_effective_col_skips_foreign_fallback() {
+        // User's catalog: 7 columns where image1/image2 sit at the legacy
+        // title_en/file_en positions. file_en must read as ABSENT, not as image2.
+        let headers: Vec<String> = ["type", "number", "title", "file", "template", "image1", "image2"].into_iter().map(String::from).collect();
+        assert_eq!(effective_col(6, &headers, &["file_en", "fileen"], 6), usize::MAX);
+        assert_eq!(effective_col(5, &headers, &["title_en", "titleen"], 5), usize::MAX);
+        // file is found by name at its real position.
+        assert_eq!(effective_col(3, &headers, &["file", "filename"], 3), 3);
+        // Legacy 7-column layout keeps working.
+        let legacy: Vec<String> = ["type", "number", "title", "file", "template", "title_en", "file_en"].into_iter().map(String::from).collect();
+        assert_eq!(effective_col(5, &legacy, &["title_en", "titleen"], 5), 5);
+        assert_eq!(effective_col(6, &legacy, &["file_en", "fileen"], 6), 6);
     }
 
     #[test]
@@ -14004,6 +14300,63 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(texts.iter().any(|t| t.contains("GEOGRAPHY")), "Should contain derived EN chapter title: {texts:?}");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_ai_translated_body_drives_the_en_spread_without_file_en() {
+        // The user's report: reviews-only AI run reaches 100%, but the R01 page shows
+        // Indonesian only — the English spread never appears. With the translations map
+        // filled (as the worker leaves it) and no file_en, the spread must still come.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let dir = std::env::temp_dir().join(format!("designcraft_pubgen_ai_ulasan_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let id_rtf = dir.join("R01_id.rtf");
+        std::fs::write(&id_rtf, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Ulasan wilayah Indonesia."#).unwrap();
+
+        let mut st = PubgenState {
+            card1_preset: 6,
+            bilingual_output: true,
+            translate_with_ai: true,
+            card1_records: vec![vec![
+                "Ulasan".into(),
+                "01".into(),
+                "BAB 01 Geografi".into(),
+                id_rtf.to_string_lossy().to_string(),
+                "".into(),
+                "".into(),
+            ]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into(), "file_en".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            translations: HashMap::from([("Ulasan wilayah Indonesia.".to_string(), "Indonesian region review.".to_string())]),
+            ..Default::default()
+        };
+
+        // The temp RTF the panel writes from the translated paragraphs.
+        let en_rtf = ai::translated_body_rtf(&st, id_rtf.to_string_lossy().as_ref());
+        assert!(en_rtf.is_some(), "translated body RTF should be written from the map");
+        let en_rtf = en_rtf.expect("checked");
+        let en_text = std::fs::read_to_string(&en_rtf).expect("temp rtf readable");
+        assert!(en_text.contains("Indonesian region review"), "{en_text}");
+
+        // Point the record's file_en column at the temp RTF, exactly as the spread gate does.
+        st.card1_records[0][5] = en_rtf.to_string_lossy().to_string();
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "generate should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 3, "ID spread + EN spread expected");
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("Indonesian region review")), "EN body placed: {texts:?}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_file(&en_rtf);
     }
 
     #[test]

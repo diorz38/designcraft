@@ -101,6 +101,19 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `plan/pubgen/samples/DUAL_LANG/infografik_02.png` | DesignCraft contributors | bilingual copy of the sample infographic graphic illustration | CC0-1.0 | Authored sample graphic |
 | `plan/pubgen/samples/DUAL_LANG/pembatas_bab.jpg` | DesignCraft contributor / Pubgen sample | bilingual copy of the synthetic chapter divider test asset | CC0-1.0 | Test sample |
 | `plan/pubgen/samples/DUAL_LANG/visualisasi_keuangan_perdagangan_portrait.png` | DesignCraft contributor / Pubgen sample | bilingual copy of the synthetic portrait test asset | CC0-1.0 | Test sample |
+| `plan/pubgen/samples/SINGLE_LANG/B01_pict1.jpg` | DesignCraft contributor / Pubgen sample | single-language copy of the sample picture placed by the Pubgen Page from RTF | CC0-1.0 | Test sample |
+| `plan/pubgen/samples/SINGLE_LANG/B01_pict2.png` | DesignCraft contributor / Pubgen sample | single-language copy of the sample picture placed by the Pubgen Page from RTF | CC0-1.0 | Test sample |
+| `plan/pubgen/samples/SINGLE_LANG/C02_01.png` | DesignCraft contributor (generated) | single-language copy of the synthetic chart-sheet test asset | CC0-1.0 | Test sample |
+| `plan/pubgen/samples/SINGLE_LANG/Generated_Publication_single_lang.pdf` | DesignCraft contributor (generated) | test sample publication PDF export for Pubgen | CC0-1.0 | Test export |
+| `plan/pubgen/samples/SINGLE_LANG/Sarana_Ekonomi_Karawang_Timur_2025.png` | DesignCraft contributor / Pubgen sample | single-language copy of the synthetic infographic test asset | CC0-1.0 | Test sample |
+| `plan/pubgen/samples/SINGLE_LANG/infografik_01.png` | DesignCraft contributors | single-language copy of the sample infographic graphic illustration | CC0-1.0 | Authored sample graphic |
+| `plan/pubgen/samples/SINGLE_LANG/infografik_02.png` | DesignCraft contributors | single-language copy of the sample infographic graphic illustration | CC0-1.0 | Authored sample graphic |
+| `plan/pubgen/samples/SINGLE_LANG/kcda2025.backup.designcraft` | DesignCraft contributor (generated) | single-language sample backup document for Pubgen | CC0-1.0 | Test document |
+| `plan/pubgen/samples/SINGLE_LANG/kcda2025.designcraft` | DesignCraft contributor (generated) | single-language sample publication document for Pubgen | CC0-1.0 | Test document |
+| `plan/pubgen/samples/SINGLE_LANG/kcda2025_2.designcraft` | DesignCraft contributor (generated) | single-language sample publication document for Pubgen | CC0-1.0 | Test document |
+| `plan/pubgen/samples/SINGLE_LANG/kcda2025_hf.designcraft` | DesignCraft contributor (generated) | single-language sample document with header/footer for Pubgen | CC0-1.0 | Test document |
+| `plan/pubgen/samples/SINGLE_LANG/pembatas_bab.jpg` | DesignCraft contributor / Pubgen sample | single-language copy of the synthetic chapter divider test asset | CC0-1.0 | Test sample |
+| `plan/pubgen/samples/SINGLE_LANG/visualisasi_keuangan_perdagangan_portrait.png` | DesignCraft contributor / Pubgen sample | single-language copy of the synthetic portrait test asset | CC0-1.0 | Test sample |
 | `plan/pubgen/samples/style/design-1.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/design-2.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
 | `plan/pubgen/samples/style/design-3.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |

@@ -1,0 +1,30 @@
+[package]
+name = "designcraft-translate"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+serde_json = { workspace = true, optional = true }
+# Groq (OpenAI-compatible chat completions) and the model downloader share one TLS stack.
+ureq = { version = "2", optional = true, default-features = false, features = ["tls"] }
+sha2 = { version = "0.10", optional = true }
+# Offline NLLB-200 inference (optional; the default build is a stub).
+ort = { version = "=2.0.0-rc.15", optional = true, default-features = false, features = ["std", "download-binaries"] }
+tokenizers = { version = "0.21", optional = true, default-features = false }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Safe RAM probe for the setup dialog (system feature only: memory, no disks/networks).
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }
+
+[features]
+default = []
+# Online provider (Groq free tier). Stub without it; never enabled on wasm.
+groq = ["dep:ureq", "dep:serde_json"]
+# Offline NLLB-200 distilled 600M (ONNX Runtime). Stub without it.
+nllb = ["dep:ort", "dep:tokenizers"]
+# In-app model downloader (shares ureq with groq).
+download = ["dep:ureq", "dep:sha2", "dep:serde_json"]

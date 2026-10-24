@@ -95,6 +95,17 @@ At the top header band of the Pubgen panel, you can toggle between **Single Lang
   - **Statistical Tables (`XX_XX`)**: Produces 2-row header chrome (`Tabel` / italic `Table`) and 2-line titles split on `" / "` with italicized English.
   - **Charts (`CXX_XX`)**: Emits bilingual subtitle structures with accurate italicization of English components.
 
+### Translate with AI (Groq, optional feature)
+When your source is pure Indonesian — no `title_en` / `file_en` columns and no `" / "` pairs — the **Translate with AI** checkbox (next to the Dual Lang toggle) fills the English half for you. It requires a build with the online translation feature (`cargo run --release -p designcraft --features pubgen,ai-translate-online`).
+
+1. Tick **Translate with AI** — the setup dialog opens.
+2. Choose **Online — Groq (free account)**, paste your API key from [console.groq.com/keys](https://console.groq.com/keys), and pick a model (Refresh fills the list from your account).
+3. Press **Use AI**, then **Generate Pages** as usual.
+
+What happens under the hood: Pubgen first collects every Indonesian text (row titles, cover headline, table cells, narrative paragraphs), translates them in the background with a progress bar and a working Cancel, then generates the pages with the English halves filled. A second Generate over the same rows reuses the translations and runs instantly.
+
+Two honest lines from the dialog: **catalog text is sent to Groq's cloud**, and free-tier rate limits make big jobs slower rather than blocking them. The API key is stored locally in DesignCraft settings. The optional offline model (NLLB-200 distilled 600M, ONNX) is planned on the same dialog; its licence is **CC-BY-NC-4.0 — non-commercial**.
+
 ---
 
 ## 3. Card 1: Publication Cover (Cover Page Generator)

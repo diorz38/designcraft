@@ -1098,7 +1098,7 @@ mod tests {
         s.execute("style.paragraph.create", &json!({"name": "Heading 2"})).unwrap();
         let stories: Vec<u64> = {
             let d = s.doc().unwrap();
-            d.doc.stories.iter().map(|(id, _)| id.0).filter(|id| *id > 1).collect()
+            d.doc.stories.keys().map(|id| id.0).filter(|id| *id > 1).collect()
         };
         for (sid, name) in stories.iter().zip(["Heading 2", "Heading 1"]) {
             s.execute("text.select", &json!({"story": sid, "anchor": 0, "focus": 0})).unwrap();

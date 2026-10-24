@@ -245,6 +245,18 @@ pub struct Prefs {
     pub recent_files_max: u32,
     /// Saved Header/Footer templates (Layout ▸ Header/Footer… & Pubgen).
     pub header_footer_templates: Vec<designcraft_doc::HeaderFooterTemplate>,
+    /// Pubgen AI translation (docs/plans/2026-10-22-offline-ai-translation-pubgen.md):
+    /// folder holding the offline NLLB-200 model files.
+    pub translation_model_dir: String,
+    /// Offline model catalogue id (e.g. "nllb600-int8").
+    pub translation_model_id: String,
+    /// Translation backend: "offline" or "groq".
+    pub translation_provider: String,
+    /// Groq API key. ponytail: stored in plaintext Prefs — the OS keychain (DPAPI /
+    /// Keychain) is the upgrade path if keys beyond a hobby account ever matter.
+    pub translation_groq_api_key: String,
+    /// Groq model id (resolved via GET /openai/v1/models on first use).
+    pub translation_groq_model: String,
 }
 
 /// The most recent files Preferences lets File › Open Recent keep.
@@ -320,6 +332,11 @@ impl Default for Prefs {
             recent_files: Vec::new(),
             recent_files_max: 20,
             header_footer_templates: Vec::new(),
+            translation_model_dir: String::new(),
+            translation_model_id: String::from("nllb600-int8"),
+            translation_provider: String::from("offline"),
+            translation_groq_api_key: String::new(),
+            translation_groq_model: String::new(),
         }
     }
 }

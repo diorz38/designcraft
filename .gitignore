@@ -13,4 +13,5 @@
 /plan/pubgen/samples/**/*.csv
 /plan/pubgen/samples/*.csv
 /plan/pubgen/*.designcraft
+*.key
 ~$*

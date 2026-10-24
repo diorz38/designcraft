@@ -48,6 +48,12 @@ const ALLOWED: &[(&str, &str)] = &[
     ),
     ("engine/src/cmd/template/catalog.rs", "scans local template directories to discover canonical page templates and their previews"),
     ("engine/src/cmd/template/mod.rs", "reads template .designcraft document files to apply layout and styles to document pages"),
+    (
+        "translate/src/download.rs",
+        "downloads and caches offline NLLB translation model weights and vocabulary files into the user-configured model directory",
+    ),
+    ("translate/src/models.rs", "checks presence of required offline model files in the configured translation model directory"),
+    ("ui-egui/src/panels/pubgen/ai.rs", "reads source RTF and cover assets and writes translated RTF files for pubgen AI translation workflow"),
 ];
 
 fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
