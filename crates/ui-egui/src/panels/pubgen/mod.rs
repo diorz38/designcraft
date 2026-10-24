@@ -4409,8 +4409,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 // Images of a front-matter sheet: `image1` (official photo) wraps tight around the text (Word "Tight")
                 // placed before RTF placement; `image2` (signature) is anchored dynamically to the signatory block.
                 if !has_chapter_prefix {
-                    let img1_rect = [margin.x0, margin.y0 + mh * 0.254, margin.x0 + mw * 0.335, margin.y0 + mh * 0.528];
-                    if place_catalog_image(app, st, row, "image1", spread_idx, img1_rect, "none").is_some() {
+                    let img1_rect = [margin.x0, margin.y0 + mh * 0.22, margin.x0 + mw * 0.24, margin.y0 + mh * 0.43];
+                    if place_catalog_image(app, st, row, "image1", spread_idx, img1_rect, "boundingBox").is_some() {
                         inserted_images_count = inserted_images_count.saturating_add(1);
                     }
                 }
@@ -4518,8 +4518,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 
                     let (mw, mh) = (en_margin.x1 - en_margin.x0, en_margin.y1 - en_margin.y0);
                     // Place image1 before English RTF text so textWrap: "boundingBox" wraps body text around it.
-                    let img1_rect = [en_margin.x0, en_margin.y0 + mh * 0.254, en_margin.x0 + mw * 0.335, en_margin.y0 + mh * 0.528];
-                    if place_catalog_image(app, st, row, "image1", en_spread_idx, img1_rect, "none").is_some() {
+                    let img1_rect = [en_margin.x0, en_margin.y0 + mh * 0.22, en_margin.x0 + mw * 0.24, en_margin.y0 + mh * 0.43];
+                    if place_catalog_image(app, st, row, "image1", en_spread_idx, img1_rect, "boundingBox").is_some() {
                         inserted_images_count = inserted_images_count.saturating_add(1);
                     }
 
@@ -5489,11 +5489,14 @@ fn harmonize_signatory_block(app: &mut DesignApp, fid: u64, margin: designcraft_
         };
 
         // Walk backwards to find the start of the signatory block.
-        let mut start_pi = last_pi;
+        // Identify the first non-empty signatory line (the date line like "Karawang, September 2025").
+        let mut first_sig_non_empty = last_pi;
         for i in (0..last_pi).rev() {
             let t = story.text[ranges[i].clone()].trim();
-            let is_sig_line = t.is_empty()
-                || t.contains("Karawang")
+            if t.is_empty() {
+                continue;
+            }
+            let is_sig = t.contains("Karawang")
                 || t.contains("Kepala")
                 || t.contains("Head of")
                 || t.contains("Regency")
@@ -5501,12 +5504,13 @@ fn harmonize_signatory_block(app: &mut DesignApp, fid: u64, margin: designcraft_
                 || t.contains("BPS")
                 || (t.contains(',') && (t.contains("202") || t.contains("203")))
                 || story.paras[i].para.left_indent.unwrap_or(0.0) > 80.0;
-            if is_sig_line {
-                start_pi = i;
+            if is_sig {
+                first_sig_non_empty = i;
             } else {
                 break;
             }
         }
+        let start_pi = first_sig_non_empty;
 
         for pi in (start_pi..=last_pi).rev() {
             let r = story.para_ranges()[pi].clone();
@@ -5531,9 +5535,13 @@ fn harmonize_signatory_block(app: &mut DesignApp, fid: u64, margin: designcraft_
                 p.para.first_line_indent = Some(0.0);
                 p.para.last_line_indent = Some(0.0);
                 p.para.tabs = None;
+                if pi == start_pi {
+                    let cur_sb = p.para.space_before.unwrap_or(0.0);
+                    p.para.space_before = Some(cur_sb.max(16.0));
+                }
                 if pi == last_pi {
                     let cur_sb = p.para.space_before.unwrap_or(0.0);
-                    p.para.space_before = Some(cur_sb.max(36.0));
+                    p.para.space_before = Some(cur_sb.max(42.0));
                 }
             }
         }
@@ -5605,17 +5613,23 @@ fn compute_signature_placement(
 
     let (y0, y1) = if let Some(pby) = prev_baseline_y {
         let gap = spread_last_baseline_y - pby;
-        if gap > 35.0 {
-            let h = (gap * 0.95).clamp(45.0, 65.0);
-            let bottom = spread_last_baseline_y - 6.0;
-            (bottom - h, bottom)
-        } else {
-            let h = 50.0;
-            let bottom = spread_last_baseline_y - 6.0;
-            (bottom - h, bottom)
+        let h = (gap - 10.0).clamp(32.0, 52.0);
+        let mid_y = (pby + spread_last_baseline_y) / 2.0;
+        let mut y0 = mid_y - h / 2.0;
+        let mut y1 = mid_y + h / 2.0;
+        if y0 < pby + 2.0 {
+            let shift = (pby + 2.0) - y0;
+            y0 += shift;
+            y1 += shift;
         }
+        if y1 > spread_last_baseline_y - 4.0 {
+            let shift = y1 - (spread_last_baseline_y - 4.0);
+            y0 -= shift;
+            y1 -= shift;
+        }
+        (y0, y1)
     } else {
-        let h = 50.0;
+        let h = 45.0;
         let bottom = spread_last_baseline_y - 6.0;
         (bottom - h, bottom)
     };
@@ -11562,6 +11576,12 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
             app.run("file.new", json!({})).unwrap();
 
+            // Place image1 with boundingBox wrap before placing RTF, matching execute_generate_pages
+            let img1_rect = [margin.x0, margin.y0 + mh * 0.22, margin.x0 + mw * 0.24, margin.y0 + mh * 0.43];
+            let res_img = app.run("frame.create", json!({"spread": 0, "rect": img1_rect, "content": "graphic"})).unwrap();
+            let img_fid = res_img.get("id").and_then(Value::as_u64).unwrap();
+            let _ = app.run("object.textWrap", json!({"mode": "boundingBox", "offset": 6.0, "ids": [img_fid]}));
+
             let rtf_rect = [margin.x0, margin.y0 + 50.0, margin.x1, margin.y1];
             let res = app.run("frame.create", json!({"spread": 0, "rect": rtf_rect, "content": "text", "caret": false})).unwrap();
             let fid = res.get("id").and_then(Value::as_u64).unwrap();
@@ -11601,7 +11621,6 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
                     .filter(|l| l.glyphs.iter().any(|g| g.visible && !g.rendered_char.is_whitespace()))
                     .collect();
 
-                // The last non-empty lines are the signatory block
                 assert!(non_empty_lines.len() >= 4, "Too few lines for {sample}: {}", non_empty_lines.len());
                 let sig_lines = &non_empty_lines[non_empty_lines.len() - 4..];
                 let mut sig_centers = Vec::new();
