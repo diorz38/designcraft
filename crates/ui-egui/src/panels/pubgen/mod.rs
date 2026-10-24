@@ -2743,7 +2743,34 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     // The second headline line has its own frame in the cover templates (`title#2`), styled
     // smaller and in another colour than the headline above it. An empty field leaves that
     // frame blank.
-    let title2_text = st.cover_title2.trim();
+    let title2_text = if st.bilingual_output {
+        let t2 = st.cover_title2.trim();
+        let ten = if !st.cover_title_en.trim().is_empty() {
+            st.cover_title_en.trim()
+        } else if st.translate_with_ai {
+            st.translations.get(title_text.trim()).map(String::as_str).unwrap_or("")
+        } else {
+            ""
+        };
+
+        if !t2.is_empty() && !ten.is_empty() {
+            if t2.eq_ignore_ascii_case(ten) || t2.to_lowercase().contains(&ten.to_lowercase()) {
+                t2.to_string()
+            } else if ten.to_lowercase().contains(&t2.to_lowercase()) {
+                ten.to_string()
+            } else {
+                format!("{t2} / {ten}")
+            }
+        } else if !t2.is_empty() {
+            t2.to_string()
+        } else {
+            ten.to_string()
+        }
+    } else if !st.cover_title2.trim().is_empty() {
+        st.cover_title2.trim().to_string()
+    } else {
+        st.cover_title_en.trim().to_string()
+    };
     let year_text = if st.cover_year.trim().is_empty() { "2026" } else { st.cover_year.trim() };
     let volume_text = if st.cover_volume.trim().is_empty() { "Volume 23 2026" } else { st.cover_volume.trim() };
 
@@ -2789,13 +2816,20 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         let mut text_slots = serde_json::Map::new();
         text_slots.insert("title".into(), json!(title_text));
         text_slots.insert("title#2".into(), json!(title2_text));
-        if st.bilingual_output && !st.cover_title_en.trim().is_empty() {
-            text_slots.insert("title_en".into(), json!(st.cover_title_en.trim()));
-        } else if st.bilingual_output
-            && st.translate_with_ai
-            && let Some(en) = st.translations.get(title_text.trim()).map(String::as_str).filter(|s| !s.is_empty())
+        // If a template has an explicit separate title_en slot, only bind it if title#2 does not already incorporate it.
+        let title_en_candidate = if !st.cover_title_en.trim().is_empty() {
+            st.cover_title_en.trim()
+        } else if st.translate_with_ai {
+            st.translations.get(title_text.trim()).map(String::as_str).unwrap_or("")
+        } else {
+            ""
+        };
+        if st.bilingual_output
+            && !title_en_candidate.is_empty()
+            && !title2_text.eq_ignore_ascii_case(title_en_candidate)
+            && !title2_text.to_lowercase().contains(&title_en_candidate.to_lowercase())
         {
-            text_slots.insert("title_en".into(), json!(en));
+            text_slots.insert("title_en".into(), json!(title_en_candidate));
         }
         text_slots.insert("year".into(), json!(year_text));
         text_slots.insert("volume".into(), json!(volume_text));
@@ -2828,13 +2862,78 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         if res.is_ok() {
             crate::canvas::go_to_page(app, 0);
             let _ = app.session.edit(|doc, _| {
+                let mut title_en_stories = Vec::new();
+                let mut redundant_items = Vec::new();
+                if let Some(sp) = doc.spreads.first() {
+                    for item in &sp.items {
+                        if item.label.starts_with("#slot:text:title_en")
+                            || item.name.starts_with("#slot:text:title_en")
+                        {
+                            if let designcraft_doc::Content::Text(tf) = &item.content
+                                && let Some(story) = doc.story(tf.story)
+                            {
+                                if story.text.trim().is_empty()
+                                    || title2_text.eq_ignore_ascii_case(story.text.trim())
+                                {
+                                    redundant_items.push(item.id);
+                                } else {
+                                    title_en_stories.push(tf.story);
+                                }
+                            } else {
+                                redundant_items.push(item.id);
+                            }
+                        }
+                    }
+                }
                 if let Some(sp) = doc.spreads.first_mut() {
                     let sp = std::sync::Arc::make_mut(sp);
                     if let Some(pg) = sp.pages.first_mut() {
                         pg.margins = designcraft_doc::Margins::uniform(0.0);
                         pg.local_margins = true;
                     }
+                    if !redundant_items.is_empty() {
+                        sp.items.retain(|it| !redundant_items.contains(&it.id));
+                    }
                     sp.relayout();
+                }
+                for sid in title_en_stories {
+                    if let Some(story) = doc.story_mut(sid) {
+                        for r in &mut story.chars {
+                            r.format.over.font_style = Some("Bold Italic".to_string());
+                        }
+                    }
+                }
+                if st.bilingual_output {
+                    let mut title2_stories = Vec::new();
+                    if let Some(sp) = doc.spreads.first() {
+                        for item in &sp.items {
+                            if (item.label.starts_with("#slot:text:title#2")
+                                || item.name.starts_with("#slot:text:title#2"))
+                                && let designcraft_doc::Content::Text(tf) = &item.content
+                            {
+                                title2_stories.push(tf.story);
+                            }
+                        }
+                    }
+                    for sid in title2_stories {
+                        if let Some(story) = doc.story_mut(sid) {
+                            if let Some(slash_idx) = story.text.find(" / ") {
+                                let split_char_pos = slash_idx + 3;
+                                let mut offset = 0;
+                                for r in &mut story.chars {
+                                    let run_end = offset + r.len;
+                                    offset = run_end;
+                                    if run_end > split_char_pos {
+                                        r.format.over.font_style = Some("Bold Italic".to_string());
+                                    }
+                                }
+                            } else {
+                                for r in &mut story.chars {
+                                    r.format.over.font_style = Some("Bold Italic".to_string());
+                                }
+                            }
+                        }
+                    }
                 }
                 Ok(serde_json::Value::Null)
             });
@@ -2884,7 +2983,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         accent,
         dark,
         title_text,
-        title2_text,
+        title2_text: &title2_text,
         year_text,
         volume_text,
         cat_text: cat_text.as_str(),
@@ -6409,6 +6508,17 @@ pub fn execute_insert_table_matrix(
                 .unwrap_or_else(|| TableColorTheme::new("#FFCB56", "#FFE9A9"))
         });
 
+    // Detect and extract structured table note / source rows (Catatan, Note, Sumber, Source, Keterangan, Ket, Ket.)
+    let mut table_notes: Vec<excel::TableNoteItem> = Vec::new();
+    matrix.retain(|row| {
+        if let Some(item) = excel::parse_table_note_row(row) {
+            table_notes.push(item);
+            false
+        } else {
+            true
+        }
+    });
+
     // Detect and extract trailing footnote/source row(s) (where only first col has data and rest of cols are empty)
     let mut footnotes = Vec::new();
     let cols_count = matrix.iter().map(Vec::len).max().unwrap_or(0);
@@ -6604,11 +6714,18 @@ pub fn execute_insert_table_matrix(
                 }
             }
 
-            let has_footnote = footnote_text.is_some();
+            let has_footnote = footnote_text.is_some() || !table_notes.is_empty();
+            let note_reserve_h = if !table_notes.is_empty() {
+                (table_notes.len() as f64 * 16.0 + 20.0).clamp(32.0, 140.0)
+            } else if footnote_text.is_some() {
+                32.0
+            } else {
+                0.0
+            };
             let gap_below_title = 12.0;
             let table_y0 = if title_bottom > margin.y0 { title_bottom + gap_below_title } else { margin.y0 };
             let available_h = (margin.y1 - table_y0).max(60.0);
-            let max_table_h = if has_footnote { (available_h - 32.0).max(40.0) } else { available_h };
+            let max_table_h = if has_footnote { (available_h - note_reserve_h).max(40.0) } else { available_h };
             let frame_h = max_table_h;
 
             let res = app.run(
@@ -6632,8 +6749,15 @@ pub fn execute_insert_table_matrix(
             let spread = active.doc.spreads.get(spread_idx).ok_or("Spread missing")?;
             let page = spread.pages.get(page_in_spread).ok_or("Page missing")?;
             let margin = page.margin_rect();
-            let has_footnote = footnote_text.is_some();
-            let max_table_h = if has_footnote { (margin.height() - 32.0).max(40.0) } else { margin.height() };
+            let has_footnote = footnote_text.is_some() || !table_notes.is_empty();
+            let note_reserve_h = if !table_notes.is_empty() {
+                (table_notes.len() as f64 * 16.0 + 20.0).clamp(32.0, 140.0)
+            } else if footnote_text.is_some() {
+                32.0
+            } else {
+                0.0
+            };
+            let max_table_h = if has_footnote { (margin.height() - note_reserve_h).max(40.0) } else { margin.height() };
             let frame_h = max_table_h;
 
             let res = app.run(
@@ -7111,14 +7235,108 @@ pub fn execute_insert_table_matrix(
             Ok(serde_json::Value::Null)
         });
 
-        if footnote_text.is_some() {
+        if footnote_text.is_some() || !table_notes.is_empty() {
             let fn_y0 = y0 + fit_h + 8.0;
             let fn_y1 = (fn_y0 + 24.0).min(margin_y1);
             actual_fn_target = Some((spread_idx, [x0, fn_y0, x1, fn_y1]));
         }
     }
 
-    if let (Some(fn_str), Some((target_spread, fn_rect))) = (footnote_text.as_ref(), actual_fn_target) {
+    if !table_notes.is_empty() && let Some((target_spread, fn_rect)) = actual_fn_target {
+        let max_label_len = table_notes.iter().map(|n| n.label.chars().count()).max().unwrap_or(6);
+        let colon_pos = if max_label_len > 7 { 58.0 } else { 46.0 };
+        let text_pos = colon_pos + 8.0;
+
+        let note_text = table_notes
+            .iter()
+            .map(|item| {
+                if item.content.is_empty() {
+                    format!("{}\t{}", item.label, item.colon)
+                } else {
+                    format!("{}\t{}\t{}", item.label, item.colon, item.content)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        if let Ok(res) = app.run(
+            "frame.create",
+            json!({
+                "spread": target_spread,
+                "rect": [fn_rect[0], fn_rect[1], fn_rect[2], fn_rect[1] + 60.0],
+                "content": "text",
+                "text": note_text,
+                "caret": false
+            }),
+        ) {
+            let fn_story_id = res.get("story").and_then(Value::as_u64);
+            let fn_item_id = res.get("id").and_then(Value::as_u64).map(designcraft_doc::ItemId);
+
+            if let Some(fn_sid) = fn_story_id {
+                let tab_stop_colon = designcraft_doc::TabStop {
+                    position: colon_pos,
+                    align: designcraft_doc::TabAlign::Left,
+                    leader: String::new(),
+                    align_on: String::new(),
+                };
+                let tab_stop_text = designcraft_doc::TabStop {
+                    position: text_pos,
+                    align: designcraft_doc::TabAlign::Left,
+                    leader: String::new(),
+                    align_on: String::new(),
+                };
+
+                let _ = app.session.edit(|doc, _| {
+                    if let Some(story) = doc.story_mut(designcraft_doc::StoryId(fn_sid)) {
+                        for p in &mut story.paras {
+                            p.para.left_indent = Some(text_pos);
+                            p.para.first_line_indent = Some(-text_pos);
+                            p.para.tabs = Some(vec![tab_stop_colon.clone(), tab_stop_text.clone()]);
+                            p.para.space_after = Some(2.0);
+                        }
+                        let ranges = story.para_ranges();
+                        for (idx, item) in table_notes.iter().enumerate() {
+                            if let Some(r) = ranges.get(idx) {
+                                let end = if idx + 1 < ranges.len() { ranges[idx + 1].start } else { r.end };
+                                if r.start < end {
+                                    story.format_chars(r.start..end, |f| {
+                                        f.over.size = Some(8.5);
+                                        f.over.font_style = Some(if item.is_italic { "Italic".to_string() } else { "Regular".to_string() });
+                                    });
+                                }
+                            }
+                        }
+                        story.rev += 1;
+                    }
+                    Ok(serde_json::Value::Null)
+                });
+
+                let fit_note_h = {
+                    if let Some(active) = app.session.active() {
+                        let cs = designcraft_compose::compose_story(&active.doc, designcraft_doc::StoryId(fn_sid), &Default::default());
+                        let h = cs.frames.first().map(|f| f.content_height).unwrap_or(24.0);
+                        (h + 4.0).max(18.0)
+                    } else {
+                        (table_notes.len() as f64 * 16.0 + 8.0).max(20.0)
+                    }
+                };
+
+                if let Some(fid) = fn_item_id {
+                    let _ = app.session.edit(|doc, _| {
+                        if let Some(it) = doc.item_mut(fid) {
+                            it.path = designcraft_geom::shapes::rectangle(designcraft_geom::Rect::new(
+                                fn_rect[0],
+                                fn_rect[1],
+                                fn_rect[2],
+                                fn_rect[1] + fit_note_h,
+                            ));
+                        }
+                        Ok(serde_json::Value::Null)
+                    });
+                }
+            }
+        }
+    } else if let (Some(fn_str), Some((target_spread, fn_rect))) = (footnote_text.as_ref(), actual_fn_target) {
         let _ = app.run(
             "frame.create",
             json!({
@@ -7139,7 +7357,13 @@ pub fn execute_insert_table_matrix(
         None => String::new(),
     };
 
-    let fn_msg = if footnote_text.is_some() { " + footnote" } else { "" };
+    let fn_msg = if !table_notes.is_empty() {
+        " + notes"
+    } else if footnote_text.is_some() {
+        " + footnote"
+    } else {
+        ""
+    };
     Ok(format!("Inserted table{target_msg} ({total_rows} rows × {cols_count} cols){fn_msg}"))
 }
 
@@ -15267,6 +15491,29 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(texts_dual.iter().any(|t| t.contains("KARAWANG TIMUR")), "Should contain ID title: {texts_dual:?}");
         assert!(texts_dual.iter().any(|t| t.contains("DALAM ANGKA")), "Should contain ID title2: {texts_dual:?}");
         assert!(texts_dual.iter().any(|t| t.contains("IN FIGURES")), "Should contain title_en in bilingual mode: {texts_dual:?}");
+
+        // 3. User scenario: title2 in template already contains the English title (test across all 10 styles)
+        for style in 0..10 {
+            let mut app_s = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app_s.run("file.new", json!({})).unwrap();
+            let st_s = PubgenState {
+                cover_style: style,
+                cover_title: "KECAMATAN KARAWANG".into(),
+                cover_title2: "EAST KARAWANG DISTRICT IN FIGURES".into(),
+                cover_title_en: "EAST KARAWANG DISTRICT IN FIGURES".into(),
+                bilingual_output: true,
+                ..Default::default()
+            };
+            let res_s = execute_generate_cover(&mut app_s, &st_s);
+            assert!(res_s.is_ok(), "Style {style} should succeed: {res_s:?}");
+            let active_s = app_s.session.active().unwrap();
+            let texts_s: Vec<String> = active_s.doc.stories.values().map(|s| s.text.clone()).collect();
+            let count_en = texts_s.iter().filter(|t| t.contains("EAST KARAWANG DISTRICT IN FIGURES")).count();
+            assert_eq!(count_en, 1, "Style {style}: English title must appear exactly once, got {count_en}: {texts_s:?}");
+            let en_story = active_s.doc.stories.values().find(|s| s.text.contains("EAST KARAWANG DISTRICT IN FIGURES")).unwrap();
+            let has_bold_italic = en_story.chars.iter().any(|r| r.format.over.font_style.as_deref() == Some("Bold Italic"));
+            assert!(has_bold_italic, "Style {style}: English title runs must be Bold Italic: {:?}", en_story.chars);
+        }
     }
 
     #[test]
@@ -15640,5 +15887,73 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(!st.hf_top_accent_bar_bleed);
         assert_eq!(st.hf_color_primary, "#334455");
         assert_eq!(st.hf_color_accent, "#ffaa00");
+    }
+
+    #[test]
+    fn test_table_sheet_note_and_source_rows_extracted_to_textbox() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let matrix = vec![
+            vec!["Kecamatan".into(), "Luas".into()],
+            vec!["Karawang Timur".into(), "35.2".into()],
+            vec!["Catatan".into(), ":".into(), "Desa pada tabel ini termasuk UPT".into()],
+            vec!["Note".into(), ":".into(), "Villages in this table include UPT".into()],
+            vec!["Sumber".into(), ":".into(), "Badan Pusat Statistik".into()],
+            vec!["Source".into(), ":".into(), "BPS-Statistics Indonesia".into()],
+        ];
+
+        let st = PubgenState { card2_placement: 1, card2_col_numbers: false, ..Default::default() };
+        let res = execute_insert_table_matrix(&mut app, &st, Some(&matrix), Some(0));
+        assert!(res.is_ok(), "execute_insert_table_matrix failed: {:?}", res.err());
+        let msg = res.unwrap();
+        assert!(msg.contains("+ notes"), "Must indicate + notes: {msg}");
+
+        let doc = &app.session.active().unwrap().doc;
+        let spread = doc.spreads.first().unwrap();
+        // The spread must have the table frame AND the note textbox frame!
+        assert_eq!(spread.items.len(), 2, "Must create 2 frames: table frame and note textbox frame");
+
+        // First frame: table frame. The table must have ONLY 2 rows (header + 1 data row)! The 4 note rows are NOT in the table!
+        let table_item = &spread.items[0];
+        let table_tf = table_item.text_frame().unwrap();
+        let table_story = doc.story(table_tf.story).unwrap();
+        let table_id = *table_story.tables.keys().next().unwrap();
+        let table = table_story.tables.get(&table_id).unwrap();
+        assert_eq!(table.nrows(), 2, "Table must have 2 rows, notes must be excluded from table");
+
+        // Second frame: note textbox frame below the table.
+        let note_item = &spread.items[1];
+        let note_tf = note_item.text_frame().unwrap();
+        let note_story = doc.story(note_tf.story).unwrap();
+        assert_eq!(note_story.paras.len(), 4, "Note textbox must have 4 paragraphs");
+
+        // Check hanging indent and tab stops on paragraphs:
+        for p in &note_story.paras {
+            assert!(p.para.left_indent.is_some(), "Must have left_indent");
+            assert!(p.para.first_line_indent.is_some(), "Must have negative first_line_indent");
+            assert_eq!(p.para.first_line_indent.unwrap(), -p.para.left_indent.unwrap());
+            let tabs = p.para.tabs.as_ref().unwrap();
+            assert_eq!(tabs.len(), 2, "Must have 2 tab stops: colon and text");
+            assert_eq!(tabs[0].position, 46.0, "Colon tab position at 46.0");
+            assert_eq!(tabs[1].position, 54.0, "Text tab position at 54.0");
+        }
+
+        // Check Italic formatting:
+        // Paras: 0=Catatan (Regular), 1=Note (Italic), 2=Sumber (Regular), 3=Source (Italic)
+        let ranges = note_story.para_ranges();
+        let get_style_at = |pos: usize| {
+            note_story.format_after(pos).over.font_style.clone()
+        };
+        assert_eq!(get_style_at(ranges[0].start), Some("Regular".to_string()));
+        assert_eq!(get_style_at(ranges[1].start), Some("Italic".to_string()));
+        assert_eq!(get_style_at(ranges[2].start), Some("Regular".to_string()));
+        assert_eq!(get_style_at(ranges[3].start), Some("Italic".to_string()));
+
+        // Check textbox height adjusted:
+        let note_bounds = note_item.bounds();
+        let table_bounds = table_item.bounds();
+        assert!(note_bounds.y0 >= table_bounds.y1, "Note textbox must be placed below table");
+        assert!(note_bounds.height() >= 18.0 && note_bounds.height() < 120.0, "Textbox height must be fitted to content");
     }
 }

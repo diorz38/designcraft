@@ -199,6 +199,7 @@ Phase 8: Advanced Table Dev beyond the PRD                    [DONE]
 3. **"Pubgen" label is not localized.** No entry in `crates/ui-egui/src/i18n.rs`; the dock tab/label renders as the literal English string.
 4. **CI does not build the `pubgen` feature.** `cargo xtask ci` and `cargo xtask wasm` check default features, so the seam can rot silently. Consider adding a `cargo check/test --features pubgen` step (and a `diff-dock` gate) to `ci`.
 5. **Docs drift.** `PRD.md` and `docs/pubgen-guide.md` still list the earlier 3 presets / 3 styles / 2 placements and the "single-step undo" claim; reconcile them with Phases 3/4/7/8 above.
+6. **Panel Ergonomics & Workflow Ordering.** The most frequently used actions (`Lang Mode`, `Excel to CSV Data…`, and `TOC`) are currently inverted or buried in Card 3. Redesign the vertical layout or introduce workflow tabs as proposed in [`docs/plans/2026-10-25-pubgen-panel-ux-redesign.md`](file:///f:/GitHub/designcraft/docs/plans/2026-10-25-pubgen-panel-ux-redesign.md).
 
 ---
 

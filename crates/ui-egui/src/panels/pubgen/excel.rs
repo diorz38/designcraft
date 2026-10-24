@@ -161,6 +161,7 @@ pub fn is_table_sheet_name(sheet_name: &str) -> bool {
     }
 }
 
+
 /// Split bilingual table title and harmonize trailing year (e.g. ", 2025") across both lines:
 /// Line 1: Indonesian text, [year]
 /// Line 2: English text, [year]
@@ -322,8 +323,16 @@ pub fn is_ignored_sheet(sheet_name: &str) -> bool {
 /// Parse the `COVER` sheet: one `key | value` row per field (see `ExcelCoverData`).
 pub fn parse_cover_sheet(sheet: &ExcelSheetData) -> ExcelCoverData {
     let mut cover = ExcelCoverData::default();
-    for row in &sheet.grid {
+    for (row_idx, row) in sheet.grid.iter().enumerate() {
         let Some(key) = row.first().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()) else {
+            // Even if key column is empty, check if row 3 (0-indexed 2) has col 2
+            if row_idx == 2 && row.len() > 1 && !row[1].trim().is_empty() && cover.title_en.is_empty() {
+                let v = row[1..].iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
+                cover.title_en = v.clone();
+                if cover.title2.is_empty() {
+                    cover.title2 = v;
+                }
+            }
             continue;
         };
         // A value may span several columns (e.g. volume = 13, year = 2026).
@@ -336,7 +345,13 @@ pub fn parse_cover_sheet(sheet: &ExcelSheetData) -> ExcelCoverData {
             "style" => &mut cover.style,
             "level" => &mut cover.level,
             "titleid" | "title1" | "title" => &mut cover.title1,
-            "title2" => &mut cover.title2,
+            "title2" => {
+                cover.title2 = value.clone();
+                if cover.title_en.is_empty() {
+                    cover.title_en = value;
+                }
+                continue;
+            }
             "titleen" => &mut cover.title_en,
             "year" => &mut cover.year,
             "volume" => &mut cover.volume,
@@ -347,9 +362,29 @@ pub fn parse_cover_sheet(sheet: &ExcelSheetData) -> ExcelCoverData {
             "imagelanscape" | "imagelandscape" | "landscape" => &mut cover.image_landscape,
             "officelogo" | "logo" => &mut cover.logo,
             "tabletheme" | "theme" | "tablecolor" | "color" | "colortheme" | "warna" => &mut cover.table_theme,
-            _ => continue,
+            _ => {
+                // If it is row 3 (0-indexed 2) and title_en isn't set yet:
+                if row_idx == 2 && cover.title_en.is_empty() {
+                    cover.title_en = value.clone();
+                    if cover.title2.is_empty() {
+                        cover.title2 = value;
+                    }
+                }
+                continue;
+            }
         };
         *slot = value;
+    }
+    // Final fallback check for row 3 (0-indexed 2) if title_en is still empty
+    if cover.title_en.is_empty() && sheet.grid.len() > 2 {
+        let row3 = &sheet.grid[2];
+        if row3.len() > 1 && !row3[1].trim().is_empty() {
+            let v = row3[1..].iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
+            cover.title_en = v.clone();
+            if cover.title2.is_empty() {
+                cover.title2 = v;
+            }
+        }
     }
     cover
 }
@@ -426,6 +461,165 @@ pub fn extract_theme_from_sheet(sheet: &ExcelSheetData) -> Option<String> {
     None
 }
 
+/// Keys recognized for the divider background / infographic image.
+pub const IMAGE_DIV_KEYS: &[&str] = &[
+    "image_div",
+    "imagediv",
+    "image_divider",
+    "imagedivider",
+    "divider_image",
+    "div_image",
+    "gambar_div",
+    "gambar_pembatas",
+    "foto_div",
+    "image",
+    "photo",
+    "hero",
+    "gambar",
+    "infografik",
+];
+
+/// Extract the divider image from an RXX review sheet (taken from row #6 col #2 / `image_div`).
+pub fn extract_divider_image_from_rxx(sheet: &ExcelSheetData) -> Option<String> {
+    // 1. Direct check on row 6 (0-indexed 5): row #6 col #2 (image_div)
+    if sheet.grid.len() >= 6 {
+        let row6 = &sheet.grid[5];
+        // Check if row 6 has explicit keys like "image_div" or semicolon/colon syntax
+        if let Some(img) = extract_field_for_keys(row6, IMAGE_DIV_KEYS) {
+            return Some(img);
+        }
+        // Direct col #2 (index 1) check if at least 2 columns
+        if row6.len() >= 2 {
+            let val = row6[1].trim().trim_matches('"').trim();
+            if !val.is_empty() && !val.to_lowercase().ends_with(".rtf") {
+                return Some(val.to_string());
+            }
+        }
+        // If 3 columns (e.g. ["6", "image_div", "infografik.png"])
+        if row6.len() >= 3 {
+            let val = row6[2].trim().trim_matches('"').trim();
+            if !val.is_empty() && !val.to_lowercase().ends_with(".rtf") {
+                return Some(val.to_string());
+            }
+        }
+        // Single cell on row 6
+        let non_empty: Vec<&str> = row6.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        if non_empty.len() == 1 {
+            let val = non_empty[0].trim_matches('"').trim();
+            let lower = val.to_lowercase();
+            if !lower.ends_with(".rtf") && !key_matches(val, IMAGE_DIV_KEYS) {
+                return Some(val.to_string());
+            }
+        }
+    }
+
+    // 2. Scan any other row for explicit "image_div" / "image_divider" keys
+    for row in &sheet.grid {
+        if let Some(img) = extract_field_for_keys(
+            row,
+            &[
+                "image_div",
+                "imagediv",
+                "image_divider",
+                "imagedivider",
+                "divider_image",
+                "div_image",
+                "gambar_div",
+                "gambar_pembatas",
+                "foto_div",
+            ],
+        ) {
+            return Some(img);
+        }
+    }
+
+    // 3. Scan rows for generic image keys (skip narrative file rows 0..4)
+    for (idx, row) in sheet.grid.iter().enumerate() {
+        if idx >= 4
+            && let Some(img) = extract_field_for_keys(row, &["image", "photo", "hero", "gambar", "infografik"])
+        {
+            return Some(img);
+        }
+    }
+
+    // 4. Fallback: check for image file extensions (.png, .jpg, etc.) in row 5 onwards
+    if sheet.grid.len() >= 5 {
+        for row in &sheet.grid[4..] {
+            for cell in row {
+                let c = cell.trim().trim_matches('"').trim();
+                let lower = c.to_lowercase();
+                if (lower.ends_with(".png")
+                    || lower.ends_with(".jpg")
+                    || lower.ends_with(".jpeg")
+                    || lower.ends_with(".webp")
+                    || lower.ends_with(".svg"))
+                    && !lower.ends_with(".rtf")
+                {
+                    return Some(c.to_string());
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// A parsed note or source item from a table sheet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableNoteItem {
+    pub label: String,
+    pub colon: String,
+    pub content: String,
+    pub is_italic: bool,
+}
+
+pub fn matches_table_note_keyword(col1: &str) -> bool {
+    let lower = col1.trim().to_lowercase();
+    lower.starts_with("keterangan")
+        || lower.starts_with("ket.")
+        || lower.starts_with("ket ")
+        || lower == "ket"
+        || lower.starts_with("catatan")
+        || lower.starts_with("note")
+        || lower.starts_with("sumber")
+        || lower.starts_with("source")
+}
+
+pub fn is_table_note_or_source_row(row: &[impl AsRef<str>]) -> bool {
+    let Some(col1) = row.first().map(|s| s.as_ref().trim()) else { return false; };
+    if col1.is_empty() || !matches_table_note_keyword(col1) {
+        return false;
+    }
+
+    row.get(1).map(|s| s.as_ref().trim().contains(':')).unwrap_or(false)
+}
+
+pub fn parse_table_note_row(row: &[impl AsRef<str>]) -> Option<TableNoteItem> {
+    let col1 = row.first()?.as_ref().trim();
+    if col1.is_empty() || !matches_table_note_keyword(col1) {
+        return None;
+    }
+
+    let col2 = row.get(1).map(|s| s.as_ref().trim()).unwrap_or("");
+    if col2.contains(':') {
+        let label = col1.trim_end_matches(':').trim().to_string();
+        let (_, after_colon) = col2.split_once(':').unwrap_or(("", ""));
+        let mut parts = Vec::new();
+        if !after_colon.trim().is_empty() {
+            parts.push(after_colon.trim());
+        }
+        parts.extend(row.iter().skip(2).map(|s| s.as_ref().trim()).filter(|s| !s.is_empty()));
+        let content = parts.join(" ");
+        let is_italic = {
+            let l = label.to_lowercase();
+            l.starts_with("note") || l.starts_with("source")
+        };
+        return Some(TableNoteItem { label, colon: ":".to_string(), content, is_italic });
+    }
+
+    None
+}
+
 /// Lenient field extraction for title/file rows with fallback.
 pub fn extract_field_lenient(row: &[String], expected_key: &str) -> String {
     for cell in row {
@@ -471,7 +665,7 @@ pub fn parse_rtf_review_sheet_bilingual(
             title_val = t;
         }
         if title_en.is_none()
-            && let Some(ten) = extract_field_for_keys(row, &["title_en", "titleen", "judulen", "judul_en"])
+            && let Some(ten) = extract_field_for_keys(row, &["title_en", "titleen", "judulen", "judul_en", "title2", "title_2"])
         {
             title_en = Some(ten);
         }
@@ -548,6 +742,21 @@ pub fn parse_rtf_review_sheet_bilingual(
         }
     }
 
+    if title_en.is_none()
+        && let Some(row2) = sheet.grid.get(1)
+    {
+        let non_empty: Vec<&str> = row2.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        if non_empty.len() == 1 {
+            let val = non_empty[0];
+            let lower = val.to_lowercase();
+            if !lower.ends_with(".rtf")
+                && !key_matches(val, &["file", "image", "photo", "template", "divider", "diivider", "table", "data"])
+            {
+                title_en = Some(val.trim_matches('"').trim().to_string());
+            }
+        }
+    }
+
     // Split combined bilingual title like "Kata Pengantar / Preface"
     if let Some((id_part, en_part)) = locale::split_pair(&title_val) {
         if title_en.is_none() {
@@ -567,7 +776,17 @@ pub fn parse_rtf_review_sheet_bilingual(
         }
     });
 
-    let template_val = extract_template_from_sheet(sheet);
+    let mut template_val = extract_template_from_sheet(sheet);
+    if template_val.is_none() && sheet.grid.len() >= 5 {
+        // Row 5 (index 4) col 2 check: row divider (row #5 col 2)
+        let row5 = &sheet.grid[4];
+        let non_empty: Vec<&str> = row5.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        if non_empty.len() >= 2 && (key_matches(non_empty[0], TEMPLATE_KEYS) || !non_empty[1].to_lowercase().ends_with(".rtf")) {
+            template_val = Some(non_empty[1].trim_matches('"').trim().to_string());
+        } else if non_empty.len() == 1 && !non_empty[0].to_lowercase().ends_with(".rtf") && !key_matches(non_empty[0], TEMPLATE_KEYS) {
+            template_val = Some(non_empty[0].trim_matches('"').trim().to_string());
+        }
+    }
 
     Some(("Ulasan".to_string(), num_val, title_val, file_val, template_val, title_en, file_en))
 }
@@ -944,7 +1163,7 @@ pub fn parse_divider_sheet_bilingual(sheet: &ExcelSheetData) -> Option<(String, 
             title_en_val = Some(ten);
         }
         if image_val.is_empty()
-            && let Some(img) = extract_field_for_keys(row, &["image", "file", "photo", "hero", "gambar"])
+            && let Some(img) = extract_field_for_keys(row, IMAGE_DIV_KEYS)
         {
             image_val = img;
         }
@@ -1126,10 +1345,13 @@ pub fn worksheet_to_csv_with_theme(sheet: &ExcelSheetData, fallback_theme: Optio
         return None;
     }
 
-    // Determine the active column count of the table (ignoring trailing empty columns)
+    // Determine the active column count of the table (ignoring trailing empty columns and note rows)
     let mut num_cols = 0usize;
     for r in 1..sheet.grid.len() {
         if let Some(row) = sheet.grid.get(r) {
+            if is_table_note_or_source_row(row) {
+                continue;
+            }
             for (c, cell) in row.iter().enumerate() {
                 if !cell.trim().is_empty() {
                     num_cols = num_cols.max(c + 1);
@@ -1159,6 +1381,14 @@ pub fn worksheet_to_csv_with_theme(sheet: &ExcelSheetData, fallback_theme: Optio
     let data_start = header_end_row + 1;
     for r in data_start..sheet.grid.len() {
         let row = &sheet.grid[r];
+        if is_table_note_or_source_row(row) {
+            let last_col = row.iter().rposition(|c| !c.trim().is_empty()).unwrap_or(row.len().saturating_sub(1));
+            let max_idx = last_col.max(2.min(row.len().saturating_sub(1)));
+            let note_cols = row[..=max_idx].iter().map(|c| escape_csv_field(c.trim())).collect::<Vec<_>>();
+            csv_lines.push(note_cols.join(","));
+            continue;
+        }
+
         let has_any = (0..num_cols).any(|c| row.get(c).map(|s| !s.trim().is_empty()).unwrap_or(false));
         if !has_any {
             continue;
@@ -1206,7 +1436,7 @@ struct CatalogEntryItem {
 /// When bilingual fields (`title_en` on DIV or `file_en` on RXX/BXX) are present, `title_en,file_en` columns are appended.
 /// When a color theme is present (e.g. `table_theme` on DIV or COVER), `theme` column is appended and propagated to tables.
 pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> ExcelConversionResult {
-    let mut entries = Vec::new();
+    let mut entries: Vec<CatalogEntryItem> = Vec::new();
     let mut table_csvs = Vec::new();
     let mut cover = None;
     let mut current_table_theme: Option<String> = None;
@@ -1245,6 +1475,22 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
                     c.table_theme = th.clone();
                 }
             }
+            if let Some(existing_div) = entries.iter_mut().find(|e| e.entry_type.eq_ignore_ascii_case("Divider") && e.number == n_val) {
+                // Enrich existing Divider already synthesized from RXX
+                if existing_div.file.is_empty() && !f_val.is_empty() {
+                    existing_div.file = f_val;
+                }
+                if existing_div.template.is_none() && tpl_val.is_some() {
+                    existing_div.template = tpl_val;
+                }
+                if existing_div.title_en.is_none() && ten_val.is_some() {
+                    existing_div.title_en = ten_val;
+                }
+                if existing_div.theme.is_none() && div_theme.is_some() {
+                    existing_div.theme = div_theme;
+                }
+                continue;
+            }
             entries.push(CatalogEntryItem {
                 entry_type: t_val,
                 number: n_val,
@@ -1268,6 +1514,49 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         {
             let (image1, image2) = if is_b_sheet(sheet_name) { parse_sheet_images(sheet) } else { (None, None) };
             let rtf_theme = extract_theme_from_sheet(sheet);
+
+            if is_rtf_review_sheet(sheet_name) {
+                let divider_img = extract_divider_image_from_rxx(sheet);
+
+                // Relink DIV information with RXX:
+                // Check if a Divider entry for this chapter already exists in entries (from a previous DIV sheet).
+                let existing_div_idx = entries.iter().position(|e| e.entry_type.eq_ignore_ascii_case("Divider") && e.number == n_val);
+                if let Some(idx) = existing_div_idx {
+                    // Enrich existing Divider entry with any info provided in RXX:
+                    // Image for page divider is taken from sheet RXX, row #6 col #2 (image_div).
+                    if let Some(img) = divider_img {
+                        entries[idx].file = img;
+                    }
+                    if entries[idx].title_en.is_none() && ten_val.is_some() {
+                        entries[idx].title_en = ten_val.clone();
+                    }
+                    if let Some(tpl) = &tpl_val
+                        && (entries[idx].template.is_none()
+                            || entries[idx].template.as_deref() == Some("assets/templates/dividers/002_batik_infographic.designcraft"))
+                    {
+                        entries[idx].template = Some(resolve_divider_template(tpl));
+                    }
+                    if entries[idx].theme.is_none() && rtf_theme.is_some() {
+                        entries[idx].theme = rtf_theme.clone();
+                    }
+                } else if tpl_val.is_some() || divider_img.is_some() {
+                    // No DIV sheet existed for this chapter!
+                    // Synthesize the Divider entry directly from RXX so the redundant DIV sheet can be completely omitted.
+                    entries.push(CatalogEntryItem {
+                        entry_type: "Divider".to_string(),
+                        number: n_val.clone(),
+                        title: title_val.clone(),
+                        file: divider_img.unwrap_or_default(),
+                        template: Some(resolve_divider_template(tpl_val.as_deref().unwrap_or("002"))),
+                        image1: None,
+                        image2: None,
+                        title_en: ten_val.clone(),
+                        file_en: None,
+                        theme: rtf_theme.clone(),
+                    });
+                }
+            }
+
             entries.push(CatalogEntryItem {
                 entry_type: t_val,
                 number: n_val,
@@ -2417,11 +2706,13 @@ mod tests {
         let res = convert_excel_to_csv_data(&[sheet_r01, sheet_tbl], "TEST_CONVERT");
         let lines: Vec<&str> = res.catalog_csv_content.lines().collect();
 
-        // Must output 5-column header because sheet_r01 specified a template!
+        // Must output 5-column header because sheet_r01 specified a template,
+        // and synthesizes Divider entry before Ulasan so DIV sheet is redundant!
         assert_eq!(lines[0], "type,number,title,file,template");
-        assert_eq!(lines.len(), 3);
-        assert_eq!(lines[1], "Ulasan,01,BAB 01 Pemerintahan,ulasan_bab_1.rtf,dividers/special_infographic_divider");
-        assert_eq!(lines[2], "Tabel,01.01,\"Luas Wilayah Menurut Kecamatan, 2026\",01_01,");
+        assert_eq!(lines.len(), 4);
+        assert_eq!(lines[1], "Divider,01,BAB 01 Pemerintahan,,assets/templates/dividers/002_batik_infographic.designcraft");
+        assert_eq!(lines[2], "Ulasan,01,BAB 01 Pemerintahan,ulasan_bab_1.rtf,dividers/special_infographic_divider");
+        assert_eq!(lines[3], "Tabel,01.01,\"Luas Wilayah Menurut Kecamatan, 2026\",01_01,");
     }
 
     #[test]
@@ -2619,4 +2910,251 @@ mod tests {
         assert_eq!(tbl_name, "01_01.csv");
         assert!(tbl_content.contains("theme,#9E7EB5 - #C4A4DA"));
     }
+
+    #[test]
+    fn test_cover_row_title2_sets_title_en() {
+        // Standard user scenario: row 2 is title1, row 3 is title2 with English title
+        let cover_sheet = ExcelSheetData {
+            name: "COVER".into(),
+            grid: vec![
+                vec!["style".into(), "HONEYCOMB HEXAGON".into()],
+                vec!["title1".into(), "KECAMATAN KARAWANG TIMUR DALAM ANGKA".into()],
+                vec!["title2".into(), "KARAWANG TIMUR DISTRICT IN FIGURES".into()],
+                vec!["year".into(), "2026".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let cover = parse_cover_sheet(&cover_sheet);
+        assert_eq!(cover.title1, "KECAMATAN KARAWANG TIMUR DALAM ANGKA");
+        assert_eq!(cover.title2, "KARAWANG TIMUR DISTRICT IN FIGURES");
+        assert_eq!(cover.title_en, "KARAWANG TIMUR DISTRICT IN FIGURES", "title_en must be taken from row title2 col 2");
+
+        // Even with empty key in col 1 on row 3:
+        let cover_sheet_no_key = ExcelSheetData {
+            name: "COVER".into(),
+            grid: vec![
+                vec!["style".into(), "HONEYCOMB HEXAGON".into()],
+                vec!["title1".into(), "KECAMATAN KARAWANG TIMUR DALAM ANGKA".into()],
+                vec!["".into(), "KARAWANG TIMUR DISTRICT IN FIGURES".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let cover2 = parse_cover_sheet(&cover_sheet_no_key);
+        assert_eq!(cover2.title_en, "KARAWANG TIMUR DISTRICT IN FIGURES");
+    }
+
+    #[test]
+    fn test_rxx_sheet_relinks_with_div_and_synthesizes_divider_when_redundant() {
+        // Scenario A: Workbook with ONLY R02 (DIV is omitted as redundant)
+        let r02_sheet = ExcelSheetData {
+            name: "R02".into(),
+            grid: vec![
+                vec!["title".into(), "Bab 02 Pemerintahan".into()],
+                vec!["title_en".into(), "Chapter 02 Government".into()],
+                vec!["file".into(), "R02.rtf".into()],
+                vec!["file_en".into(), "R02_en.rtf".into()],
+                vec!["diivider".into(), "001_simple_chapter".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let tbl_sheet = ExcelSheetData {
+            name: "02_01".into(),
+            grid: vec![vec!["Tabel 02.01 Luas Wilayah".into()], vec!["Kec".into(), "Luas".into()]],
+            merges: Vec::new(),
+        };
+        let res_no_div = convert_excel_to_csv_data(&[r02_sheet, tbl_sheet], "NO_DIV_TEST");
+        let lines_no_div: Vec<&str> = res_no_div.catalog_csv_content.lines().collect();
+        // Header: type,number,title,file,template,title_en,file_en
+        assert_eq!(lines_no_div.len(), 4, "Must produce Divider, Ulasan, and Tabel even without DIV sheet");
+        assert!(lines_no_div[1].contains("Divider,02,Bab 02 Pemerintahan,,assets/templates/dividers/001_simple_chapter.designcraft,Chapter 02 Government,"));
+        assert!(lines_no_div[2].contains("Ulasan,02,Bab 02 Pemerintahan,R02.rtf,001_simple_chapter,Chapter 02 Government,R02_en.rtf"));
+        assert!(lines_no_div[3].contains("Tabel,02.01,Luas Wilayah,02_01,,,"));
+
+        // Scenario B: Workbook with BOTH DIV and R02 (DIV present, info relinked without duplicates)
+        let div_sheet = ExcelSheetData {
+            name: "DIV".into(),
+            grid: vec![
+                vec!["title".into(), "BAB 02 PEMERINTAHAN".into()],
+                vec!["image".into(), "infografik_01.png".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let r02_b = ExcelSheetData {
+            name: "R02".into(),
+            grid: vec![
+                vec!["title".into(), "Bab 02 Pemerintahan".into()],
+                vec!["title_en".into(), "Chapter 02 Government".into()],
+                vec!["file".into(), "R02.rtf".into()],
+                vec!["file_en".into(), "R02_en.rtf".into()],
+                vec!["diivider".into(), "001_simple_chapter".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let res_with_div = convert_excel_to_csv_data(&[div_sheet, r02_b], "WITH_DIV_TEST");
+        let lines_with_div: Vec<&str> = res_with_div.catalog_csv_content.lines().collect();
+        assert_eq!(lines_with_div.len(), 3, "Exactly 1 Divider and 1 Ulasan, no duplicate divider!");
+        assert!(lines_with_div[1].contains("Divider,02,BAB 02 PEMERINTAHAN,infografik_01.png,assets/templates/dividers/001_simple_chapter.designcraft,Chapter 02 Government,"));
+        assert!(lines_with_div[2].contains("Ulasan,02,Bab 02 Pemerintahan,R02.rtf,001_simple_chapter,Chapter 02 Government,R02_en.rtf"));
+    }
+
+    #[test]
+    fn test_cover_sheet_title2_row3_col2() {
+        // Test case 1: explicit title2 row
+        let sheet1 = ExcelSheetData {
+            name: "COVER".into(),
+            grid: vec![
+                vec!["style".into(), "1".into()],
+                vec!["title".into(), "KECAMATAN KARAWANG TIMUR".into()],
+                vec!["title2".into(), "KARAWANG TIMUR SUBDISTRICT IN FIGURES 2026".into()],
+                vec!["year".into(), "2026".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let cover1 = parse_cover_sheet(&sheet1);
+        assert_eq!(cover1.title1, "KECAMATAN KARAWANG TIMUR");
+        assert_eq!(cover1.title2, "KARAWANG TIMUR SUBDISTRICT IN FIGURES 2026");
+        assert_eq!(cover1.title_en, "KARAWANG TIMUR SUBDISTRICT IN FIGURES 2026");
+
+        // Test case 2: unlabeled row #3 (0-indexed 2) col 2
+        let sheet2 = ExcelSheetData {
+            name: "COVER".into(),
+            grid: vec![
+                vec!["title".into(), "STATISTIK DAERAH".into()],
+                vec!["year".into(), "2026".into()],
+                vec!["".into(), "REGIONAL STATISTICS 2026".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let cover2 = parse_cover_sheet(&sheet2);
+        assert_eq!(cover2.title1, "STATISTIK DAERAH");
+        assert_eq!(cover2.title_en, "REGIONAL STATISTICS 2026");
+    }
+
+    #[test]
+    fn test_rxx_divider_image_row6_col2() {
+        // Sheet R02 with row #5 (divider) and row #6 (image_div)
+        let r02_sheet = ExcelSheetData {
+            name: "R02".into(),
+            grid: vec![
+                vec!["title".into(), "Bab 02 Pemerintahan".into()],                          // Row 1
+                vec!["title_en".into(), "Chapter 02 Government".into()],                     // Row 2
+                vec!["file".into(), "R02.rtf".into()],                                       // Row 3
+                vec!["file_en".into(), "R02_en.rtf".into()],                                 // Row 4
+                vec!["divider".into(), "002_batik_infographic".into()],                      // Row 5
+                vec!["image_div".into(), "plan/pubgen/samples/infografik_02.png".into()],     // Row 6
+            ],
+            merges: Vec::new(),
+        };
+
+        // 1. Direct helper test
+        let img = extract_divider_image_from_rxx(&r02_sheet);
+        assert_eq!(img, Some("plan/pubgen/samples/infografik_02.png".to_string()));
+
+        // 2. Conversion test when DIV is omitted
+        let res = convert_excel_to_csv_data(&[r02_sheet.clone()], "RXX_IMAGE_TEST");
+        let lines: Vec<&str> = res.catalog_csv_content.lines().collect();
+        assert_eq!(lines.len(), 3); // Header, Divider, Ulasan
+        assert!(
+            lines[1].contains("Divider,02,Bab 02 Pemerintahan,plan/pubgen/samples/infografik_02.png,assets/templates/dividers/002_batik_infographic.designcraft,Chapter 02 Government,"),
+            "Divider line must contain image from row 6 col 2: {}",
+            lines[1]
+        );
+        assert!(lines[2].contains("Ulasan,02,Bab 02 Pemerintahan,R02.rtf"));
+
+        // 3. Relinking test: R02 row 6 col 2 image overrides/enriches DIV
+        let div_sheet = ExcelSheetData {
+            name: "DIV".into(),
+            grid: vec![
+                vec!["title".into(), "BAB 02 PEMERINTAHAN".into()],
+                vec!["image".into(), "old_placeholder.png".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let res_relink = convert_excel_to_csv_data(&[div_sheet, r02_sheet], "RELINK_IMG_TEST");
+        let lines_relink: Vec<&str> = res_relink.catalog_csv_content.lines().collect();
+        assert!(
+            lines_relink[1].contains("plan/pubgen/samples/infografik_02.png"),
+            "Relinked Divider must take image from RXX row 6 col 2: {}",
+            lines_relink[1]
+        );
+    }
+
+    #[test]
+    fn test_table_note_and_source_row_parsing() {
+        // Catatan
+        let r1 = ["Catatan", ":", "Desa pada tabel ini termasuk Unit Permukiman"];
+        assert!(is_table_note_or_source_row(&r1));
+        let item1 = parse_table_note_row(&r1).unwrap();
+        assert_eq!(item1.label, "Catatan");
+        assert_eq!(item1.colon, ":");
+        assert_eq!(item1.content, "Desa pada tabel ini termasuk Unit Permukiman");
+        assert!(!item1.is_italic, "Catatan should not be italic");
+
+        // Note (must be italic)
+        let r2 = ["Note", ":", "Villages in this table include Transmigration"];
+        assert!(is_table_note_or_source_row(&r2));
+        let item2 = parse_table_note_row(&r2).unwrap();
+        assert_eq!(item2.label, "Note");
+        assert_eq!(item2.content, "Villages in this table include Transmigration");
+        assert!(item2.is_italic, "Note must be italic");
+
+        // Sumber
+        let r3 = ["Sumber", ":", "Badan Pusat Statistik"];
+        let item3 = parse_table_note_row(&r3).unwrap();
+        assert_eq!(item3.label, "Sumber");
+        assert!(!item3.is_italic, "Sumber should not be italic");
+
+        // Source (must be italic)
+        let r4 = ["Source", ":", "BPS-Statistics Indonesia"];
+        let item4 = parse_table_note_row(&r4).unwrap();
+        assert_eq!(item4.label, "Source");
+        assert!(item4.is_italic, "Source must be italic");
+
+        // Keterangan / Ket. / Ket
+        let r5 = ["Keterangan", ":", "Data sementara"];
+        let item5 = parse_table_note_row(&r5).unwrap();
+        assert_eq!(item5.label, "Keterangan");
+        assert!(!item5.is_italic);
+
+        let r6 = ["Ket.", ":", ""];
+        let item6 = parse_table_note_row(&r6).unwrap();
+        assert_eq!(item6.label, "Ket.");
+        assert_eq!(item6.content, "");
+        assert!(!item6.is_italic);
+
+        // Non-note row
+        let r_normal = ["Kecamatan", "Luas", "12.3"];
+        assert!(!is_table_note_or_source_row(&r_normal));
+        assert!(parse_table_note_row(&r_normal).is_none());
+    }
+
+    #[test]
+    fn test_worksheet_to_csv_with_table_notes_dual_lang() {
+        let sheet = ExcelSheetData {
+            name: "01_01".into(),
+            grid: vec![
+                vec!["Tabel 01.01 Luas Wilayah".into()],
+                vec!["Kecamatan".into(), "Luas".into()],
+                vec!["Karawang Barat".into(), "32.5".into()],
+                vec!["Catatan".into(), ":".into(), "Desa pada tabel ini termasuk UPT".into()],
+                vec!["Note".into(), ":".into(), "Villages in this table include UPT".into()],
+                vec!["Sumber".into(), ":".into(), "BPS".into()],
+                vec!["Source".into(), ":".into(), "Statistics Indonesia".into()],
+            ],
+            merges: Vec::new(),
+        };
+
+        let csv = worksheet_to_csv(&sheet).expect("Should produce CSV");
+        let lines: Vec<&str> = csv.lines().collect();
+        // Line 0: Header (must have only 2 columns: Kecamatan,Luas, not expanded by note rows!)
+        assert_eq!(lines[0], "Kecamatan,Luas");
+        assert_eq!(lines[1], "Karawang Barat,32.5");
+        // Note rows preserved in full
+        assert_eq!(lines[2], "Catatan,:,Desa pada tabel ini termasuk UPT");
+        assert_eq!(lines[3], "Note,:,Villages in this table include UPT");
+        assert_eq!(lines[4], "Sumber,:,BPS");
+        assert_eq!(lines[5], "Source,:,Statistics Indonesia");
+    }
 }
+
+

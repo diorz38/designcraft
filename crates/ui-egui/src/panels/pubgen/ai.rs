@@ -544,6 +544,9 @@ pub fn pair_cells(matrix: &[Vec<String>], translations: &HashMap<String, String>
     matrix
         .iter()
         .map(|row| {
+            if super::excel::is_table_note_or_source_row(row) {
+                return row.clone();
+            }
             row.iter()
                 .map(|cell| {
                     let t = cell.trim();
