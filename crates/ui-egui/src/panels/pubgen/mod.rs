@@ -26,8 +26,10 @@ pub use locale::Locale;
 pub mod ai;
 
 mod cover_art;
+mod divider_art;
 
 use cover_art::CoverArtVals;
+use divider_art::DividerArtVals;
 
 const PANEL_ID: &str = "pubgen_panel_state";
 
@@ -2616,7 +2618,7 @@ pub fn execute_delete_hf_template(app: &mut DesignApp, st: &mut PubgenState, nam
     Ok(format!("Template '{name}' deleted"))
 }
 
-fn add_cover_text_frame(
+pub(super) fn add_cover_text_frame(
     app: &mut DesignApp,
     spread: usize,
     rect: [f64; 4],
@@ -3718,6 +3720,25 @@ pub fn resolve_template_path_spec(catalog_path: &str, spec: &str) -> Option<Stri
         return None;
     }
 
+    let clean_lower = clean.to_lowercase();
+    let alias_opt = match clean_lower.as_str() {
+        "dividers/special_infographic_divider"
+        | "special_infographic_divider"
+        | "dividers/002_chapter_devider"
+        | "002_chapter_devider"
+        | "chapter_devider"
+        | "dividers/002_batik_infographic"
+        | "002_batik_infographic"
+        | "batik_infographic" => Some("dividers/002_batik_infographic"),
+        "dividers/001_ulasan_chapter"
+        | "001_ulasan_chapter"
+        | "ulasan_chapter"
+        | "dividers/001_simple_chapter"
+        | "001_simple_chapter"
+        | "simple_chapter" => Some("dividers/001_simple_chapter"),
+        _ => None,
+    };
+
     // 1. Direct path check as-is or with .designcraft
     let direct_p = std::path::Path::new(clean);
     if direct_p.is_file() {
@@ -3726,6 +3747,15 @@ pub fn resolve_template_path_spec(catalog_path: &str, spec: &str) -> Option<Stri
     let direct_ext = format!("{clean}.designcraft");
     if std::path::Path::new(&direct_ext).is_file() {
         return Some(direct_ext);
+    }
+    if let Some(alias) = alias_opt {
+        let alias_ext = format!("{alias}.designcraft");
+        if std::path::Path::new(alias).is_file() {
+            return Some(alias.to_string());
+        }
+        if std::path::Path::new(&alias_ext).is_file() {
+            return Some(alias_ext);
+        }
     }
 
     // 2. Relative to catalog file directory
@@ -3788,6 +3818,12 @@ pub fn resolve_template_path_spec(catalog_path: &str, spec: &str) -> Option<Stri
         // Exact ID match
         if let Some(found) = scanned.iter().find(|t| t.id.to_lowercase() == clean_lower) {
             return Some(found.path.to_string_lossy().to_string());
+        }
+        if let Some(alias) = alias_opt {
+            let alias_stem = alias.strip_prefix("dividers/").unwrap_or(alias);
+            if let Some(found) = scanned.iter().find(|t| t.id.to_lowercase() == alias_stem) {
+                return Some(found.path.to_string_lossy().to_string());
+            }
         }
         // If numeric 1-3 digits (e.g. "002" or "2"), check for divider templates with matching prefix
         if clean.len() <= 3 && clean.chars().all(|c| c.is_ascii_digit()) {
@@ -4223,16 +4259,57 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         let row_tpl_spec = row.get(template_col).map(String::as_str).unwrap_or("").trim();
         let explicit_tpl_path = if !row_tpl_spec.is_empty() { resolve_template_path_spec(&st.card1_path, row_tpl_spec) } else { None };
 
+        // GUARD: An Ulasan narrative review chapter must NEVER use a graphic divider-only template
+        // (such as 002_batik_infographic) because it has no story slot for the narrative RTF body.
+        let explicit_tpl_path = if is_ulasan_type(type_val) {
+            if let Some(ref ep) = explicit_tpl_path {
+                let ep_lower = ep.to_lowercase();
+                if ep_lower.contains("002")
+                    || ep_lower.contains("batik")
+                    || ep_lower.contains("infographic")
+                    || ep_lower.contains("chapter_devider")
+                    || ep_lower.contains("special_infographic_divider")
+                {
+                    if st.card1_preset == 6 {
+                        resolve_template_path_spec(&st.card1_path, "001_simple_chapter")
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(ep.clone())
+                }
+            } else {
+                None
+            }
+        } else {
+            explicit_tpl_path
+        };
+
         if explicit_tpl_path.is_some() || st.card1_preset == 6 || is_div {
             // Modular Template Mode: delegate to template engine
             let raw_tpl = if let Some(ref ep) = explicit_tpl_path {
                 ep.clone()
             } else if !st.card1_template_path.trim().is_empty() {
-                st.card1_template_path.trim().to_string()
+                let custom_tpl = st.card1_template_path.trim().to_string();
+                if is_ulasan_type(type_val) {
+                    let custom_lower = custom_tpl.to_lowercase();
+                    if custom_lower.contains("002")
+                        || custom_lower.contains("batik")
+                        || custom_lower.contains("infographic")
+                        || custom_lower.contains("chapter_devider")
+                        || custom_lower.contains("special_infographic_divider")
+                    {
+                        "assets/templates/dividers/001_simple_chapter.designcraft".to_string()
+                    } else {
+                        custom_tpl
+                    }
+                } else {
+                    custom_tpl
+                }
             } else if is_divider_type(type_val) {
-                "assets/templates/dividers/002_chapter_devider.designcraft".to_string()
+                "assets/templates/dividers/002_batik_infographic.designcraft".to_string()
             } else if is_ulasan_type(type_val) {
-                "assets/templates/dividers/001_ulasan_chapter.designcraft".to_string()
+                "assets/templates/dividers/001_simple_chapter.designcraft".to_string()
             } else if type_val.eq_ignore_ascii_case("Note") || type_val.eq_ignore_ascii_case("G") {
                 "assets/templates/front_matter/001_publication_note.designcraft".to_string()
             } else {
@@ -4375,6 +4452,107 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     continue;
                 }
             }
+
+            // Procedural Divider Fallback (Option 1: like Cover template, works without assets on disk)
+            if is_div {
+                app.run("layout.pages.insert", json!({"count": 1}))?;
+                let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
+                crate::canvas::go_to_page(app, cur_page_idx);
+                let _ = app.session.edit(|doc, _| {
+                    if let Some((si, pi)) = doc.page_loc(cur_page_idx)
+                        && let Some(sp) = doc.spreads.get_mut(si)
+                    {
+                        let sp = std::sync::Arc::make_mut(sp);
+                        if let Some(pg) = sp.pages.get_mut(pi) {
+                            pg.margins = designcraft_doc::Margins::uniform(0.0);
+                            pg.local_margins = true;
+                        }
+                        sp.relayout();
+                    }
+                    Ok(serde_json::Value::Null)
+                });
+
+                let (pw, ph, spread_idx) = {
+                    let active = app.session.active().ok_or("No active document")?;
+                    let (si, pi) = active.doc.page_loc(cur_page_idx).ok_or("Page loc missing")?;
+                    let spread = active.doc.spreads.get(si).ok_or("Spread missing")?;
+                    let page = spread.pages.get(pi).ok_or("Page missing")?;
+                    (page.width, page.height, si)
+                };
+
+                let (first_word, digit_num, rest_text) = excel::split_divider_title(title_val);
+                let final_num = if !digit_num.is_empty() { digit_num } else { num_val.to_string() };
+                let prefix = if first_word.is_empty() || first_word.chars().all(|c| c.is_ascii_digit()) {
+                    "BAB".to_string()
+                } else if !rest_text.is_empty() {
+                    first_word.clone()
+                } else {
+                    "BAB".to_string()
+                };
+                let mut chapter_title = if !rest_text.is_empty() {
+                    rest_text
+                } else if !first_word.eq_ignore_ascii_case("bab") && !first_word.chars().all(|c| c.is_ascii_digit()) {
+                    first_word
+                } else {
+                    title_val.to_string()
+                };
+
+                let title_en = if st.bilingual_output {
+                    if !title_en_val.is_empty() {
+                        title_en_val.to_string()
+                    } else if let Some((id_t, en_t)) = locale::split_pair(&chapter_title) {
+                        let (id_s, en_s) = (id_t.to_string(), en_t.to_string());
+                        chapter_title = id_s;
+                        en_s
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    if let Some((id_t, en_t)) = locale::split_pair(&chapter_title) {
+                        let (id_s, en_s) = (id_t.to_string(), en_t.to_string());
+                        chapter_title = match st.locale {
+                            locale::Locale::Id => id_s,
+                            locale::Locale::En => en_s,
+                        };
+                    }
+                    String::new()
+                };
+
+                let resolved_img = if let Some(file_str) = Some(file_val).filter(|s| !s.is_empty()) {
+                    resolve_image_file(&st.card1_path, file_str, &["png", "jpg", "jpeg"])
+                } else {
+                    None
+                };
+                let img_str = resolved_img.as_ref().map(|p| p.to_string_lossy().to_string());
+
+                let div_vals = DividerArtVals {
+                    spread_idx,
+                    pw,
+                    ph,
+                    primary: st.cover_color_primary.trim(),
+                    accent: st.cover_color_accent.trim(),
+                    dark: st.cover_color_dark.trim(),
+                    first_word: &prefix,
+                    chapter_num: &final_num,
+                    chapter_title: &chapter_title,
+                    title_en: &title_en,
+                    image_path: img_str.as_deref(),
+                };
+
+                let row_tpl_lower = row_tpl_spec.to_lowercase();
+                let style_choice = if row_tpl_lower.contains("simple") || row_tpl_lower.contains("001") {
+                    1
+                } else {
+                    2
+                };
+
+                divider_art::generate_divider(app, div_vals, style_choice)?;
+                if img_str.is_some() {
+                    inserted_images_count = inserted_images_count.saturating_add(1);
+                }
+                generated_count = generated_count.saturating_add(1);
+                continue;
+            }
         }
 
         // 1. Insert Page
@@ -4422,6 +4600,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             let (ch_line, title_line) = split_chapter_title(clean_id_title, num_val);
             let resolved_en_rtf = if st.bilingual_output && !file_en_val.is_empty() && !is_preface {
                 resolve_catalog_related_file(&st.card1_path, file_en_val, "rtf")
+            } else if st.bilingual_output && st.translate_with_ai && !file_val.is_empty() && !is_preface {
+                ai::translated_body_rtf(st, file_val)
             } else {
                 None
             };
@@ -13818,7 +13998,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
                     }
                 }
             }
-            let target = dividers_dir.join("001_ulasan_chapter.designcraft");
+            let target = dividers_dir.join("001_simple_chapter.designcraft");
             app.run("file.saveAs", json!({"path": target.to_string_lossy()})).unwrap();
         }
 
@@ -14309,13 +14489,27 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     #[test]
     fn test_resolve_template_path_spec() {
         // Direct template ID resolution from assets/templates/
-        let r1 = resolve_template_path_spec("", "001_ulasan_chapter");
-        assert!(r1.is_some(), "Should resolve 001_ulasan_chapter: {r1:?}");
-        assert!(r1.unwrap().contains("001_ulasan_chapter.designcraft"));
+        let r1 = resolve_template_path_spec("", "001_simple_chapter");
+        assert!(r1.is_some(), "Should resolve 001_simple_chapter: {r1:?}");
+        assert!(r1.unwrap().contains("001_simple_chapter.designcraft"));
 
         // Subcategory path resolution
-        let r2 = resolve_template_path_spec("", "dividers/001_ulasan_chapter");
-        assert!(r2.is_some(), "Should resolve dividers/001_ulasan_chapter: {r2:?}");
+        let r2 = resolve_template_path_spec("", "dividers/001_simple_chapter");
+        assert!(r2.is_some(), "Should resolve dividers/001_simple_chapter: {r2:?}");
+
+        // Batik infographic divider resolution
+        let r_batik = resolve_template_path_spec("", "002_batik_infographic");
+        assert!(r_batik.is_some(), "Should resolve 002_batik_infographic: {r_batik:?}");
+        assert!(r_batik.unwrap().contains("002_batik_infographic.designcraft"));
+
+        // Legacy / alias resolution
+        let r_legacy1 = resolve_template_path_spec("", "dividers/001_ulasan_chapter");
+        assert!(r_legacy1.is_some(), "Should resolve legacy ulasan: {r_legacy1:?}");
+        assert!(r_legacy1.unwrap().contains("001_simple_chapter.designcraft"));
+
+        let r_legacy2 = resolve_template_path_spec("", "dividers/special_infographic_divider");
+        assert!(r_legacy2.is_some(), "Should resolve special infographic alias: {r_legacy2:?}");
+        assert!(r_legacy2.unwrap().contains("002_batik_infographic.designcraft"));
 
         // Table template resolution
         let r3 = resolve_template_path_spec("", "001_single_table_standard");
@@ -14365,6 +14559,87 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(texts.iter().any(|t| t.contains("BAB 02")), "Stories should contain BAB 02: {texts:?}");
         assert!(texts.iter().any(|t| t.contains("Sosial")), "Stories should contain Sosial: {texts:?}");
         assert!(texts.iter().any(|t| t.contains("Ulasan sosial Bab 2")), "Stories should contain RTF text: {texts:?}");
+    }
+
+    #[test]
+    fn test_ulasan_row_with_erroneous_divider_template_places_rtf() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("ch1.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Narasi bab 1 geografi dan iklim.}"#).unwrap();
+
+        // Row has type "Ulasan", but template explicitly says "dividers/special_infographic_divider"
+        // (e.g. from an Excel sheet where the user specified a divider style).
+        // It MUST NOT render as a Batik Infographic divider, and MUST place the RTF text!
+        let st = PubgenState {
+            card1_preset: 0,
+            card1_records: vec![vec![
+                "Ulasan".into(),
+                "01".into(),
+                "BAB 01 Geografi".into(),
+                rtf_path.to_string_lossy().to_string(),
+                "dividers/special_infographic_divider".into(),
+            ]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("Narasi bab 1 geografi")), "Ulasan RTF must be placed into the document: {texts:?}");
+    }
+
+    #[test]
+    fn test_procedural_divider_art_fallback() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // Simulate DIV sheet row without template on disk (e.g. portable app release)
+        let st = PubgenState {
+            card1_preset: 0,
+            card1_records: vec![vec![
+                "Divider".into(),
+                "01".into(),
+                "BAB 01 Geografi".into(),
+                "".into(),
+                "dividers/special_infographic_divider".into(),
+                "Chapter 01 Geography".into(),
+            ]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into(), "title_en".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_title_en_col: 5,
+            card1_range_all: true,
+            bilingual_output: true,
+            cover_color_primary: "#0284c7".into(),
+            cover_color_accent: "#f59e0b".into(),
+            cover_color_dark: "#1e293b".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages should generate procedural divider: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // Page 1 is initial, Page 2 is procedural divider
+        assert_eq!(active.doc.page_count(), 2);
+
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("01")), "Stories should contain chapter num 01: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("BAB")), "Stories should contain prefix BAB: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Geografi")), "Stories should contain title Geografi: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Chapter 01 Geography")), "Stories should contain title_en: {texts:?}");
     }
 
     #[test]

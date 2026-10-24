@@ -266,15 +266,26 @@ pub fn parse_catalog_entry(first_row_cells: &[String], sheet_name: &str) -> (Str
     ("Tabel".into(), sheet_name.into(), full, sheet_name.into())
 }
 
-/// Check if a sheet is an RTF review sheet (named RXX where XX is 01-99).
+/// Check if a sheet is an RTF review sheet (named RXX where XX is 01-99, or R_01, Review, Ulasan, etc.).
 pub fn is_rtf_review_sheet(sheet_name: &str) -> bool {
     let s = sheet_name.trim();
-    if s.len() >= 2 && (s.starts_with('R') || s.starts_with('r')) {
-        let rest = &s[1..];
-        rest.chars().all(|c| c.is_ascii_digit())
-    } else {
-        false
+    if s.is_empty() {
+        return false;
     }
+    let lower = s.to_lowercase();
+    if lower == "ulasan" || lower == "review" || lower == "editorial" {
+        return true;
+    }
+    if lower.starts_with("ulasan") || lower.starts_with("review") || lower.starts_with("editorial") {
+        return true;
+    }
+    if let Some(rest) = lower.strip_prefix('r') {
+        let rest_clean = rest.trim_start_matches(['_', '-', ' ', '.']);
+        if !rest_clean.is_empty() && rest_clean.chars().all(|c| c.is_ascii_digit()) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Extract first two-digit number from a string, e.g. "BAB 01 Pemerintahan" -> "01".
@@ -465,14 +476,47 @@ pub fn parse_rtf_review_sheet_bilingual(
             title_en = Some(ten);
         }
         if file_val.is_empty()
-            && let Some(f) = extract_field_for_keys(row, &["file_id", "fileid", "file", "rtf", "path"])
+            && let Some(f) = extract_field_for_keys(
+                row,
+                &[
+                    "file_id", "fileid", "file", "rtf", "path", "dokumen", "doc", "naskah", "source", "berkas",
+                    "file_rtf",
+                ],
+            )
         {
             file_val = f;
         }
         if file_en.is_none()
-            && let Some(fen) = extract_field_for_keys(row, &["file_en", "fileen", "rtf_en", "rtfen", "path_en", "pathen"])
+            && let Some(fen) = extract_field_for_keys(
+                row,
+                &[
+                    "file_en", "fileen", "rtf_en", "rtfen", "path_en", "pathen", "dokumen_en", "doc_en", "naskah_en",
+                    "source_en",
+                ],
+            )
         {
             file_en = Some(fen);
+        }
+    }
+
+    // Grid-wide scan for .rtf files: handles rows without explicit "file;" key
+    if file_val.is_empty() || !file_val.to_lowercase().ends_with(".rtf") {
+        for row in &sheet.grid {
+            for cell in row {
+                let c = cell.trim().trim_matches('"').trim();
+                let lower = c.to_lowercase();
+                if lower.ends_with(".rtf") {
+                    if lower.contains("_en.") || lower.contains("en.rtf") || lower.contains("english") {
+                        if file_en.is_none() {
+                            file_en = Some(c.to_string());
+                        }
+                    } else if file_val.is_empty() || !file_val.to_lowercase().ends_with(".rtf") {
+                        file_val = c.to_string();
+                    } else if file_en.is_none() && c != file_val {
+                        file_en = Some(c.to_string());
+                    }
+                }
+            }
         }
     }
 
@@ -486,6 +530,22 @@ pub fn parse_rtf_review_sheet_bilingual(
         && let Some(row2) = sheet.grid.get(1)
     {
         file_val = extract_field_lenient(row2, "file");
+    }
+
+    // Final scan for second RTF file if file_en is still missing
+    if file_en.is_none() && !file_val.is_empty() {
+        for row in &sheet.grid {
+            for cell in row {
+                let c = cell.trim().trim_matches('"').trim();
+                if c.to_lowercase().ends_with(".rtf") && c != file_val {
+                    file_en = Some(c.to_string());
+                    break;
+                }
+            }
+            if file_en.is_some() {
+                break;
+            }
+        }
     }
 
     // Split combined bilingual title like "Kata Pengantar / Preface"
@@ -814,11 +874,28 @@ pub fn split_divider_title(title: &str) -> (String, String, String) {
     }
 }
 
-/// Resolve a divider template specification (e.g. "002" or "002_chapter_devider") to its template path.
+/// Resolve a divider template specification (e.g. "002", "002_batik_infographic", "001_simple_chapter") to its template path.
 pub fn resolve_divider_template(tpl_spec: &str) -> String {
     let raw = tpl_spec.trim().trim_matches('"').trim();
     if raw.is_empty() {
-        return "assets/templates/dividers/002_chapter_devider.designcraft".to_string();
+        return "assets/templates/dividers/002_batik_infographic.designcraft".to_string();
+    }
+
+    let raw_lower = raw.to_lowercase();
+    if raw_lower.contains("batik")
+        || raw_lower.contains("infographic")
+        || raw_lower.contains("chapter_devider")
+        || raw_lower == "002"
+        || raw_lower == "2"
+    {
+        return "assets/templates/dividers/002_batik_infographic.designcraft".to_string();
+    }
+    if raw_lower.contains("simple")
+        || raw_lower.contains("ulasan")
+        || raw_lower == "001"
+        || raw_lower == "1"
+    {
+        return "assets/templates/dividers/001_simple_chapter.designcraft".to_string();
     }
 
     let is_numeric = raw.chars().all(|c| c.is_ascii_digit());
@@ -836,7 +913,7 @@ pub fn resolve_divider_template(tpl_spec: &str) -> String {
                 }
             }
         }
-        return format!("assets/templates/dividers/{prefix}_chapter_devider.designcraft");
+        return format!("assets/templates/dividers/{prefix}_batik_infographic.designcraft");
     }
 
     if raw.contains('/') || raw.contains('\\') || raw.ends_with(".designcraft") {
@@ -1840,6 +1917,12 @@ mod tests {
         assert!(is_rtf_review_sheet("R1"));
         assert!(is_rtf_review_sheet("R99"));
         assert!(is_rtf_review_sheet("r05"));
+        assert!(is_rtf_review_sheet("R_01"));
+        assert!(is_rtf_review_sheet("R-02"));
+        assert!(is_rtf_review_sheet("Review"));
+        assert!(is_rtf_review_sheet("Review 01"));
+        assert!(is_rtf_review_sheet("Ulasan"));
+        assert!(is_rtf_review_sheet("Ulasan 02"));
         assert!(!is_rtf_review_sheet("02_01"));
         assert!(!is_rtf_review_sheet("Report"));
         assert!(!is_rtf_review_sheet("Table1"));
@@ -1871,6 +1954,23 @@ mod tests {
         assert_eq!(n2, "02");
         assert_eq!(title2, "BAB 02 Keadaan Alam");
         assert_eq!(f2, "ulasan_bab_2.rtf");
+
+        // Test with 3 rows without explicit "file;" key (row 1: title, row 2: title_en, row 3: raw rtf filename)
+        let sheet3 = ExcelSheetData {
+            name: "R_03".into(),
+            grid: vec![
+                vec!["BAB 03 Kependudukan".into()],
+                vec!["CHAPTER 03 POPULATION".into()],
+                vec!["ulasan_bab_3.rtf".into()],
+            ],
+            merges: Vec::new(),
+        };
+        let (t3, n3, title3, f3, _, ten3, _) = parse_rtf_review_sheet_bilingual(&sheet3).unwrap();
+        assert_eq!(t3, "Ulasan");
+        assert_eq!(n3, "03");
+        assert_eq!(title3, "BAB 03 Kependudukan");
+        assert_eq!(f3, "ulasan_bab_3.rtf");
+        assert_eq!(ten3, Some("CHAPTER 03 POPULATION".into()));
     }
 
     #[test]
@@ -2393,7 +2493,7 @@ mod tests {
         assert_eq!(lines.len(), 3);
         assert_eq!(
             lines[1],
-            "Divider,02,BAB 02 PEMERINTAHAN,E:\\Github\\designcraft\\plan\\pubgen\\samples\\infografik_01.png,assets/templates/dividers/002_chapter_devider.designcraft"
+            "Divider,02,BAB 02 PEMERINTAHAN,E:\\Github\\designcraft\\plan\\pubgen\\samples\\infografik_01.png,assets/templates/dividers/002_batik_infographic.designcraft"
         );
         assert_eq!(lines[2], "Tabel,02.01,Jumlah Penduduk,02_01,");
 
@@ -2454,7 +2554,7 @@ mod tests {
         assert_eq!(lines[0], "type,number,title,file,template,title_en,file_en");
         assert_eq!(lines.len(), 4);
         assert!(lines[1].contains(
-            "Divider,02,BAB 02 PEMERINTAHAN,infografik_02.png,assets/templates/dividers/002_chapter_devider.designcraft,CHAPTER 02 GOVERNMENT,"
+            "Divider,02,BAB 02 PEMERINTAHAN,infografik_02.png,assets/templates/dividers/002_batik_infographic.designcraft,CHAPTER 02 GOVERNMENT,"
         ));
         assert!(lines[2].contains("Ulasan,02,BAB 02 PEMERINTAHAN,ulasan_02_id.rtf,,,ulasan_02_en.rtf"));
         assert_eq!(lines[3], "Tabel,02.01,Luas Wilayah / Area,02_01,,,");
