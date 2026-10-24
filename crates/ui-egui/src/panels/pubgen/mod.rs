@@ -1050,31 +1050,6 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
     // in show()), the same click path generates with the EN maps filled.
     let can_gen = !st.card1_records.is_empty();
     if ui.add_enabled(can_gen, egui::Button::new("Generate Pages")).clicked() {
-        if st.bilingual_output && st.translate_with_ai {
-            let key = ai::slice_signature(st);
-            if st.translate_job.is_some() {
-                st.card1_status = Some(("Still translating with AI…".into(), true));
-                return;
-            }
-            if st.translations_slice_key != key {
-                // Smart resume: drop units already translated (done or from a stopped run).
-                let mut units = ai::collect_translation_units(st);
-                units.retain(|(k, _)| !st.translations.contains_key(k));
-                if units.is_empty() {
-                    // Everything already translated: nothing to do, generate directly.
-                    st.translations_slice_key = key;
-                } else {
-                    if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
-                        st.translate_job = Some(ai::TranslateJob::spawn(&provider, &key, &model, units, ui.ctx().clone()));
-                        st.translations_slice_key = key;
-                        st.card1_status = Some(("Translating with AI…".to_string(), true));
-                        return;
-                    }
-                    st.card1_status = Some(("AI translation: no backend configured — open Configure…".into(), false));
-                    return;
-                }
-            }
-        }
         let res = execute_generate_pages(app, st);
         st.card1_status = Some(match res {
             Ok(msg) => (msg, true),
@@ -3203,59 +3178,10 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
     ui.checkbox(&mut st.excel_auto_generate, "Auto-generate pages, tables & cover from sheets")
         .on_hover_text("When checked, picking an Excel file automatically runs 'Page from CSV', inserts each sheet's table with default options, and generates the cover page before Page 1 from the COVER sheet");
 
-    // Translate with AI (needs Dual Lang): fills the English half when the sheets carry
-    // no title_en/file_en. Ticking opens the setup dialog; Use AI arms it.
-    let can_ai = st.bilingual_output && (designcraft_translate::is_available() || designcraft_translate::online_available());
-    let mut ai_on = st.translate_with_ai;
-    let ai_tip = "Fills the English half when the sheets have no title_en/file_en columns.\n\
-                  Requires Dual Lang mode. Offline model licence: CC-BY-NC-4.0 (non-commercial).";
-    let ai_resp = ui.add_enabled(can_ai, egui::Checkbox::new(&mut ai_on, "Translate with AI")).on_hover_text(ai_tip).on_disabled_hover_text(
-        if !st.bilingual_output {
-            "Switch to Dual Lang first (header band) — AI fills the English half."
-        } else {
-            "This build has no AI translation compiled in. Run with --features pubgen,ai-translate-online."
-        },
-    );
-    if ai_resp.changed() {
-        if ai_on && !st.ai_setup_done {
-            st.ai_dialog = Some(ai::AiSetupDialog::open(app));
-        } else {
-            st.translate_with_ai = ai_on;
-        }
-    }
-    if st.translate_with_ai {
-        ui.checkbox(&mut st.ai_only_reviews, "Reviews only (RXX / BXX pages)").on_hover_text(
-            "Targeted translation: only the narrative review pages (and their titles) get English. \
-                 Tables, charts and the cover stay Indonesian. Good under tight provider token limits.",
-        );
-    }
-    if st.translate_with_ai && st.ai_setup_done {
-        ai::header_status_row(app, st, ui);
-    }
     let resp_excel = outline_button(ui, "Excel to CSV Data…", full_width(ui)).on_hover_text(tip_excel);
     if resp_excel.clicked()
         && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
     {
-        // AI: convert first (so the records exist to collect from), translate in the
-        // background, then run the full convert+generate when the job finishes.
-        if st.bilingual_output && st.translate_with_ai {
-            match execute_excel_to_csvs(st, &path) {
-                Ok(conv_msg) => {
-                    let mut units = ai::collect_translation_units(st);
-                    units.retain(|(k, _)| !st.translations.contains_key(k));
-                    if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
-                        st.ai_pending_excel_path = path.clone();
-                        st.translate_job = Some(ai::TranslateJob::spawn(&provider, &key, &model, units, ui.ctx().clone()));
-                        st.translations_slice_key.clear();
-                        st.card3_status = Some((format!("{conv_msg} — translating with AI…"), true));
-                        return;
-                    }
-                    st.card3_status = Some(("AI translation: no backend configured — open Configure…".into(), false));
-                }
-                Err(e) => st.card3_status = Some((e, false)),
-            }
-            return;
-        }
         let res = execute_excel_and_generate(app, st, &path);
         st.card3_status = Some(match res {
             Ok(msg) => (msg, true),

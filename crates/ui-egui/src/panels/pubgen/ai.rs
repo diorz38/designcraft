@@ -98,7 +98,6 @@ impl AiSetupDialog {
                         "translationGroqModel": self.groq_model.trim(),
                     }),
                 );
-                st.translate_with_ai = true;
                 st.ai_setup_done = true;
                 self.close_requested = true;
                 true
@@ -193,7 +192,6 @@ fn offline_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSetupD
                     "translationProvider": "offline",
                 }),
             );
-            st.translate_with_ai = true;
             st.ai_setup_done = true;
             dialog.close_requested = true;
         }
