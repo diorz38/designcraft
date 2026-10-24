@@ -1414,6 +1414,23 @@ fn read_xlsx_shared_strings(archive: &mut ZipArchive<std::fs::File>) -> Vec<Stri
     shared_strings
 }
 
+/// Clean IEEE 754 floating point artifacts from numeric cell values (e.g. `4.0199999999999996` -> `4.02`).
+pub fn clean_excel_numeric_str(s: &str) -> String {
+    let trimmed = s.trim();
+    if let Some((_int_part, dec_part)) = trimmed.split_once('.') {
+        // If the fractional part has at least 8 digits and contains an artifact run of 00000 or 99999:
+        if dec_part.len() >= 8 && (dec_part.contains("99999") || dec_part.contains("00000"))
+            && let Ok(val) = trimmed.parse::<f64>()
+        {
+            let rounded = (val * 1e10).round() / 1e10;
+            let formatted = format!("{rounded:.10}");
+            let cleaned = formatted.trim_end_matches('0').trim_end_matches('.');
+            return if cleaned.is_empty() { "0".to_string() } else { cleaned.to_string() };
+        }
+    }
+    trimmed.to_string()
+}
+
 /// Parse one worksheet XML into a named sheet (cells, merged ranges).
 fn parse_worksheet_xml(sheet_name: String, xml: &str, shared_strings: &[String]) -> ExcelSheetData {
     let mut merges = Vec::new();
@@ -1498,7 +1515,7 @@ fn parse_worksheet_xml(sheet_name: String, xml: &str, shared_strings: &[String])
                             let idx = cur_v.trim().parse::<usize>().unwrap_or(usize::MAX);
                             shared_strings.get(idx).cloned().unwrap_or_default()
                         } else {
-                            cur_v.trim().to_string()
+                            clean_excel_numeric_str(&cur_v)
                         };
                         if !val_str.is_empty() {
                             max_col = max_col.max(c);
@@ -1516,6 +1533,7 @@ fn parse_worksheet_xml(sheet_name: String, xml: &str, shared_strings: &[String])
         }
         buf.clear();
     }
+
 
     // Build 2D grid
     let num_rows = if cell_map.is_empty() { 0 } else { max_row + 1 };
@@ -1649,6 +1667,15 @@ pub fn execute_convert_excel(path: &str) -> Result<ConvertedExcelPackage, String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_clean_excel_numeric_str() {
+        assert_eq!(clean_excel_numeric_str("4.0199999999999996"), "4.02");
+        assert_eq!(clean_excel_numeric_str("4.0200000000000005"), "4.02");
+        assert_eq!(clean_excel_numeric_str("1.65"), "1.65");
+        assert_eq!(clean_excel_numeric_str("42"), "42");
+        assert_eq!(clean_excel_numeric_str("hello"), "hello");
+    }
 
     #[test]
     fn test_parse_cell_ref_and_range() {
