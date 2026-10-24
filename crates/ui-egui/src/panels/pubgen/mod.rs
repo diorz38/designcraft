@@ -332,6 +332,10 @@ pub struct PubgenState {
     #[serde(default = "default_true")]
     pub card2_row_conditions: bool,
     pub card2_style: usize,
+    #[serde(default)]
+    pub card2_color_theme: usize,
+    #[serde(default)]
+    pub card2_theme_override: Option<String>,
     pub card2_placement: usize,
     pub card2_status: Option<(String, bool)>,
     #[serde(default)]
@@ -551,7 +555,9 @@ impl Default for PubgenState {
             card2_col_numbers: true,
             card2_table_footer: true,
             card2_row_conditions: true,
-            card2_style: 3,     // Horizontal Rules
+            card2_style: 3,       // Horizontal Rules
+            card2_color_theme: 0, // #FFCB56 - #FFE9A9 (Default)
+            card2_theme_override: None,
             card2_placement: 2, // At page
             card2_status: None,
             card2_delim: None,
@@ -1161,6 +1167,24 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
                 ui.selectable_value(&mut st.card2_style, i, *s);
             }
         });
+    });
+
+    // Table Color Theme Selector
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Theme:").size(11.0).color(t.text));
+        let cur = TABLE_COLOR_THEMES.get(st.card2_color_theme).map(|(name, _, _)| *name).unwrap_or("#FFCB56 - #FFE9A9");
+        let combo_w = (ui.available_width() - 4.0).clamp(80.0, 200.0);
+        let prev_theme = st.card2_color_theme;
+        egui::ComboBox::from_id_salt("pubgen_card2_theme").selected_text(cur).width(combo_w).show_ui(ui, |ui| {
+            for (i, (name, _, _)) in TABLE_COLOR_THEMES.iter().enumerate() {
+                ui.selectable_value(&mut st.card2_color_theme, i, *name);
+            }
+        });
+        if st.card2_color_theme != prev_theme
+            && let Some((name, _, _)) = TABLE_COLOR_THEMES.get(st.card2_color_theme)
+        {
+            st.card2_theme_override = Some(name.to_string());
+        }
     });
 
     // Placement
@@ -3549,6 +3573,34 @@ fn load_card2_csv(st: &mut PubgenState, path: &str) {
         return;
     }
     st.card2_matrix = rows;
+
+    for row in &st.card2_matrix {
+        let first = row.first().map(|s| s.trim()).unwrap_or("");
+        let first_lower = first.to_lowercase();
+        if excel::THEME_KEYS.iter().any(|k| first_lower.starts_with(k)) {
+            let val = if let Some(pos) = first.find(':') {
+                first[pos + 1..].trim().to_string()
+            } else {
+                row.get(1).map(|s| s.trim().to_string()).unwrap_or_default()
+            };
+            if !val.is_empty()
+                && let Some(th) = parse_table_color_theme(&val)
+            {
+                if th == TableColorTheme::new("#FFCB56", "#FFE9A9") {
+                    st.card2_color_theme = 0;
+                } else if th == TableColorTheme::new("#F3D2AF", "#F8EADC") {
+                    st.card2_color_theme = 1;
+                } else if th == TableColorTheme::new("#9E7EB5", "#C4A4DA") {
+                    st.card2_color_theme = 2;
+                } else if th.is_none() {
+                    st.card2_color_theme = 3;
+                }
+                st.card2_theme_override = Some(val);
+            }
+            break;
+        }
+    }
+
     let r = st.card2_matrix.len();
     let c = st.card2_matrix.first().map(Vec::len).unwrap_or(0);
     let delim_name = delimiter_name(delim);
@@ -3612,6 +3664,112 @@ pub fn matches_pubgen_row_condition(text: &str) -> bool {
 pub fn is_index_or_empty(text: &str) -> bool {
     let t = text.trim();
     t.is_empty() || t.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | ')' | '(' | '-' | '#'))
+}
+
+/// Check if a cell's string representation represents numeric data, a dash, or a missing data symbol.
+pub fn is_numeric_or_dash(text: &str) -> bool {
+    let t = text.replace('\u{00A0}', " ");
+    let t = t.trim().trim_matches('"').trim_matches('\'').trim();
+    if t.is_empty() {
+        return false;
+    }
+    if matches!(t, "-" | "—" | "–" | "- " | "--" | "−" | "..." | "…" | "N/A" | "n/a" | "NA" | "na") {
+        return true;
+    }
+    let mut clean = t.trim_matches(|c: char| c == '%' || c == '$' || c == '€' || c == '£').trim();
+    if clean.is_empty() {
+        return false;
+    }
+    if clean.starts_with('(') && clean.ends_with(')') && clean.len() > 2 {
+        clean = clean[1..clean.len() - 1].trim();
+    }
+    let clean = clean.replace('−', "-");
+    if clean.parse::<f64>().is_ok() {
+        return true;
+    }
+    let without_commas = clean.replace(',', "");
+    if without_commas.parse::<f64>().is_ok() {
+        return true;
+    }
+    let eu_converted = clean.replace('.', "").replace(',', ".");
+    if eu_converted.parse::<f64>().is_ok() {
+        return true;
+    }
+    false
+}
+
+/// Table color theme specifying background colors for table header/footer and row number row.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TableColorTheme {
+    pub header_footer: String,
+    pub row_number: String,
+}
+
+impl TableColorTheme {
+    pub fn new(header_footer: impl Into<String>, row_number: impl Into<String>) -> Self {
+        Self { header_footer: header_footer.into(), row_number: row_number.into() }
+    }
+
+    pub fn is_none(&self) -> bool {
+        let hf = self.header_footer.trim();
+        hf.is_empty() || hf.eq_ignore_ascii_case("none")
+    }
+}
+
+pub const TABLE_COLOR_THEMES: &[(&str, &str, &str)] = &[
+    ("#FFCB56 - #FFE9A9", "#FFCB56", "#FFE9A9"),
+    ("#F3D2AF - #F8EADC", "#F3D2AF", "#F8EADC"),
+    ("#9E7EB5 - #C4A4DA", "#9E7EB5", "#C4A4DA"),
+    ("None", "", ""),
+];
+
+/// Parse a table color theme from string (preset index "0", "1", "2", hex names, or custom pair).
+pub fn parse_table_color_theme(val: &str) -> Option<TableColorTheme> {
+    let s = val.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let lower = s.to_lowercase();
+    if lower == "none" || lower == "plain" || lower == "white" || lower == "transparent" {
+        return Some(TableColorTheme::new("", ""));
+    }
+    if s == "0" || lower.contains("ffcb56") || lower == "gold" || lower == "amber" {
+        return Some(TableColorTheme::new("#FFCB56", "#FFE9A9"));
+    }
+    if s == "1" || lower.contains("f3d2af") || lower.contains("f8eadc") || lower == "peach" || lower == "sand" {
+        return Some(TableColorTheme::new("#F3D2AF", "#F8EADC"));
+    }
+    if s == "2" || lower.contains("9e7eb5") || lower.contains("c4a4da") || lower == "lilac" || lower == "lavender" {
+        return Some(TableColorTheme::new("#9E7EB5", "#C4A4DA"));
+    }
+    for sep in ['-', ',', '/', ';'] {
+        if let Some((h, r)) = s.split_once(sep) {
+            let h = h.trim();
+            let r = r.trim();
+            if !h.is_empty() && !r.is_empty() {
+                let h_hex = if h.starts_with('#') { h.to_string() } else { format!("#{h}") };
+                let r_hex = if r.starts_with('#') { r.to_string() } else { format!("#{r}") };
+                return Some(TableColorTheme::new(h_hex, r_hex));
+            }
+        }
+    }
+    None
+}
+
+/// Ensure a hex color swatch exists in the document swatches and return its canonical swatch name.
+pub fn ensure_swatch(doc: &mut designcraft_doc::Document, hex: &str) -> String {
+    let clean = hex.trim();
+    if clean.is_empty() || clean.eq_ignore_ascii_case("none") {
+        return String::new();
+    }
+    let formatted = if clean.starts_with('#') { clean.to_string() } else { format!("#{clean}") };
+    let upper = formatted.to_uppercase();
+    if !doc.swatches.iter().any(|s| s.name.eq_ignore_ascii_case(&upper))
+        && let Some(col) = designcraft_color::Color::from_hex(&upper)
+    {
+        doc.swatches.push(designcraft_color::swatch::Swatch::color(&upper, col));
+    }
+    upper
 }
 
 /// Detect row indices (0-based relative to matrix) matching the summary/break keyword condition.
@@ -4155,6 +4313,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     let template_col = effective_col(st.card1_template_col, &st.card1_headers, &["template"], 4);
     let title_en_col = effective_col(st.card1_title_en_col, &st.card1_headers, &["title_en", "titleen"], 5);
     let file_en_col = effective_col(st.card1_file_en_col, &st.card1_headers, &["file_en", "fileen"], 6);
+    let theme_col = effective_col(999, &st.card1_headers, &["theme", "themes", "table_theme", "tabletheme", "color", "colortheme", "warna"], 999);
 
     for row in slice {
         let type_val = row.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("").trim();
@@ -4162,6 +4321,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         let title_val = row.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("").trim();
         let title_en_val = row.get(title_en_col).map(String::as_str).unwrap_or("").trim();
         let file_en_val = row.get(file_en_col).map(String::as_str).unwrap_or("").trim();
+        let theme_val = row.get(theme_col).map(String::as_str).unwrap_or("").trim();
         let file_val = row.get(file_col).map(String::as_str).unwrap_or("").trim();
         let (clean_id_title, clean_en_title) = if let Some((id_t, en_t)) = locale::split_pair(title_val) {
             (id_t, if title_en_val.is_empty() { en_t } else { title_en_val })
@@ -4253,7 +4413,11 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                             let display_matrix =
                                 if st.bilingual_output && st.translate_with_ai { ai::pair_cells(&tbl_matrix, &st.translations) } else { tbl_matrix };
                             let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
-                            if execute_insert_table_matrix(app, st, Some(&display_matrix), Some(cur_page_idx)).is_ok() {
+                            let mut table_st = st.clone();
+                            if !theme_val.is_empty() {
+                                table_st.card2_theme_override = Some(theme_val.to_string());
+                            }
+                            if execute_insert_table_matrix(app, &table_st, Some(&display_matrix), Some(cur_page_idx)).is_ok() {
                                 inserted_tables_count = inserted_tables_count.saturating_add(1);
                             }
                         }
@@ -4683,8 +4847,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 // Images of a front-matter sheet: `image1` (official photo) wraps tight around the text (Word "Tight")
                 // placed before RTF placement; `image2` (signature) is anchored dynamically to the signatory block.
                 if !has_chapter_prefix {
-                    let img1_rect = [margin.x0, margin.y0 + mh * 0.254, margin.x0 + mw * 0.335, margin.y0 + mh * 0.528];
-                    if place_catalog_image(app, st, row, "image1", spread_idx, img1_rect, "none").is_some() {
+                    let img1_rect = [margin.x0, margin.y0 + mh * 0.22, margin.x0 + mw * 0.24, margin.y0 + mh * 0.43];
+                    if place_catalog_image(app, st, row, "image1", spread_idx, img1_rect, "boundingBox").is_some() {
                         inserted_images_count = inserted_images_count.saturating_add(1);
                     }
                 }
@@ -4796,8 +4960,8 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 
                     let (mw, mh) = (en_margin.x1 - en_margin.x0, en_margin.y1 - en_margin.y0);
                     // Place image1 before English RTF text so textWrap: "boundingBox" wraps body text around it.
-                    let img1_rect = [en_margin.x0, en_margin.y0 + mh * 0.254, en_margin.x0 + mw * 0.335, en_margin.y0 + mh * 0.528];
-                    if place_catalog_image(app, st, row, "image1", en_spread_idx, img1_rect, "none").is_some() {
+                    let img1_rect = [en_margin.x0, en_margin.y0 + mh * 0.22, en_margin.x0 + mw * 0.24, en_margin.y0 + mh * 0.43];
+                    if place_catalog_image(app, st, row, "image1", en_spread_idx, img1_rect, "boundingBox").is_some() {
                         inserted_images_count = inserted_images_count.saturating_add(1);
                     }
 
@@ -5451,7 +5615,11 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         let display_matrix =
                             if st.bilingual_output && st.translate_with_ai { ai::pair_cells(&tbl_matrix, &st.translations) } else { tbl_matrix };
                         let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
-                        if execute_insert_table_matrix(app, st, Some(&display_matrix), Some(cur_page_idx)).is_ok() {
+                        let mut table_st = st.clone();
+                        if !theme_val.is_empty() {
+                            table_st.card2_theme_override = Some(theme_val.to_string());
+                        }
+                        if execute_insert_table_matrix(app, &table_st, Some(&display_matrix), Some(cur_page_idx)).is_ok() {
                             inserted_tables_count = inserted_tables_count.saturating_add(1);
                         }
                     }
@@ -5769,11 +5937,14 @@ fn harmonize_signatory_block(app: &mut DesignApp, fid: u64, margin: designcraft_
         };
 
         // Walk backwards to find the start of the signatory block.
-        let mut start_pi = last_pi;
+        // Identify the first non-empty signatory line (the date line like "Karawang, September 2025").
+        let mut first_sig_non_empty = last_pi;
         for i in (0..last_pi).rev() {
             let t = story.text[ranges[i].clone()].trim();
-            let is_sig_line = t.is_empty()
-                || t.contains("Karawang")
+            if t.is_empty() {
+                continue;
+            }
+            let is_sig = t.contains("Karawang")
                 || t.contains("Kepala")
                 || t.contains("Head of")
                 || t.contains("Regency")
@@ -5781,12 +5952,13 @@ fn harmonize_signatory_block(app: &mut DesignApp, fid: u64, margin: designcraft_
                 || t.contains("BPS")
                 || (t.contains(',') && (t.contains("202") || t.contains("203")))
                 || story.paras[i].para.left_indent.unwrap_or(0.0) > 80.0;
-            if is_sig_line {
-                start_pi = i;
+            if is_sig {
+                first_sig_non_empty = i;
             } else {
                 break;
             }
         }
+        let start_pi = first_sig_non_empty;
 
         for pi in (start_pi..=last_pi).rev() {
             let r = story.para_ranges()[pi].clone();
@@ -5811,9 +5983,13 @@ fn harmonize_signatory_block(app: &mut DesignApp, fid: u64, margin: designcraft_
                 p.para.first_line_indent = Some(0.0);
                 p.para.last_line_indent = Some(0.0);
                 p.para.tabs = None;
+                if pi == start_pi {
+                    let cur_sb = p.para.space_before.unwrap_or(0.0);
+                    p.para.space_before = Some(cur_sb.max(16.0));
+                }
                 if pi == last_pi {
                     let cur_sb = p.para.space_before.unwrap_or(0.0);
-                    p.para.space_before = Some(cur_sb.max(36.0));
+                    p.para.space_before = Some(cur_sb.max(42.0));
                 }
             }
         }
@@ -5885,17 +6061,23 @@ fn compute_signature_placement(
 
     let (y0, y1) = if let Some(pby) = prev_baseline_y {
         let gap = spread_last_baseline_y - pby;
-        if gap > 35.0 {
-            let h = (gap * 0.95).clamp(45.0, 65.0);
-            let bottom = spread_last_baseline_y - 6.0;
-            (bottom - h, bottom)
-        } else {
-            let h = 50.0;
-            let bottom = spread_last_baseline_y - 6.0;
-            (bottom - h, bottom)
+        let h = (gap - 10.0).clamp(32.0, 52.0);
+        let mid_y = (pby + spread_last_baseline_y) / 2.0;
+        let mut y0 = mid_y - h / 2.0;
+        let mut y1 = mid_y + h / 2.0;
+        if y0 < pby + 2.0 {
+            let shift = (pby + 2.0) - y0;
+            y0 += shift;
+            y1 += shift;
         }
+        if y1 > spread_last_baseline_y - 4.0 {
+            let shift = y1 - (spread_last_baseline_y - 4.0);
+            y0 -= shift;
+            y1 -= shift;
+        }
+        (y0, y1)
     } else {
-        let h = 50.0;
+        let h = 45.0;
         let bottom = spread_last_baseline_y - 6.0;
         (bottom - h, bottom)
     };
@@ -6134,9 +6316,38 @@ pub fn execute_insert_table_matrix(
         return Err("No tabular data to insert".into());
     }
 
+    // Detect and extract any metadata rows (e.g. theme: #FFCB56 - #FFE9A9 or color: ...)
+    let mut detected_theme = None;
+    let mut matrix = source_matrix.to_vec();
+    matrix.retain(|row| {
+        let first = row.first().map(|s| s.trim()).unwrap_or("");
+        let first_lower = first.to_lowercase();
+        let is_theme_key = excel::THEME_KEYS.iter().any(|k| first_lower.starts_with(k));
+        if is_theme_key {
+            // Find theme value in second cell or after ':' in first cell
+            let val = if let Some(pos) = first.find(':') {
+                first[pos + 1..].trim().to_string()
+            } else {
+                row.get(1).map(|s| s.trim().to_string()).unwrap_or_default()
+            };
+            if !val.is_empty() {
+                detected_theme = parse_table_color_theme(&val);
+            }
+            return false;
+        }
+        true
+    });
+
+    let active_theme: TableColorTheme =
+        st.card2_theme_override.as_deref().and_then(parse_table_color_theme).or(detected_theme).unwrap_or_else(|| {
+            TABLE_COLOR_THEMES
+                .get(st.card2_color_theme)
+                .map(|(_, hf, rn)| TableColorTheme::new(*hf, *rn))
+                .unwrap_or_else(|| TableColorTheme::new("#FFCB56", "#FFE9A9"))
+        });
+
     // Detect and extract trailing footnote/source row(s) (where only first col has data and rest of cols are empty)
     let mut footnotes = Vec::new();
-    let mut matrix = source_matrix.to_vec();
     let cols_count = matrix.iter().map(Vec::len).max().unwrap_or(0);
     if cols_count > 1 {
         while matrix.len() > 1 {
@@ -6438,6 +6649,12 @@ pub fn execute_insert_table_matrix(
 
     app.session
         .edit(|doc, _| {
+            let (hf_swatch, rn_swatch) = if !active_theme.is_none() {
+                (ensure_swatch(doc, &active_theme.header_footer), ensure_swatch(doc, &active_theme.row_number))
+            } else {
+                (String::new(), String::new())
+            };
+
             if st.card2_style == 3 && !doc.styles.table.iter().any(|s| s.name == "Horizontal Rules") {
                 let ts = designcraft_doc::TableStyle {
                     name: "Horizontal Rules".to_string(),
@@ -6482,17 +6699,112 @@ pub fn execute_insert_table_matrix(
                         c += 1;
                     }
                 }
+            }
 
-                // 3. Center alignment & vertical centering on all header cells
-                let nc = table.ncols();
-                for r in 0..num_header_rows {
-                    for col_idx in 0..nc {
-                        if let Some(cell) = table.cell_mut(r, col_idx) {
+            let nr = table.nrows();
+            let nc = table.ncols();
+
+            let header_rows = if has_merged_headers {
+                num_header_rows
+            } else if st.card2_first_row_header {
+                1
+            } else {
+                0
+            };
+
+            let mut data_start = if header_rows > 0 {
+                if st.card2_col_numbers { header_rows + 1 } else { header_rows }
+            } else if st.card2_col_numbers {
+                1
+            } else {
+                0
+            };
+
+            // Also check if row at data_start is an explicit row of column numbers e.g. (1), (2)...
+            if data_start < nr && !st.card2_col_numbers && nc > 0 {
+                let is_explicit_col_num = (0..nc).all(|c| {
+                    table
+                        .cell(data_start, c)
+                        .map(|cell| {
+                            let t = cell.text.text.trim();
+                            t == format!("({})", c + 1) || t == format!("{}", c + 1)
+                        })
+                        .unwrap_or(false)
+                });
+                if is_explicit_col_num {
+                    data_start += 1;
+                }
+            }
+
+            // 1. All table header rows and row number / column numbers row are center-aligned
+            for r in 0..data_start.min(nr) {
+                for col_idx in 0..nc {
+                    if let Some(cell) = table.cell_mut(r, col_idx) {
+                        cell.vj = designcraft_doc::VerticalJustification::Center;
+                        for p in &mut cell.text.paras {
+                            p.para.align = Some(designcraft_doc::Align::Center);
+                        }
+                        cell.text.rev += 1;
+                    }
+                }
+            }
+
+            // 2. For data rows, except col 1 (index 0), check if majority cell contains numeric or "-" -> set column to align center
+            for c in 1..nc {
+                let mut total_non_empty = 0usize;
+                let mut numeric_or_dash_count = 0usize;
+                for r in data_start..nr {
+                    if let Some(cell) = table.cell(r, c) {
+                        let txt = cell.text.text.trim();
+                        if !txt.is_empty() {
+                            total_non_empty += 1;
+                            if is_numeric_or_dash(txt) {
+                                numeric_or_dash_count += 1;
+                            }
+                        }
+                    }
+                }
+                if total_non_empty > 0 && numeric_or_dash_count * 2 >= total_non_empty {
+                    for r in data_start..nr {
+                        if let Some(cell) = table.cell_mut(r, c) {
                             cell.vj = designcraft_doc::VerticalJustification::Center;
                             for p in &mut cell.text.paras {
                                 p.para.align = Some(designcraft_doc::Align::Center);
                             }
                             cell.text.rev += 1;
+                        }
+                    }
+                }
+            }
+
+            // 3. Bilingual table content styling: all English text after " / " or on separate lines is Italic
+            for r in 0..nr {
+                for c in 0..nc {
+                    if let Some(cell) = table.cell_mut(r, c) {
+                        let text = cell.text.text.clone();
+                        // Case A: Separated by " / "
+                        if let Some(pos) = text.find(" / ") {
+                            let en_byte_start = pos + " / ".len();
+                            if en_byte_start < text.len() {
+                                cell.text.format_chars(en_byte_start..text.len(), |f| {
+                                    let is_bold = f.over.font_style.as_deref().is_some_and(|s| s.to_lowercase().contains("bold"));
+                                    f.over.font_style = Some(if is_bold { "Bold Italic".to_string() } else { "Italic".to_string() });
+                                });
+                            }
+                        } else if let Some(pos) = text.find(designcraft_doc::FORCED_LINE_BREAK).or_else(|| text.find('\n')) {
+                            // Case B: Separated by line break (Indonesian line 1, English line 2+)
+                            let break_len = if text[pos..].starts_with(designcraft_doc::FORCED_LINE_BREAK) {
+                                designcraft_doc::FORCED_LINE_BREAK.len_utf8()
+                            } else {
+                                1
+                            };
+                            let en_byte_start = pos + break_len;
+                            if en_byte_start < text.len() {
+                                cell.text.format_chars(en_byte_start..text.len(), |f| {
+                                    let is_bold = f.over.font_style.as_deref().is_some_and(|s| s.to_lowercase().contains("bold"));
+                                    f.over.font_style = Some(if is_bold { "Bold Italic".to_string() } else { "Italic".to_string() });
+                                });
+                            }
                         }
                     }
                 }
@@ -6506,9 +6818,6 @@ pub fn execute_insert_table_matrix(
                 table.options.column_strokes = None;
                 table.options.alt_rows = None;
                 table.options.alt_cols = None;
-
-                let nr = table.nrows();
-                let nc = table.ncols();
 
                 // Clear all cell strokes and set border_overrides so no default or table borders show
                 for cell in &mut table.cells {
@@ -6532,14 +6841,6 @@ pub fn execute_insert_table_matrix(
                         tint: 1.0,
                         kind: designcraft_doc::StrokeType::Solid,
                         ..Default::default()
-                    };
-
-                    let header_rows = if has_merged_headers {
-                        num_header_rows
-                    } else if st.card2_first_row_header {
-                        1
-                    } else {
-                        0
                     };
                     if header_rows > 0 {
                         // Top of header (row 0 top)
@@ -6686,6 +6987,44 @@ pub fn execute_insert_table_matrix(
                 && let Some(r) = table.rows.last_mut()
             {
                 r.kind = designcraft_doc::RowKind::Footer;
+            }
+
+            // Apply Table Color Theme fills
+            if !active_theme.is_none() {
+                // 1. Header rows fill
+                if !hf_swatch.is_empty() && header_rows > 0 {
+                    for r in 0..header_rows.min(nr) {
+                        for c in 0..nc {
+                            if let Some(cell) = table.cell_mut(r, c) {
+                                cell.fill = hf_swatch.clone();
+                                cell.fill_tint = 1.0;
+                            }
+                        }
+                    }
+                }
+
+                // 2. Row number row fill
+                if !rn_swatch.is_empty() && data_start > header_rows {
+                    for r in header_rows..data_start.min(nr) {
+                        for c in 0..nc {
+                            if let Some(cell) = table.cell_mut(r, c) {
+                                cell.fill = rn_swatch.clone();
+                                cell.fill_tint = 1.0;
+                            }
+                        }
+                    }
+                }
+
+                // 3. Footer row fill
+                if !hf_swatch.is_empty() && st.card2_table_footer && nr > data_start + 1 {
+                    let footer_row = nr - 1;
+                    for c in 0..nc {
+                        if let Some(cell) = table.cell_mut(footer_row, c) {
+                            cell.fill = hf_swatch.clone();
+                            cell.fill_tint = 1.0;
+                        }
+                    }
+                }
             }
 
             Ok(())
@@ -8578,6 +8917,20 @@ fn apply_excel_cover(st: &mut PubgenState, cover: &excel::ExcelCoverData, base_d
     if !cover.logo.trim().is_empty() {
         st.cover_image_logo = resolve(&cover.logo);
     }
+    if !cover.table_theme.trim().is_empty()
+        && let Some(th) = parse_table_color_theme(&cover.table_theme)
+    {
+        if th == TableColorTheme::new("#FFCB56", "#FFE9A9") {
+            st.card2_color_theme = 0;
+        } else if th == TableColorTheme::new("#F3D2AF", "#F8EADC") {
+            st.card2_color_theme = 1;
+        } else if th == TableColorTheme::new("#9E7EB5", "#C4A4DA") {
+            st.card2_color_theme = 2;
+        } else if th.is_none() {
+            st.card2_color_theme = 3;
+        }
+        st.card2_theme_override = Some(cover.table_theme.trim().to_string());
+    }
 }
 
 pub fn execute_excel_to_csvs(st: &mut PubgenState, path: &str) -> Result<String, String> {
@@ -9982,6 +10335,361 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         // Row 7: "Jumlah Total" (last row)
         assert_eq!(table.cell(7, 0).unwrap().strokes[0].weight, 0.5);
         assert_eq!(table.cell(7, 0).unwrap().strokes[2].weight, 1.0);
+    }
+
+    #[test]
+    fn test_is_numeric_or_dash() {
+        // Dashes and missing data symbols
+        assert!(is_numeric_or_dash("-"));
+        assert!(is_numeric_or_dash("—"));
+        assert!(is_numeric_or_dash("–"));
+        assert!(is_numeric_or_dash("- "));
+        assert!(is_numeric_or_dash("--"));
+        assert!(is_numeric_or_dash("−"));
+        assert!(is_numeric_or_dash("..."));
+        assert!(is_numeric_or_dash("…"));
+        assert!(is_numeric_or_dash("N/A"));
+        assert!(is_numeric_or_dash("n/a"));
+        assert!(is_numeric_or_dash("NA"));
+        assert!(is_numeric_or_dash("na"));
+
+        // Integers and floats
+        assert!(is_numeric_or_dash("0"));
+        assert!(is_numeric_or_dash("7"));
+        assert!(is_numeric_or_dash("4.02"));
+        assert!(is_numeric_or_dash("1.65"));
+        assert!(is_numeric_or_dash("-12.5"));
+        assert!(is_numeric_or_dash("−12.5"));
+        assert!(is_numeric_or_dash("100"));
+
+        // Accounting parentheses
+        assert!(is_numeric_or_dash("(12.5)"));
+        assert!(is_numeric_or_dash("(100)"));
+
+        // Thousands and European / Indonesian formats
+        assert!(is_numeric_or_dash("1,234.56"));
+        assert!(is_numeric_or_dash("1.234,56"));
+        assert!(is_numeric_or_dash("1,000"));
+
+        // Percentages
+        assert!(is_numeric_or_dash("21.32%"));
+        assert!(is_numeric_or_dash("100%"));
+
+        // Text strings (must return false)
+        assert!(!is_numeric_or_dash(""));
+        assert!(!is_numeric_or_dash("   "));
+        assert!(!is_numeric_or_dash("Warungbambu"));
+        assert!(!is_numeric_or_dash("Desa / Village"));
+        assert!(!is_numeric_or_dash("Jumlah"));
+        assert!(!is_numeric_or_dash("Total"));
+        assert!(!is_numeric_or_dash("Plawad"));
+    }
+
+    #[test]
+    fn test_execute_insert_table_header_and_col_alignments() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Desa/Kelurahan".into(), "Luas Wilayah".into(), "Persentase".into(), "Keterangan".into()],
+                vec!["Warungbambu".into(), "1.65".into(), "21.32".into(), "Valid".into()],
+                vec!["Kondangjaya".into(), "2.44".into(), "8.84".into(), "Valid".into()],
+                vec!["Tegalsawah".into(), "-".into(), "13.48".into(), "Special".into()],
+                vec!["Total".into(), "4.09".into(), "43.64".into(), "Summary".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_placement: 1, // New frame
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "Table insertion failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item =
+            spread.items.iter().find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty())).unwrap();
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        // 1 header row + 1 column number row + 4 data rows = 6 rows
+        assert_eq!(table.rows.len(), 6);
+        assert_eq!(table.columns.len(), 4);
+
+        // Row 0: Table Header -> all cells must be Center aligned and VerticalJustification::Center
+        for c in 0..4 {
+            let cell = table.cell(0, c).unwrap();
+            assert_eq!(cell.vj, designcraft_doc::VerticalJustification::Center, "Header col {c} vj should be Center");
+            assert_eq!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Header col {c} align should be Center");
+        }
+
+        // Row 1: Column number row (1), (2), (3), (4) -> all cells must be Center aligned
+        for c in 0..4 {
+            let cell = table.cell(1, c).unwrap();
+            assert_eq!(cell.vj, designcraft_doc::VerticalJustification::Center, "Col number {c} vj should be Center");
+            assert_eq!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Col number {c} align should be Center");
+        }
+
+        // Data rows (rows 2..6):
+        // Col 0: Column 1 (index 0) is excluded from centering -> align should NOT be Center
+        for r in 2..6 {
+            let cell = table.cell(r, 0).unwrap();
+            assert_ne!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Data row {r} col 0 should remain left aligned");
+        }
+
+        // Col 1: Majority numeric / dash ("1.65", "2.44", "-", "4.09") -> must be Center aligned
+        for r in 2..6 {
+            let cell = table.cell(r, 1).unwrap();
+            assert_eq!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Data row {r} col 1 should be Center aligned");
+        }
+
+        // Col 2: All numeric ("21.32", "8.84", "13.48", "43.64") -> must be Center aligned
+        for r in 2..6 {
+            let cell = table.cell(r, 2).unwrap();
+            assert_eq!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Data row {r} col 2 should be Center aligned");
+        }
+
+        // Col 3: Text descriptions ("Valid", "Special", "Summary") -> must NOT be Center aligned
+        for r in 2..6 {
+            let cell = table.cell(r, 3).unwrap();
+            assert_ne!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Data row {r} col 3 should remain left aligned");
+        }
+    }
+
+    #[test]
+    fn test_parse_table_color_theme() {
+        assert_eq!(parse_table_color_theme("0"), Some(TableColorTheme::new("#FFCB56", "#FFE9A9")));
+        assert_eq!(parse_table_color_theme("gold"), Some(TableColorTheme::new("#FFCB56", "#FFE9A9")));
+        assert_eq!(parse_table_color_theme("1"), Some(TableColorTheme::new("#F3D2AF", "#F8EADC")));
+        assert_eq!(parse_table_color_theme("peach"), Some(TableColorTheme::new("#F3D2AF", "#F8EADC")));
+        assert_eq!(parse_table_color_theme("2"), Some(TableColorTheme::new("#9E7EB5", "#C4A4DA")));
+        assert_eq!(parse_table_color_theme("lilac"), Some(TableColorTheme::new("#9E7EB5", "#C4A4DA")));
+        assert_eq!(parse_table_color_theme("none"), Some(TableColorTheme::new("", "")));
+        assert_eq!(parse_table_color_theme("plain"), Some(TableColorTheme::new("", "")));
+        assert_eq!(parse_table_color_theme("#112233 - #445566"), Some(TableColorTheme::new("#112233", "#445566")));
+    }
+
+    #[test]
+    fn test_execute_insert_table_color_theme_default() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Kecamatan".into(), "2021".into(), "2022".into(), "2025".into()],
+                vec!["Cikampek".into(), "10".into(), "20".into(), "30".into()],
+                vec!["Klari".into(), "15".into(), "25".into(), "35".into()],
+                vec!["Karawang".into(), "25".into(), "45".into(), "65".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_table_footer: true,
+            card2_color_theme: 0, // Default: #FFCB56 - #FFE9A9
+            card2_placement: 1,   // New frame
+            card2_style: 3,       // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "Table insertion failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item =
+            spread.items.iter().find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty())).unwrap();
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        // 1 header row + 1 col numbers row + 3 data rows (last is footer) = 5 rows
+        assert_eq!(table.rows.len(), 5);
+
+        // Header row (row 0) must have fill == "#FFCB56"
+        for c in 0..4 {
+            let cell = table.cell(0, c).unwrap();
+            assert_eq!(cell.fill, "#FFCB56");
+            assert_eq!(cell.fill_tint, 1.0);
+        }
+
+        // Col number row (row 1) must have fill == "#FFE9A9"
+        for c in 0..4 {
+            let cell = table.cell(1, c).unwrap();
+            assert_eq!(cell.fill, "#FFE9A9");
+            assert_eq!(cell.fill_tint, 1.0);
+        }
+
+        // Interior data rows (rows 2, 3) must have uncolored fill
+        for r in 2..4 {
+            for c in 0..4 {
+                let cell = table.cell(r, c).unwrap();
+                assert_eq!(cell.fill, designcraft_color::swatch::NONE);
+            }
+        }
+
+        // Footer row (row 4) must have fill == "#FFCB56"
+        for c in 0..4 {
+            let cell = table.cell(4, c).unwrap();
+            assert_eq!(cell.fill, "#FFCB56");
+            assert_eq!(cell.fill_tint, 1.0);
+        }
+
+        // Swatches must be registered in doc
+        assert!(active.doc.swatches.iter().any(|s| s.name == "#FFCB56"));
+        assert!(active.doc.swatches.iter().any(|s| s.name == "#FFE9A9"));
+    }
+
+    #[test]
+    fn test_execute_insert_table_color_theme_metadata_override() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["theme".into(), "#F3D2AF - #F8EADC".into()],
+                vec!["Kecamatan".into(), "2021".into(), "2025".into()],
+                vec!["Cikampek".into(), "10".into(), "30".into()],
+                vec!["Karawang".into(), "25".into(), "65".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_table_footer: true,
+            card2_color_theme: 0, // default is 0, but metadata overrides to #F3D2AF - #F8EADC
+            card2_placement: 1,
+            card2_style: 3,
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "Table insertion failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item =
+            spread.items.iter().find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty())).unwrap();
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        // 1 header row + 1 col numbers row + 2 data rows = 4 rows
+        assert_eq!(table.rows.len(), 4);
+
+        // Header row must have #F3D2AF
+        assert_eq!(table.cell(0, 0).unwrap().fill, "#F3D2AF");
+        // Col number row must have #F8EADC
+        assert_eq!(table.cell(1, 0).unwrap().fill, "#F8EADC");
+        // Interior data row must have NONE
+        assert_eq!(table.cell(2, 0).unwrap().fill, designcraft_color::swatch::NONE);
+        // Footer row must have #F3D2AF
+        assert_eq!(table.cell(3, 0).unwrap().fill, "#F3D2AF");
+    }
+
+    #[test]
+    fn test_execute_insert_table_bilingual_english_italic() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Kecamatan / District".into(), "Luas / Area".into(), "Keterangan\nDescription".into()],
+                vec!["Cikampek".into(), "10".into(), "Aktif / Active".into()],
+                vec!["Karawang".into(), "25".into(), "Selesai / Finished".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: false,
+            card2_table_footer: false,
+            card2_placement: 1,
+            card2_style: 3,
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "Table insertion failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item =
+            spread.items.iter().find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty())).unwrap();
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        // Check Header Cell (0, 0): "Kecamatan / District"
+        let cell_0_0 = table.cell(0, 0).unwrap();
+        assert_eq!(cell_0_0.text.text, "Kecamatan / District");
+        // "Kecamatan / " is upright (not italic)
+        let fmt_id = cell_0_0.text.char_format_of(0);
+        assert_ne!(fmt_id.over.font_style.as_deref(), Some("Italic"));
+        assert_ne!(fmt_id.over.font_style.as_deref(), Some("Bold Italic"));
+        // "District" (starting at byte 12) must be Italic / Bold Italic
+        let fmt_en = cell_0_0.text.char_format_of(12);
+        let en_style = fmt_en.over.font_style.as_deref().unwrap_or("");
+        assert!(en_style.contains("Italic"), "English text 'District' must be italic, got: {en_style}");
+
+        // Check Data Cell (1, 2): "Aktif / Active"
+        let cell_1_2 = table.cell(1, 2).unwrap();
+        assert_eq!(cell_1_2.text.text, "Aktif / Active");
+        let fmt_aktif = cell_1_2.text.char_format_of(0);
+        assert_ne!(fmt_aktif.over.font_style.as_deref(), Some("Italic"));
+        let fmt_active = cell_1_2.text.char_format_of(8);
+        let active_style = fmt_active.over.font_style.as_deref().unwrap_or("");
+        assert!(active_style.contains("Italic"), "English text 'Active' must be italic, got: {active_style}");
+
+        // Check Cell with line break (0, 2): "Keterangan\u{2028}Description"
+        let cell_0_2 = table.cell(0, 2).unwrap();
+        let desc_byte = cell_0_2.text.text.find("Description").unwrap();
+        let fmt_desc = cell_0_2.text.char_format_of(desc_byte);
+        let desc_style = fmt_desc.over.font_style.as_deref().unwrap_or("");
+        assert!(desc_style.contains("Italic"), "Line 2 English text 'Description' must be italic, got: {desc_style}");
+    }
+
+    #[test]
+    fn test_execute_insert_table_with_theme_from_div_csv() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // Simulate CSV generated with theme row from DIV sheet (table_theme: #9E7EB5 - #C4A4DA)
+        let matrix = vec![
+            vec!["Kecamatan / District".into(), "Luas / Area".into()],
+            vec!["Karawang Timur".into(), "32.5".into()],
+            vec!["Jumlah / Total".into(), "32.5".into()],
+            vec!["theme".into(), "#9E7EB5 - #C4A4DA".into()],
+        ];
+
+        let st = PubgenState {
+            card2_matrix: matrix,
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_table_footer: true,
+            card2_placement: 1,
+            card2_style: 3,
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "Table insertion failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item =
+            spread.items.iter().find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty())).unwrap();
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        // 4 rows in table (metadata theme row was stripped):
+        // Row 0: Header (fill = #9E7EB5)
+        // Row 1: Col numbers (fill = #C4A4DA)
+        // Row 2: Data row (fill = NONE)
+        // Row 3: Footer row (fill = #9E7EB5)
+        assert_eq!(table.rows.len(), 4);
+        assert_eq!(table.cell(0, 0).unwrap().fill, "#9E7EB5");
+        assert_eq!(table.cell(1, 0).unwrap().fill, "#C4A4DA");
+        assert_eq!(table.cell(2, 0).unwrap().fill, designcraft_color::swatch::NONE);
+        assert_eq!(table.cell(3, 0).unwrap().fill, "#9E7EB5");
     }
 
     #[test]
@@ -11842,6 +12550,12 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
             app.run("file.new", json!({})).unwrap();
 
+            // Place image1 with boundingBox wrap before placing RTF, matching execute_generate_pages
+            let img1_rect = [margin.x0, margin.y0 + mh * 0.22, margin.x0 + mw * 0.24, margin.y0 + mh * 0.43];
+            let res_img = app.run("frame.create", json!({"spread": 0, "rect": img1_rect, "content": "graphic"})).unwrap();
+            let img_fid = res_img.get("id").and_then(Value::as_u64).unwrap();
+            let _ = app.run("object.textWrap", json!({"mode": "boundingBox", "offset": 6.0, "ids": [img_fid]}));
+
             let rtf_rect = [margin.x0, margin.y0 + 50.0, margin.x1, margin.y1];
             let res = app.run("frame.create", json!({"spread": 0, "rect": rtf_rect, "content": "text", "caret": false})).unwrap();
             let fid = res.get("id").and_then(Value::as_u64).unwrap();
@@ -11881,7 +12595,6 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
                     .filter(|l| l.glyphs.iter().any(|g| g.visible && !g.rendered_char.is_whitespace()))
                     .collect();
 
-                // The last non-empty lines are the signatory block
                 assert!(non_empty_lines.len() >= 4, "Too few lines for {sample}: {}", non_empty_lines.len());
                 let sig_lines = &non_empty_lines[non_empty_lines.len() - 4..];
                 let mut sig_centers = Vec::new();

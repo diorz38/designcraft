@@ -39,6 +39,7 @@ pub struct ExcelCoverData {
     pub image_hero: String,
     pub image_landscape: String,
     pub logo: String,
+    pub table_theme: String,
 }
 
 /// Generated CSV data from conversion.
@@ -334,6 +335,7 @@ pub fn parse_cover_sheet(sheet: &ExcelSheetData) -> ExcelCoverData {
             "image1" | "imagehero" | "image" => &mut cover.image_hero,
             "imagelanscape" | "imagelandscape" | "landscape" => &mut cover.image_landscape,
             "officelogo" | "logo" => &mut cover.logo,
+            "tabletheme" | "theme" | "tablecolor" | "color" | "colortheme" | "warna" => &mut cover.table_theme,
             _ => continue,
         };
         *slot = value;
@@ -394,6 +396,20 @@ pub fn extract_template_from_sheet(sheet: &ExcelSheetData) -> Option<String> {
     for row in &sheet.grid {
         if let Some(tpl) = extract_field_for_keys(row, TEMPLATE_KEYS) {
             return Some(tpl);
+        }
+    }
+    None
+}
+
+/// Keys recognized for custom table color theme selection in Excel sheets.
+pub const THEME_KEYS: &[&str] =
+    &["table_theme", "tabletheme", "theme", "themes", "table_color", "tablecolor", "color", "colortheme", "color_theme", "warna"];
+
+/// Search for an optional table color theme specifier across any row in the sheet grid.
+pub fn extract_theme_from_sheet(sheet: &ExcelSheetData) -> Option<String> {
+    for row in &sheet.grid {
+        if let Some(th) = extract_field_for_keys(row, THEME_KEYS) {
+            return Some(th);
         }
     }
     None
@@ -1027,8 +1043,8 @@ pub fn detect_header_end_row(grid: &[Vec<String>], merges: &[((usize, usize), (u
     end_row.min(header_start_row + 2).min(grid.len().saturating_sub(1))
 }
 
-/// Convert a single worksheet to CSV string with merged headers.
-pub fn worksheet_to_csv(sheet: &ExcelSheetData) -> Option<String> {
+/// Convert a single worksheet to CSV string with merged headers and optional color theme.
+pub fn worksheet_to_csv_with_theme(sheet: &ExcelSheetData, fallback_theme: Option<&str>) -> Option<String> {
     if sheet.grid.is_empty() {
         return None;
     }
@@ -1081,7 +1097,17 @@ pub fn worksheet_to_csv(sheet: &ExcelSheetData) -> Option<String> {
         csv_lines.push(line);
     }
 
+    let effective_theme = extract_theme_from_sheet(sheet).or_else(|| fallback_theme.map(str::to_string));
+    if let Some(th) = effective_theme {
+        csv_lines.push(format!("theme,{}", escape_csv_field(&th)));
+    }
+
     Some(csv_lines.join("\n"))
+}
+
+/// Convert a single worksheet to CSV string with merged headers.
+pub fn worksheet_to_csv(sheet: &ExcelSheetData) -> Option<String> {
+    worksheet_to_csv_with_theme(sheet, None)
 }
 
 struct CatalogEntryItem {
@@ -1095,16 +1121,18 @@ struct CatalogEntryItem {
     image2: Option<String>,
     title_en: Option<String>,
     file_en: Option<String>,
+    theme: Option<String>,
 }
 
 /// Convert multiple Excel sheets into 1 catalog CSV and individual table CSVs.
-/// If any sheet defines a template/divider (e.g. in Row 3), the catalog emits a 5th `template` column.
-/// If no sheet defines a template, the catalog preserves the standard 4-column format `type,number,title,file`.
+/// If any sheet defines a template/divider (e.g. in Row 3), the catalog emits a `template` column.
 /// When bilingual fields (`title_en` on DIV or `file_en` on RXX/BXX) are present, `title_en,file_en` columns are appended.
+/// When a color theme is present (e.g. `table_theme` on DIV or COVER), `theme` column is appended and propagated to tables.
 pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> ExcelConversionResult {
     let mut entries = Vec::new();
     let mut table_csvs = Vec::new();
     let mut cover = None;
+    let mut current_table_theme: Option<String> = None;
 
     for sheet in sheets {
         let sheet_name = sheet.name.trim();
@@ -1112,7 +1140,15 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
 
         // The COVER sheet supplies Publication Cover values, not a catalog page or table.
         if is_cover_sheet(sheet_name) {
-            cover = Some(parse_cover_sheet(sheet));
+            let mut parsed_cover = parse_cover_sheet(sheet);
+            if parsed_cover.table_theme.trim().is_empty() {
+                if let Some(th) = &current_table_theme {
+                    parsed_cover.table_theme = th.clone();
+                }
+            } else {
+                current_table_theme = Some(parsed_cover.table_theme.trim().to_string());
+            }
+            cover = Some(parsed_cover);
             continue;
         }
         if is_ignored_sheet(sheet_name) {
@@ -1123,6 +1159,15 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         if is_divider_sheet(sheet_name)
             && let Some((t_val, n_val, title_val, f_val, tpl_val, ten_val)) = parse_divider_sheet_bilingual(sheet)
         {
+            let div_theme = extract_theme_from_sheet(sheet);
+            if let Some(th) = &div_theme {
+                current_table_theme = Some(th.clone());
+                if let Some(c) = &mut cover
+                    && c.table_theme.trim().is_empty()
+                {
+                    c.table_theme = th.clone();
+                }
+            }
             entries.push(CatalogEntryItem {
                 entry_type: t_val,
                 number: n_val,
@@ -1133,6 +1178,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
                 image2: None,
                 title_en: ten_val,
                 file_en: None,
+                theme: div_theme,
             });
             // DIV sheets are divider spreads, not tabular data
             continue;
@@ -1144,6 +1190,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
             && let Some((t_val, n_val, title_val, f_val, tpl_val, ten_val, fen_val)) = parse_rtf_review_sheet_bilingual(sheet)
         {
             let (image1, image2) = if is_b_sheet(sheet_name) { parse_sheet_images(sheet) } else { (None, None) };
+            let rtf_theme = extract_theme_from_sheet(sheet);
             entries.push(CatalogEntryItem {
                 entry_type: t_val,
                 number: n_val,
@@ -1154,6 +1201,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
                 image2,
                 title_en: ten_val,
                 file_en: fen_val,
+                theme: rtf_theme,
             });
             // Narrative chapters (RTF), not tabular data
             continue;
@@ -1163,6 +1211,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         if is_chart_sheet(sheet_name)
             && let Some((t_val, n_val, title_val, f_val, tpl_val)) = parse_chart_sheet_with_template(sheet)
         {
+            let chart_theme = extract_theme_from_sheet(sheet);
             entries.push(CatalogEntryItem {
                 entry_type: t_val,
                 number: n_val,
@@ -1173,6 +1222,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
                 image2: None,
                 title_en: None,
                 file_en: None,
+                theme: chart_theme,
             });
             // CXX sheets are graphic chart figures, not tabular data
             continue;
@@ -1182,6 +1232,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         if is_note_sheet(sheet_name)
             && let Some((t_val, n_val, title_val, f_val, tpl_val)) = parse_note_sheet_with_template(sheet)
         {
+            let note_theme = extract_theme_from_sheet(sheet);
             entries.push(CatalogEntryItem {
                 entry_type: t_val,
                 number: n_val,
@@ -1192,6 +1243,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
                 image2: None,
                 title_en: None,
                 file_en: None,
+                theme: note_theme,
             });
             // The A02 sheet carries a narrative RTF note, not tabular data
             continue;
@@ -1201,6 +1253,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         let first_row = sheet.grid.first().cloned().unwrap_or_default();
         let (t_val, n_val, title_val, f_val) = parse_catalog_entry(&first_row, &safe_name);
         let tpl_val = extract_template_from_sheet(sheet);
+        let tbl_theme = extract_theme_from_sheet(sheet).or_else(|| current_table_theme.clone());
         entries.push(CatalogEntryItem {
             entry_type: t_val,
             number: n_val,
@@ -1211,10 +1264,11 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
             image2: None,
             title_en: None,
             file_en: None,
+            theme: tbl_theme.clone(),
         });
 
         // 2. Process table data for individual CSV
-        if let Some(table_csv) = worksheet_to_csv(sheet) {
+        if let Some(table_csv) = worksheet_to_csv_with_theme(sheet, tbl_theme.as_deref()) {
             table_csvs.push((format!("{safe_name}.csv"), table_csv));
         }
     }
@@ -1224,68 +1278,44 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
     let has_any_bilingual = entries.iter().any(|e| {
         e.title_en.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false) || e.file_en.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false)
     });
+    let has_any_theme = entries.iter().any(|e| e.theme.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false));
 
+    let mut header_cols = vec!["type", "number", "title", "file"];
+    if has_any_template {
+        header_cols.push("template");
+    }
     if has_any_image {
-        let mut rows = vec![match (has_any_template, has_any_bilingual) {
-            (true, true) => "type,number,title,file,template,image1,image2,title_en,file_en".to_string(),
-            (true, false) => "type,number,title,file,template,image1,image2".to_string(),
-            (false, true) => "type,number,title,file,image1,image2,title_en,file_en".to_string(),
-            (false, false) => "type,number,title,file,image1,image2".to_string(),
-        }];
-        for e in &entries {
-            let base = format!(
-                "{},{},{},{}",
-                escape_csv_field(&e.entry_type),
-                escape_csv_field(&e.number),
-                escape_csv_field(&e.title),
-                escape_csv_field(&e.file),
-            );
-            let base = if has_any_template { format!("{base},{}", escape_csv_field(e.template.as_deref().unwrap_or(""))) } else { base };
-            let with_img =
-                format!("{base},{},{}", escape_csv_field(e.image1.as_deref().unwrap_or("")), escape_csv_field(e.image2.as_deref().unwrap_or("")),);
-            if has_any_bilingual {
-                rows.push(format!(
-                    "{with_img},{},{}",
-                    escape_csv_field(e.title_en.as_deref().unwrap_or("")),
-                    escape_csv_field(e.file_en.as_deref().unwrap_or("")),
-                ));
-            } else {
-                rows.push(with_img);
-            }
-        }
-        return ExcelConversionResult {
-            catalog_csv_name: format!("{base_stem}_catalog.csv"),
-            catalog_csv_content: rows.join("\n"),
-            table_csvs,
-            cover,
-        };
+        header_cols.push("image1");
+        header_cols.push("image2");
+    }
+    if has_any_bilingual {
+        header_cols.push("title_en");
+        header_cols.push("file_en");
+    }
+    if has_any_theme {
+        header_cols.push("theme");
     }
 
-    let mut catalog_rows = Vec::new();
-    match (has_any_template, has_any_bilingual) {
-        (true, true) => catalog_rows.push("type,number,title,file,template,title_en,file_en".to_string()),
-        (true, false) => catalog_rows.push("type,number,title,file,template".to_string()),
-        (false, true) => catalog_rows.push("type,number,title,file,title_en,file_en".to_string()),
-        (false, false) => catalog_rows.push("type,number,title,file".to_string()),
-    }
+    let mut catalog_rows = Vec::with_capacity(1 + entries.len());
+    catalog_rows.push(header_cols.join(","));
+
     for e in &entries {
-        let base = format!(
-            "{},{},{},{}",
-            escape_csv_field(&e.entry_type),
-            escape_csv_field(&e.number),
-            escape_csv_field(&e.title),
-            escape_csv_field(&e.file),
-        );
-        let base = if has_any_template { format!("{base},{}", escape_csv_field(e.template.as_deref().unwrap_or(""))) } else { base };
-        if has_any_bilingual {
-            catalog_rows.push(format!(
-                "{base},{},{}",
-                escape_csv_field(e.title_en.as_deref().unwrap_or("")),
-                escape_csv_field(e.file_en.as_deref().unwrap_or("")),
-            ));
-        } else {
-            catalog_rows.push(base);
+        let mut row_cols = vec![escape_csv_field(&e.entry_type), escape_csv_field(&e.number), escape_csv_field(&e.title), escape_csv_field(&e.file)];
+        if has_any_template {
+            row_cols.push(escape_csv_field(e.template.as_deref().unwrap_or("")));
         }
+        if has_any_image {
+            row_cols.push(escape_csv_field(e.image1.as_deref().unwrap_or("")));
+            row_cols.push(escape_csv_field(e.image2.as_deref().unwrap_or("")));
+        }
+        if has_any_bilingual {
+            row_cols.push(escape_csv_field(e.title_en.as_deref().unwrap_or("")));
+            row_cols.push(escape_csv_field(e.file_en.as_deref().unwrap_or("")));
+        }
+        if has_any_theme {
+            row_cols.push(escape_csv_field(e.theme.as_deref().unwrap_or("")));
+        }
+        catalog_rows.push(row_cols.join(","));
     }
 
     ExcelConversionResult { catalog_csv_name: format!("{base_stem}_catalog.csv"), catalog_csv_content: catalog_rows.join("\n"), table_csvs, cover }
@@ -1414,6 +1444,24 @@ fn read_xlsx_shared_strings(archive: &mut ZipArchive<std::fs::File>) -> Vec<Stri
     shared_strings
 }
 
+/// Clean IEEE 754 floating point artifacts from numeric cell values (e.g. `4.0199999999999996` -> `4.02`).
+pub fn clean_excel_numeric_str(s: &str) -> String {
+    let trimmed = s.trim();
+    if let Some((_int_part, dec_part)) = trimmed.split_once('.') {
+        // If the fractional part has at least 8 digits and contains an artifact run of 00000 or 99999:
+        if dec_part.len() >= 8
+            && (dec_part.contains("99999") || dec_part.contains("00000"))
+            && let Ok(val) = trimmed.parse::<f64>()
+        {
+            let rounded = (val * 1e10).round() / 1e10;
+            let formatted = format!("{rounded:.10}");
+            let cleaned = formatted.trim_end_matches('0').trim_end_matches('.');
+            return if cleaned.is_empty() { "0".to_string() } else { cleaned.to_string() };
+        }
+    }
+    trimmed.to_string()
+}
+
 /// Parse one worksheet XML into a named sheet (cells, merged ranges).
 fn parse_worksheet_xml(sheet_name: String, xml: &str, shared_strings: &[String]) -> ExcelSheetData {
     let mut merges = Vec::new();
@@ -1498,7 +1546,7 @@ fn parse_worksheet_xml(sheet_name: String, xml: &str, shared_strings: &[String])
                             let idx = cur_v.trim().parse::<usize>().unwrap_or(usize::MAX);
                             shared_strings.get(idx).cloned().unwrap_or_default()
                         } else {
-                            cur_v.trim().to_string()
+                            clean_excel_numeric_str(&cur_v)
                         };
                         if !val_str.is_empty() {
                             max_col = max_col.max(c);
@@ -1649,6 +1697,15 @@ pub fn execute_convert_excel(path: &str) -> Result<ConvertedExcelPackage, String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_clean_excel_numeric_str() {
+        assert_eq!(clean_excel_numeric_str("4.0199999999999996"), "4.02");
+        assert_eq!(clean_excel_numeric_str("4.0200000000000005"), "4.02");
+        assert_eq!(clean_excel_numeric_str("1.65"), "1.65");
+        assert_eq!(clean_excel_numeric_str("42"), "42");
+        assert_eq!(clean_excel_numeric_str("hello"), "hello");
+    }
 
     #[test]
     fn test_parse_cell_ref_and_range() {
@@ -2401,5 +2458,65 @@ mod tests {
         ));
         assert!(lines[2].contains("Ulasan,02,BAB 02 PEMERINTAHAN,ulasan_02_id.rtf,,,ulasan_02_en.rtf"));
         assert_eq!(lines[3], "Tabel,02.01,Luas Wilayah / Area,02_01,,,");
+    }
+
+    #[test]
+    fn test_convert_excel_div_table_theme() {
+        // As seen in user image:
+        // Sheet DIV:
+        // A1: title | BAB 01 GEOGRAFI
+        // A2: title_en | Chapter 01 GEOGRAPHY
+        // A3: image | F:\GitHub\designcraft\plan\pubgen\samples\DUAL_LANG\infografik_01.png
+        // A4: template | 002
+        // A5: table_theme | #9E7EB5 - #C4A4DA
+        let cover_sheet = ExcelSheetData {
+            name: "COVER".into(),
+            grid: vec![vec!["title_id".into(), "KECAMATAN KARAWANG TIMUR".into()], vec!["title2".into(), "DALAM ANGKA 2026".into()]],
+            merges: Vec::new(),
+        };
+
+        let div_sheet = ExcelSheetData {
+            name: "DIV".into(),
+            grid: vec![
+                vec!["title".into(), "BAB 01 GEOGRAFI".into()],
+                vec!["title_en".into(), "Chapter 01 GEOGRAPHY".into()],
+                vec!["image".into(), "F:\\GitHub\\designcraft\\plan\\pubgen\\samples\\DUAL_LANG\\infografik_01.png".into()],
+                vec!["template".into(), "002".into()],
+                vec!["table_theme".into(), "#9E7EB5 - #C4A4DA".into()],
+            ],
+            merges: Vec::new(),
+        };
+
+        let tbl_sheet = ExcelSheetData {
+            name: "01_01".into(),
+            grid: vec![
+                vec!["Tabel 01.01 Luas Wilayah / Total Area".into()],
+                vec!["Kecamatan / Subdistrict".into(), "Luas (km2) / Area".into()],
+                vec!["(1)".into(), "(2)".into()],
+                vec!["Karawang Timur".into(), "32.5".into()],
+                vec!["Jumlah / Total".into(), "32.5".into()],
+            ],
+            merges: Vec::new(),
+        };
+
+        let res = convert_excel_to_csv_data(&[cover_sheet, div_sheet, tbl_sheet], "DUAL_LANG_RUN");
+        assert!(res.cover.is_some());
+        let cover = res.cover.unwrap();
+        // Cover inherited table_theme from DIV sheet
+        assert_eq!(cover.table_theme, "#9E7EB5 - #C4A4DA");
+
+        // Catalog CSV includes theme column and propagates to table
+        let lines: Vec<&str> = res.catalog_csv_content.lines().collect();
+        assert_eq!(lines[0], "type,number,title,file,template,title_en,file_en,theme");
+        assert!(lines[1].contains("Divider,01,BAB 01 GEOGRAFI"));
+        assert!(lines[1].ends_with("#9E7EB5 - #C4A4DA"));
+        assert!(lines[2].contains("Tabel,01.01,Luas Wilayah / Total Area,01_01"));
+        assert!(lines[2].ends_with("#9E7EB5 - #C4A4DA"));
+
+        // Table CSV contains theme row
+        assert_eq!(res.table_csvs.len(), 1);
+        let (tbl_name, tbl_content) = &res.table_csvs[0];
+        assert_eq!(tbl_name, "01_01.csv");
+        assert!(tbl_content.contains("theme,#9E7EB5 - #C4A4DA"));
     }
 }
