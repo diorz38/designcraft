@@ -3394,6 +3394,38 @@ pub fn is_index_or_empty(text: &str) -> bool {
     t.is_empty() || t.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | ')' | '(' | '-' | '#'))
 }
 
+/// Check if a cell's string representation represents numeric data, a dash, or a missing data symbol.
+pub fn is_numeric_or_dash(text: &str) -> bool {
+    let t = text.replace('\u{00A0}', " ");
+    let t = t.trim().trim_matches('"').trim_matches('\'').trim();
+    if t.is_empty() {
+        return false;
+    }
+    if matches!(t, "-" | "—" | "–" | "- " | "--" | "−" | "..." | "…" | "N/A" | "n/a" | "NA" | "na") {
+        return true;
+    }
+    let mut clean = t.trim_matches(|c: char| c == '%' || c == '$' || c == '€' || c == '£').trim();
+    if clean.is_empty() {
+        return false;
+    }
+    if clean.starts_with('(') && clean.ends_with(')') && clean.len() > 2 {
+        clean = clean[1..clean.len() - 1].trim();
+    }
+    let clean = clean.replace('−', "-");
+    if clean.parse::<f64>().is_ok() {
+        return true;
+    }
+    let without_commas = clean.replace(',', "");
+    if without_commas.parse::<f64>().is_ok() {
+        return true;
+    }
+    let eu_converted = clean.replace('.', "").replace(',', ".");
+    if eu_converted.parse::<f64>().is_ok() {
+        return true;
+    }
+    false
+}
+
 /// Detect row indices (0-based relative to matrix) matching the summary/break keyword condition.
 pub fn detect_condition_rows(matrix: &[Vec<String>], first_row_header: bool) -> Vec<usize> {
     let start_idx = if first_row_header { 1 } else { 0 };
@@ -6217,11 +6249,71 @@ pub fn execute_insert_table_matrix(
                     }
                 }
 
-                // 3. Center alignment & vertical centering on all header cells
-                let nc = table.ncols();
-                for r in 0..num_header_rows {
-                    for col_idx in 0..nc {
-                        if let Some(cell) = table.cell_mut(r, col_idx) {
+            }
+
+            let nr = table.nrows();
+            let nc = table.ncols();
+
+            let header_rows = if has_merged_headers {
+                num_header_rows
+            } else if st.card2_first_row_header {
+                1
+            } else {
+                0
+            };
+
+            let mut data_start = if header_rows > 0 {
+                if st.card2_col_numbers { header_rows + 1 } else { header_rows }
+            } else if st.card2_col_numbers {
+                1
+            } else {
+                0
+            };
+
+            // Also check if row at data_start is an explicit row of column numbers e.g. (1), (2)...
+            if data_start < nr && !st.card2_col_numbers && nc > 0 {
+                let is_explicit_col_num = (0..nc).all(|c| {
+                    table.cell(data_start, c).map(|cell| {
+                        let t = cell.text.text.trim();
+                        t == format!("({})", c + 1) || t == format!("{}", c + 1)
+                    }).unwrap_or(false)
+                });
+                if is_explicit_col_num {
+                    data_start += 1;
+                }
+            }
+
+            // 1. All table header rows and row number / column numbers row are center-aligned
+            for r in 0..data_start.min(nr) {
+                for col_idx in 0..nc {
+                    if let Some(cell) = table.cell_mut(r, col_idx) {
+                        cell.vj = designcraft_doc::VerticalJustification::Center;
+                        for p in &mut cell.text.paras {
+                            p.para.align = Some(designcraft_doc::Align::Center);
+                        }
+                        cell.text.rev += 1;
+                    }
+                }
+            }
+
+            // 2. For data rows, except col 1 (index 0), check if majority cell contains numeric or "-" -> set column to align center
+            for c in 1..nc {
+                let mut total_non_empty = 0usize;
+                let mut numeric_or_dash_count = 0usize;
+                for r in data_start..nr {
+                    if let Some(cell) = table.cell(r, c) {
+                        let txt = cell.text.text.trim();
+                        if !txt.is_empty() {
+                            total_non_empty += 1;
+                            if is_numeric_or_dash(txt) {
+                                numeric_or_dash_count += 1;
+                            }
+                        }
+                    }
+                }
+                if total_non_empty > 0 && numeric_or_dash_count * 2 >= total_non_empty {
+                    for r in data_start..nr {
+                        if let Some(cell) = table.cell_mut(r, c) {
                             cell.vj = designcraft_doc::VerticalJustification::Center;
                             for p in &mut cell.text.paras {
                                 p.para.align = Some(designcraft_doc::Align::Center);
@@ -6240,9 +6332,6 @@ pub fn execute_insert_table_matrix(
                 table.options.column_strokes = None;
                 table.options.alt_rows = None;
                 table.options.alt_cols = None;
-
-                let nr = table.nrows();
-                let nc = table.ncols();
 
                 // Clear all cell strokes and set border_overrides so no default or table borders show
                 for cell in &mut table.cells {
@@ -6266,14 +6355,6 @@ pub fn execute_insert_table_matrix(
                         tint: 1.0,
                         kind: designcraft_doc::StrokeType::Solid,
                         ..Default::default()
-                    };
-
-                    let header_rows = if has_merged_headers {
-                        num_header_rows
-                    } else if st.card2_first_row_header {
-                        1
-                    } else {
-                        0
                     };
                     if header_rows > 0 {
                         // Top of header (row 0 top)
@@ -9716,6 +9797,132 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         // Row 7: "Jumlah Total" (last row)
         assert_eq!(table.cell(7, 0).unwrap().strokes[0].weight, 0.5);
         assert_eq!(table.cell(7, 0).unwrap().strokes[2].weight, 1.0);
+    }
+
+    #[test]
+    fn test_is_numeric_or_dash() {
+        // Dashes and missing data symbols
+        assert!(is_numeric_or_dash("-"));
+        assert!(is_numeric_or_dash("—"));
+        assert!(is_numeric_or_dash("–"));
+        assert!(is_numeric_or_dash("- "));
+        assert!(is_numeric_or_dash("--"));
+        assert!(is_numeric_or_dash("−"));
+        assert!(is_numeric_or_dash("..."));
+        assert!(is_numeric_or_dash("…"));
+        assert!(is_numeric_or_dash("N/A"));
+        assert!(is_numeric_or_dash("n/a"));
+        assert!(is_numeric_or_dash("NA"));
+        assert!(is_numeric_or_dash("na"));
+
+        // Integers and floats
+        assert!(is_numeric_or_dash("0"));
+        assert!(is_numeric_or_dash("7"));
+        assert!(is_numeric_or_dash("4.02"));
+        assert!(is_numeric_or_dash("1.65"));
+        assert!(is_numeric_or_dash("-12.5"));
+        assert!(is_numeric_or_dash("−12.5"));
+        assert!(is_numeric_or_dash("100"));
+
+        // Accounting parentheses
+        assert!(is_numeric_or_dash("(12.5)"));
+        assert!(is_numeric_or_dash("(100)"));
+
+        // Thousands and European / Indonesian formats
+        assert!(is_numeric_or_dash("1,234.56"));
+        assert!(is_numeric_or_dash("1.234,56"));
+        assert!(is_numeric_or_dash("1,000"));
+
+        // Percentages
+        assert!(is_numeric_or_dash("21.32%"));
+        assert!(is_numeric_or_dash("100%"));
+
+        // Text strings (must return false)
+        assert!(!is_numeric_or_dash(""));
+        assert!(!is_numeric_or_dash("   "));
+        assert!(!is_numeric_or_dash("Warungbambu"));
+        assert!(!is_numeric_or_dash("Desa / Village"));
+        assert!(!is_numeric_or_dash("Jumlah"));
+        assert!(!is_numeric_or_dash("Total"));
+        assert!(!is_numeric_or_dash("Plawad"));
+    }
+
+    #[test]
+    fn test_execute_insert_table_header_and_col_alignments() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Desa/Kelurahan".into(), "Luas Wilayah".into(), "Persentase".into(), "Keterangan".into()],
+                vec!["Warungbambu".into(), "1.65".into(), "21.32".into(), "Valid".into()],
+                vec!["Kondangjaya".into(), "2.44".into(), "8.84".into(), "Valid".into()],
+                vec!["Tegalsawah".into(), "-".into(), "13.48".into(), "Special".into()],
+                vec!["Total".into(), "4.09".into(), "43.64".into(), "Summary".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_placement: 1, // New frame
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "Table insertion failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .unwrap();
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        // 1 header row + 1 column number row + 4 data rows = 6 rows
+        assert_eq!(table.rows.len(), 6);
+        assert_eq!(table.columns.len(), 4);
+
+        // Row 0: Table Header -> all cells must be Center aligned and VerticalJustification::Center
+        for c in 0..4 {
+            let cell = table.cell(0, c).unwrap();
+            assert_eq!(cell.vj, designcraft_doc::VerticalJustification::Center, "Header col {c} vj should be Center");
+            assert_eq!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Header col {c} align should be Center");
+        }
+
+        // Row 1: Column number row (1), (2), (3), (4) -> all cells must be Center aligned
+        for c in 0..4 {
+            let cell = table.cell(1, c).unwrap();
+            assert_eq!(cell.vj, designcraft_doc::VerticalJustification::Center, "Col number {c} vj should be Center");
+            assert_eq!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Col number {c} align should be Center");
+        }
+
+        // Data rows (rows 2..6):
+        // Col 0: Column 1 (index 0) is excluded from centering -> align should NOT be Center
+        for r in 2..6 {
+            let cell = table.cell(r, 0).unwrap();
+            assert_ne!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Data row {r} col 0 should remain left aligned");
+        }
+
+        // Col 1: Majority numeric / dash ("1.65", "2.44", "-", "4.09") -> must be Center aligned
+        for r in 2..6 {
+            let cell = table.cell(r, 1).unwrap();
+            assert_eq!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Data row {r} col 1 should be Center aligned");
+        }
+
+        // Col 2: All numeric ("21.32", "8.84", "13.48", "43.64") -> must be Center aligned
+        for r in 2..6 {
+            let cell = table.cell(r, 2).unwrap();
+            assert_eq!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Data row {r} col 2 should be Center aligned");
+        }
+
+        // Col 3: Text descriptions ("Valid", "Special", "Summary") -> must NOT be Center aligned
+        for r in 2..6 {
+            let cell = table.cell(r, 3).unwrap();
+            assert_ne!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Data row {r} col 3 should remain left aligned");
+        }
     }
 
     #[test]
