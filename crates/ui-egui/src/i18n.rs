@@ -4481,6 +4481,7 @@ fn column(lang: &str) -> Option<usize> {
 }
 
 /// `s` in `lang` (English, or the string itself, when there's no translation).
+pub fn tr<'a>(lang: &str, s: &'a str) -> &'a str {
     let text = lookup(lang, s);
     // An empty row is a translation nobody has written yet.
     if text.trim().is_empty() { s } else { text }
