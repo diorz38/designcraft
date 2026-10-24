@@ -6214,6 +6214,9 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                             if execute_page_from_rtf(app, &mut st_copy, &rtf_path_str).is_ok() {
                                 inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
                                 placed_rtf_fid = Some(fid);
+                                if !has_chapter_prefix {
+                                    harmonize_signatory_block(app, fid, margin);
+                                }
                             }
                         }
                     }
@@ -6313,6 +6316,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         if execute_page_from_rtf(app, &mut st_copy, &rtf_path_str).is_ok() {
                             inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
                             placed_en_rtf_fid = Some(fid);
+                            harmonize_signatory_block(app, fid, en_margin);
                         }
                     }
                     let end_page = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(en_page_idx);
@@ -7206,10 +7210,95 @@ fn place_catalog_image(
     let _ = app.run("selection.set", json!({"ids": [fid]}));
     let _ = app.run("file.place", json!({"path": img.to_string_lossy(), "frame": fid}));
     let _ = app.run("object.fit", json!({"mode": "fitProportionally", "ids": [fid]}));
-    if wrap != "none" {
+    if wrap == "none" {
+        let _ = app.run("object.textWrap", json!({"mode": "none", "ids": [fid]}));
+        let _ = app.run("object.textWrap", json!({"mode": "none", "content": true, "ids": [fid]}));
+        let _ = app.session.edit(|doc, _| {
+            if let Some(it) = doc.item_mut(designcraft_doc::ItemId(fid)) {
+                it.wrap.mode = designcraft_doc::WrapMode::None;
+                if let designcraft_doc::Content::Graphic(g) = &mut it.content {
+                    g.wrap.mode = designcraft_doc::WrapMode::None;
+                }
+            }
+            Ok(serde_json::Value::Null)
+        });
+    } else {
         let _ = app.run("object.textWrap", json!({"mode": wrap, "offset": 6.0, "ids": [fid]}));
     }
     Some(fid)
+}
+
+/// Harmonizes indentation and alignment of the signatory block at the end of narrative text
+/// (e.g. Kata Pengantar / Preface) so that all signatory lines (date, office, title, name)
+/// share identical center alignment and are not placed too close to the page right edge.
+fn harmonize_signatory_block(app: &mut DesignApp, fid: u64, margin: designcraft_geom::Rect) {
+    let Some(sid) = story_of_frame(app, fid) else {
+        return;
+    };
+    let mw = (margin.x1 - margin.x0).max(100.0);
+    // Position the signatory block in the right-hand portion of the page with breathing room
+    // from the right margin (at least 36pt buffer from the page right margin).
+    let sig_left_indent = (mw * 0.44).round();
+    let sig_right_indent = 36.0_f64;
+
+    let _ = app.session.edit(|doc, _| {
+        let Some(story) = doc.story_mut(sid) else {
+            return Ok(serde_json::Value::Null);
+        };
+        let ranges = story.para_ranges();
+        if ranges.is_empty() {
+            return Ok(serde_json::Value::Null);
+        }
+
+        // Find the last non-empty paragraph (signatory name line).
+        let mut last_non_empty = None;
+        for (i, r) in ranges.iter().enumerate().rev() {
+            let t = story.text[r.clone()].trim();
+            if !t.is_empty() {
+                last_non_empty = Some(i);
+                break;
+            }
+        }
+        let Some(last_pi) = last_non_empty else {
+            return Ok(serde_json::Value::Null);
+        };
+
+        // Walk backwards to find the start of the signatory block.
+        let mut start_pi = last_pi;
+        for i in (0..last_pi).rev() {
+            let t = story.text[ranges[i].clone()].trim();
+            let is_sig_line = t.is_empty()
+                || t.contains("Karawang")
+                || t.contains("Kepala")
+                || t.contains("Head of")
+                || t.contains("Regency")
+                || t.contains("Office")
+                || t.contains("BPS")
+                || (t.contains(',') && (t.contains("202") || t.contains("203")))
+                || story.paras[i].para.left_indent.unwrap_or(0.0) > 80.0;
+            if is_sig_line {
+                start_pi = i;
+            } else {
+                break;
+            }
+        }
+
+        for (pi, p) in story.paras.iter_mut().enumerate() {
+            if pi >= start_pi && pi <= last_pi {
+                p.para.align = Some(designcraft_doc::Align::Center);
+                p.para.left_indent = Some(sig_left_indent);
+                p.para.right_indent = Some(sig_right_indent);
+                p.para.first_line_indent = Some(0.0);
+                p.para.last_line_indent = Some(0.0);
+                if pi == last_pi {
+                    let cur_sb = p.para.space_before.unwrap_or(0.0);
+                    p.para.space_before = Some(cur_sb.max(36.0));
+                }
+            }
+        }
+
+        Ok(serde_json::Value::Null)
+    });
 }
 
 /// Computes the dynamic placement rect for the signature (`image2`) anchored to the signatory
@@ -7276,16 +7365,16 @@ fn compute_signature_placement(
     let (y0, y1) = if let Some(pby) = prev_baseline_y {
         let gap = spread_last_baseline_y - pby;
         if gap > 35.0 {
-            let h = (gap * 0.95).clamp(50.0, 75.0);
+            let h = (gap * 0.95).clamp(45.0, 65.0);
             let bottom = spread_last_baseline_y - 6.0;
             (bottom - h, bottom)
         } else {
-            let h = 65.0;
+            let h = 50.0;
             let bottom = spread_last_baseline_y - 6.0;
             (bottom - h, bottom)
         }
     } else {
-        let h = 65.0;
+        let h = 50.0;
         let bottom = spread_last_baseline_y - 6.0;
         (bottom - h, bottom)
     };
@@ -7293,8 +7382,10 @@ fn compute_signature_placement(
     let mut x0 = spread_center_x - img_w / 2.0;
     let mut x1 = spread_center_x + img_w / 2.0;
 
-    if x1 > margin.x1 {
-        let shift = x1 - margin.x1;
+    // Ensure image2 never hugs the right margin too closely (keep at least 20pt buffer)
+    let max_allowed_x1 = margin.x1 - 20.0;
+    if x1 > max_allowed_x1 {
+        let shift = x1 - max_allowed_x1;
         x0 -= shift;
         x1 -= shift;
     }
@@ -13226,31 +13317,74 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let (mw, mh) = (margin.x1 - margin.x0, margin.y1 - margin.y0);
         let default_img2_rect = [margin.x1 - mw * 0.244, margin.y0 + mh * 0.354, margin.x1 - mw * 0.044, margin.y0 + mh * 0.464];
 
-        // Create a text frame for the Kata Pengantar RTF
-        let rtf_rect = [margin.x0, margin.y0 + 50.0, margin.x1, margin.y1];
-        let res = app.run("frame.create", json!({"spread": 0, "rect": rtf_rect, "content": "text", "caret": false})).unwrap();
-        let fid = res.get("id").and_then(Value::as_u64).unwrap();
-        let _ = app.run("selection.set", json!({"ids": [fid]}));
+        for sample in ["B01.rtf", "B01_en.rtf"] {
+            let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({})).unwrap();
 
-        let mut st = PubgenState::default();
-        let rtf_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plan/pubgen/samples/DUAL_LANG/B01.rtf");
-        if std::path::Path::new(rtf_path).exists() {
-            let place_res = execute_page_from_rtf(&mut app, &mut st, rtf_path);
-            assert!(place_res.is_ok(), "execute_page_from_rtf should place B01.rtf: {place_res:?}");
+            let rtf_rect = [margin.x0, margin.y0 + 50.0, margin.x1, margin.y1];
+            let res = app.run("frame.create", json!({"spread": 0, "rect": rtf_rect, "content": "text", "caret": false})).unwrap();
+            let fid = res.get("id").and_then(Value::as_u64).unwrap();
+            let _ = app.run("selection.set", json!({"ids": [fid]}));
 
-            let (target_spread, img2_rect) = compute_signature_placement(&app, fid, default_img2_rect, 0, margin);
-            assert_eq!(target_spread, 0);
+            let mut st = PubgenState::default();
+            let rtf_path = format!("{}/../../plan/pubgen/samples/DUAL_LANG/{}", env!("CARGO_MANIFEST_DIR"), sample);
+            if std::path::Path::new(&rtf_path).exists() {
+                let place_res = execute_page_from_rtf(&mut app, &mut st, &rtf_path);
+                assert!(place_res.is_ok(), "execute_page_from_rtf should place {sample}: {place_res:?}");
 
-            // The dynamic signature rect must be anchored down near the signatory block at the bottom
-            // of the text, significantly lower than the default static position (~308pt).
-            assert!(
-                img2_rect[1] > default_img2_rect[1] + 50.0,
-                "Dynamic signature y0 ({}) should be anchored lower than default ({})",
-                img2_rect[1],
-                default_img2_rect[1]
-            );
-            assert!(img2_rect[1] >= margin.y0 && img2_rect[3] <= margin.y1);
-            assert!(img2_rect[0] >= margin.x0 && img2_rect[2] <= margin.x1);
+                harmonize_signatory_block(&mut app, fid, margin);
+
+                let (target_spread, img2_rect) = compute_signature_placement(&app, fid, default_img2_rect, 0, margin);
+                assert_eq!(target_spread, 0);
+
+                // The dynamic signature rect must be anchored down near the signatory block at the bottom
+                // of the text, significantly lower than the default static position (~308pt).
+                assert!(
+                    img2_rect[1] > default_img2_rect[1] + 50.0,
+                    "Dynamic signature y0 ({}) should be anchored lower than default ({}) for {sample}",
+                    img2_rect[1],
+                    default_img2_rect[1]
+                );
+                assert!(img2_rect[1] >= margin.y0 && img2_rect[3] <= margin.y1);
+                assert!(img2_rect[0] >= margin.x0 && img2_rect[2] <= margin.x1 - 20.0, "Signature must not hug right page edge for {sample}");
+
+                // Verify composed lines: all signatory lines must be well away from the right margin
+                // and must share consistent horizontal centering.
+                let active = app.session.active().unwrap();
+                let sid = story_of_frame(&app, fid).unwrap();
+                let cs = designcraft_compose::compose_story(&active.doc, sid, &Default::default());
+                let non_empty_lines: Vec<&designcraft_compose::Line> = cs
+                    .frames
+                    .iter()
+                    .flat_map(|f| &f.lines)
+                    .filter(|l| l.glyphs.iter().any(|g| g.visible && !g.rendered_char.is_whitespace()))
+                    .collect();
+
+                // The last non-empty lines are the signatory block
+                assert!(non_empty_lines.len() >= 4, "Too few lines for {sample}: {}", non_empty_lines.len());
+                let sig_lines = &non_empty_lines[non_empty_lines.len() - 4..];
+                let mut sig_centers = Vec::new();
+                for l in sig_lines {
+                    let min_x = l.glyphs.iter().filter(|g| g.visible && !g.rendered_char.is_whitespace()).map(|g| g.x).fold(f64::INFINITY, f64::min);
+                    let max_x = l
+                        .glyphs
+                        .iter()
+                        .filter(|g| g.visible && !g.rendered_char.is_whitespace())
+                        .map(|g| g.x + g.adv)
+                        .fold(f64::NEG_INFINITY, f64::max);
+                    assert!(
+                        max_x <= margin.x1 - 25.0,
+                        "Signatory line max_x ({max_x}) must not be too close to margin.x1 ({}) in {sample}",
+                        margin.x1
+                    );
+                    sig_centers.push((min_x + max_x) / 2.0);
+                }
+                // All signatory lines must share matching center alignment (within 3 points)
+                let avg_center: f64 = sig_centers.iter().sum::<f64>() / sig_centers.len() as f64;
+                for &c in &sig_centers {
+                    assert!((c - avg_center).abs() < 3.0, "Signatory line center ({c}) does not match average center ({avg_center}) in {sample}");
+                }
+            }
         }
     }
 
