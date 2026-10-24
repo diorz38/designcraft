@@ -6,7 +6,7 @@ use egui::{Color32, Sense, Stroke, vec2};
 use crate::theme::{Tokens, semibold};
 use crate::{DesignApp, icons, panels};
 
-#[path = "panels/pubgen.rs"]
+#[path = "panels/pubgen/mod.rs"]
 pub mod pubgen;
 
 /// (id, label, icon) of the tabs in the expanded group.

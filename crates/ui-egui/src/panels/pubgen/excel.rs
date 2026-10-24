@@ -1291,13 +1291,10 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
     ExcelConversionResult { catalog_csv_name: format!("{base_stem}_catalog.csv"), catalog_csv_content: catalog_rows.join("\n"), table_csvs, cover }
 }
 
-/// Parse all worksheets from an `.xlsx` file using `zip` and `quick-xml`.
-pub fn parse_xlsx_sheets(path: &str) -> Result<Vec<ExcelSheetData>, String> {
-    let file = std::fs::File::open(path).map_err(|e| format!("Cannot open file '{path}': {e}"))?;
-    let mut archive = ZipArchive::new(file).map_err(|e| format!("Invalid XLSX archive '{path}': {e}"))?;
-
-    // 1. Read xl/_rels/workbook.xml.rels to resolve relationship IDs
+/// Read `xl/_rels/workbook.xml.rels`: relationship id → zip path (normalized to `xl/…`).
+fn read_xlsx_rels(archive: &mut ZipArchive<std::fs::File>) -> HashMap<String, String> {
     let mut rels: HashMap<String, String> = HashMap::new();
+    // 1. Read xl/_rels/workbook.xml.rels to resolve relationship IDs
     if let Ok(mut r_file) = archive.by_name("xl/_rels/workbook.xml.rels") {
         let mut xml = String::new();
         let _ = r_file.read_to_string(&mut xml);
@@ -1335,8 +1332,11 @@ pub fn parse_xlsx_sheets(path: &str) -> Result<Vec<ExcelSheetData>, String> {
             buf.clear();
         }
     }
+    rels
+}
 
-    // 2. Read xl/workbook.xml to extract sheet list and targets
+/// Read `xl/workbook.xml`: sheet name → worksheet zip path (falls back to the positional name).
+fn read_xlsx_sheet_list(archive: &mut ZipArchive<std::fs::File>, rels: &HashMap<String, String>) -> Vec<(String, String)> {
     let mut sheets_to_load: Vec<(String, String)> = Vec::new();
     if let Ok(mut wb_file) = archive.by_name("xl/workbook.xml") {
         let mut xml = String::new();
@@ -1370,11 +1370,11 @@ pub fn parse_xlsx_sheets(path: &str) -> Result<Vec<ExcelSheetData>, String> {
         }
     }
 
-    if sheets_to_load.is_empty() {
-        return Err("No sheets found in workbook".into());
-    }
+    sheets_to_load
+}
 
-    // 3. Read xl/sharedStrings.xml (shared string table)
+/// Read `xl/sharedStrings.xml` into the shared string table.
+fn read_xlsx_shared_strings(archive: &mut ZipArchive<std::fs::File>) -> Vec<String> {
     let mut shared_strings: Vec<String> = Vec::new();
     if let Ok(mut ss_file) = archive.by_name("xl/sharedStrings.xml") {
         let mut xml = String::new();
@@ -1411,6 +1411,136 @@ pub fn parse_xlsx_sheets(path: &str) -> Result<Vec<ExcelSheetData>, String> {
             buf.clear();
         }
     }
+    shared_strings
+}
+
+/// Parse one worksheet XML into a named sheet (cells, merged ranges).
+fn parse_worksheet_xml(sheet_name: String, xml: &str, shared_strings: &[String]) -> ExcelSheetData {
+    let mut merges = Vec::new();
+    let mut cell_map: HashMap<(usize, usize), String> = HashMap::new();
+    let mut max_row = 0usize;
+    let mut max_col = 0usize;
+
+    let mut reader = quick_xml::Reader::from_str(xml);
+    reader.config_mut().trim_text(false);
+    let mut buf = Vec::new();
+
+    let mut cur_coord: Option<(usize, usize)> = None;
+    let mut cur_type = String::new();
+    let mut inside_v = false;
+    let mut inside_inline_t = false;
+    let mut cur_v = String::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(quick_xml::events::Event::Empty(ref e)) => {
+                if e.name().local_name().as_ref() == b"mergeCell" {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.local_name().as_ref() == b"ref" {
+                            let ref_str = String::from_utf8_lossy(&attr.value);
+                            if let Some(range) = parse_range(&ref_str) {
+                                merges.push(range);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(quick_xml::events::Event::Start(ref e)) => match e.name().local_name().as_ref() {
+                b"mergeCell" => {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.local_name().as_ref() == b"ref" {
+                            let ref_str = String::from_utf8_lossy(&attr.value);
+                            if let Some(range) = parse_range(&ref_str) {
+                                merges.push(range);
+                            }
+                        }
+                    }
+                }
+                b"c" => {
+                    cur_v.clear();
+                    cur_type.clear();
+                    cur_coord = None;
+                    for attr in e.attributes().flatten() {
+                        if attr.key.local_name().as_ref() == b"r" {
+                            let r_val = String::from_utf8_lossy(&attr.value);
+                            cur_coord = parse_cell_ref(&r_val);
+                        } else if attr.key.local_name().as_ref() == b"t" {
+                            cur_type = String::from_utf8_lossy(&attr.value).to_string();
+                        }
+                    }
+                }
+                b"v" => {
+                    inside_v = true;
+                    cur_v.clear();
+                }
+                b"t" if cur_coord.is_some() => {
+                    inside_inline_t = true;
+                }
+                _ => {}
+            },
+            Ok(quick_xml::events::Event::Text(ref t)) => {
+                if (inside_v || inside_inline_t)
+                    && let Ok(txt) = t.decode()
+                {
+                    cur_v.push_str(&txt);
+                }
+            }
+            Ok(quick_xml::events::Event::End(ref e)) => match e.name().local_name().as_ref() {
+                b"v" => {
+                    inside_v = false;
+                }
+                b"t" => {
+                    inside_inline_t = false;
+                }
+                b"c" => {
+                    if let Some((c, r)) = cur_coord {
+                        let val_str = if cur_type == "s" {
+                            let idx = cur_v.trim().parse::<usize>().unwrap_or(usize::MAX);
+                            shared_strings.get(idx).cloned().unwrap_or_default()
+                        } else {
+                            cur_v.trim().to_string()
+                        };
+                        if !val_str.is_empty() {
+                            max_col = max_col.max(c);
+                            max_row = max_row.max(r);
+                            cell_map.insert((c, r), val_str);
+                        }
+                    }
+                    cur_coord = None;
+                    cur_v.clear();
+                }
+                _ => {}
+            },
+            Ok(quick_xml::events::Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    // Build 2D grid
+    let num_rows = if cell_map.is_empty() { 0 } else { max_row + 1 };
+    let num_cols = if cell_map.is_empty() { 0 } else { max_col + 1 };
+    let mut grid = vec![vec![String::new(); num_cols]; num_rows];
+    for ((c, r), val) in cell_map {
+        if r < num_rows && c < num_cols {
+            grid[r][c] = val;
+        }
+    }
+
+    ExcelSheetData { name: sheet_name, grid, merges }
+}
+
+/// Parse all worksheets from an `.xlsx` file using `zip` and `quick-xml`.
+pub fn parse_xlsx_sheets(path: &str) -> Result<Vec<ExcelSheetData>, String> {
+    let file = std::fs::File::open(path).map_err(|e| format!("Cannot open file '{path}': {e}"))?;
+    let mut archive = ZipArchive::new(file).map_err(|e| format!("Invalid XLSX archive '{path}': {e}"))?;
+
+    let rels = read_xlsx_rels(&mut archive);
+    let sheets_to_load = read_xlsx_sheet_list(&mut archive, &rels);
+    if sheets_to_load.is_empty() {
+        return Err("No sheets found in workbook".into());
+    }
+    let shared_strings = read_xlsx_shared_strings(&mut archive);
 
     // 4. Read each worksheet
     let mut result_sheets = Vec::new();
@@ -1420,119 +1550,7 @@ pub fn parse_xlsx_sheets(path: &str) -> Result<Vec<ExcelSheetData>, String> {
         };
         let mut xml = String::new();
         let _ = ws_file.read_to_string(&mut xml);
-
-        let mut merges = Vec::new();
-        let mut cell_map: HashMap<(usize, usize), String> = HashMap::new();
-        let mut max_row = 0usize;
-        let mut max_col = 0usize;
-
-        let mut reader = quick_xml::Reader::from_str(&xml);
-        reader.config_mut().trim_text(false);
-        let mut buf = Vec::new();
-
-        let mut cur_coord: Option<(usize, usize)> = None;
-        let mut cur_type = String::new();
-        let mut inside_v = false;
-        let mut inside_inline_t = false;
-        let mut cur_v = String::new();
-
-        loop {
-            match reader.read_event_into(&mut buf) {
-                Ok(quick_xml::events::Event::Empty(ref e)) => {
-                    if e.name().local_name().as_ref() == b"mergeCell" {
-                        for attr in e.attributes().flatten() {
-                            if attr.key.local_name().as_ref() == b"ref" {
-                                let ref_str = String::from_utf8_lossy(&attr.value);
-                                if let Some(range) = parse_range(&ref_str) {
-                                    merges.push(range);
-                                }
-                            }
-                        }
-                    }
-                }
-                Ok(quick_xml::events::Event::Start(ref e)) => match e.name().local_name().as_ref() {
-                    b"mergeCell" => {
-                        for attr in e.attributes().flatten() {
-                            if attr.key.local_name().as_ref() == b"ref" {
-                                let ref_str = String::from_utf8_lossy(&attr.value);
-                                if let Some(range) = parse_range(&ref_str) {
-                                    merges.push(range);
-                                }
-                            }
-                        }
-                    }
-                    b"c" => {
-                        cur_v.clear();
-                        cur_type.clear();
-                        cur_coord = None;
-                        for attr in e.attributes().flatten() {
-                            if attr.key.local_name().as_ref() == b"r" {
-                                let r_val = String::from_utf8_lossy(&attr.value);
-                                cur_coord = parse_cell_ref(&r_val);
-                            } else if attr.key.local_name().as_ref() == b"t" {
-                                cur_type = String::from_utf8_lossy(&attr.value).to_string();
-                            }
-                        }
-                    }
-                    b"v" => {
-                        inside_v = true;
-                        cur_v.clear();
-                    }
-                    b"t" if cur_coord.is_some() => {
-                        inside_inline_t = true;
-                    }
-                    _ => {}
-                },
-                Ok(quick_xml::events::Event::Text(ref t)) => {
-                    if (inside_v || inside_inline_t)
-                        && let Ok(txt) = t.decode()
-                    {
-                        cur_v.push_str(&txt);
-                    }
-                }
-                Ok(quick_xml::events::Event::End(ref e)) => match e.name().local_name().as_ref() {
-                    b"v" => {
-                        inside_v = false;
-                    }
-                    b"t" => {
-                        inside_inline_t = false;
-                    }
-                    b"c" => {
-                        if let Some((c, r)) = cur_coord {
-                            let val_str = if cur_type == "s" {
-                                let idx = cur_v.trim().parse::<usize>().unwrap_or(usize::MAX);
-                                shared_strings.get(idx).cloned().unwrap_or_default()
-                            } else {
-                                cur_v.trim().to_string()
-                            };
-                            if !val_str.is_empty() {
-                                max_col = max_col.max(c);
-                                max_row = max_row.max(r);
-                                cell_map.insert((c, r), val_str);
-                            }
-                        }
-                        cur_coord = None;
-                        cur_v.clear();
-                    }
-                    _ => {}
-                },
-                Ok(quick_xml::events::Event::Eof) | Err(_) => break,
-                _ => {}
-            }
-            buf.clear();
-        }
-
-        // Build 2D grid
-        let num_rows = if cell_map.is_empty() { 0 } else { max_row + 1 };
-        let num_cols = if cell_map.is_empty() { 0 } else { max_col + 1 };
-        let mut grid = vec![vec![String::new(); num_cols]; num_rows];
-        for ((c, r), val) in cell_map {
-            if r < num_rows && c < num_cols {
-                grid[r][c] = val;
-            }
-        }
-
-        result_sheets.push(ExcelSheetData { name: sheet_name, grid, merges });
+        result_sheets.push(parse_worksheet_xml(sheet_name, &xml, &shared_strings));
     }
 
     Ok(result_sheets)
