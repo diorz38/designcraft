@@ -4410,7 +4410,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 // placed before RTF placement; `image2` (signature) is anchored dynamically to the signatory block.
                 if !has_chapter_prefix {
                     let img1_rect = [margin.x0, margin.y0 + mh * 0.254, margin.x0 + mw * 0.335, margin.y0 + mh * 0.528];
-                    if place_catalog_image(app, st, row, "image1", spread_idx, img1_rect, "boundingBox").is_some() {
+                    if place_catalog_image(app, st, row, "image1", spread_idx, img1_rect, "none").is_some() {
                         inserted_images_count = inserted_images_count.saturating_add(1);
                     }
                 }
@@ -4519,7 +4519,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     let (mw, mh) = (en_margin.x1 - en_margin.x0, en_margin.y1 - en_margin.y0);
                     // Place image1 before English RTF text so textWrap: "boundingBox" wraps body text around it.
                     let img1_rect = [en_margin.x0, en_margin.y0 + mh * 0.254, en_margin.x0 + mw * 0.335, en_margin.y0 + mh * 0.528];
-                    if place_catalog_image(app, st, row, "image1", en_spread_idx, img1_rect, "boundingBox").is_some() {
+                    if place_catalog_image(app, st, row, "image1", en_spread_idx, img1_rect, "none").is_some() {
                         inserted_images_count = inserted_images_count.saturating_add(1);
                     }
 
@@ -5508,6 +5508,21 @@ fn harmonize_signatory_block(app: &mut DesignApp, fid: u64, margin: designcraft_
             }
         }
 
+        for pi in (start_pi..=last_pi).rev() {
+            let r = story.para_ranges()[pi].clone();
+            let p_text = &story.text[r.clone()];
+            let trim_head = p_text.chars().take_while(|c| *c == '\t' || *c == ' ').map(|c| c.len_utf8()).sum::<usize>();
+            if trim_head > 0 {
+                story.delete(r.start..r.start + trim_head);
+            }
+            let r_after = story.para_ranges()[pi].clone();
+            let p_text_after = &story.text[r_after.clone()];
+            let trim_tail = p_text_after.chars().rev().take_while(|c| *c == '\t' || *c == ' ').map(|c| c.len_utf8()).sum::<usize>();
+            if trim_tail > 0 && trim_tail < p_text_after.len() {
+                story.delete(r_after.end - trim_tail..r_after.end);
+            }
+        }
+
         for (pi, p) in story.paras.iter_mut().enumerate() {
             if pi >= start_pi && pi <= last_pi {
                 p.para.align = Some(designcraft_doc::Align::Center);
@@ -5515,6 +5530,7 @@ fn harmonize_signatory_block(app: &mut DesignApp, fid: u64, margin: designcraft_
                 p.para.right_indent = Some(sig_right_indent);
                 p.para.first_line_indent = Some(0.0);
                 p.para.last_line_indent = Some(0.0);
+                p.para.tabs = None;
                 if pi == last_pi {
                     let cur_sb = p.para.space_before.unwrap_or(0.0);
                     p.para.space_before = Some(cur_sb.max(36.0));
