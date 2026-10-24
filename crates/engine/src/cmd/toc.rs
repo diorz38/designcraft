@@ -457,12 +457,11 @@ fn ensure_styles(d: &mut Document, levels: u8, width: f64) {
     let mut want = vec![("TOC Title".to_string(), ParaAttrs { space_after: Some(12.0), ..Default::default() }, Some(16.0))];
     for l in 1..=levels.max(1) {
         let indent = (l as f64 - 1.0) * 12.0;
-        let hanging = 68.0;
         want.push((
             format!("TOC Level {l}"),
             ParaAttrs {
-                left_indent: Some(indent + hanging),
-                first_line_indent: Some(-hanging),
+                left_indent: Some(indent),
+                first_line_indent: Some(0.0),
                 space_before: Some(if l == 1 { 4.0 } else { 0.0 }),
                 align: Some(Align::Left),
                 tabs: Some(vec![TabStop { position: width.max(36.0), align: TabAlign::Right, leader: ". ".into(), align_on: String::new() }]),

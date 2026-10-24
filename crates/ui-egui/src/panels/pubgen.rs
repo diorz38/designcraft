@@ -103,11 +103,14 @@ pub fn toc_kind_words(kind: usize) -> &'static [&'static str] {
 }
 
 /// The title a TOC style fills in when it is picked; `None` leaves the typed title alone.
-pub fn toc_kind_title(kind: usize) -> Option<&'static str> {
-    match kind {
-        1 => Some("Daftar Table"),
-        2 => Some("Daftar Grafik"),
-        3 => Some("Daftar Isi"),
+pub fn toc_kind_title(kind: usize, bilingual: bool) -> Option<&'static str> {
+    match (kind, bilingual) {
+        (1, false) => Some("Daftar Tabel"),
+        (1, true) => Some("Daftar Tabel / List of Tables"),
+        (2, false) => Some("Daftar Grafik"),
+        (2, true) => Some("Daftar Grafik / List of Charts"),
+        (3, false) => Some("Daftar Isi"),
+        (3, true) => Some("Daftar Isi / Table of Contents"),
         _ => None,
     }
 }
@@ -698,9 +701,17 @@ fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
                         Dual Lang (Bilingual): generate both languages, per the sheet pattern rules (see docs/pubgen-guide.md).";
         let mode_resp = outline_button(ui, mode_label, 90.0).on_hover_text(mode_tip);
         if mode_resp.clicked() {
+            let was_bilingual = st.bilingual_output;
             st.bilingual_output = !st.bilingual_output;
             let mode_str = if st.bilingual_output { "Dual Lang (Bilingual)" } else { "Single Lang" };
             st.header_status = Some((format!("Mode: {mode_str}"), true));
+            if let Some(old_title) = toc_kind_title(st.toc_kind, was_bilingual) {
+                if st.toc_title.trim().is_empty() || st.toc_title.trim() == old_title {
+                    if let Some(new_title) = toc_kind_title(st.toc_kind, st.bilingual_output) {
+                        st.toc_title = new_title.to_string();
+                    }
+                }
+            }
         }
     });
     rule(ui);
@@ -4678,9 +4689,9 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
             })
             .response
             .on_hover_text(tip);
-        // Picking a table/chart list fills in its title ("Daftar Table" / "Daftar Grafik").
+        // Picking a table/chart/paragraph list fills in its title per single or dual lang mode.
         if st.toc_kind != before
-            && let Some(title) = toc_kind_title(st.toc_kind)
+            && let Some(title) = toc_kind_title(st.toc_kind, st.bilingual_output)
         {
             st.toc_title = title.to_string();
         }
@@ -5352,6 +5363,8 @@ fn post_process_template_applied_page(
     let mut story_ids_to_tag = Vec::new();
     let mut body_story_ids = Vec::new();
     let mut image_slot_ids = Vec::new();
+    // Dual Lang Mode: the divider's English title boxes (styled after the loop below).
+    let mut title_en_stories: Vec<designcraft_doc::StoryId> = Vec::new();
     if let Some(items) = applied_info.get("items").and_then(Value::as_array) {
         if let Some(active) = app.session.active() {
             for it_id_val in items {
@@ -5362,6 +5375,14 @@ fn post_process_template_applied_page(
                         && let Some(spread) = active.doc.spreads.get(si)
                         && let Some(item) = spread.items.iter().find(|i| i.id == item_id)
                     {
+                        if st.bilingual_output
+                            && type_val.eq_ignore_ascii_case("Divider")
+                            && item.label.starts_with("#slot:text:title_en")
+                            && let Some(tf) = item.text_frame()
+                            && !title_en_stories.contains(&tf.story)
+                        {
+                            title_en_stories.push(tf.story);
+                        }
                         if item.label.starts_with("#slot:table")
                             || (item.label.contains("table") && !matches!(item.content, designcraft_doc::Content::Text(_)))
                         {
@@ -5379,6 +5400,16 @@ fn post_process_template_applied_page(
                         }
                     }
                 }
+            }
+        }
+
+        // Dual Lang Mode: the divider's title_en textbox is 22 pt italic with a black
+        // stroke behind the fill.
+        for sid in title_en_stories {
+            let len = app.session.active().and_then(|a| a.doc.story(sid)).map(|story| story.text.len()).unwrap_or(0);
+            if len > 0 {
+                let _ = app.run("text.select", json!({"story": sid, "anchor": 0, "focus": len}));
+                let _ = app.run("type.char", json!({"size": 22.0, "fontStyle": "Italic", "stroke": "[Black]", "strokeBehindFill": true}));
             }
         }
 
@@ -5663,6 +5694,10 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     text_slots.insert("chart_title".into(), json!(title_line));
                     text_slots.insert("title".into(), json!(title_line));
                     text_slots.insert("number".into(), json!(ch_line));
+                    if st.bilingual_output && !title_en_val.is_empty() {
+                        text_slots.insert("chart_title_en".into(), json!(title_en_val));
+                        text_slots.insert("title_en".into(), json!(title_en_val));
+                    }
                     if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty())
                         && let Some(img_file) = resolve_catalog_related_file(&st.card1_path, file_str, "png")
                             .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str, "jpg"))
@@ -6457,7 +6492,50 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             }
         } else if is_chart_type(type_val) {
             // Chart / Grafik layout:
-            if st.bilingual_output && title_val.contains(" / ") {
+            let en_title_text = if !title_en_val.is_empty() {
+                title_en_val
+            } else if clean_en_title != clean_id_title {
+                clean_en_title
+            } else {
+                ""
+            };
+            let has_dual_title_en = st.bilingual_output && !en_title_text.is_empty() && (!title_val.contains(" / ") || !title_en_val.is_empty());
+            let title_h = if has_dual_title_en { 60.0 } else { 48.0 };
+
+            if has_dual_title_en {
+                let (ch_line, title_line) = split_chart_title(clean_id_title, num_val, type_val);
+                let full_text = if title_line.is_empty() {
+                    format!("{ch_line}{}{en_title_text}", designcraft_doc::story::FORCED_LINE_BREAK)
+                } else {
+                    format!(
+                        "{ch_line}{}{title_line}{}{en_title_text}",
+                        designcraft_doc::story::FORCED_LINE_BREAK,
+                        designcraft_doc::story::FORCED_LINE_BREAK
+                    )
+                };
+
+                let title_rect = [margin.x0, margin.y0, margin.x1, margin.y0 + title_h];
+                if let Some(story) = frame_with_centered_bold_title(app, spread_idx, title_rect, &full_text, Some(&st.toc_style)) {
+                    let b_start = full_text.len().saturating_sub(en_title_text.len());
+                    let b_end = full_text.len();
+                    let _ = app.run(
+                        "text.select",
+                        json!({
+                            "story": story,
+                            "anchor": b_start,
+                            "focus": b_end,
+                        }),
+                    );
+                    let _ = app.run(
+                        "type.char",
+                        json!({
+                            "fontFamily": "Arial",
+                            "fontStyle": "Italic",
+                            "size": 9.0,
+                        }),
+                    );
+                }
+            } else if st.bilingual_output && title_val.contains(" / ") {
                 let parts = locale::split_chart_title_parts(title_val);
                 let line1 = format!(
                     "{} / {}{}",
@@ -6467,7 +6545,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 );
                 let line2 = format!("{} / {}{}", parts.id_subtitle, parts.en_subtitle.as_deref().unwrap_or(""), parts.suffix);
                 let full_text = format!("{line1}{}{line2}", designcraft_doc::story::FORCED_LINE_BREAK);
-                let title_rect = [margin.x0, margin.y0, margin.x1, margin.y0 + 48.0];
+                let title_rect = [margin.x0, margin.y0, margin.x1, margin.y0 + title_h];
                 if let Some(story) = frame_with_centered_bold_title(app, spread_idx, title_rect, &full_text, Some(&st.toc_style)) {
                     let chart_start = parts.id_kicker.chars().count() + 3;
                     let chart_end = chart_start + parts.en_kicker.as_deref().unwrap_or("").chars().count();
@@ -6490,19 +6568,20 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 let full_text =
                     if title_line.is_empty() { ch_line } else { format!("{ch_line}{}{title_line}", designcraft_doc::story::FORCED_LINE_BREAK) };
 
-                let title_rect = [margin.x0, margin.y0, margin.x1, margin.y0 + 48.0];
+                let title_rect = [margin.x0, margin.y0, margin.x1, margin.y0 + title_h];
                 frame_with_centered_bold_title(app, spread_idx, title_rect, &full_text, Some(&st.toc_style));
             }
 
             // 2. Place image from 'file' column inside margins below the title
             if let Some(file_str) = row.get(3).map(|s| s.trim()).filter(|s| !s.is_empty()) {
                 let resolved_img = resolve_catalog_related_file(&st.card1_path, file_str, "png")
-                    .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str, "jpg"));
+                    .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str, "jpg"))
+                    .or_else(|| resolve_catalog_related_file(&st.card1_path, file_str, "jpeg"));
 
                 if let Some(img_file) = resolved_img {
                     let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
                     crate::canvas::go_to_page(app, cur_page_idx);
-                    let img_y0 = margin.y0 + 56.0;
+                    let img_y0 = margin.y0 + title_h + 8.0;
                     let img_rect = [margin.x0, img_y0, margin.x1, margin.y1];
                     let created_fid = app
                         .run(
@@ -8223,8 +8302,12 @@ pub fn wrap_tablepage_title(title: &str, width: f64, hanging_indent: f64, page_s
 
 /// The first column header a TablePage table of contents writes: the type word of its own kind
 /// ("Grafik"/"Chart" for a list of charts, "Tabel"/"Table" otherwise) in the language the source
-/// records use.
+/// records use. In dual lang mode, it writes two lines (Indonesian on line 1, English on line 2).
 fn toc_header_line(plan: &TocPlan, st: &PubgenState) -> String {
+    if st.bilingual_output {
+        let (id_type, en_type) = if plan.kind() == 2 { ("Grafik", "Chart") } else { ("Tabel", "Table") };
+        return format!("{id_type}\tHalaman{}\u{2028}{en_type}\tPage", "");
+    }
     let english = st.card1_records.iter().any(|r| {
         let t = r.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("");
         t.eq_ignore_ascii_case("table") || t.eq_ignore_ascii_case("chart")
@@ -8315,11 +8398,12 @@ impl TocPlan {
         } else {
             vec![level(st.toc_style.clone(), toc_kind_words(st.toc_kind).iter().map(|w| (*w).to_string()).collect(), false)]
         };
+        let is_para = st.toc_kind == 3;
         Self {
             levels,
             title: st.toc_title.trim().to_string(),
             layout: st.toc_layout_style,
-            hanging: st.toc_hanging_indent,
+            hanging: st.toc_hanging_indent && !is_para,
             include_self: st.toc_include_self,
         }
     }
@@ -8343,11 +8427,12 @@ impl TocPlan {
         } else {
             levels
         };
+        let is_para = levels.first().is_some_and(|l| l.style == TOC_NARRATIVE_STYLE);
         Self {
             levels,
             title: toc.title.trim().to_string(),
             layout: st.toc_layout_style,
-            hanging: st.toc_hanging_indent,
+            hanging: st.toc_hanging_indent && !is_para,
             include_self: st.toc_include_self,
         }
     }
@@ -8557,7 +8642,7 @@ fn enrich_toc_story(
                 let r_title = row.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("").trim();
 
                 let titles_match = !r_title.is_empty()
-                    && (raw_title == r_title || raw_title.ends_with(r_title) || r_title.ends_with(&raw_title) || {
+                    && (raw_title == r_title || raw_title.contains(r_title) || raw_title.ends_with(r_title) || r_title.ends_with(&raw_title) || {
                         let norm_r = strip_tablepage_title_prefix(r_title, r_num, r_type);
                         let norm_raw = strip_tablepage_title_prefix(&raw_title, r_num, r_type);
                         !norm_r.is_empty() && norm_r.eq_ignore_ascii_case(norm_raw)
@@ -8710,6 +8795,15 @@ fn enrich_toc_story(
 fn ensure_toc_entry_style(app: &mut DesignApp, width: f64, hanging: bool, hanging_indent: f64, layout_style: usize, prefix: &str) {
     let level_one = format!("{prefix} 1");
     let _ = app.session.edit(|d, _| {
+        if d.styles.char_style("TOC English").is_none() {
+            d.styles_mut().character.push(designcraft_doc::CharacterStyle {
+                name: "TOC English".into(),
+                based_on: None,
+                chars: designcraft_doc::CharAttrs { font_style: Some("Italic".into()), ..Default::default() },
+                shortcut: String::new(),
+            });
+        }
+
         let tab_stop = designcraft_doc::TabStop {
             position: width.max(36.0),
             align: designcraft_doc::TabAlign::Right,
@@ -8932,6 +9026,163 @@ fn add_toc_self_entry(app: &mut DesignApp, sid: designcraft_doc::StoryId, plan: 
     });
 }
 
+/// Wrap a paragraph TOC title line so that continuation lines do not crowd the right margin
+/// and page numbers, and maintain ample dot leader space before the page number.
+fn wrap_paragraph_title(clean_title: &str, max_line_w: f64) -> String {
+    let raw_words: Vec<&str> = clean_title.split_whitespace().collect();
+    if raw_words.len() <= 1 {
+        return clean_title.to_string();
+    }
+
+    // Attach any standalone "/" to the preceding word so that lines never begin with a slash
+    let mut words: Vec<String> = Vec::new();
+    for w in raw_words {
+        if w == "/" && !words.is_empty() {
+            if let Some(prev) = words.last_mut() {
+                prev.push_str(" /");
+            }
+        } else {
+            words.push(w.to_string());
+        }
+    }
+
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur_line = String::new();
+
+    for word in words {
+        let candidate = if cur_line.is_empty() { word.clone() } else { format!("{cur_line} {word}") };
+
+        if estimate_text_advance(&candidate) <= max_line_w || cur_line.is_empty() {
+            cur_line = candidate;
+        } else {
+            lines.push(cur_line);
+            cur_line = word;
+        }
+    }
+
+    if !cur_line.is_empty() {
+        lines.push(cur_line);
+    }
+
+    lines.join(&designcraft_doc::story::FORCED_LINE_BREAK.to_string())
+}
+
+/// Early wrapping for paragraph TOC entries so that long headings wrap cleanly before the
+/// page number column, while maintaining character styling (such as italic for English halves
+/// in bilingual paired headings).
+fn enrich_paragraph_toc_story(
+    app: &mut DesignApp,
+    sid: designcraft_doc::StoryId,
+    width: f64,
+) {
+    let _ = app.session.edit(|doc, _| {
+        let story = doc.story_mut(sid).ok_or(designcraft_doc::DocError::NoStory(sid))?;
+        let ranges = story.para_ranges();
+        if ranges.is_empty() {
+            return Ok(serde_json::Value::Null);
+        }
+
+        let mut new_lines = Vec::new();
+        let mut para_styles = Vec::new();
+        let mut en_spans: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+        let mut current_offset = 0;
+
+        for (pi, r) in ranges.into_iter().enumerate() {
+            let para_style = story.paras.get(pi).map(|p| p.style.clone()).unwrap_or_else(|| "TOC Level 1".into());
+            let para_text = story.text[r].trim_end_matches('\r').to_string();
+
+            if pi == 0 || !para_text.contains('\t') {
+                let line_len = para_text.len();
+                new_lines.push(para_text);
+                para_styles.push(para_style);
+                current_offset += line_len + 1;
+                continue;
+            }
+
+            let (title, page_part) = match para_text.split_once('\t') {
+                Some((t, p)) => (t, p),
+                None => {
+                    let line_len = para_text.len();
+                    new_lines.push(para_text);
+                    para_styles.push(para_style);
+                    current_offset += line_len + 1;
+                    continue;
+                }
+            };
+
+            let clean_title = title.replace(designcraft_doc::story::FORCED_LINE_BREAK, " ");
+            let clean_title = clean_title.trim();
+
+            let level = para_style.strip_prefix("TOC Level ").and_then(|s| s.parse::<usize>().ok()).unwrap_or(1);
+            let base_indent = (level.saturating_sub(1) as f64) * 12.0;
+
+            let page_trim = page_part.trim();
+            let page_w = estimate_text_advance(page_trim);
+            let min_leader_gap = 48.0;
+            let right_reserve = page_w + min_leader_gap;
+            let max_line_w = (width - base_indent - right_reserve).max(80.0);
+
+            let wrapped_title = if clean_title.is_empty() {
+                String::new()
+            } else if estimate_text_advance(clean_title) <= max_line_w {
+                clean_title.to_string()
+            } else {
+                wrap_paragraph_title(clean_title, max_line_w)
+            };
+
+            let new_line = format!("{wrapped_title}\t{page_part}");
+            let line_len = new_line.len();
+
+            // Detect English half in bilingual paired heading ("Indonesian / English")
+            if let Some(slash_idx) = wrapped_title.find(" / ") {
+                let en_start = current_offset + slash_idx + 3;
+                let en_end = current_offset + wrapped_title.len();
+                if en_start < en_end {
+                    en_spans.push((en_start..en_end, "TOC English".to_string()));
+                }
+            } else if let Some(slash_idx) = wrapped_title.find(" /") {
+                let after_slash = slash_idx + 2;
+                let mut en_start_rel = after_slash;
+                for c in wrapped_title[after_slash..].chars() {
+                    if c.is_whitespace() || c == designcraft_doc::story::FORCED_LINE_BREAK {
+                        en_start_rel += c.len_utf8();
+                    } else {
+                        break;
+                    }
+                }
+                let en_start = current_offset + en_start_rel;
+                let en_end = current_offset + wrapped_title.len();
+                if en_start < en_end {
+                    en_spans.push((en_start..en_end, "TOC English".to_string()));
+                }
+            }
+
+            new_lines.push(new_line);
+            para_styles.push(para_style);
+            current_offset += line_len + 1;
+        }
+
+        let full_text = new_lines.join("\n");
+        let len = story.len();
+        story.replace(0..len, &full_text);
+
+        story.format_chars(0..story.len(), |f| f.style = designcraft_doc::NO_CHAR_STYLE.into());
+        for (span, style) in en_spans {
+            story.format_chars(span, |f| f.style = style.clone());
+        }
+
+        for (pi, r) in story.para_ranges().into_iter().enumerate() {
+            if let Some(st_name) = para_styles.get(pi) {
+                story.format_paras(r.start..r.start, |f| {
+                    *f = designcraft_doc::ParaFormat { style: st_name.clone(), ..Default::default() };
+                });
+            }
+        }
+
+        Ok(serde_json::Value::Null)
+    });
+}
+
 fn apply_toc_post_process(
     app: &mut DesignApp,
     st: &PubgenState,
@@ -8948,6 +9199,7 @@ fn apply_toc_post_process(
     // contents itself is added here: `enrich_toc_story` rewrites the flat lists and skips them.
     if plan.is_paragraph_toc() {
         add_toc_self_entry(app, sid, plan, target_page);
+        enrich_paragraph_toc_story(app, sid, width);
     }
 
     let entry_style = format!("{} 1", plan.entry_prefix());
@@ -8964,7 +9216,10 @@ fn apply_toc_post_process(
                             || para_text.eq_ignore_ascii_case("daftar isi")
                             || para_text.eq_ignore_ascii_case("daftar tabel")
                             || para_text.eq_ignore_ascii_case("daftar grafik")
-                            || para_text.eq_ignore_ascii_case("daftar chart"))
+                            || para_text.eq_ignore_ascii_case("daftar chart")
+                            || para_text.eq_ignore_ascii_case("daftar tabel / list of tables")
+                            || para_text.eq_ignore_ascii_case("daftar grafik / list of charts")
+                            || para_text.eq_ignore_ascii_case("daftar isi / table of contents"))
                     {
                         "TOC Title".to_string()
                     } else if is_toc_header_line(para_text) {
@@ -8994,6 +9249,19 @@ fn apply_toc_post_process(
                         f.para.align = Some(designcraft_doc::Align::Center);
                     }
                 });
+
+                if style_name == "TOC TablePage Header" {
+                    if let Some(pos) = story.text[r.clone()].find(designcraft_doc::story::FORCED_LINE_BREAK) {
+                        let second_line_start = r.start + pos + designcraft_doc::story::FORCED_LINE_BREAK.len_utf8();
+                        let second_line_end = r.end;
+                        if second_line_start < second_line_end {
+                            story.format_chars(second_line_start..second_line_end, |f| {
+                                f.style = "TOC English".to_string();
+                                f.over.font_style = Some("Italic".to_string());
+                            });
+                        }
+                    }
+                }
             }
         }
         Ok(serde_json::Value::Null)
@@ -9125,8 +9393,9 @@ fn sync_toc_continuation_headers(app: &mut DesignApp, st: &PubgenState, sid: des
             let Some(page) = spread.pages.get(pi) else { continue };
             let m = page.margin_rect();
 
-            let header_rect = designcraft_geom::Rect::new(m.x0, m.y0, m.x1, m.y0 + TOC_CONT_HEADER_H);
-            let flow_top = (m.y0 + TOC_CONT_HEADER_H + TOC_CONT_HEADER_GAP).min(m.y1 - 10.0);
+            let cont_h = if header_text.contains(designcraft_doc::story::FORCED_LINE_BREAK) { 28.0 } else { TOC_CONT_HEADER_H };
+            let header_rect = designcraft_geom::Rect::new(m.x0, m.y0, m.x1, m.y0 + cont_h);
+            let flow_top = (m.y0 + cont_h + TOC_CONT_HEADER_GAP).min(m.y1 - 10.0);
             let flow_rect = designcraft_geom::Rect::new(m.x0, flow_top, m.x1, m.y1);
 
             let layer = active.doc.item(fid).map(|it| it.layer).unwrap_or_else(|| active.doc.default_layer());
@@ -9158,11 +9427,23 @@ fn sync_toc_continuation_headers(app: &mut DesignApp, st: &PubgenState, sid: des
             for p in &plans {
                 if p.needs_header {
                     let para = designcraft_doc::ParaFormat { style: style_name.to_string(), ..Default::default() };
-                    if let Ok((hdr_id, _)) = doc.add_text_frame(p.spread_ref, p.header_rect, p.layer, &header_text, para)
-                        && let Some(it) = doc.item_mut(hdr_id)
-                    {
-                        it.label = TOC_CONTINUATION_HEADER_LABEL.to_string();
-                        it.name = "TOC Continuation Header".to_string();
+                    if let Ok((hdr_id, hdr_sid)) = doc.add_text_frame(p.spread_ref, p.header_rect, p.layer, &header_text, para) {
+                        if let Some(it) = doc.item_mut(hdr_id) {
+                            it.label = TOC_CONTINUATION_HEADER_LABEL.to_string();
+                            it.name = "TOC Continuation Header".to_string();
+                        }
+                        if let Some(hdr_story) = doc.story_mut(hdr_sid) {
+                            if let Some(pos) = hdr_story.text.find(designcraft_doc::story::FORCED_LINE_BREAK) {
+                                let start = pos + designcraft_doc::story::FORCED_LINE_BREAK.len_utf8();
+                                let end = hdr_story.len();
+                                if start < end {
+                                    hdr_story.format_chars(start..end, |f| {
+                                        f.style = "TOC English".to_string();
+                                        f.over.font_style = Some("Italic".to_string());
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
                 if p.needs_resize
@@ -12144,6 +12425,92 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     }
 
     #[test]
+    fn test_toc_paragraph_long_heading2_wraps_early_without_hanging_indent() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        ensure_para_style(&mut app, "Heading 2");
+        ensure_para_style(&mut app, TOC_NARRATIVE_STYLE);
+
+        let active = app.session.active().unwrap();
+        let si = 0;
+        let p = &active.doc.spreads[si].pages[0];
+        let bounds = p.bounds();
+        let mid = bounds.center().x;
+        let (left_col, right_col) = ([bounds.x0 + 36.0, mid - 18.0], [mid + 18.0, bounds.x1 - 36.0]);
+
+        // Place chapter title
+        let _ = app.run("frame.create", json!({"spread": si, "rect": [bounds.x0 + 36.0, 36.0, bounds.x1 - 36.0, 72.0], "content": "text", "text": "BAB 02 Pemerintahan", "caret": false})).unwrap();
+
+        // Place long heading 2 in left column (ID) and right column (EN)
+        let id_heading = "Analisis Struktur Wilayah Administrasi dan Kapasitas Sumber Daya Manusia Kecamatan Karawang Timur";
+        let en_heading = "Administrative Structure and Human Resource Capacity in Karawang Timur District";
+
+        for (text, [x0, x1]) in [(id_heading, left_col), (en_heading, right_col)] {
+            let res = app
+                .run("frame.create", json!({"spread": si, "rect": [x0, 120.0, x1, 240.0], "content": "text", "text": text, "caret": false}))
+                .expect("frame.create");
+            let sid = res["story"].as_u64().expect("story");
+            app.run("text.select", json!({"story": sid, "anchor": 0, "focus": 0})).expect("text.select");
+            app.run("style.paragraph.apply", json!({"name": "Heading 2"})).expect("style.paragraph.apply");
+        }
+
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        let pages = app.session.active().unwrap().doc.page_count();
+        crate::canvas::go_to_page(&mut app, pages - 1);
+
+        let mut st = PubgenState {
+            toc_kind: 3, // TOC Paragraph
+            toc_style: "TOC Entry".into(),
+            toc_title: "Daftar Isi".into(),
+            toc_pair_bilingual: true,
+            bilingual_output: true,
+            toc_hanging_indent: true, // User had this checked by default
+            ..Default::default()
+        };
+
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_add_toc should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().expect("table of contents");
+        let story = active.doc.story(toc.story).expect("TOC story");
+
+        // Verify style indentation for TOC Level 3 (Heading 2)
+        let style = active.doc.styles.para("TOC Level 3").expect("TOC Level 3 style");
+        assert_eq!(
+            style.para.left_indent,
+            Some(24.0),
+            "TOC Level 3 left_indent must equal base_indent (24.0) without unnecessary hanging indent"
+        );
+        assert_eq!(
+            style.para.first_line_indent,
+            Some(0.0),
+            "TOC Level 3 first_line_indent must be 0.0 so continuation lines align with first line"
+        );
+
+        // Verify the long paired heading was wrapped early using FORCED_LINE_BREAK
+        assert!(
+            story.text.contains(designcraft_doc::story::FORCED_LINE_BREAK),
+            "Long Heading 2 should be early-wrapped with soft line breaks: {}",
+            story.text
+        );
+
+        // Verify English half retains TOC English (italic) styling across the wrapped lines
+        let en_pos = story.text.find("Administrative Structure").expect("English text start");
+        let fmt = story.char_format_of(en_pos);
+        assert_eq!(fmt.style, "TOC English", "English portion must be styled with TOC English italic");
+
+        let en_end_pos = story.text.find("District").expect("English text end");
+        let fmt_end = story.char_format_of(en_end_pos);
+        assert_eq!(fmt_end.style, "TOC English", "End of English portion across line breaks must remain TOC English");
+
+        // Verify Indonesian half retains normal style
+        let id_pos = story.text.find("Analisis Struktur").expect("ID text start");
+        let fmt_id = story.char_format_of(id_pos);
+        assert_eq!(fmt_id.style, designcraft_doc::NO_CHAR_STYLE, "ID portion must have default char style");
+    }
+
+    #[test]
     fn test_toc_paragraph_lists_a_legacy_chapter_page_until_its_pages_are_regenerated() {
         // A page made before the narrative style existed: the chapter line in a plain box, the
         // title below it tagged with the card's TOC style.
@@ -12505,7 +12872,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert_eq!(table_style.para.left_indent, Some(0.0), "the Tables list keeps its (unhung) indent");
         assert_eq!(table_style.para.first_line_indent, Some(0.0));
         let contents_style = active.doc.styles.para("TOC Level 1").expect("the Contents list's style");
-        assert_eq!(contents_style.para.left_indent, Some(toc_hanging_indent(&para_state, 0)), "the Contents list hangs its rows");
+        assert_eq!(contents_style.para.left_indent, Some(0.0), "the Contents list keeps its unhung indent for paragraph TOC");
+        assert_eq!(contents_style.para.first_line_indent, Some(0.0));
         let table_entry = active
             .doc
             .tocs
@@ -13284,7 +13652,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     #[test]
     fn test_toc_paragraph_kind_tables_and_plan() {
         assert_eq!(toc_kind_words(3), ["BAB"]);
-        assert_eq!(toc_kind_title(3), Some("Daftar Isi"));
+        assert_eq!(toc_kind_title(3, false), Some("Daftar Isi"));
+        assert_eq!(toc_kind_title(3, true), Some("Daftar Isi / Table of Contents"));
         assert_eq!(toc_kind_of_words(&["BAB".into()]), 3);
         // The older kinds keep their detection.
         assert_eq!(toc_kind_of_words(&["Tabel".into(), "Table".into()]), 1);
@@ -13498,8 +13867,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
         // Quick Actions TOC style = "TOC Table" (its title was filled in when it was picked).
         st.toc_kind = 1;
-        st.toc_title = toc_kind_title(1).unwrap().to_string();
-        assert_eq!(st.toc_title, "Daftar Table");
+        st.toc_title = toc_kind_title(1, false).unwrap().to_string();
+        assert_eq!(st.toc_title, "Daftar Tabel");
         let res = execute_add_toc(&mut app, &mut st);
         assert!(res.is_ok(), "{res:?}");
 
@@ -13507,7 +13876,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let toc = active.doc.tocs.last().unwrap();
         let story = active.doc.story(toc.story).unwrap();
         let text = story.text.clone();
-        assert!(text.starts_with("Daftar Table"), "{text}");
+        assert!(text.starts_with("Daftar Tabel"), "{text}");
         assert!(text.contains("Tabel 01.01. Jarak Antar Kecamatan"), "{text}");
         assert!(text.contains("Tabel 01.02. Keadaan Curah Hujan"), "{text}");
         assert!(!text.contains("Grafik 1.1."), "a list of tables lists no charts: {text}");
@@ -13542,7 +13911,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         app.run("layout.pages.insert", json!({"count": 1})).unwrap();
 
         st.toc_kind = 2;
-        st.toc_title = toc_kind_title(2).unwrap().to_string();
+        st.toc_title = toc_kind_title(2, false).unwrap().to_string();
         assert_eq!(st.toc_title, "Daftar Grafik");
         let res = execute_add_toc(&mut app, &mut st);
         assert!(res.is_ok(), "{res:?}");
@@ -14430,6 +14799,76 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     }
 
     #[test]
+    fn test_chart_bilingual_three_line_title_from_title_en() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card1_preset: 0,
+            bilingual_output: true,
+            card1_records: vec![vec![
+                "Grafik".into(),
+                "02.01".into(),
+                "Panjang Jalan Kecamatan Karawang Timur 2026".into(),
+                "".into(),
+                "".into(),
+                "Chart 02.01 Road Length in East Karawang District, 2025".into(),
+            ]],
+            card1_headers: vec![
+                "type".into(),
+                "number".into(),
+                "title".into(),
+                "file".into(),
+                "template".into(),
+                "title_en".into(),
+            ],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "3-line bilingual chart generation should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let chart_story = active
+            .doc
+            .stories
+            .values()
+            .find(|s| s.text.contains("Grafik 02.01"))
+            .expect("Chart story must exist");
+
+        // Verify 3 lines separated by FORCED_LINE_BREAK
+        let lines: Vec<&str> = chart_story.text.split(designcraft_doc::story::FORCED_LINE_BREAK).collect();
+        assert_eq!(lines.len(), 3, "Expected 3 lines, got {:?}", lines);
+        assert_eq!(lines[0], "Grafik 02.01");
+        assert_eq!(lines[1], "Panjang Jalan Kecamatan Karawang Timur 2026");
+        assert_eq!(lines[2], "Chart 02.01 Road Length in East Karawang District, 2025");
+
+        // Verify font styling: Line 1 and Line 2 are Bold 11pt, Line 3 is Italic 9pt
+        let en_line_text = "Chart 02.01 Road Length in East Karawang District, 2025";
+        let en_start = chart_story.text.find(en_line_text).expect("EN line must be in text");
+
+        let mut curr_offset = 0;
+        for run in &chart_story.chars {
+            let run_start = curr_offset;
+            let run_end = curr_offset + run.len;
+            curr_offset = run_end;
+
+            if run_end <= en_start {
+                assert_eq!(run.format.over.font_style.as_deref(), Some("Bold"), "Lines 1-2 must be Bold");
+                assert_eq!(run.format.over.size, Some(11.0), "Lines 1-2 must be 11pt");
+            } else if run_start >= en_start {
+                assert_eq!(run.format.over.font_style.as_deref(), Some("Italic"), "Line 3 must be Italic");
+                assert_eq!(run.format.over.size, Some(9.0), "Line 3 must be 9pt (smaller font)");
+            }
+        }
+    }
+
+    #[test]
     fn test_resolve_template_path_spec() {
         // Direct template ID resolution from assets/templates/
         let r1 = resolve_template_path_spec("", "001_ulasan_chapter");
@@ -14753,6 +15192,66 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     }
 
     #[test]
+    fn test_toc_style_default_titles_single_and_dual_lang() {
+        // 1. TOC Table (kind 1)
+        assert_eq!(toc_kind_title(1, false), Some("Daftar Tabel"));
+        assert_eq!(toc_kind_title(1, true), Some("Daftar Tabel / List of Tables"));
+
+        // 2. TOC Chart (kind 2)
+        assert_eq!(toc_kind_title(2, false), Some("Daftar Grafik"));
+        assert_eq!(toc_kind_title(2, true), Some("Daftar Grafik / List of Charts"));
+
+        // 3. TOC Paragraph (kind 3)
+        assert_eq!(toc_kind_title(3, false), Some("Daftar Isi"));
+        assert_eq!(toc_kind_title(3, true), Some("Daftar Isi / Table of Contents"));
+
+        // Verify switching modes updates default title
+        let mut st = PubgenState {
+            toc_kind: 1, // TOC Table
+            toc_title: "Daftar Tabel".into(),
+            bilingual_output: false,
+            ..Default::default()
+        };
+
+        // Simulate toggling to Dual Lang mode
+        let was_bilingual = st.bilingual_output;
+        st.bilingual_output = !st.bilingual_output;
+        if let Some(old_title) = toc_kind_title(st.toc_kind, was_bilingual) {
+            if st.toc_title.trim().is_empty() || st.toc_title.trim() == old_title {
+                if let Some(new_title) = toc_kind_title(st.toc_kind, st.bilingual_output) {
+                    st.toc_title = new_title.to_string();
+                }
+            }
+        }
+        assert_eq!(st.toc_title, "Daftar Tabel / List of Tables");
+
+        // Simulate toggling back to Single Lang mode
+        let was_bilingual = st.bilingual_output;
+        st.bilingual_output = !st.bilingual_output;
+        if let Some(old_title) = toc_kind_title(st.toc_kind, was_bilingual) {
+            if st.toc_title.trim().is_empty() || st.toc_title.trim() == old_title {
+                if let Some(new_title) = toc_kind_title(st.toc_kind, st.bilingual_output) {
+                    st.toc_title = new_title.to_string();
+                }
+            }
+        }
+        assert_eq!(st.toc_title, "Daftar Tabel");
+
+        // Custom titles are preserved and not overwritten on mode toggle
+        st.toc_title = "Custom Table List".into();
+        let was_bilingual = st.bilingual_output;
+        st.bilingual_output = !st.bilingual_output;
+        if let Some(old_title) = toc_kind_title(st.toc_kind, was_bilingual) {
+            if st.toc_title.trim().is_empty() || st.toc_title.trim() == old_title {
+                if let Some(new_title) = toc_kind_title(st.toc_kind, st.bilingual_output) {
+                    st.toc_title = new_title.to_string();
+                }
+            }
+        }
+        assert_eq!(st.toc_title, "Custom Table List");
+    }
+
+    #[test]
     fn test_toc_header_line_uses_locale_words() {
         let mut st =
             PubgenState { card1_records: vec![vec!["Tabel".into(), "01.01".into(), "Penduduk".into()]], locale: Locale::Id, ..Default::default() };
@@ -14762,14 +15261,92 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         st.locale = Locale::En;
         assert_eq!(toc_header_line(&plan_table, &st), "Table\tpage");
 
+        // Dual Lang mode produces two-line header: Tabel / Table, Halaman / Page
+        st.bilingual_output = true;
+        assert_eq!(toc_header_line(&plan_table, &st), format!("Tabel\tHalaman{}\u{2028}Table\tPage", ""));
+
         // Chart list
         st.toc_kind = 2;
         let plan_chart = TocPlan::from_state(&st);
+        st.bilingual_output = false;
         st.locale = Locale::Id;
         assert_eq!(toc_header_line(&plan_chart, &st), "Grafik\thalaman");
 
         st.locale = Locale::En;
         assert_eq!(toc_header_line(&plan_chart, &st), "Chart\tpage");
+
+        // Dual Lang mode produces two-line header: Grafik / Chart, Halaman / Page
+        st.bilingual_output = true;
+        assert_eq!(toc_header_line(&plan_chart, &st), format!("Grafik\tHalaman{}\u{2028}Chart\tPage", ""));
+    }
+
+    #[test]
+    fn test_toc_table_and_chart_dual_lang_two_line_header() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card1_records: vec![
+                vec!["Tabel".into(), "01.01.".into(), "Luas Daerah".into()],
+                vec!["Grafik".into(), "01.01.".into(), "Pertumbuhan Penduduk".into()],
+            ],
+            card1_headers: vec!["type".into(), "number".into(), "title".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            card1_preset: 5,
+            toc_style: "TOC Entry".into(),
+            toc_layout_style: 1, // TablePage layout
+            bilingual_output: true,
+            ..Default::default()
+        };
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        // 1. Generate TOC Table in Dual Lang mode
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        st.toc_kind = 1;
+        st.toc_title = toc_kind_title(1, true).unwrap().to_string();
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_add_toc for TOC Table: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc = active.doc.tocs.last().unwrap();
+        let story = active.doc.story(toc.story).unwrap();
+        assert!(story.text.contains("Tabel\tHalaman\u{2028}Table\tPage"), "TOC Table story text: {}", story.text);
+
+        let table_pos = story.text.find("Table\tPage").expect("Table position");
+        let fmt_table = story.char_format_of(table_pos);
+        assert_eq!(fmt_table.style, "TOC English");
+        assert_eq!(fmt_table.over.font_style.as_deref(), Some("Italic"));
+
+        let page_pos = story.text.find("Page").expect("Page position");
+        let fmt_page = story.char_format_of(page_pos);
+        assert_eq!(fmt_page.style, "TOC English");
+        assert_eq!(fmt_page.over.font_style.as_deref(), Some("Italic"));
+
+        let id_table_pos = story.text.find("Tabel\t").expect("Tabel position");
+        let fmt_id_table = story.char_format_of(id_table_pos);
+        assert_eq!(fmt_id_table.style, designcraft_doc::NO_CHAR_STYLE);
+
+        // 2. Generate TOC Chart in Dual Lang mode
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        let pages = app.session.active().unwrap().doc.page_count();
+        crate::canvas::go_to_page(&mut app, pages - 1);
+        st.toc_kind = 2;
+        st.toc_title = toc_kind_title(2, true).unwrap().to_string();
+        let res_chart = execute_add_toc(&mut app, &mut st);
+        assert!(res_chart.is_ok(), "execute_add_toc for TOC Chart: {res_chart:?}");
+
+        let active = app.session.active().unwrap();
+        let toc_chart = active.doc.tocs.last().unwrap();
+        let story_chart = active.doc.story(toc_chart.story).unwrap();
+        assert!(story_chart.text.contains("Grafik\tHalaman\u{2028}Chart\tPage"), "TOC Chart story text: {}", story_chart.text);
+
+        let chart_pos = story_chart.text.find("Chart\tPage").expect("Chart position");
+        let fmt_chart = story_chart.char_format_of(chart_pos);
+        assert_eq!(fmt_chart.style, "TOC English");
+        assert_eq!(fmt_chart.over.font_style.as_deref(), Some("Italic"));
     }
 
     #[test]
@@ -14823,6 +15400,21 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
         assert!(texts.iter().any(|t| t.contains("GEOGRAFI")), "Stories should contain Indonesian title GEOGRAFI: {texts:?}");
         assert!(texts.iter().any(|t| t.contains("GEOGRAPHY AND CLIMATE")), "Stories should contain English title: {texts:?}");
+
+        // Dual Lang Mode: the title_en textbox is 22 pt italic, black stroke behind the fill.
+        let en_story = active
+            .doc
+            .stories
+            .values()
+            .find(|s| s.text.contains("GEOGRAPHY AND CLIMATE"))
+            .expect("EN title story exists");
+        assert!(!en_story.chars.is_empty(), "EN title story has runs");
+        for run in &en_story.chars {
+            assert_eq!(run.format.over.size, Some(22.0), "title_en run size: {run:?}");
+            assert_eq!(run.format.over.font_style.as_deref(), Some("Italic"), "title_en run style: {run:?}");
+            assert_eq!(run.format.over.stroke.as_deref(), Some("[Black]"), "title_en run stroke: {run:?}");
+            assert_eq!(run.format.over.stroke_behind_fill, Some(true), "title_en stroke behind fill: {run:?}");
+        }
     }
 
     #[test]
