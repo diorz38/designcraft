@@ -43,10 +43,12 @@ impl AiSetupDialog {
     /// few microseconds — no thread needed).
     pub fn open(app: &DesignApp) -> Self {
         let prefs = &app.session.prefs;
+        let groq_model =
+            if prefs.translation_groq_model.trim().is_empty() { "llama-3.3-70b-versatile".to_string() } else { prefs.translation_groq_model.clone() };
         Self {
             provider: if prefs.translation_provider == "groq" { PROVIDER_GROQ } else { PROVIDER_OFFLINE },
             groq_key: prefs.translation_groq_api_key.clone(),
-            groq_model: prefs.translation_groq_model.clone(),
+            groq_model,
             groq_models: Vec::new(),
             groq_models_error: None,
             offline_available: translate::is_available(),
@@ -159,9 +161,13 @@ fn groq_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSetupDial
     if ui.add_enabled(can_use, egui::Button::new("Use AI")).clicked() {
         dialog.verify_and_accept_groq(app, st);
     }
+    if let Some(err) = &dialog.error {
+        ui.add_space(4.0);
+        ui.label(RichText::new(err).size(10.5).color(Color32::from_rgb(220, 80, 80)));
+    }
 }
 
-fn offline_pane(dialog: &AiSetupDialog, ui: &mut egui::Ui) {
+fn offline_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSetupDialog, ui: &mut egui::Ui) {
     match dialog.mem {
         Some(mem) => {
             ui.label(format!("RAM      {:.1} GB available of {:.1} GB", mem.available as f64 / 1e9, mem.total as f64 / 1e9));
@@ -179,6 +185,18 @@ fn offline_pane(dialog: &AiSetupDialog, ui: &mut egui::Ui) {
                 .size(10.5)
                 .color(Color32::from_rgb(220, 120, 60)),
         );
+    } else {
+        if ui.button("Use Offline Model").clicked() {
+            let _ = app.run(
+                "prefs.set",
+                json!({
+                    "translationProvider": "offline",
+                }),
+            );
+            st.translate_with_ai = true;
+            st.ai_setup_done = true;
+            dialog.close_requested = true;
+        }
     }
 
     for opt in translate::models::MODEL_OPTIONS {
@@ -205,7 +223,7 @@ fn offline_pane(dialog: &AiSetupDialog, ui: &mut egui::Ui) {
     }
 }
 
-/// Render the modal, when open. Called from the panel's \`show\`.
+/// Render the modal, when open. Called from the panel's `show`.
 pub fn dialog_ui(app: &mut DesignApp, st: &mut PubgenState, ui: &mut egui::Ui) {
     let Some(mut dialog) = st.ai_dialog.take() else { return };
     let mut open = true;
@@ -225,25 +243,18 @@ pub fn dialog_ui(app: &mut DesignApp, st: &mut PubgenState, ui: &mut egui::Ui) {
             if dialog.provider == PROVIDER_GROQ {
                 groq_pane(app, st, &mut dialog, ui);
             } else {
-                offline_pane(&dialog, ui);
+                offline_pane(app, st, &mut dialog, ui);
             }
 
             ui.separator();
             ui.horizontal(|ui| {
-                if ui.button("Cancel").clicked() {
-                    // Cancel leaves AI off and unticks the header box.
-                    st.translate_with_ai = false;
+                if ui.button("Close").clicked() {
                     closed_by_x = true;
                 }
             });
         });
     open &= !closed_by_x;
-    if dialog.close_requested {
-        // Armed by Use AI: the dialog closes and stays closed.
-        st.ai_dialog = None;
-    } else if !open {
-        // Cancel or ✕: AI stays off, the dialog is discarded.
-        st.translate_with_ai = false;
+    if dialog.close_requested || !open {
         st.ai_dialog = None;
     } else {
         st.ai_dialog = Some(dialog);
@@ -629,13 +640,13 @@ pub fn backend_from_prefs(app: &DesignApp) -> Option<(String, String, String)> {
     let prefs = &app.session.prefs;
     if prefs.translation_provider == "groq" && !prefs.translation_groq_api_key.trim().is_empty() {
         let model = if prefs.translation_groq_model.trim().is_empty() {
-            // ponytail: a model id the key cannot use fails the Use AI check with the
-            // provider's own error, so this fallback only matters for display.
-            "openai/gpt-oss-20b".to_string()
+            "llama-3.3-70b-versatile".to_string()
         } else {
             prefs.translation_groq_model.trim().to_string()
         };
         return Some((String::from("groq"), prefs.translation_groq_api_key.trim().to_string(), model));
+    } else if prefs.translation_provider == "offline" && translate::is_available() {
+        return Some((String::from("offline"), prefs.translation_model_dir.clone(), prefs.translation_model_id.clone()));
     }
     None
 }

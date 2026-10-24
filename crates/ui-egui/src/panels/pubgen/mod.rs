@@ -765,26 +765,30 @@ pub fn execute_set_page_margins(app: &mut DesignApp) -> Result<String, String> {
 
 fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     ui.horizontal(|ui| {
-        ui.set_min_height(33.0);
+        ui.set_min_height(28.0);
         let g = crate::rtl::plain(ui.ctx(), "Pubgen", crate::theme::semibold(11.5), t.text_strong);
-        let (r, _) = ui.allocate_exact_size(vec2(g.size().x + 10.0, 33.0), Sense::hover());
+        let (r, _) = ui.allocate_exact_size(vec2(g.size().x + 6.0, 28.0), Sense::hover());
         ui.painter().galley(pos2(r.min.x, r.center().y - g.size().y / 2.0), g, t.text_strong);
 
-        let lang = app.ui.language.clone();
-        let tip = "Set document margins:\nTop: 20.20 mm\nBottom: 20 mm\nInside: 19 mm\nOutside: 15 mm";
-        let resp = outline_button(ui, crate::i18n::tr(&lang, "Set Page Margin"), 120.0).on_hover_text(tip);
-        if resp.clicked() {
-            match execute_set_page_margins(app) {
-                Ok(msg) => st.header_status = Some((msg, true)),
-                Err(err) => st.header_status = Some((err, false)),
-            }
+        // 4. "AI Translator" button (position on top Panel Pubgen right after Pubgen Panel Name)
+        let backend_ready = ai::backend_from_prefs(app).is_some();
+        let ai_setup_label = if backend_ready { "AI Translator \u{2713}" } else { "AI Translator" };
+        let ai_setup_tip = if backend_ready {
+            "AI Provider configured and ready. Click to change settings, API key, or model."
+        } else {
+            "Click to set up AI translation provider (Groq API key & model selection, or offline translator)."
+        };
+        let ai_setup_resp = outline_button(ui, ai_setup_label, 92.0).on_hover_text(ai_setup_tip);
+        if ai_setup_resp.clicked() {
+            st.ai_dialog = Some(ai::AiSetupDialog::open(app));
         }
 
         let mode_raw = if st.bilingual_output { "Dual Lang" } else { "Single Lang" };
+        let lang = app.ui.language.clone();
         let mode_label = crate::i18n::tr(&lang, mode_raw);
         let mode_tip = "Single Lang: generate the active output language only.\n\
                         Dual Lang (Bilingual): generate both languages, per the sheet pattern rules (see docs/pubgen-guide.md).";
-        let mode_resp = outline_button(ui, mode_label, 90.0).on_hover_text(mode_tip);
+        let mode_resp = outline_button(ui, mode_label, 80.0).on_hover_text(mode_tip);
         if mode_resp.clicked() {
             let was_bilingual = st.bilingual_output;
             st.bilingual_output = !st.bilingual_output;
@@ -797,21 +801,28 @@ fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
                 st.toc_title = new_title.to_string();
             }
         }
+    });
 
-        // Page-targeted AI translation: the selected RXX review page translated in place.
+    ui.horizontal(|ui| {
+        ui.set_min_height(26.0);
+        let lang = app.ui.language.clone();
+        let backend_ready = ai::backend_from_prefs(app).is_some();
+
+        // 5. "Translate this Page" button (enabled when Dual Lang + backend setup + RXX page selected)
         let page_idx = app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app));
         let target = page_idx.and_then(|p| ai::detect_page_target(app, p));
-        let backend_ready = ai::backend_from_prefs(app).is_some();
-        let can_page_ai = target.is_some() && backend_ready;
+        let can_page_ai = target.is_some() && backend_ready && st.bilingual_output;
         let page_btn = ui
-            .add_enabled(can_page_ai, egui::Button::new("Translate with AI"))
+            .add_enabled(can_page_ai, egui::Button::new("Translate this Page"))
             .on_hover_text(
-                "Translate the selected RXX review page in place: the chapter title (textbox 3) and the right-column body are replaced with English.",
+                "Translate the selected RXX review page in place: the chapter title (textbox 3) and the right-column body are replaced with English while preserving all paragraph styles.",
             )
-            .on_disabled_hover_text(if target.is_none() {
-                "Select a generated RXX review page (BAB NN / title / Chapter NN + two body columns)."
+            .on_disabled_hover_text(if !backend_ready {
+                "Configure AI Provider first: click 'AI Translator' button above to set up your Groq key and model."
+            } else if !st.bilingual_output {
+                "Switch to Dual Lang mode first (button above)."
             } else {
-                "Configure the AI backend first: tick Translate with AI in the Excel card and press Use AI."
+                "Select a generated RXX review page (BAB NN / title / Chapter NN + two body columns)."
             });
         if page_btn.clicked()
             && let Some(target) = target
@@ -827,7 +838,16 @@ fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
                 ai::apply_page_result(app, st, &target);
                 st.header_status = Some(("Page translated from cache.".into(), true));
             } else {
-                st.header_status = Some(("AI translation: no backend configured — tick Translate with AI in the Excel card.".into(), false));
+                st.header_status = Some(("AI translation: no backend configured — click 'AI Translator' to set up.".into(), false));
+            }
+        }
+
+        let tip = "Set document margins:\nTop: 20.20 mm\nBottom: 20 mm\nInside: 19 mm\nOutside: 15 mm";
+        let resp = outline_button(ui, crate::i18n::tr(&lang, "Set Page Margin"), 110.0).on_hover_text(tip);
+        if resp.clicked() {
+            match execute_set_page_margins(app) {
+                Ok(msg) => st.header_status = Some((msg, true)),
+                Err(err) => st.header_status = Some((err, false)),
             }
         }
     });
