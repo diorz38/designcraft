@@ -297,6 +297,10 @@ pub struct PubgenState {
     #[serde(default = "default_true")]
     pub card2_row_conditions: bool,
     pub card2_style: usize,
+    #[serde(default)]
+    pub card2_color_theme: usize,
+    #[serde(default)]
+    pub card2_theme_override: Option<String>,
     pub card2_placement: usize,
     pub card2_status: Option<(String, bool)>,
     #[serde(default)]
@@ -507,6 +511,8 @@ impl Default for PubgenState {
             card2_table_footer: true,
             card2_row_conditions: true,
             card2_style: 3,     // Horizontal Rules
+            card2_color_theme: 0, // #FFCB56 - #FFE9A9 (Default)
+            card2_theme_override: None,
             card2_placement: 2, // At page
             card2_status: None,
             card2_delim: None,
@@ -1017,6 +1023,24 @@ fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
                 ui.selectable_value(&mut st.card2_style, i, *s);
             }
         });
+    });
+
+    // Table Color Theme Selector
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Theme:").size(11.0).color(t.text));
+        let cur = TABLE_COLOR_THEMES.get(st.card2_color_theme).map(|(name, _, _)| *name).unwrap_or("#FFCB56 - #FFE9A9");
+        let combo_w = (ui.available_width() - 4.0).clamp(80.0, 200.0);
+        let prev_theme = st.card2_color_theme;
+        egui::ComboBox::from_id_salt("pubgen_card2_theme").selected_text(cur).width(combo_w).show_ui(ui, |ui| {
+            for (i, (name, _, _)) in TABLE_COLOR_THEMES.iter().enumerate() {
+                ui.selectable_value(&mut st.card2_color_theme, i, *name);
+            }
+        });
+        if st.card2_color_theme != prev_theme
+            && let Some((name, _, _)) = TABLE_COLOR_THEMES.get(st.card2_color_theme)
+        {
+            st.card2_theme_override = Some(name.to_string());
+        }
     });
 
     // Placement
@@ -3329,6 +3353,34 @@ fn load_card2_csv(st: &mut PubgenState, path: &str) {
         return;
     }
     st.card2_matrix = rows;
+
+    for row in &st.card2_matrix {
+        let first = row.first().map(|s| s.trim()).unwrap_or("");
+        let first_lower = first.to_lowercase();
+        if excel::THEME_KEYS.iter().any(|k| first_lower.starts_with(k)) {
+            let val = if let Some(pos) = first.find(':') {
+                first[pos + 1..].trim().to_string()
+            } else {
+                row.get(1).map(|s| s.trim().to_string()).unwrap_or_default()
+            };
+            if !val.is_empty()
+                && let Some(th) = parse_table_color_theme(&val)
+            {
+                if th == TableColorTheme::new("#FFCB56", "#FFE9A9") {
+                    st.card2_color_theme = 0;
+                } else if th == TableColorTheme::new("#F3D2AF", "#F8EADC") {
+                    st.card2_color_theme = 1;
+                } else if th == TableColorTheme::new("#9E7EB5", "#C4A4DA") {
+                    st.card2_color_theme = 2;
+                } else if th.is_none() {
+                    st.card2_color_theme = 3;
+                }
+                st.card2_theme_override = Some(val);
+            }
+            break;
+        }
+    }
+
     let r = st.card2_matrix.len();
     let c = st.card2_matrix.first().map(Vec::len).unwrap_or(0);
     let delim_name = delimiter_name(delim);
@@ -3424,6 +3476,83 @@ pub fn is_numeric_or_dash(text: &str) -> bool {
         return true;
     }
     false
+}
+
+/// Table color theme specifying background colors for table header/footer and row number row.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TableColorTheme {
+    pub header_footer: String,
+    pub row_number: String,
+}
+
+impl TableColorTheme {
+    pub fn new(header_footer: impl Into<String>, row_number: impl Into<String>) -> Self {
+        Self {
+            header_footer: header_footer.into(),
+            row_number: row_number.into(),
+        }
+    }
+
+    pub fn is_none(&self) -> bool {
+        let hf = self.header_footer.trim();
+        hf.is_empty() || hf.eq_ignore_ascii_case("none")
+    }
+}
+
+pub const TABLE_COLOR_THEMES: &[(&str, &str, &str)] = &[
+    ("#FFCB56 - #FFE9A9", "#FFCB56", "#FFE9A9"),
+    ("#F3D2AF - #F8EADC", "#F3D2AF", "#F8EADC"),
+    ("#9E7EB5 - #C4A4DA", "#9E7EB5", "#C4A4DA"),
+    ("None", "", ""),
+];
+
+/// Parse a table color theme from string (preset index "0", "1", "2", hex names, or custom pair).
+pub fn parse_table_color_theme(val: &str) -> Option<TableColorTheme> {
+    let s = val.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let lower = s.to_lowercase();
+    if lower == "none" || lower == "plain" || lower == "white" || lower == "transparent" {
+        return Some(TableColorTheme::new("", ""));
+    }
+    if s == "0" || lower.contains("ffcb56") || lower == "gold" || lower == "amber" {
+        return Some(TableColorTheme::new("#FFCB56", "#FFE9A9"));
+    }
+    if s == "1" || lower.contains("f3d2af") || lower.contains("f8eadc") || lower == "peach" || lower == "sand" {
+        return Some(TableColorTheme::new("#F3D2AF", "#F8EADC"));
+    }
+    if s == "2" || lower.contains("9e7eb5") || lower.contains("c4a4da") || lower == "lilac" || lower == "lavender" {
+        return Some(TableColorTheme::new("#9E7EB5", "#C4A4DA"));
+    }
+    for sep in ['-', ',', '/', ';'] {
+        if let Some((h, r)) = s.split_once(sep) {
+            let h = h.trim();
+            let r = r.trim();
+            if !h.is_empty() && !r.is_empty() {
+                let h_hex = if h.starts_with('#') { h.to_string() } else { format!("#{h}") };
+                let r_hex = if r.starts_with('#') { r.to_string() } else { format!("#{r}") };
+                return Some(TableColorTheme::new(h_hex, r_hex));
+            }
+        }
+    }
+    None
+}
+
+/// Ensure a hex color swatch exists in the document swatches and return its canonical swatch name.
+pub fn ensure_swatch(doc: &mut designcraft_doc::Document, hex: &str) -> String {
+    let clean = hex.trim();
+    if clean.is_empty() || clean.eq_ignore_ascii_case("none") {
+        return String::new();
+    }
+    let formatted = if clean.starts_with('#') { clean.to_string() } else { format!("#{clean}") };
+    let upper = formatted.to_uppercase();
+    if !doc.swatches.iter().any(|s| s.name.eq_ignore_ascii_case(&upper))
+        && let Some(col) = designcraft_color::Color::from_hex(&upper)
+    {
+        doc.swatches.push(designcraft_color::swatch::Swatch::color(&upper, col));
+    }
+    upper
 }
 
 /// Detect row indices (0-based relative to matrix) matching the summary/break keyword condition.
@@ -3946,6 +4075,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
     let template_col = effective_col(st.card1_template_col, &st.card1_headers, &["template"], 4);
     let title_en_col = effective_col(st.card1_title_en_col, &st.card1_headers, &["title_en", "titleen"], 5);
     let file_en_col = effective_col(st.card1_file_en_col, &st.card1_headers, &["file_en", "fileen"], 6);
+    let theme_col = effective_col(999, &st.card1_headers, &["theme", "themes", "table_theme", "tabletheme", "color", "colortheme", "warna"], 999);
 
     for row in slice {
         let type_val = row.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("").trim();
@@ -3953,6 +4083,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         let title_val = row.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("").trim();
         let title_en_val = row.get(title_en_col).map(String::as_str).unwrap_or("").trim();
         let file_en_val = row.get(file_en_col).map(String::as_str).unwrap_or("").trim();
+        let theme_val = row.get(theme_col).map(String::as_str).unwrap_or("").trim();
         let file_val = row.get(file_col).map(String::as_str).unwrap_or("").trim();
         let (clean_id_title, clean_en_title) = if let Some((id_t, en_t)) = locale::split_pair(title_val) {
             (id_t, if title_en_val.is_empty() { en_t } else { title_en_val })
@@ -4040,7 +4171,11 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                         let tbl_matrix = parse_csv_content_with_delim(&content, delim);
                         if !tbl_matrix.is_empty() {
                             let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
-                            if execute_insert_table_matrix(app, st, Some(&tbl_matrix), Some(cur_page_idx)).is_ok() {
+                            let mut table_st = st.clone();
+                            if !theme_val.is_empty() {
+                                table_st.card2_theme_override = Some(theme_val.to_string());
+                            }
+                            if execute_insert_table_matrix(app, &table_st, Some(&tbl_matrix), Some(cur_page_idx)).is_ok() {
                                 inserted_tables_count = inserted_tables_count.saturating_add(1);
                             }
                         }
@@ -5203,7 +5338,11 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     let tbl_matrix = parse_csv_content_with_delim(&content, delim);
                     if !tbl_matrix.is_empty() {
                         let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
-                        if execute_insert_table_matrix(app, st, Some(&tbl_matrix), Some(cur_page_idx)).is_ok() {
+                        let mut table_st = st.clone();
+                        if !theme_val.is_empty() {
+                            table_st.card2_theme_override = Some(theme_val.to_string());
+                        }
+                        if execute_insert_table_matrix(app, &table_st, Some(&tbl_matrix), Some(cur_page_idx)).is_ok() {
                             inserted_tables_count = inserted_tables_count.saturating_add(1);
                         }
                     }
@@ -5900,9 +6039,42 @@ pub fn execute_insert_table_matrix(
         return Err("No tabular data to insert".into());
     }
 
+    // Detect and extract any metadata rows (e.g. theme: #FFCB56 - #FFE9A9 or color: ...)
+    let mut detected_theme = None;
+    let mut matrix = source_matrix.to_vec();
+    matrix.retain(|row| {
+        let first = row.first().map(|s| s.trim()).unwrap_or("");
+        let first_lower = first.to_lowercase();
+        let is_theme_key = excel::THEME_KEYS.iter().any(|k| first_lower.starts_with(k));
+        if is_theme_key {
+            // Find theme value in second cell or after ':' in first cell
+            let val = if let Some(pos) = first.find(':') {
+                first[pos + 1..].trim().to_string()
+            } else {
+                row.get(1).map(|s| s.trim().to_string()).unwrap_or_default()
+            };
+            if !val.is_empty() {
+                detected_theme = parse_table_color_theme(&val);
+            }
+            return false;
+        }
+        true
+    });
+
+    let active_theme: TableColorTheme = st
+        .card2_theme_override
+        .as_deref()
+        .and_then(parse_table_color_theme)
+        .or(detected_theme)
+        .unwrap_or_else(|| {
+            TABLE_COLOR_THEMES
+                .get(st.card2_color_theme)
+                .map(|(_, hf, rn)| TableColorTheme::new(*hf, *rn))
+                .unwrap_or_else(|| TableColorTheme::new("#FFCB56", "#FFE9A9"))
+        });
+
     // Detect and extract trailing footnote/source row(s) (where only first col has data and rest of cols are empty)
     let mut footnotes = Vec::new();
-    let mut matrix = source_matrix.to_vec();
     let cols_count = matrix.iter().map(Vec::len).max().unwrap_or(0);
     if cols_count > 1 {
         while matrix.len() > 1 {
@@ -6204,6 +6376,15 @@ pub fn execute_insert_table_matrix(
 
     app.session
         .edit(|doc, _| {
+            let (hf_swatch, rn_swatch) = if !active_theme.is_none() {
+                (
+                    ensure_swatch(doc, &active_theme.header_footer),
+                    ensure_swatch(doc, &active_theme.row_number),
+                )
+            } else {
+                (String::new(), String::new())
+            };
+
             if st.card2_style == 3 && !doc.styles.table.iter().any(|s| s.name == "Horizontal Rules") {
                 let ts = designcraft_doc::TableStyle {
                     name: "Horizontal Rules".to_string(),
@@ -6319,6 +6500,39 @@ pub fn execute_insert_table_matrix(
                                 p.para.align = Some(designcraft_doc::Align::Center);
                             }
                             cell.text.rev += 1;
+                        }
+                    }
+                }
+            }
+
+            // 3. Bilingual table content styling: all English text after " / " or on separate lines is Italic
+            for r in 0..nr {
+                for c in 0..nc {
+                    if let Some(cell) = table.cell_mut(r, c) {
+                        let text = cell.text.text.clone();
+                        // Case A: Separated by " / "
+                        if let Some(pos) = text.find(" / ") {
+                            let en_byte_start = pos + " / ".len();
+                            if en_byte_start < text.len() {
+                                cell.text.format_chars(en_byte_start..text.len(), |f| {
+                                    let is_bold = f.over.font_style.as_deref().is_some_and(|s| s.to_lowercase().contains("bold"));
+                                    f.over.font_style = Some(if is_bold { "Bold Italic".to_string() } else { "Italic".to_string() });
+                                });
+                            }
+                        } else if let Some(pos) = text.find(designcraft_doc::FORCED_LINE_BREAK).or_else(|| text.find('\n')) {
+                            // Case B: Separated by line break (Indonesian line 1, English line 2+)
+                            let break_len = if text[pos..].starts_with(designcraft_doc::FORCED_LINE_BREAK) {
+                                designcraft_doc::FORCED_LINE_BREAK.len_utf8()
+                            } else {
+                                1
+                            };
+                            let en_byte_start = pos + break_len;
+                            if en_byte_start < text.len() {
+                                cell.text.format_chars(en_byte_start..text.len(), |f| {
+                                    let is_bold = f.over.font_style.as_deref().is_some_and(|s| s.to_lowercase().contains("bold"));
+                                    f.over.font_style = Some(if is_bold { "Bold Italic".to_string() } else { "Italic".to_string() });
+                                });
+                            }
                         }
                     }
                 }
@@ -6501,6 +6715,44 @@ pub fn execute_insert_table_matrix(
                 && let Some(r) = table.rows.last_mut()
             {
                 r.kind = designcraft_doc::RowKind::Footer;
+            }
+
+            // Apply Table Color Theme fills
+            if !active_theme.is_none() {
+                // 1. Header rows fill
+                if !hf_swatch.is_empty() && header_rows > 0 {
+                    for r in 0..header_rows.min(nr) {
+                        for c in 0..nc {
+                            if let Some(cell) = table.cell_mut(r, c) {
+                                cell.fill = hf_swatch.clone();
+                                cell.fill_tint = 1.0;
+                            }
+                        }
+                    }
+                }
+
+                // 2. Row number row fill
+                if !rn_swatch.is_empty() && data_start > header_rows {
+                    for r in header_rows..data_start.min(nr) {
+                        for c in 0..nc {
+                            if let Some(cell) = table.cell_mut(r, c) {
+                                cell.fill = rn_swatch.clone();
+                                cell.fill_tint = 1.0;
+                            }
+                        }
+                    }
+                }
+
+                // 3. Footer row fill
+                if !hf_swatch.is_empty() && st.card2_table_footer && nr > data_start + 1 {
+                    let footer_row = nr - 1;
+                    for c in 0..nc {
+                        if let Some(cell) = table.cell_mut(footer_row, c) {
+                            cell.fill = hf_swatch.clone();
+                            cell.fill_tint = 1.0;
+                        }
+                    }
+                }
             }
 
             Ok(())
@@ -8393,6 +8645,20 @@ fn apply_excel_cover(st: &mut PubgenState, cover: &excel::ExcelCoverData, base_d
     if !cover.logo.trim().is_empty() {
         st.cover_image_logo = resolve(&cover.logo);
     }
+    if !cover.table_theme.trim().is_empty()
+        && let Some(th) = parse_table_color_theme(&cover.table_theme)
+    {
+        if th == TableColorTheme::new("#FFCB56", "#FFE9A9") {
+            st.card2_color_theme = 0;
+        } else if th == TableColorTheme::new("#F3D2AF", "#F8EADC") {
+            st.card2_color_theme = 1;
+        } else if th == TableColorTheme::new("#9E7EB5", "#C4A4DA") {
+            st.card2_color_theme = 2;
+        } else if th.is_none() {
+            st.card2_color_theme = 3;
+        }
+        st.card2_theme_override = Some(cover.table_theme.trim().to_string());
+    }
 }
 
 pub fn execute_excel_to_csvs(st: &mut PubgenState, path: &str) -> Result<String, String> {
@@ -9923,6 +10189,250 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             let cell = table.cell(r, 3).unwrap();
             assert_ne!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Data row {r} col 3 should remain left aligned");
         }
+    }
+
+    #[test]
+    fn test_parse_table_color_theme() {
+        assert_eq!(parse_table_color_theme("0"), Some(TableColorTheme::new("#FFCB56", "#FFE9A9")));
+        assert_eq!(parse_table_color_theme("gold"), Some(TableColorTheme::new("#FFCB56", "#FFE9A9")));
+        assert_eq!(parse_table_color_theme("1"), Some(TableColorTheme::new("#F3D2AF", "#F8EADC")));
+        assert_eq!(parse_table_color_theme("peach"), Some(TableColorTheme::new("#F3D2AF", "#F8EADC")));
+        assert_eq!(parse_table_color_theme("2"), Some(TableColorTheme::new("#9E7EB5", "#C4A4DA")));
+        assert_eq!(parse_table_color_theme("lilac"), Some(TableColorTheme::new("#9E7EB5", "#C4A4DA")));
+        assert_eq!(parse_table_color_theme("none"), Some(TableColorTheme::new("", "")));
+        assert_eq!(parse_table_color_theme("plain"), Some(TableColorTheme::new("", "")));
+        assert_eq!(parse_table_color_theme("#112233 - #445566"), Some(TableColorTheme::new("#112233", "#445566")));
+    }
+
+    #[test]
+    fn test_execute_insert_table_color_theme_default() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Kecamatan".into(), "2021".into(), "2022".into(), "2025".into()],
+                vec!["Cikampek".into(), "10".into(), "20".into(), "30".into()],
+                vec!["Klari".into(), "15".into(), "25".into(), "35".into()],
+                vec!["Karawang".into(), "25".into(), "45".into(), "65".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_table_footer: true,
+            card2_color_theme: 0, // Default: #FFCB56 - #FFE9A9
+            card2_placement: 1,   // New frame
+            card2_style: 3,       // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "Table insertion failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .unwrap();
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        // 1 header row + 1 col numbers row + 3 data rows (last is footer) = 5 rows
+        assert_eq!(table.rows.len(), 5);
+
+        // Header row (row 0) must have fill == "#FFCB56"
+        for c in 0..4 {
+            let cell = table.cell(0, c).unwrap();
+            assert_eq!(cell.fill, "#FFCB56");
+            assert_eq!(cell.fill_tint, 1.0);
+        }
+
+        // Col number row (row 1) must have fill == "#FFE9A9"
+        for c in 0..4 {
+            let cell = table.cell(1, c).unwrap();
+            assert_eq!(cell.fill, "#FFE9A9");
+            assert_eq!(cell.fill_tint, 1.0);
+        }
+
+        // Interior data rows (rows 2, 3) must have uncolored fill
+        for r in 2..4 {
+            for c in 0..4 {
+                let cell = table.cell(r, c).unwrap();
+                assert_eq!(cell.fill, designcraft_color::swatch::NONE);
+            }
+        }
+
+        // Footer row (row 4) must have fill == "#FFCB56"
+        for c in 0..4 {
+            let cell = table.cell(4, c).unwrap();
+            assert_eq!(cell.fill, "#FFCB56");
+            assert_eq!(cell.fill_tint, 1.0);
+        }
+
+        // Swatches must be registered in doc
+        assert!(active.doc.swatches.iter().any(|s| s.name == "#FFCB56"));
+        assert!(active.doc.swatches.iter().any(|s| s.name == "#FFE9A9"));
+    }
+
+    #[test]
+    fn test_execute_insert_table_color_theme_metadata_override() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["theme".into(), "#F3D2AF - #F8EADC".into()],
+                vec!["Kecamatan".into(), "2021".into(), "2025".into()],
+                vec!["Cikampek".into(), "10".into(), "30".into()],
+                vec!["Karawang".into(), "25".into(), "65".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_table_footer: true,
+            card2_color_theme: 0, // default is 0, but metadata overrides to #F3D2AF - #F8EADC
+            card2_placement: 1,
+            card2_style: 3,
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "Table insertion failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .unwrap();
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        // 1 header row + 1 col numbers row + 2 data rows = 4 rows
+        assert_eq!(table.rows.len(), 4);
+
+        // Header row must have #F3D2AF
+        assert_eq!(table.cell(0, 0).unwrap().fill, "#F3D2AF");
+        // Col number row must have #F8EADC
+        assert_eq!(table.cell(1, 0).unwrap().fill, "#F8EADC");
+        // Interior data row must have NONE
+        assert_eq!(table.cell(2, 0).unwrap().fill, designcraft_color::swatch::NONE);
+        // Footer row must have #F3D2AF
+        assert_eq!(table.cell(3, 0).unwrap().fill, "#F3D2AF");
+    }
+
+    #[test]
+    fn test_execute_insert_table_bilingual_english_italic() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Kecamatan / District".into(), "Luas / Area".into(), "Keterangan\nDescription".into()],
+                vec!["Cikampek".into(), "10".into(), "Aktif / Active".into()],
+                vec!["Karawang".into(), "25".into(), "Selesai / Finished".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: false,
+            card2_table_footer: false,
+            card2_placement: 1,
+            card2_style: 3,
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "Table insertion failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .unwrap();
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        // Check Header Cell (0, 0): "Kecamatan / District"
+        let cell_0_0 = table.cell(0, 0).unwrap();
+        assert_eq!(cell_0_0.text.text, "Kecamatan / District");
+        // "Kecamatan / " is upright (not italic)
+        let fmt_id = cell_0_0.text.char_format_of(0);
+        assert_ne!(fmt_id.over.font_style.as_deref(), Some("Italic"));
+        assert_ne!(fmt_id.over.font_style.as_deref(), Some("Bold Italic"));
+        // "District" (starting at byte 12) must be Italic / Bold Italic
+        let fmt_en = cell_0_0.text.char_format_of(12);
+        let en_style = fmt_en.over.font_style.as_deref().unwrap_or("");
+        assert!(en_style.contains("Italic"), "English text 'District' must be italic, got: {en_style}");
+
+        // Check Data Cell (1, 2): "Aktif / Active"
+        let cell_1_2 = table.cell(1, 2).unwrap();
+        assert_eq!(cell_1_2.text.text, "Aktif / Active");
+        let fmt_aktif = cell_1_2.text.char_format_of(0);
+        assert_ne!(fmt_aktif.over.font_style.as_deref(), Some("Italic"));
+        let fmt_active = cell_1_2.text.char_format_of(8);
+        let active_style = fmt_active.over.font_style.as_deref().unwrap_or("");
+        assert!(active_style.contains("Italic"), "English text 'Active' must be italic, got: {active_style}");
+
+        // Check Cell with line break (0, 2): "Keterangan\u{2028}Description"
+        let cell_0_2 = table.cell(0, 2).unwrap();
+        let desc_byte = cell_0_2.text.text.find("Description").unwrap();
+        let fmt_desc = cell_0_2.text.char_format_of(desc_byte);
+        let desc_style = fmt_desc.over.font_style.as_deref().unwrap_or("");
+        assert!(desc_style.contains("Italic"), "Line 2 English text 'Description' must be italic, got: {desc_style}");
+    }
+
+    #[test]
+    fn test_execute_insert_table_with_theme_from_div_csv() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // Simulate CSV generated with theme row from DIV sheet (table_theme: #9E7EB5 - #C4A4DA)
+        let matrix = vec![
+            vec!["Kecamatan / District".into(), "Luas / Area".into()],
+            vec!["Karawang Timur".into(), "32.5".into()],
+            vec!["Jumlah / Total".into(), "32.5".into()],
+            vec!["theme".into(), "#9E7EB5 - #C4A4DA".into()],
+        ];
+
+        let st = PubgenState {
+            card2_matrix: matrix,
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_table_footer: true,
+            card2_placement: 1,
+            card2_style: 3,
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "Table insertion failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .unwrap();
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        // 4 rows in table (metadata theme row was stripped):
+        // Row 0: Header (fill = #9E7EB5)
+        // Row 1: Col numbers (fill = #C4A4DA)
+        // Row 2: Data row (fill = NONE)
+        // Row 3: Footer row (fill = #9E7EB5)
+        assert_eq!(table.rows.len(), 4);
+        assert_eq!(table.cell(0, 0).unwrap().fill, "#9E7EB5");
+        assert_eq!(table.cell(1, 0).unwrap().fill, "#C4A4DA");
+        assert_eq!(table.cell(2, 0).unwrap().fill, designcraft_color::swatch::NONE);
+        assert_eq!(table.cell(3, 0).unwrap().fill, "#9E7EB5");
     }
 
     #[test]
