@@ -14,3 +14,4 @@
 /plan/pubgen/samples/*.csv
 /plan/pubgen/*.designcraft
 ~$*
+/.kilo/
