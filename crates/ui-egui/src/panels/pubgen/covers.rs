@@ -1013,3 +1013,58 @@ pub fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<S
         Ok(format!("Cover page generated successfully ({sname})"))
     }
 }
+pub(super) fn add_cover_text_frame(
+    app: &mut DesignApp,
+    spread: usize,
+    rect: [f64; 4],
+    text: &str,
+    color: &str,
+    font_family: &str,
+    font_style: &str,
+    size: f64,
+    leading: Option<f64>,
+    tracking: Option<f64>,
+    align: &str,
+) -> Result<u64, String> {
+    let res = app
+        .run(
+            "frame.create",
+            json!({
+                "spread": spread,
+                "rect": rect,
+                "content": "text",
+                "text": text,
+                "caret": false,
+            }),
+        )
+        .map_err(|e| format!("frame.create failed for '{text}': {e}"))?;
+
+    let id = res.get("id").and_then(Value::as_u64).ok_or("Missing frame id")?;
+    let story = res.get("story").and_then(Value::as_u64);
+
+    let mut char_attrs = json!({
+        "fontFamily": font_family,
+        "fontStyle": font_style,
+        "size": size,
+    });
+    if let Some(lead) = leading {
+        char_attrs["leading"] = json!({"kind": "points", "value": lead});
+    }
+    if let Some(track) = tracking {
+        char_attrs["tracking"] = json!(track);
+    }
+
+    if let Some(sid) = story {
+        let _ = app.run("text.select", json!({"story": sid, "anchor": 0, "focus": text.len()}));
+        let _ = app.run("object.color", json!({"color": color, "text": true}));
+        let _ = app.run("type.char", json!({"attrs": char_attrs.clone()}));
+        let _ = app.run("type.para", json!({"attrs": {"align": align}}));
+    }
+
+    let _ = app.run("selection.set", json!({"ids": [id]}));
+    let _ = app.run("object.color", json!({"color": color, "text": true}));
+    let _ = app.run("type.char", json!({"attrs": char_attrs}));
+    let _ = app.run("type.para", json!({"attrs": {"align": align}}));
+
+    Ok(id)
+}
