@@ -178,3 +178,126 @@ pub fn execute_page_from_image(app: &mut DesignApp, st: &mut PubgenState, path: 
 
     Ok(format!("Placed '{filename}' as {mode_desc} on Page {cur_label}"))
 }
+
+pub(crate) fn page_utilities_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    section(ui, crate::i18n::tr(&app.ui.language, "4. Page Utilities"), true);
+
+    let facing = app.session.active().map(|s| s.doc.settings.facing_pages).unwrap_or(true);
+    let cur_page =
+        app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app)).unwrap_or_else(|| target_page_index(app));
+    let cur_label = app.session.page_label(cur_page);
+
+    // Button 1: switch Facing Pages
+    let facing_text = if facing { crate::i18n::tr(&app.ui.language, "Single-sided") } else { crate::i18n::tr(&app.ui.language, "Double-sided") };
+    let add_page_text = crate::i18n::tr(&app.ui.language, "Add Blank Page");
+
+    let fw = full_width(ui);
+    let hw = (fw - 10.0) / 2.0;
+
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+
+        let tip_facing = if facing {
+            "Current: Double-sided (facing pages). Click to switch to Single-sided layout"
+        } else {
+            "Current: Single-sided layout. Click to switch to Double-sided (facing pages)"
+        };
+        let resp_facing = outline_button(ui, facing_text, hw).on_hover_text(tip_facing);
+        if resp_facing.clicked() {
+            let next_facing = !facing;
+            let _ = app.run("layout.documentSetup", json!({"facingPages": next_facing}));
+            let msg = if next_facing { "Switched to Double-sided (Facing Pages)".to_string() } else { "Switched to Single-sided layout".to_string() };
+            st.utilities_status = Some((msg.clone(), true));
+            st.card3_status = Some((msg, true));
+        }
+
+        let tip_page = format!("Insert a blank page after Page {cur_label}");
+        let resp_page = outline_button(ui, add_page_text, hw).on_hover_text(tip_page);
+        if resp_page.clicked() {
+            let _ = app.run("layout.pages.insert", json!({"after": cur_page, "count": 1}));
+            crate::canvas::go_to_page(app, cur_page + 1);
+            let next_label = app.session.page_label(cur_page + 1);
+            let msg = format!("Added blank page after Page {cur_label} (new Page {next_label})");
+            st.utilities_status = Some((msg.clone(), true));
+            st.card3_status = Some((msg, true));
+        }
+    });
+
+    let hf_text = crate::i18n::tr(&app.ui.language, "Header/Footer…");
+    let tbl_text = crate::i18n::tr(&app.ui.language, "Table Options…");
+
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+
+        let tip_hf = "Configure page running headers, footers, page numbering, and section titles";
+        let resp_hf = outline_button(ui, hf_text, hw).on_hover_text(tip_hf);
+        if resp_hf.clicked() {
+            let _ = crate::header_footer::open(app);
+        }
+
+        let tip_tbl = "Configure table header/footer rows and repeating continuation rows";
+        let resp_tbl = outline_button(ui, tbl_text, hw).on_hover_text(tip_tbl);
+        if resp_tbl.clicked() {
+            let _ = crate::dialogs::open_table_options(app);
+        }
+    });
+
+    let sec_text = crate::i18n::tr(&app.ui.language, "Numbering & Section Options…");
+    ui.add_space(4.0);
+    let resp_sec = outline_button(ui, sec_text, fw).on_hover_text("Open Layout › Numbering & Section Options dialog for the active page");
+    if resp_sec.clicked() {
+        crate::section_options::open(app);
+    }
+
+    divider(ui);
+
+    // Renumber Page / Section
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Renumber:").size(11.0).color(t.text));
+        ui.add(egui::DragValue::new(&mut st.card3_renumber_start).range(1..=9999).prefix("Start: "));
+        let styles = ["1, 2, 3…", "i, ii, iii…", "I, II, III…"];
+        let cur_style = styles.get(st.card3_renumber_style).copied().unwrap_or("1, 2, 3…");
+        egui::ComboBox::from_id_salt("pubgen_renumber_style").selected_text(cur_style).width(80.0).show_ui(ui, |ui| {
+            for (idx, s) in styles.iter().enumerate() {
+                ui.selectable_value(&mut st.card3_renumber_style, idx, *s);
+            }
+        });
+    });
+    let hw_renum = (ui.available_width() - 4.0) * 0.5;
+    ui.horizontal(|ui| {
+        let tip_renum = format!("Restart page numbering at {} on Page {cur_label}", st.card3_renumber_start);
+        if outline_button(ui, "Restart page #", hw_renum).on_hover_text(tip_renum).clicked() {
+            let res = execute_renumber_page(app, st);
+            let (msg, ok) = match res {
+                Ok(msg) => (msg, true),
+                Err(e) => (e, false),
+            };
+            st.utilities_status = Some((msg.clone(), ok));
+            st.card3_status = Some((msg, ok));
+        }
+        let tip_cont = format!("Continue numbering on Page {cur_label} (remove section restart)");
+        if outline_button(ui, "Continue #", hw_renum).on_hover_text(tip_cont).clicked() {
+            let res = execute_continue_numbering(app, st);
+            let (msg, ok) = match res {
+                Ok(msg) => (msg, true),
+                Err(e) => (e, false),
+            };
+            st.utilities_status = Some((msg.clone(), ok));
+            st.card3_status = Some((msg, ok));
+        }
+    });
+
+    let mode_str = if facing { "Double-sided" } else { "Single-sided" };
+    ui.add(egui::Label::new(RichText::new(format!("Mode: {mode_str} · Selected: Page {cur_label}")).size(10.5).color(t.text_dim)).truncate());
+
+    if let Some((msg, ok)) = &st.utilities_status {
+        let color = if *ok { Color32::from_rgb(80, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
+        ui.add(egui::Label::new(RichText::new(msg).size(11.0).color(color)).wrap());
+    }
+}
+
+#[allow(dead_code)]
+fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    page_utilities_ui(app, ui, st, t);
+}

@@ -3440,3 +3440,62 @@ pub fn execute_download_csv_zip(app: &mut DesignApp, st: &mut PubgenState) -> Re
         Ok(format!("Saved {}", save_path.display()))
     }
 }
+
+pub(crate) fn master_excel_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    section(ui, crate::i18n::tr(&app.ui.language, "1. Data Source & Generate (Master Excel)"), true);
+
+    let tip_excel = "Convert a multi-sheet Excel file (.xlsx) into 1 catalog CSV for Page from CSV + individual table CSVs (with auto-merged headers). \
+        A sheet named COVER supplies the Publication Cover values (style, title1, title2, year, volume, no_catalogue, ISSN, office_name, image_1, image_lanscape, office_logo)";
+    ui.checkbox(&mut st.excel_auto_generate, "Auto-generate pages, tables & cover from sheets")
+        .on_hover_text("When checked, picking an Excel file automatically runs 'Page from CSV', inserts each sheet's table with default options, and generates the cover page before Page 1 from the COVER sheet");
+
+    let resp_excel = primary_outline_button(ui, t, "Excel to CSV Data (.xlsx)…", full_width(ui)).on_hover_text(tip_excel);
+    if resp_excel.clicked()
+        && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
+    {
+        st.excel_source_path = path.clone();
+        let res = execute_excel_and_generate(app, st, &path);
+        let (msg, ok) = match res {
+            Ok(msg) => (msg, true),
+            Err(e) => (e, false),
+        };
+        st.excel_status = Some((msg.clone(), ok));
+        st.card3_status = Some((msg, ok));
+    }
+
+    // Active catalog / excel indicator
+    let (active_label, active_color) = if !st.excel_source_path.is_empty() {
+        let name = std::path::Path::new(&st.excel_source_path)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| st.excel_source_path.clone());
+        (format!("Active: {name} ({} records)", st.card1_records.len()), t.text)
+    } else if !st.card1_path.is_empty() {
+        let name = std::path::Path::new(&st.card1_path).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| st.card1_path.clone());
+        (format!("Active: {name} ({} records)", st.card1_records.len()), t.text)
+    } else {
+        (crate::i18n::tr(&app.ui.language, "No Excel file loaded").to_string(), t.text_dim)
+    };
+    ui.add(egui::Label::new(RichText::new(active_label).size(11.0).color(active_color)).truncate());
+
+    let tip_zip = "Download all generated catalog and table CSVs packaged in a single .zip archive";
+    let zip_label = if !st.generated_zip_name.is_empty() {
+        format!("Download {}…", st.generated_zip_name)
+    } else {
+        "Download Generated CSVs as ZIP…".to_string()
+    };
+    if outline_button(ui, &zip_label, full_width(ui)).on_hover_text(tip_zip).clicked() {
+        let res = execute_download_csv_zip(app, st);
+        let (msg, ok) = match res {
+            Ok(msg) => (msg, true),
+            Err(e) => (e, false),
+        };
+        st.excel_status = Some((msg.clone(), ok));
+        st.card3_status = Some((msg, ok));
+    }
+
+    if let Some((msg, ok)) = &st.excel_status {
+        let color = if *ok { Color32::from_rgb(80, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
+        ui.add(egui::Label::new(RichText::new(msg).size(11.0).color(color)).wrap());
+    }
+}
