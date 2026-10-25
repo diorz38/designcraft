@@ -1562,7 +1562,6 @@ mod tests {
 #[cfg(test)]
 pub(crate) mod flow_tests {
     use super::super::ai;
-    use super::super::testutil::*;
     use super::super::*;
     use super::*;
 

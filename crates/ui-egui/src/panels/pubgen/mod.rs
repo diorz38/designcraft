@@ -46,7 +46,6 @@ pub(crate) use helpers::*;
 pub(crate) use page_utils::*;
 pub(crate) use pages::*;
 pub use state::PubgenState;
-pub(crate) use state::{default_cover_title, default_cover_title2};
 pub(crate) use tables::*;
 pub(crate) use themes::*;
 pub(crate) use thumbnails::*;

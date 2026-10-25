@@ -547,7 +547,6 @@ pub fn execute_delete_hf_template(app: &mut DesignApp, st: &mut PubgenState, nam
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::testutil::*;
     use super::*;
 
     #[test]

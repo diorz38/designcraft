@@ -1112,7 +1112,6 @@ pub(super) fn add_cover_text_frame(
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::testutil::*;
     use super::*;
 
     #[test]

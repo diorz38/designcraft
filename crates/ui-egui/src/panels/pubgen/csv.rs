@@ -185,11 +185,6 @@ pub(crate) fn parse_csv_content_with_delim(text: &str, delim: char) -> Vec<Vec<S
     rows
 }
 
-pub(crate) fn parse_csv_content(text: &str) -> Vec<Vec<String>> {
-    let delim = detect_delimiter(text);
-    parse_csv_content_with_delim(text, delim)
-}
-
 /// Find a CSV column by exact header name (case-insensitive, all columns); `fallback` position
 /// when no header matches — keeps legacy fixed-position layouts working.
 /// Resolve a catalog-relative image: `resolve_catalog_related_file` for each of `exts` in
@@ -415,13 +410,12 @@ pub(crate) fn is_numeric_or_dash(text: &str) -> bool {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::testutil::*;
     use super::*;
 
     #[test]
     fn test_parse_csv_content_rfc4180() {
         let csv = "type,number,title\n\"Chapter\",01,\"The Beginning, and Future\"\nSection,02,\"Clean Architecture\"\n";
-        let rows = parse_csv_content(csv);
+        let rows = parse_csv_content_with_delim(csv, ',');
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0], vec!["type", "number", "title"]);
         assert_eq!(rows[1], vec!["Chapter", "01", "The Beginning, and Future"]);
@@ -431,13 +425,13 @@ pub(crate) mod tests {
     #[test]
     fn test_parse_csv_content_tab_and_semicolon() {
         let tsv = "Item\tQty\tPrice\nWidget\t10\t$5.00\n";
-        let rows = parse_csv_content(tsv);
+        let rows = parse_csv_content_with_delim(tsv, '\t');
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0], vec!["Item", "Qty", "Price"]);
         assert_eq!(rows[1], vec!["Widget", "10", "$5.00"]);
 
         let semi = "ColA;ColB\nValA;ValB\n";
-        let rows2 = parse_csv_content(semi);
+        let rows2 = parse_csv_content_with_delim(semi, ';');
         assert_eq!(rows2.len(), 2);
         assert_eq!(rows2[0], vec!["ColA", "ColB"]);
         assert_eq!(rows2[1], vec!["ValA", "ValB"]);
@@ -449,7 +443,7 @@ pub(crate) mod tests {
                        Tabel;01.01.;Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006\n\
                        Tabel;01.02.;Keadaan Curah Hujan Tiap Bulan menurut Kecamatan (mm), 2006\n";
         assert_eq!(detect_delimiter(content), ';');
-        let rows = parse_csv_content(content);
+        let rows = parse_csv_content_with_delim(content, ';');
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0], vec!["type", "number", "title"]);
         assert_eq!(rows[1], vec!["Tabel", "01.01.", "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006"]);
@@ -461,7 +455,7 @@ pub(crate) mod tests {
         // Comma with quotes containing semicolon
         let csv_with_semi = "id,name,tags\n1,Alice,\"tag1;tag2\"\n2,Bob,\"tag3\"\n";
         assert_eq!(detect_delimiter(csv_with_semi), ',');
-        let r1 = parse_csv_content(csv_with_semi);
+        let r1 = parse_csv_content_with_delim(csv_with_semi, ',');
         assert_eq!(r1[1], vec!["1", "Alice", "tag1;tag2"]);
 
         // Tab with commas in values
@@ -481,7 +475,7 @@ pub(crate) mod tests {
         // UTF-8 BOM
         let with_bom = "\u{FEFF}type;number;title\nTabel;01;Judul\n";
         assert_eq!(detect_delimiter(with_bom), ';');
-        let rows_bom = parse_csv_content(with_bom);
+        let rows_bom = parse_csv_content_with_delim(with_bom, ';');
         assert_eq!(rows_bom[0], vec!["type", "number", "title"]);
     }
 

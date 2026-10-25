@@ -583,7 +583,6 @@ impl Default for PubgenState {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::super::testutil::*;
     use super::super::*;
     use super::*;
 

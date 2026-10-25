@@ -3502,7 +3502,7 @@ pub(crate) fn master_excel_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
 
 #[cfg(test)]
 pub(crate) mod flow_tests {
-    use super::testutil::*;
+    use super::super::state::default_cover_title;
     use super::*;
 
     #[test]

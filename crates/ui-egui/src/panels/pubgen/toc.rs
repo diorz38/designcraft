@@ -14,7 +14,6 @@ pub const TOC_NARRATIVE_STYLE: &str = "TOC Chapter";
 /// this style at generation, so the paragraph TOC pairs it with the Indonesian chapter row
 /// ("BAB 01 Geografi / Geography") instead of listing it as a page of its own. Only tagged when
 /// the pairing checkbox is on with the Dual Lang toggle.
-pub const TOC_CHAPTER_EN_STYLE: &str = "TOC Chapter EN";
 
 /// The words the first text box on a page must start with for each TOC style; none lists every
 /// paragraph of the tagged style (the original behaviour). A paragraph list takes chapter pages
@@ -240,16 +239,16 @@ pub(crate) fn is_section_header(toc_kind: usize, r_type: &str, num_str: &str, ti
 /// chose when it was created.
 #[derive(Clone, Debug)]
 /// One listed paragraph style of a table of contents and the level it nests at.
-struct TocLevel {
-    style: String,
-    level: u8,
+pub(crate) struct TocLevel {
+    pub(crate) style: String,
+    pub(crate) level: u8,
     /// `pageTitle` filter: list a page only when its first text box starts with one of these.
-    words: Vec<String>,
+    pub(crate) words: Vec<String>,
     /// Prefix the entry with the page's first text box (the chapter line): a narrative page's
     /// title reads "BAB 01 Geografi" instead of "Geografi".
-    chapter_number: bool,
+    pub(crate) chapter_number: bool,
     /// Pair bilingual headings (ID / EN) of this style into one row on Dual Lang pages.
-    pair: bool,
+    pub(crate) pair: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -1170,6 +1169,7 @@ pub const TOC_CONTINUATION_HEADER_LABEL: &str = "pubgen_toc_continuation_header"
 pub(crate) const TOC_CONT_HEADER_H: f64 = 18.0;
 pub(crate) const TOC_CONT_HEADER_GAP: f64 = 6.0;
 
+#[cfg(test)]
 pub(crate) fn remove_toc_continuation_headers(app: &mut DesignApp) {
     let _ = app.session.edit(|doc, _| {
         let mut to_remove = Vec::new();

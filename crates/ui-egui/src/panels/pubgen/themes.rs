@@ -78,7 +78,6 @@ pub(crate) fn ensure_swatch(doc: &mut designcraft_doc::Document, hex: &str) -> S
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::testutil::*;
     use super::*;
 
     #[test]

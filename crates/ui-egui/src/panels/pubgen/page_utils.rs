@@ -247,6 +247,8 @@ pub fn execute_page_from_rtf(app: &mut DesignApp, st: &mut PubgenState, path: &s
 
 /// Page from Image: place an image on the selected page either as an image object fitted inside
 /// the page margins, or as a full-page background (page bounds, sent to the back).
+/// ponytail: unwired engine utility kept for the page-from-image tests; wire into page_utilities_ui when the panel gains the button.
+#[cfg(test)]
 pub fn execute_page_from_image(app: &mut DesignApp, st: &mut PubgenState, path: &str) -> Result<String, String> {
     let target_path = if path.trim().is_empty() {
         st.image_path.trim().trim_matches('"').trim().to_string()

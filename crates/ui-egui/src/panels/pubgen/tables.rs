@@ -1119,7 +1119,6 @@ pub(crate) fn estimate_text_width(text: &str, is_uppercase_kicker: bool) -> f64 
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::testutil::*;
     use super::*;
 
     #[test]
@@ -1541,7 +1540,7 @@ pub(crate) mod tests {
             "\"Persentase terhadap Luas Kecamatan\n/ Percentage to District Area\"\n",
             "Warungbambu,1.65,21.32\n",
         );
-        let matrix = parse_csv_content(csv);
+        let matrix = parse_csv_content_with_delim(csv, ',');
         assert_eq!(matrix.len(), 2);
         assert!(matrix[0][1].contains('\n'));
 
@@ -2063,7 +2062,7 @@ Luka Berat (Badly Injured);28,89;33;34,81;63
 Luka Ringan (Slightly Injured);62,15;70;22,65;41
 JUMLAH / TOTAL;100,00;113;100,00;181";
         st.card2_delim = Some(detect_delimiter(content));
-        st.card2_matrix = parse_csv_content(content);
+        st.card2_matrix = parse_csv_content_with_delim(content, detect_delimiter(content));
         assert_eq!(st.card2_matrix.len(), 5);
         assert_eq!(st.card2_delim, Some(';'));
 
