@@ -411,8 +411,9 @@ fn mcp_automation_roots_take_several_folders() {
     for d in ["in", "shared", "out", "scratch", "outside", "in2", "scratch2"] {
         std::fs::create_dir_all(base.join(d)).unwrap();
     }
-    // Resolved, as the server shows the roots (`/var` is `/private/var` on macOS).
-    let base = std::fs::canonicalize(base).unwrap();
+    // Resolved, as the server shows the roots (`/var` is `/private/var` on macOS, and Windows'
+    // `\\?\` prefix is stripped, matching `AutomationRoots::describe`).
+    let base = designcraft_engine::file_access::plain(std::fs::canonicalize(base).unwrap());
     for f in ["in/a.designcraft", "shared/b.designcraft", "outside/secret.designcraft", "parent.designcraft", "in2/c.designcraft"] {
         make_document(&base.join(f));
     }

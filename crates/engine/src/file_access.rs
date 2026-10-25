@@ -183,7 +183,8 @@ pub fn current() -> Option<Arc<AutomationRoots>> {
 }
 
 /// `path` without Windows' `\\?\` prefix (which `canonicalize` adds), for people to read.
-fn plain(path: PathBuf) -> PathBuf {
+/// The path without Windows' `\\?\` (and `\\?\UNC\`) prefix: what people read. No-op elsewhere.
+pub fn plain(path: PathBuf) -> PathBuf {
     if !cfg!(windows) {
         return path;
     }
