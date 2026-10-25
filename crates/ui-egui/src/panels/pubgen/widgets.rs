@@ -367,3 +367,843 @@ pub(crate) fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
         ui.add(egui::Label::new(RichText::new(msg).size(10.5).color(color)).wrap());
     }
 }
+
+pub(crate) fn card1_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    // Active catalog indicator (populated from Excel conversion)
+    let (file_label, color) = if st.card1_path.is_empty() {
+        (crate::i18n::tr(&app.ui.language, "No file selected").to_string(), t.text_dim)
+    } else {
+        let name = std::path::Path::new(&st.card1_path).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| st.card1_path.clone());
+        (format!("{name} ({} records)", st.card1_records.len()), t.text)
+    };
+    ui.add(egui::Label::new(RichText::new(file_label).size(11.0).color(color)).truncate());
+
+    // Column detection badges
+    if !st.card1_headers.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new("Columns:").size(10.5).color(t.text_dim));
+            if let Some(d) = st.card1_delim {
+                badge(ui, t, "delim", delimiter_name(d));
+            }
+            badge(ui, t, "type", st.card1_headers.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("col 0"));
+            badge(ui, t, "number", st.card1_headers.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("col 1"));
+            badge(ui, t, "title", st.card1_headers.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("col 2"));
+            if let Some(f_hdr) = st.card1_headers.get(3) {
+                badge(ui, t, "file", f_hdr);
+            }
+            if let Some(tpl_hdr) = st.card1_headers.get(4) {
+                badge(ui, t, "template", tpl_hdr);
+            }
+            if let Some(idx) = st.card1_headers.iter().position(|h| h.trim().eq_ignore_ascii_case("title_en"))
+                && let Some(h) = st.card1_headers.get(idx)
+            {
+                badge(ui, t, "title_en", h);
+            }
+            if let Some(idx) = st.card1_headers.iter().position(|h| h.trim().eq_ignore_ascii_case("file_en"))
+                && let Some(h) = st.card1_headers.get(idx)
+            {
+                badge(ui, t, "file_en", h);
+            }
+        });
+    }
+
+    if st.card1_headers.len() >= 4 || st.card1_records.iter().any(|r| r.len() >= 4) {
+        ui.checkbox(&mut st.card1_auto_insert_tables, "Auto-insert table from 'file' col (e.g. 02_01.csv)");
+    }
+
+    // Layout Preset Selector
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Layout:").size(11.0).color(t.text));
+        let presets = [
+            "1 Row · 3 Columns",
+            "1 Row · 3 Equal Cols",
+            "Editorial Chapter (Stacked)",
+            "Technical Spec Card",
+            "Minimal Zine",
+            "TOC Line (1 paragraph/record)",
+            "Modular Template",
+        ];
+        let cur = presets.get(st.card1_preset).copied().unwrap_or("1 Row · 3 Columns");
+        let combo_w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
+        egui::ComboBox::from_id_salt("pubgen_card1_preset").selected_text(cur).width(combo_w).show_ui(ui, |ui| {
+            for (i, p) in presets.iter().enumerate() {
+                ui.selectable_value(&mut st.card1_preset, i, *p);
+            }
+        });
+    });
+
+    if st.card1_preset == 6 {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Template:").size(11.0).color(t.text));
+            let w = (ui.available_width() - 4.0).clamp(80.0, 240.0);
+            ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.card1_template_path))
+                .on_hover_text("Path to .designcraft template file (leave blank for canonical auto-dispatch)");
+        });
+    }
+
+    // Every preset tags its title paragraph with this paragraph style; a TOC entry's text is the
+    // paragraph's text, so "prefix" makes the entry read "Tabel 01.01. Jarak …".
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("TOC tag style:").size(11.0).color(t.text));
+        let w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
+        ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.toc_style))
+            .on_hover_text("Paragraph style that tags each generated page's title, so the table of contents lists that page");
+    });
+    if st.card1_preset != 5 {
+        ui.checkbox(&mut st.card1_toc_prefix, "TOC entry: prefix with type + number");
+    }
+
+    // Record Scope
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Scope:").size(11.0).color(t.text));
+        ui.radio_value(&mut st.card1_range_all, true, "All");
+        ui.radio_value(&mut st.card1_range_all, false, "Range");
+        if !st.card1_range_all {
+            ui.add(egui::DragValue::new(&mut st.card1_range_from).range(1..=st.card1_records.len().max(1)).prefix("From: "));
+            ui.add(egui::DragValue::new(&mut st.card1_range_to).range(1..=st.card1_records.len().max(1)).prefix("To: "));
+        }
+    });
+
+    ui.checkbox(&mut st.card1_append, "Append to document");
+
+    // Action button. With AI translation on, generation is two-phase: the first click
+    // collects the Indonesian units and spawns the worker; when the job finishes (polled
+    // in show()), the same click path generates with the EN maps filled.
+    let can_gen = !st.card1_records.is_empty();
+    if ui.add_enabled(can_gen, egui::Button::new("Generate Pages")).clicked() {
+        let res = execute_generate_pages(app, st);
+        st.card1_status = Some(match res {
+            Ok(msg) => (msg, true),
+            Err(err) => (err, false),
+        });
+    }
+
+    if let Some((msg, ok)) = &st.card1_status {
+        let color = if *ok { Color32::from_rgb(80, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
+        ui.add(egui::Label::new(RichText::new(msg).size(11.0).color(color)).wrap());
+    }
+}
+
+#[allow(dead_code)]
+
+pub(crate) fn card2_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    // Sheet table selector (if populated by Excel conversion)
+    if !st.card2_sheet_tables.is_empty() {
+        let mut new_selection = None;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Sheet table:").size(11.0).color(t.text));
+            let cur_name = st
+                .card2_sheet_tables
+                .get(st.card2_sheet_idx)
+                .and_then(|p| std::path::Path::new(p).file_name().map(|n| n.to_string_lossy().to_string()))
+                .unwrap_or_else(|| "Select sheet".into());
+            let combo_w = (ui.available_width() - 4.0).clamp(100.0, 240.0);
+            egui::ComboBox::from_id_salt("pubgen_card2_sheet_selector").selected_text(cur_name).width(combo_w).show_ui(ui, |ui| {
+                for (idx, p) in st.card2_sheet_tables.iter().enumerate() {
+                    let name = std::path::Path::new(p).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| p.clone());
+                    let is_sel = idx == st.card2_sheet_idx;
+                    if ui.selectable_label(is_sel, name).clicked() {
+                        new_selection = Some(idx);
+                    }
+                }
+            });
+        });
+        if let Some(idx) = new_selection
+            && let Some(p) = st.card2_sheet_tables.get(idx).cloned()
+        {
+            st.card2_sheet_idx = idx;
+            st.card2_path = p.clone();
+            load_card2_csv(st, &p);
+        }
+    }
+
+    // Active table indicator (populated from Excel conversion)
+    let (file_label, color) = if st.card2_path.is_empty() {
+        (crate::i18n::tr(&app.ui.language, "No file selected").to_string(), t.text_dim)
+    } else {
+        let name = std::path::Path::new(&st.card2_path).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| st.card2_path.clone());
+        let rows = st.card2_matrix.len();
+        let cols = st.card2_matrix.first().map(Vec::len).unwrap_or(0);
+        (format!("{name} ({}×{} grid)", rows, cols), t.text)
+    };
+    ui.add(egui::Label::new(RichText::new(file_label).size(11.0).color(color)).truncate());
+
+    ui.checkbox(&mut st.card2_first_row_header, "First row is header");
+    ui.checkbox(&mut st.card2_col_numbers, "Add column numbers (1), (2)…");
+    ui.checkbox(&mut st.card2_table_footer, "Table footer (last row)");
+    ui.checkbox(&mut st.card2_row_conditions, "Condition rules (Jumlah, Tahun…)");
+
+    if !st.card2_matrix.is_empty()
+        && let Some(d) = st.card2_delim
+    {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Delimiter:").size(10.5).color(t.text_dim));
+            badge(ui, t, "delim", delimiter_name(d));
+        });
+    }
+
+    if st.card2_first_row_header {
+        let merge_count = st.card2_matrix.first().map(|r| r.iter().filter(|c| c.contains("--")).count()).unwrap_or(0);
+        if merge_count > 1 {
+            let num_stacks = st.card2_matrix.first().map(|r| r.iter().map(|c| c.splitn(3, "--").count()).max().unwrap_or(1).clamp(1, 3)).unwrap_or(1);
+            let label = if num_stacks > 1 {
+                format!("✓ Auto-detected {num_stacks}-stack header columns (\"--\")")
+            } else {
+                "✓ Auto-detected merged header columns (\"--\")".to_string()
+            };
+            ui.add(egui::Label::new(RichText::new(label).size(10.5).color(t.accent)).wrap());
+        }
+    }
+
+    if let Some(fn_text) = detect_footnote_row(&st.card2_matrix) {
+        let display_fn = if fn_text.len() > 38 { format!("{}…", &fn_text[..38]) } else { fn_text };
+        ui.add(egui::Label::new(RichText::new(format!("✓ Auto-detected table note: \"{display_fn}\"")).size(10.5).color(t.accent)).wrap());
+    }
+
+    if st.card2_row_conditions {
+        let cond_rows = detect_condition_rows(&st.card2_matrix, st.card2_first_row_header);
+        if !cond_rows.is_empty() {
+            let label = if cond_rows.len() == 1 {
+                "✓ Auto-detected 1 summary/break row with rule formatting (\"Jumlah\", etc.)".to_string()
+            } else {
+                format!("✓ Auto-detected {} summary/break rows with rule formatting (\"Jumlah\", etc.)", cond_rows.len())
+            };
+            ui.add(egui::Label::new(RichText::new(label).size(10.5).color(t.accent)).wrap());
+        }
+    }
+
+    // Table Style Selector
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Style:").size(11.0).color(t.text));
+        let styles = ["Basic Grid", "Corporate Navy", "Minimalist", "Horizontal Rules"];
+        let cur = styles.get(st.card2_style).copied().unwrap_or("Basic Grid");
+        let combo_w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
+        egui::ComboBox::from_id_salt("pubgen_card2_style").selected_text(cur).width(combo_w).show_ui(ui, |ui| {
+            for (i, s) in styles.iter().enumerate() {
+                ui.selectable_value(&mut st.card2_style, i, *s);
+            }
+        });
+    });
+
+    // Table Color Theme Selector
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Theme:").size(11.0).color(t.text));
+        let cur = TABLE_COLOR_THEMES.get(st.card2_color_theme).map(|(name, _, _)| *name).unwrap_or("#FFCB56 - #FFE9A9");
+        let combo_w = (ui.available_width() - 4.0).clamp(80.0, 200.0);
+        let prev_theme = st.card2_color_theme;
+        egui::ComboBox::from_id_salt("pubgen_card2_theme").selected_text(cur).width(combo_w).show_ui(ui, |ui| {
+            for (i, (name, _, _)) in TABLE_COLOR_THEMES.iter().enumerate() {
+                ui.selectable_value(&mut st.card2_color_theme, i, *name);
+            }
+        });
+        if st.card2_color_theme != prev_theme
+            && let Some((name, _, _)) = TABLE_COLOR_THEMES.get(st.card2_color_theme)
+        {
+            st.card2_theme_override = Some(name.to_string());
+        }
+    });
+
+    // Placement
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new("Place:").size(11.0).color(t.text));
+        ui.radio_value(&mut st.card2_placement, 0, "At cursor");
+        ui.radio_value(&mut st.card2_placement, 1, "New frame");
+        ui.radio_value(&mut st.card2_placement, 2, "At page");
+    });
+    if st.card2_placement == 2 {
+        let cur_page = target_page_index(app);
+        let label = app.session.page_label(cur_page);
+        ui.add(egui::Label::new(RichText::new(format!("Target: Page {label} (below title)")).size(10.5).color(t.accent)).wrap());
+    }
+
+    // Action button
+    let can_insert = !st.card2_matrix.is_empty();
+    if ui.add_enabled(can_insert, egui::Button::new("Insert Table")).clicked() {
+        if std::path::Path::new(&st.card2_path).exists() {
+            load_card2_csv(st, &st.card2_path.clone());
+        }
+        let res = execute_insert_table(app, st);
+        st.card2_status = Some(match res {
+            Ok(msg) => (msg, true),
+            Err(err) => (err, false),
+        });
+    }
+
+    if let Some((msg, ok)) = &st.card2_status {
+        let color = if *ok { Color32::from_rgb(80, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
+        ui.add(egui::Label::new(RichText::new(msg).size(11.0).color(color)).wrap());
+    }
+}
+
+#[allow(dead_code)]
+
+pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    // 1. Template Style with Hover Thumbnail Preview
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Style:").size(11.0).color(t.text));
+        let styles = [
+            "Wave Curves",
+            "Geometric & Medallion",
+            "Folded Origami",
+            "Chevron & Medallion",
+            "Honeycomb Hexagon",
+            "Corporate Headline",
+            "Diagonal Arrow",
+            "Modern Horizon",
+            "Business Report",
+            "Urban Angle",
+            "Tri-Color Bands",
+            "Prism Diamonds",
+            "Quarter Stack",
+        ];
+        let cur_style = styles.get(st.cover_style).copied().unwrap_or("Wave Curves");
+        // The dock can be as narrow as 220 pt: the dropdown takes what the row has left.
+        let combo_w = (ui.available_width() - 80.0).clamp(110.0, 200.0);
+        let prev_style = st.cover_style;
+        let combo = egui::ComboBox::from_id_salt("pubgen_cover_style").selected_text(cur_style).width(combo_w).show_ui(ui, |ui| {
+            for (idx, s) in styles.iter().enumerate() {
+                let resp = ui.selectable_value(&mut st.cover_style, idx, *s);
+                resp.on_hover_ui(|ui| {
+                    show_style_thumbnail_tooltip(ui, idx, s, t);
+                });
+            }
+        });
+        if st.cover_style != prev_style {
+            match st.cover_style {
+                URBAN_STYLE => apply_urban_palette(st),
+                HORIZON_STYLE | BUSINESS_STYLE => apply_report_palette(st),
+                _ => {}
+            }
+        }
+        combo.response.on_hover_ui(|ui| {
+            show_style_thumbnail_tooltip(ui, st.cover_style, cur_style, t);
+        });
+
+        // Small eye preview icon button that also triggers hover preview
+        let (thumb_icon_rect, thumb_resp) = ui.allocate_exact_size(vec2(22.0, 20.0), Sense::click());
+        let icon_hovered = thumb_resp.hovered();
+        ui.painter().rect_filled(thumb_icon_rect, 3.0, if icon_hovered { t.accent } else { t.panel });
+        ui.painter().rect_stroke(thumb_icon_rect, 3.0, egui::Stroke::new(1.0, t.border), egui::StrokeKind::Outside);
+        ui.painter().text(
+            thumb_icon_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "👁",
+            egui::FontId::proportional(11.0),
+            if icon_hovered { Color32::WHITE } else { t.text_dim },
+        );
+        thumb_resp.on_hover_ui(|ui| {
+            show_style_thumbnail_tooltip(ui, st.cover_style, cur_style, t);
+        });
+    });
+
+    ui.checkbox(&mut st.cover_include_inside_back, "Add Inside cover and Back Cover").on_hover_text(
+        "When checked, automatically generates Inside Cover (grayscale & outlines) on page 2 and Back Cover at the end of the publication",
+    );
+
+    // 2. Color Theme Preset
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Theme:").size(11.0).color(t.text));
+        let themes = [
+            "Classic BPS (Blue/Gold)",
+            "Corporate Navy & Amber",
+            "Emerald & Gold",
+            "Crimson & Slate",
+            "Modern Teal & Cyan",
+            "Modern Violet & Slate",
+            "Report Navy & Orange",
+            "Custom",
+        ];
+        let cur_theme = themes.get(st.cover_theme_preset).copied().unwrap_or("Classic BPS (Blue/Gold)");
+        let prev_theme = st.cover_theme_preset;
+        let combo_w = (ui.available_width() - 56.0).clamp(110.0, 220.0);
+        egui::ComboBox::from_id_salt("pubgen_cover_theme").selected_text(cur_theme).width(combo_w).show_ui(ui, |ui| {
+            for (idx, th) in themes.iter().enumerate() {
+                ui.selectable_value(&mut st.cover_theme_preset, idx, *th);
+            }
+        });
+        if st.cover_theme_preset != prev_theme {
+            match st.cover_theme_preset {
+                0 => {
+                    st.cover_color_primary = "#0072bc".into();
+                    st.cover_color_accent = "#f5ab19".into();
+                    st.cover_color_dark = "#122647".into();
+                }
+                1 => {
+                    st.cover_color_primary = "#1e3a8a".into();
+                    st.cover_color_accent = "#d97706".into();
+                    st.cover_color_dark = "#0f172a".into();
+                }
+                2 => {
+                    st.cover_color_primary = "#047857".into();
+                    st.cover_color_accent = "#eab308".into();
+                    st.cover_color_dark = "#064e3b".into();
+                }
+                3 => {
+                    st.cover_color_primary = "#be123c".into();
+                    st.cover_color_accent = "#ea580c".into();
+                    st.cover_color_dark = "#1e293b".into();
+                }
+                4 => {
+                    st.cover_color_primary = "#0891b2".into();
+                    st.cover_color_accent = "#f59e0b".into();
+                    st.cover_color_dark = "#1e293b".into();
+                }
+                5 => {
+                    st.cover_color_primary = "#6c5ce7".into();
+                    st.cover_color_accent = "#a29bfe".into();
+                    st.cover_color_dark = "#1e293b".into();
+                }
+                6 => apply_report_palette(st),
+                _ => {}
+            }
+        }
+    });
+
+    // Custom color hex inputs
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Colors:").size(10.5).color(t.text_dim));
+        let field_w = ((ui.available_width() - 56.0) / 3.0 - 6.0).clamp(44.0, 72.0);
+        ui.add_sized([field_w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_color_primary))
+            .on_hover_text("Primary Color (e.g. #0072bc)");
+        ui.add_sized([field_w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_color_accent))
+            .on_hover_text("Accent Color (e.g. #f5ab19)");
+        ui.add_sized([field_w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_color_dark))
+            .on_hover_text("Dark / Secondary Color (e.g. #122647)");
+    });
+
+    // 3. Form fields
+    // #1 Title: one headline, typed over several rows (the cover keeps it as written).
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Title:").size(11.0).color(t.text));
+        let avail = (ui.available_width() - 4.0).max(100.0);
+        ui.add_sized([avail, crate::widgets::FIELD_H * 1.8], egui::TextEdit::multiline(&mut st.cover_title).hint_text("KARAWANG TIMUR\nDALAM ANGKA"))
+            .on_hover_text("The cover headline, as written (multi-line supported)");
+    });
+
+    // #2 Title 2: the second headline line, in the cover's own frame and style.
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Title 2:").size(11.0).color(t.text));
+        let avail = (ui.available_width() - 4.0).max(100.0);
+        ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_title2))
+            .on_hover_text("The second headline line, set smaller and in another colour");
+    });
+
+    // Title EN: English translation of title (optional, used in bilingual publications)
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Title EN:").size(11.0).color(t.text));
+        let avail = (ui.available_width() - 4.0).max(100.0);
+        ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_title_en))
+            .on_hover_text("English title for dual-language cover");
+    });
+
+    // #3 Year & #4 Volume
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Year:").size(11.0).color(t.text));
+        ui.add_sized([65.0, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_year));
+
+        ui.label(RichText::new("Volume:").size(11.0).color(t.text));
+        let avail = (ui.available_width() - 4.0).max(80.0);
+        ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_volume));
+    });
+
+    // #5 Catalogue Number
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Catalogue:").size(11.0).color(t.text));
+        let avail = (ui.available_width() - 4.0).max(100.0);
+        ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_catalogue));
+    });
+
+    // #6 Code: ISSN / ISBN + number
+    ui.horizontal(|ui| {
+        let code_types = ["ISSN", "ISBN"];
+        let cur_ct = code_types.get(st.cover_code_type).copied().unwrap_or("ISSN");
+        egui::ComboBox::from_id_salt("pubgen_cover_code_type").selected_text(cur_ct).width(70.0).show_ui(ui, |ui| {
+            for (idx, ct) in code_types.iter().enumerate() {
+                ui.selectable_value(&mut st.cover_code_type, idx, *ct);
+            }
+        });
+        let avail = (ui.available_width() - 4.0).max(80.0);
+        ui.add_sized([avail, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_code_num));
+    });
+
+    // 4. Dynamic Cover Images based on Selected Style
+    divider(ui);
+    ui.label(RichText::new("Cover Images:").size(11.0).strong().color(t.text_strong));
+
+    match st.cover_style {
+        0 => {
+            // Style 0 (Wave Curves): 1 image (Circular Photo)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Photo:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
+                )
+                .on_hover_text("Circular center photo");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_skyline = path;
+                }
+            });
+        }
+        1 => {
+            // Style 1 (Geometric & Medallion): 2 images (Background Photo & Medallion Cutout)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Background:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_landscape).hint_text("outputs/city_landscape.jpg"),
+                )
+                .on_hover_text("Diagonal polygon background landscape photo");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_landscape = path;
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Medallion:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
+                )
+                .on_hover_text("Circular cutout foreground photo");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_skyline = path;
+                }
+            });
+        }
+        2 => {
+            // Style 2 (Folded Origami): 1 image (Header / Hexagonal Cutout Photo)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Header Photo:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
+                )
+                .on_hover_text("Top-right hexagonal photo cutout");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_skyline = path;
+                }
+            });
+        }
+        3 => {
+            // Style 3 (Chevron & Medallion): 1 image (Medallion Photo)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Medallion:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
+                )
+                .on_hover_text("Circular center photo nestled inside the horseshoe medallion");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_skyline = path;
+                }
+            });
+        }
+        4 => {
+            // Style 4 (Honeycomb Hexagon): 1 image (Tri-hexagon honeycomb cluster photo)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Honeycomb:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_landscape).hint_text("outputs/city_landscape.jpg"),
+                )
+                .on_hover_text("Tri-hexagon honeycomb cluster photo");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_landscape = path;
+                }
+            });
+        }
+        5 => {
+            // Style 5 (Corporate Headline): 1 image (Vertical architectural photo)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Photo:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
+                )
+                .on_hover_text("Vertical architecture or city skyline photo");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_skyline = path;
+                }
+            });
+        }
+        6 => {
+            // Style 6 (Diagonal Arrow): 1 image (Full-height cityscape panel on the right)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Photo:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
+                )
+                .on_hover_text("Full-height cityscape panel behind the diagonal band and arrow");
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_skyline = path;
+                }
+            });
+        }
+        _ => {
+            // Style 7 (Modern Horizon) & Style 8 (Business Report): 1 image (Hero photograph)
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Photo:").size(10.5).color(t.text));
+                let w = (ui.available_width() - 65.0).max(80.0);
+                let hover = match st.cover_style {
+                    URBAN_STYLE => "Cityscape photograph filling the right-hand diagonal panels",
+                    BUSINESS_STYLE => "Skyscraper photograph filling the crossed diagonal bands",
+                    TRICOLOR_STYLE => "Cityscape photograph filling the right-hand panel",
+                    PRISM_STYLE => "Cityscape photograph cut as the largest diamond of the cascade",
+                    QUARTER_STYLE => "Cityscape photograph set in the front card of the stack, rounded on one corner",
+                    _ => "Hero photograph clipped by the sweeping arc across the upper page",
+                };
+                ui.add_sized(
+                    [w, crate::widgets::FIELD_H],
+                    egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
+                )
+                .on_hover_text(hover);
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+                {
+                    st.cover_image_skyline = path;
+                }
+            });
+        }
+    }
+
+    // 5. Logo & Agency Branding
+    divider(ui);
+    ui.label(RichText::new("Logo & Branding:").size(11.0).strong().color(t.text_strong));
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Logo:").size(10.5).color(t.text));
+        let w = (ui.available_width() - 65.0).max(80.0);
+        ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_image_logo).hint_text("outputs/bps_logo.png"))
+            .on_hover_text("Path to logo image file (PNG / JPG / SVG)");
+        if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+        {
+            st.cover_image_logo = path;
+        }
+    });
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Logo Text:").size(10.5).color(t.text));
+        let avail = (ui.available_width() - 4.0).max(80.0);
+        ui.add_sized(
+            [avail, crate::widgets::FIELD_H * 1.8],
+            egui::TextEdit::multiline(&mut st.cover_agency_text).hint_text("BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG"),
+        )
+        .on_hover_text("Text displayed next to the logo (multi-line supported)");
+    });
+
+    if st.cover_include_inside_back {
+        divider(ui);
+        ui.label(RichText::new("Back Cover:").size(11.0).strong().color(t.text_strong));
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Event Theme:").size(10.5).color(t.text));
+            let w = (ui.available_width() - 65.0).max(80.0);
+            ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_image_back).hint_text("outputs/event_theme.png"))
+                .on_hover_text("Back cover event theme image (from COVER sheet event_theme)");
+            if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+            {
+                st.cover_image_back = path;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Office Address:").size(10.5).color(t.text));
+            let avail = (ui.available_width() - 4.0).max(80.0);
+            ui.add_sized(
+                [avail, crate::widgets::FIELD_H * 1.8],
+                egui::TextEdit::multiline(&mut st.cover_office_address).hint_text("Jl. Cakradireja No.36 Karawang 41312..."),
+            )
+            .on_hover_text("Office address on back cover (from COVER sheet row 12 office_address)");
+        });
+    }
+
+    // Action button
+    let fw = full_width(ui);
+    let btn_label = if st.cover_include_inside_back { "Generate Cover Pages (Front, Inside, Back)" } else { "Generate Cover Page" };
+    let gen_btn = outline_button(ui, btn_label, fw).on_hover_text("Automatically inserts cover pages and generates layout");
+    if gen_btn.clicked() {
+        let res = execute_generate_cover(app, st);
+        st.cover_status = Some(match res {
+            Ok(msg) => (msg, true),
+            Err(err) => (err, false),
+        });
+    }
+
+    if let Some((msg, ok)) = &st.cover_status {
+        let color = if *ok { Color32::from_rgb(80, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
+        ui.add(egui::Label::new(RichText::new(msg).size(11.0).color(color)).wrap());
+    }
+}
+
+pub(crate) fn card_toc_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    section(ui, crate::i18n::tr(&app.ui.language, "2. Table of Contents"), true);
+
+    let cur_page =
+        app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app)).unwrap_or_else(|| target_page_index(app));
+    let cur_label = app.session.page_label(cur_page);
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("TOC title:").size(11.0).color(t.text));
+        let w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
+        ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.toc_title));
+    });
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("TOC style:").size(11.0).color(t.text));
+        let cur = TOC_KINDS.get(st.toc_kind).copied().unwrap_or(TOC_KINDS[0]);
+        let tip = "TOC Entry: every page whose title carries the TOC tag style, plus the narrative pages\nTOC Table: only pages whose first text box starts with \"Tabel\" or \"Table\"\nTOC Chart: only pages whose first text box starts with \"Grafik\" or \"Chart\"\nTOC Paragraph: the narrative pages (the GXX and RXX sheets) with their Heading 1 and Heading 2 paragraphs nested under them";
+        let before = st.toc_kind;
+        egui::ComboBox::from_id_salt("pubgen_toc_kind")
+            .selected_text(cur)
+            .width(110.0)
+            .show_ui(ui, |ui| {
+                for (idx, k) in TOC_KINDS.iter().enumerate() {
+                    ui.selectable_value(&mut st.toc_kind, idx, *k);
+                }
+            })
+            .response
+            .on_hover_text(tip);
+        // Picking a table/chart/paragraph list fills in its title per single or dual lang mode.
+        if st.toc_kind != before
+            && let Some(title) = toc_kind_title(st.toc_kind, st.bilingual_output)
+        {
+            st.toc_title = title.to_string();
+        }
+    });
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("TOC layout:").size(11.0).color(t.text));
+        let layouts = ["Standard", "TablePage"];
+        let cur_layout = layouts.get(st.toc_layout_style).copied().unwrap_or("Standard");
+        let tip_layout = "Standard: 'Tabel 4.2.1 Title ......... 36'\nTablePage: BPS statistical catalog layout with 'Tabel / halaman' header, standalone number column, and hanging indent";
+        egui::ComboBox::from_id_salt("pubgen_toc_layout_style")
+            .selected_text(cur_layout)
+            .width(110.0)
+            .show_ui(ui, |ui| {
+                for (idx, l) in layouts.iter().enumerate() {
+                    ui.selectable_value(&mut st.toc_layout_style, idx, *l);
+                }
+            })
+            .response
+            .on_hover_text(tip_layout);
+    });
+
+    ui.checkbox(&mut st.toc_hanging_indent, "Indent wrapped TOC entries (hanging indent)");
+    ui.checkbox(&mut st.toc_include_self, "Include TOC page in TOC entries");
+    ui
+        .checkbox(&mut st.toc_pair_bilingual, "Pair bilingual headings (ID / EN)")
+        .on_hover_text("Merge the same style's left-column and right-column headings on a Dual Lang page into one row (\"Indonesian / English\"). Only active with the Dual Lang toggle on and needs the two-column Dual Lang layout; full-width headings never pair.");
+    ui.checkbox(&mut st.toc_insert_after, crate::i18n::tr(&app.ui.language, "Insert on new page after selected page"))
+        .on_hover_text(format!("Insert a new blank page after Page {cur_label} and build the TOC on it"));
+
+    let hw_toc = (ui.available_width() - 4.0) * 0.5;
+    ui.horizontal(|ui| {
+        let add_toc_text = crate::i18n::tr(&app.ui.language, "Add TOC");
+        let tip_toc = if st.toc_insert_after {
+            format!("Insert blank page after Page {cur_label} and generate a {} on it", TOC_KINDS.get(st.toc_kind).copied().unwrap_or(TOC_KINDS[0]))
+        } else {
+            format!("Insert a {} on Page {cur_label}", TOC_KINDS.get(st.toc_kind).copied().unwrap_or(TOC_KINDS[0]))
+        };
+        if outline_button(ui, add_toc_text, hw_toc).on_hover_text(tip_toc).clicked() {
+            let res = execute_add_toc(app, st);
+            let (msg, ok) = match res {
+                Ok(msg) => (msg, true),
+                Err(e) => (e, false),
+            };
+            st.toc_status = Some((msg.clone(), ok));
+            st.card3_status = Some((msg, ok));
+        }
+
+        let rebuild_toc_text = crate::i18n::tr(&app.ui.language, "Rebuild TOC");
+        let tip_rebuild = "Rebuild the table of contents on this page (its own TOC style, title and page numbers)";
+        if outline_button(ui, rebuild_toc_text, hw_toc).on_hover_text(tip_rebuild).clicked() {
+            let res = execute_rebuild_toc(app, st);
+            let (msg, ok) = match res {
+                Ok(msg) => (msg, true),
+                Err(e) => (e, false),
+            };
+            st.toc_status = Some((msg.clone(), ok));
+            st.card3_status = Some((msg, ok));
+        }
+    });
+
+    if let Some((msg, ok)) = &st.toc_status {
+        let color = if *ok { Color32::from_rgb(80, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
+        ui.add(egui::Label::new(RichText::new(msg).size(11.0).color(color)).wrap());
+    }
+}
+
+pub(crate) fn manual_import_accordion_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    section(ui, crate::i18n::tr(&app.ui.language, "3. Manual Import & Fine-Tuning"), true);
+
+    egui::CollapsingHeader::new(crate::rtl::widget(
+        ui,
+        egui::RichText::new(crate::i18n::tr(&app.ui.language, "Publication Cover (Style, Theme & Overrides)")).size(11.0).color(t.text_strong),
+    ))
+    .id_salt("pubgen_collapse_cover")
+    .default_open(false)
+    .show(ui, |ui| {
+        card_cover_body_ui(app, ui, st, t);
+    });
+
+    divider(ui);
+
+    egui::CollapsingHeader::new(crate::rtl::widget(
+        ui,
+        egui::RichText::new(crate::i18n::tr(&app.ui.language, "Page from CSV (Column Mappings & Ingest)")).size(11.0).color(t.text_strong),
+    ))
+    .id_salt("pubgen_collapse_card1")
+    .default_open(false)
+    .show(ui, |ui| {
+        card1_body_ui(app, ui, st, t);
+    });
+
+    divider(ui);
+
+    egui::CollapsingHeader::new(crate::rtl::widget(
+        ui,
+        egui::RichText::new(crate::i18n::tr(&app.ui.language, "Table from CSV (Theme & Options)")).size(11.0).color(t.text_strong),
+    ))
+    .id_salt("pubgen_collapse_card2")
+    .default_open(false)
+    .show(ui, |ui| {
+        card2_body_ui(app, ui, st, t);
+    });
+
+    divider(ui);
+
+    egui::CollapsingHeader::new(crate::rtl::widget(
+        ui,
+        egui::RichText::new(crate::i18n::tr(&app.ui.language, "Header & Footer Template")).size(11.0).color(t.text_strong),
+    ))
+    .id_salt("pubgen_collapse_hf")
+    .default_open(false)
+    .show(ui, |ui| {
+        card_header_footer_body_ui(app, ui, st, t);
+    });
+}
