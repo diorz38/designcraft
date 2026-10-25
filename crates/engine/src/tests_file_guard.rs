@@ -55,6 +55,7 @@ const ALLOWED: &[(&str, &str)] = &[
     ("ui-egui/src/panels/pubgen/pages.rs", "Pubgen page generation reads user-picked CSV/RTF files and template assets next to the workbook"),
     ("ui-egui/src/panels/pubgen/covers.rs", "Pubgen cover engines resolve user-picked cover images and template assets next to the workbook"),
     ("ui-egui/src/panels/pubgen/thumbnails.rs", "Pubgen style thumbnails read the sample cover image the user configured for the style preview"),
+    ("ui-egui/src/panels/pubgen/page_utils.rs", "Pubgen page utilities probe the user-picked RTF/image files placed onto a page"),
     ("engine/src/cmd/template/catalog.rs", "scans local template directories to discover canonical page templates and their previews"),
     ("engine/src/cmd/template/mod.rs", "reads template .designcraft document files to apply layout and styles to document pages"),
     (
