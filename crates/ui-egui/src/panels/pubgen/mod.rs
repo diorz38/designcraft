@@ -102,6 +102,10 @@ fn default_one_u32() -> u32 {
     1
 }
 
+fn default_one_usize() -> usize {
+    1
+}
+
 fn default_toc_title() -> String {
     "Contents".into()
 }
@@ -307,6 +311,19 @@ pub struct PubgenState {
     /// Page-targeted translation: the page awaiting the AI result.
     #[serde(skip)]
     pub ai_page_target: Option<ai::PageTarget>,
+    /// Table page-targeted translation: the table page awaiting the AI result.
+    #[serde(skip)]
+    pub ai_table_target: Option<ai::TablePageTarget>,
+    /// Range of table pages awaiting batch AI translation.
+    #[serde(skip)]
+    pub ai_table_targets_batch: Vec<ai::TablePageTarget>,
+    /// Range picker for table page translation.
+    #[serde(default = "default_one_usize")]
+    pub ai_table_range_from: usize,
+    #[serde(default = "default_one_usize")]
+    pub ai_table_range_to: usize,
+    #[serde(default)]
+    pub show_table_range_popup: bool,
     pub card1_preset: usize,
     pub card1_range_all: bool,
     pub card1_range_from: usize,
@@ -571,6 +588,11 @@ impl Default for PubgenState {
             ai_only_reviews: false,
             ai_pending_excel_path: String::new(),
             ai_page_target: None,
+            ai_table_target: None,
+            ai_table_targets_batch: Vec::new(),
+            ai_table_range_from: 1,
+            ai_table_range_to: 1,
+            show_table_range_popup: false,
             card1_preset: 0,
             card1_range_all: true,
             card1_range_from: 1,
@@ -1008,25 +1030,55 @@ fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
         let lang = app.ui.language.clone();
         let backend_ready = ai::backend_from_prefs(app).is_some();
 
-        // "Translate this Page" button (enabled when Dual Lang + backend setup + RXX page selected)
+        // "Translate this Page" button (enabled when Dual Lang + backend setup + (RXX or Table page selected))
         let page_idx = app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app));
-        let target = page_idx.and_then(|p| ai::detect_page_target(app, p));
-        let can_page_ai = target.is_some() && backend_ready && st.bilingual_output;
+        let review_target = page_idx.and_then(|p| ai::detect_page_target(app, p));
+        let table_target = page_idx.and_then(|p| ai::detect_table_page_target(app, p));
+        let is_review = review_target.is_some();
+        let is_table = table_target.is_some();
+        let can_page_ai = (is_review || is_table) && backend_ready && st.bilingual_output;
+
+        let btn_label = if is_table {
+            "Translate Table on this Page"
+        } else if is_review {
+            "Translate Review on this Page"
+        } else {
+            "Translate this Page"
+        };
+
         let page_btn = ui
-            .add_enabled(can_page_ai, egui::Button::new("Translate this Page"))
-            .on_hover_text(
-                "Translate the selected RXX review page in place: the chapter title (textbox 3) and the right-column body are replaced with English while preserving all paragraph styles.",
-            )
+            .add_enabled(can_page_ai, egui::Button::new(btn_label))
+            .on_hover_text(if is_table {
+                "Translate the selected Table page in place: title (new line Italic), header/footer cells (in same cell new line [italic]), and notes/source box (next row [italic])."
+            } else {
+                "Translate the selected RXX review page in place: the chapter title (textbox 3) and the right-column body are replaced with English while preserving all paragraph styles."
+            })
             .on_disabled_hover_text(if !backend_ready {
                 "Configure AI Provider first: click 'AI Translator' button above to set up your Groq key and model."
             } else if !st.bilingual_output {
                 "Switch to Dual Lang mode first (button above)."
             } else {
-                "Select a generated RXX review page (BAB NN / title / Chapter NN + two body columns)."
+                "Select a generated RXX review page or Table page to translate in place."
             });
-        if page_btn.clicked()
-            && let Some(target) = target
-        {
+        if page_btn.clicked() && let Some(target) = table_target {
+            let mut units = ai::collect_table_page_units(app, &target);
+            units.retain(|(k, _)| !st.translations.contains_key(k));
+            if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
+                if !units.is_empty() {
+                    st.ai_table_target = Some(target);
+                    st.translate_job = Some(ai::TranslateJob::spawn(&provider, &key, &model, units, ui.ctx().clone()));
+                    st.header_status = Some(("Translating table page with AI…".into(), true));
+                } else {
+                    ai::apply_table_page_result(app, st, &target);
+                    st.header_status = Some(("Table page translated from cache.".into(), true));
+                }
+            } else if units.is_empty() {
+                ai::apply_table_page_result(app, st, &target);
+                st.header_status = Some(("Table page translated from cache.".into(), true));
+            } else {
+                st.header_status = Some(("AI translation: no backend configured — click 'AI Translator' to set up.".into(), false));
+            }
+        } else if page_btn.clicked() && let Some(target) = review_target {
             let mut units = ai::collect_page_units(app, &target);
             units.retain(|(k, _)| !st.translations.contains_key(k));
             if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
@@ -1039,6 +1091,17 @@ fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
                 st.header_status = Some(("Page translated from cache.".into(), true));
             } else {
                 st.header_status = Some(("AI translation: no backend configured — click 'AI Translator' to set up.".into(), false));
+            }
+        }
+
+        let total_pages = app.session.active().map(|s| s.doc.page_count()).unwrap_or(0);
+        let batch_btn = ui
+            .add_enabled(backend_ready && st.bilingual_output && total_pages > 0, egui::Button::new("Translate Tables…"))
+            .on_hover_text("Batch translate table pages across a page range using AI.");
+        if batch_btn.clicked() {
+            st.show_table_range_popup = !st.show_table_range_popup;
+            if st.ai_table_range_to == 0 || st.ai_table_range_to > total_pages {
+                st.ai_table_range_to = total_pages.max(1);
             }
         }
 
@@ -1055,6 +1118,66 @@ fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
         let mode_str = if st.bilingual_output { "Dual Lang" } else { "Single Lang" };
         badge(ui, t, "mode", mode_str);
     });
+
+    if st.show_table_range_popup {
+        let total_pages = app.session.active().map(|s| s.doc.page_count()).unwrap_or(0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Translate Tables:").size(10.5));
+            ui.label("From Page:");
+            ui.add(egui::DragValue::new(&mut st.ai_table_range_from).range(1..=total_pages.max(1)));
+            ui.label("To:");
+            ui.add(egui::DragValue::new(&mut st.ai_table_range_to).range(1..=total_pages.max(1)));
+            if ui.button("Translate Range").clicked() {
+                st.show_table_range_popup = false;
+                let from = st.ai_table_range_from.clamp(1, total_pages.max(1)).saturating_sub(1);
+                let to_inclusive = st.ai_table_range_to.clamp(st.ai_table_range_from, total_pages.max(1)).saturating_sub(1);
+                let mut targets = Vec::new();
+                for p in from..=to_inclusive {
+                    if let Some(t) = ai::detect_table_page_target(app, p) {
+                        targets.push(t);
+                    }
+                }
+                if targets.is_empty() {
+                    st.header_status = Some(("No table pages found in selected range.".into(), false));
+                } else {
+                    let mut all_units = Vec::new();
+                    for t in &targets {
+                        all_units.extend(ai::collect_table_page_units(app, t));
+                    }
+                    all_units.retain(|(k, _)| !st.translations.contains_key(k));
+                    all_units.sort_by(|a, b| a.0.cmp(&b.0));
+                    all_units.dedup_by(|a, b| a.0 == b.0);
+
+                    if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
+                        if !all_units.is_empty() {
+                            st.ai_table_targets_batch = targets;
+                            st.translate_job = Some(ai::TranslateJob::spawn(&provider, &key, &model, all_units, ui.ctx().clone()));
+                            st.header_status = Some(("Translating table pages with AI…".into(), true));
+                        } else {
+                            let mut count = 0;
+                            for t in &targets {
+                                count += ai::apply_table_page_result(app, st, t);
+                            }
+                            st.header_status =
+                                Some((format!("{} table item(s) across {} page(s) translated from cache.", count, targets.len()), true));
+                        }
+                    } else if all_units.is_empty() {
+                        let mut count = 0;
+                        for t in &targets {
+                            count += ai::apply_table_page_result(app, st, t);
+                        }
+                        st.header_status = Some((format!("{} table item(s) across {} page(s) translated from cache.", count, targets.len()), true));
+                    } else {
+                        st.header_status = Some(("AI translation: no backend configured — click 'AI Translator' to set up.".into(), false));
+                    }
+                }
+            }
+            if ui.button("Close").clicked() {
+                st.show_table_range_popup = false;
+            }
+        });
+    }
+
     rule(ui);
 
     if let Some((msg, ok)) = &st.header_status {
@@ -1095,6 +1218,22 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
                     ui.data_mut(|d| d.insert_temp(state_id, st));
                     return;
                 }
+                if let Some(target) = st.ai_table_target.take() {
+                    ai::apply_table_page_result(app, &st, &target);
+                    st.header_status = Some(("Table page translated with AI.".into(), true));
+                    ui.data_mut(|d| d.insert_temp(state_id, st));
+                    return;
+                }
+                if !st.ai_table_targets_batch.is_empty() {
+                    let targets = std::mem::take(&mut st.ai_table_targets_batch);
+                    let mut count = 0;
+                    for target in &targets {
+                        count += ai::apply_table_page_result(app, &st, target);
+                    }
+                    st.header_status = Some((format!("{} table item(s) across {} page(s) translated with AI.", count, targets.len()), true));
+                    ui.data_mut(|d| d.insert_temp(state_id, st));
+                    return;
+                }
                 st.card1_status = Some(("AI translation ready — generating…".into(), true));
                 // Excel flow: the full convert+generate runs with the translated maps.
                 let res = if st.ai_pending_excel_path.is_empty() {
@@ -1115,6 +1254,8 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
             st.translations_slice_key.clear();
             st.ai_pending_excel_path.clear();
             st.ai_page_target = None;
+            st.ai_table_target = None;
+            st.ai_table_targets_batch.clear();
         } else {
             st.translate_job = Some(job);
         }
@@ -1324,7 +1465,7 @@ fn card2_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
     ui.checkbox(&mut st.card2_first_row_header, "First row is header");
     ui.checkbox(&mut st.card2_col_numbers, "Add column numbers (1), (2)…");
     ui.checkbox(&mut st.card2_table_footer, "Table footer (last row)");
-    ui.checkbox(&mut st.card2_row_conditions, "Condition rules (Jumlah, Tahun, Kab, Kec…)");
+    ui.checkbox(&mut st.card2_row_conditions, "Condition rules (Jumlah, Tahun…)");
 
     if !st.card2_matrix.is_empty()
         && let Some(d) = st.card2_delim
@@ -4792,18 +4933,7 @@ pub fn matches_pubgen_row_condition(text: &str) -> bool {
         }
     };
 
-    match_word("jumlah")
-        || match_word("tahun")
-        || match_word("kabupaten")
-        || match_word("kab")
-        || match_word("kecamatan")
-        || match_word("kec")
-        || match_word("total")
-        || match_word("sum")
-        || match_word("subtotal")
-        || match_word("district")
-        || match_word("subdistrict")
-        || match_word("year")
+    match_word("jumlah") || match_word("tahun") || match_word("total") || match_word("sum") || match_word("subtotal") || match_word("year")
 }
 
 pub fn is_index_or_empty(text: &str) -> bool {
@@ -6680,6 +6810,13 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     if !title_val.is_empty() {
                         let (id_t, en_t_opt) =
                             excel::split_and_harmonize_table_title(title_val, if title_en_val.is_empty() { None } else { Some(title_en_val) });
+                        let en_t_opt = match en_t_opt {
+                            Some(en) => Some(en),
+                            None if st.bilingual_output => {
+                                st.translations.get(id_t.trim()).map(String::as_str).filter(|s| !s.is_empty()).map(str::to_string)
+                            }
+                            None => None,
+                        };
 
                         if let Some(en_t) = en_t_opt {
                             let full_title = format!("{id_t}{}{en_t}", designcraft_doc::story::FORCED_LINE_BREAK);
@@ -6884,6 +7021,13 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
 
                         let (id_t, en_t_opt) =
                             excel::split_and_harmonize_table_title(title_val, if title_en_val.is_empty() { None } else { Some(title_en_val) });
+                        let en_t_opt = match en_t_opt {
+                            Some(en) => Some(en),
+                            None if st.bilingual_output => {
+                                st.translations.get(id_t.trim()).map(String::as_str).filter(|s| !s.is_empty()).map(str::to_string)
+                            }
+                            None => None,
+                        };
 
                         if let Some(en_t) = en_t_opt {
                             let full_title = format!("{id_t}{}{en_t}", designcraft_doc::story::FORCED_LINE_BREAK);
@@ -7870,7 +8014,7 @@ pub fn execute_insert_table_matrix(
 
             let has_footnote = footnote_text.is_some() || !table_notes.is_empty();
             let note_reserve_h = if !table_notes.is_empty() {
-                (table_notes.len() as f64 * 16.0 + 20.0).clamp(32.0, 140.0)
+                (table_notes.len() as f64 * (if st.bilingual_output { 32.0 } else { 16.0 }) + 20.0).clamp(32.0, 160.0)
             } else if footnote_text.is_some() {
                 32.0
             } else {
@@ -7905,7 +8049,7 @@ pub fn execute_insert_table_matrix(
             let margin = page.margin_rect();
             let has_footnote = footnote_text.is_some() || !table_notes.is_empty();
             let note_reserve_h = if !table_notes.is_empty() {
-                (table_notes.len() as f64 * 16.0 + 20.0).clamp(32.0, 140.0)
+                (table_notes.len() as f64 * (if st.bilingual_output { 32.0 } else { 16.0 }) + 20.0).clamp(32.0, 160.0)
             } else if footnote_text.is_some() {
                 32.0
             } else {
@@ -8403,17 +8547,24 @@ pub fn execute_insert_table_matrix(
         let colon_pos = if max_label_len > 7 { 58.0 } else { 46.0 };
         let text_pos = colon_pos + 8.0;
 
-        let note_text = table_notes
-            .iter()
-            .map(|item| {
-                if item.content.is_empty() {
-                    format!("{}\t{}", item.label, item.colon)
-                } else {
-                    format!("{}\t{}\t{}", item.label, item.colon, item.content)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+        let mut note_lines: Vec<(String, bool)> = Vec::new();
+        for item in &table_notes {
+            let id_text = if item.content.is_empty() {
+                format!("{}\t{}", item.label, item.colon)
+            } else {
+                format!("{}\t{}\t{}", item.label, item.colon, item.content)
+            };
+            note_lines.push((id_text, item.is_italic));
+
+            if st.bilingual_output {
+                let (label_en, colon_en, content_en) = ai::translate_note_item(&item.label, &item.colon, &item.content, &st.translations);
+                let en_text =
+                    if content_en.is_empty() { format!("{}\t{}", label_en, colon_en) } else { format!("{}\t{}\t{}", label_en, colon_en, content_en) };
+                note_lines.push((en_text, true));
+            }
+        }
+
+        let note_text = note_lines.iter().map(|(l, _)| l.as_str()).collect::<Vec<_>>().join("\n");
 
         if let Ok(res) = app.run(
             "frame.create",
@@ -8451,13 +8602,13 @@ pub fn execute_insert_table_matrix(
                             p.para.space_after = Some(2.0);
                         }
                         let ranges = story.para_ranges();
-                        for (idx, item) in table_notes.iter().enumerate() {
+                        for (idx, (_, is_italic)) in note_lines.iter().enumerate() {
                             if let Some(r) = ranges.get(idx) {
                                 let end = if idx + 1 < ranges.len() { ranges[idx + 1].start } else { r.end };
                                 if r.start < end {
                                     story.format_chars(r.start..end, |f| {
                                         f.over.size = Some(8.5);
-                                        f.over.font_style = Some(if item.is_italic { "Italic".to_string() } else { "Regular".to_string() });
+                                        f.over.font_style = Some(if *is_italic { "Italic".to_string() } else { "Regular".to_string() });
                                     });
                                 }
                             }
@@ -8473,7 +8624,7 @@ pub fn execute_insert_table_matrix(
                         let h = cs.frames.first().map(|f| f.content_height).unwrap_or(24.0);
                         (h + 4.0).max(18.0)
                     } else {
-                        (table_notes.len() as f64 * 16.0 + 8.0).max(20.0)
+                        (note_lines.len() as f64 * 16.0 + 8.0).max(20.0)
                     }
                 };
 
@@ -11679,19 +11830,19 @@ mod tests {
         assert!(matches_pubgen_row_condition("Jumlah:"));
         assert!(matches_pubgen_row_condition("Tahun 2005"));
         assert!(matches_pubgen_row_condition("TAHUN"));
-        assert!(matches_pubgen_row_condition("Kab. Karawang"));
-        assert!(matches_pubgen_row_condition("Kabupaten Karawang"));
-        assert!(matches_pubgen_row_condition("Kec. Klari"));
-        assert!(matches_pubgen_row_condition("Kecamatan Klari"));
         assert!(matches_pubgen_row_condition("- Jumlah Subtotal"));
         assert!(matches_pubgen_row_condition("Total"));
         assert!(matches_pubgen_row_condition("Sum"));
         assert!(matches_pubgen_row_condition("Subtotal"));
-        assert!(matches_pubgen_row_condition("District 1"));
-        assert!(matches_pubgen_row_condition("Subdistrict"));
         assert!(matches_pubgen_row_condition("Year 2026"));
 
-        // Negative tests
+        // Negative tests (Kecamatan / Kabupaten / Desa are region names, not summary break rows)
+        assert!(!matches_pubgen_row_condition("Kab. Karawang"));
+        assert!(!matches_pubgen_row_condition("Kabupaten Karawang"));
+        assert!(!matches_pubgen_row_condition("Kec. Klari"));
+        assert!(!matches_pubgen_row_condition("Kecamatan Klari"));
+        assert!(!matches_pubgen_row_condition("District 1"));
+        assert!(!matches_pubgen_row_condition("Subdistrict"));
         assert!(!matches_pubgen_row_condition("Kabel Listrik"));
         assert!(!matches_pubgen_row_condition("Kecap"));
         assert!(!matches_pubgen_row_condition("Tahunan"));
@@ -17528,5 +17679,129 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(has_back_branding, "Back cover must contain agency text branding");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_table_page_ai_translation_end_to_end() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // 1. Create Title frame on page 0
+        let res_title = app
+            .run(
+                "frame.create",
+                json!({
+                    "spread": 0,
+                    "rect": [36.0, 36.0, 400.0, 60.0],
+                    "content": "text",
+                    "text": "Tabel 01.01 Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025",
+                    "caret": false
+                }),
+            )
+            .unwrap();
+        let _title_fid = res_title["id"].as_u64().unwrap();
+
+        // 2. Insert table with note rows on page 0
+        let matrix = vec![
+            vec!["Desa/Kelurahan".into(), "Luas (km2)".into(), "Persentase".into()],
+            vec!["Warungbambu".into(), "1.65".into(), "21.32".into()],
+            vec!["Jumlah".into(), "1.65".into(), "21.32".into()],
+            vec!["Keterangan".into(), ":".into(), "-".into()],
+            vec!["Sumber".into(), ":".into(), "BPS Kabupaten Karawang/Dinas terkait".into()],
+        ];
+        let st = PubgenState { card2_placement: 1, card2_first_row_header: true, card2_table_footer: true, ..Default::default() };
+        let ins_res = execute_insert_table_matrix(&mut app, &st, Some(&matrix), Some(0));
+        assert!(ins_res.is_ok(), "Table insert should succeed: {ins_res:?}");
+
+        // 3. Detect table page target
+        let target_opt = ai::detect_table_page_target(&app, 0);
+        assert!(target_opt.is_some(), "Should detect TablePageTarget on page 0");
+        let target = target_opt.unwrap();
+        assert!(target.title_fid.is_some(), "Must detect title frame");
+        assert!(target.notes_fid.is_some(), "Must detect notes frame");
+
+        // 4. Collect units
+        let units = ai::collect_table_page_units(&app, &target);
+        let texts: Vec<&str> = units.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(
+            texts.contains(&"Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025"),
+            "Units must contain clean title: {texts:?}"
+        );
+        assert!(texts.contains(&"Desa/Kelurahan"), "Units must contain header cell: {texts:?}");
+        assert!(texts.contains(&"Luas (km2)"), "Units must contain header cell: {texts:?}");
+        assert!(texts.contains(&"Warungbambu"), "Units must contain data label: {texts:?}");
+        assert!(texts.contains(&"BPS Kabupaten Karawang/Dinas terkait"), "Units must contain source text: {texts:?}");
+        // Numbers and '-' must NEVER be collected
+        assert!(!texts.contains(&"1.65"), "Must not contain numbers");
+        assert!(!texts.contains(&"21.32"), "Must not contain numbers");
+        assert!(!texts.contains(&"-"), "Must not contain dash");
+
+        // 5. Populate translations map
+        let mut translate_st = PubgenState::default();
+        translate_st.translations.insert(
+            "Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025".into(),
+            "Area by Village/Urban Village in Karawang Timur Subdistrict, 2025".into(),
+        );
+        translate_st.translations.insert("Desa/Kelurahan".into(), "Village/Urban Village".into());
+        translate_st.translations.insert("Luas (km2)".into(), "Area (sq km)".into());
+        translate_st.translations.insert("Persentase".into(), "Percentage".into());
+        translate_st.translations.insert("Warungbambu".into(), "Warungbambu".into());
+        translate_st
+            .translations
+            .insert("BPS Kabupaten Karawang/Dinas terkait".into(), "Statistics of Karawang Regency Office/Relevant Agency".into());
+
+        // 6. Apply table page result
+        let replaced = ai::apply_table_page_result(&mut app, &translate_st, &target);
+        assert!(replaced > 0, "Must replace items: {replaced}");
+
+        // 7. Verify Title: Line 1 Regular, Line 2 Italic
+        let doc = &app.session.active().unwrap().doc;
+        let title_it = doc.item(designcraft_doc::ItemId(target.title_fid.unwrap())).unwrap();
+        let title_story = doc.story(title_it.text_frame().unwrap().story).unwrap();
+        assert!(title_story.text.contains("Tabel 01.01 Luas Daerah"));
+        assert!(title_story.text.contains("Table 01.01 Area by Village/Urban Village"));
+        let title_lines: Vec<&str> = title_story.text.lines().collect();
+        assert_eq!(title_lines.len(), 2, "Title must have 2 lines");
+        let line2_pos = title_lines[0].len() + 1;
+        assert_eq!(title_story.format_after(line2_pos).over.font_style.as_deref(), Some("Italic"));
+
+        // 8. Verify Table cells: in same cell new line [italic]
+        let table_story = doc.story(target.table_sid).unwrap();
+        let table = table_story.tables.get(&target.table_id).unwrap();
+        let header_cell = table.cell(0, 0).unwrap();
+        assert!(header_cell.text.text.contains("Desa/Kelurahan\nVillage/Urban Village"));
+        let en_pos = "Desa/Kelurahan\n".len();
+        assert_eq!(header_cell.text.format_after(en_pos).over.font_style.as_deref(), Some("Italic"));
+
+        let col_num_cell = table.cell(1, 0).unwrap();
+        assert_eq!(col_num_cell.text.text.trim(), "(1)", "Column numbers row must be untouched");
+
+        let jumlah_cell = table.cell(3, 0).unwrap();
+        assert!(jumlah_cell.text.text.contains("Jumlah\nTotal"));
+        let total_pos = "Jumlah\n".len();
+        assert_eq!(jumlah_cell.text.format_after(total_pos).over.font_style.as_deref(), Some("Italic"));
+
+        let num_cell = table.cell(2, 1).unwrap();
+        assert_eq!(num_cell.text.text.trim(), "1.65", "Numeric cell must remain untouched");
+
+        // 9. Verify Notes:
+        // Keterangan : -
+        // [italic]Note: -
+        // Sumber: BPS Kabupaten Karawang/Dinas terkait
+        // [italic]Source : Statistics of Karawang Regency Office/Relevant Agency
+        let note_it = doc.item(designcraft_doc::ItemId(target.notes_fid.unwrap())).unwrap();
+        let note_story = doc.story(note_it.text_frame().unwrap().story).unwrap();
+        let note_lines: Vec<&str> = note_story.text.lines().collect();
+        assert_eq!(note_lines.len(), 4, "Must have 4 note lines: {note_lines:?}");
+        assert!(note_lines[0].starts_with("Keterangan"));
+        assert!(note_lines[1].starts_with("Note"));
+        assert!(note_lines[2].starts_with("Sumber"));
+        assert!(note_lines[3].starts_with("Source"));
+
+        let note_ranges = note_story.para_ranges();
+        assert_ne!(note_story.format_after(note_ranges[0].start).over.font_style.as_deref(), Some("Italic"));
+        assert_eq!(note_story.format_after(note_ranges[1].start).over.font_style.as_deref(), Some("Italic"));
+        assert_ne!(note_story.format_after(note_ranges[2].start).over.font_style.as_deref(), Some("Italic"));
+        assert_eq!(note_story.format_after(note_ranges[3].start).over.font_style.as_deref(), Some("Italic"));
     }
 }

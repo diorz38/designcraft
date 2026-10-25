@@ -449,13 +449,11 @@ pub fn collect_translation_units(st: &PubgenState) -> Vec<(String, String)> {
         let file_val = row.get(file_col).map(String::as_str).unwrap_or("").trim();
         let file_en_val = row.get(file_en_col).map(String::as_str).unwrap_or("").trim();
         let lower = file_val.to_ascii_lowercase();
-        if lower.ends_with(".rtf") {
-            if file_en_val.is_empty() {
-                for para in rtf_paragraphs(st, file_val) {
-                    push(&mut out, &mut seen, &para);
-                }
+        if lower.ends_with(".rtf") && file_en_val.is_empty() {
+            for para in rtf_paragraphs(st, file_val) {
+                push(&mut out, &mut seen, &para);
             }
-        } else if lower.ends_with(".csv") {
+        } else if lower.ends_with(".csv") || (!lower.is_empty() && !lower.ends_with(".rtf")) {
             for cell in table_cells(st, file_val) {
                 push(&mut out, &mut seen, &cell);
             }
@@ -531,7 +529,8 @@ pub fn alias_en(cell: &str) -> Option<&'static str> {
         "kabupaten" => Some("Regency"),
         "kecamatan" | "kec" => Some("Subdistrict"),
         "provinsi" | "propinsi" => Some("Province"),
-        "keterangan" => Some("Description"),
+        "keterangan" | "ket." | "ket" => Some("Note"),
+        "catatan" => Some("Note"),
         "sumber" => Some("Source"),
         "no" => Some("No"),
         _ => None,
@@ -550,15 +549,21 @@ pub fn pair_cells(matrix: &[Vec<String>], translations: &HashMap<String, String>
             row.iter()
                 .map(|cell| {
                     let t = cell.trim();
+                    if t.is_empty() || t.contains('\u{2028}') || t.contains('\n') || t.contains(" / ") {
+                        return cell.clone();
+                    }
                     if let Some(en) = alias_en(t) {
-                        return en.to_string();
+                        if t.eq_ignore_ascii_case(en) {
+                            return cell.clone();
+                        }
+                        return format!("{t}\u{2028}{en}");
                     }
                     if !translatable_cell(t) {
                         return cell.clone();
                     }
                     match translations.get(t).map(String::as_str).filter(|s| !s.is_empty()) {
-                        Some(en) => format!("{t}\u{2028}{en}"),
-                        None => cell.clone(),
+                        Some(en) if !t.eq_ignore_ascii_case(en) => format!("{t}\u{2028}{en}"),
+                        _ => cell.clone(),
                     }
                 })
                 .collect()
@@ -866,6 +871,561 @@ fn replace_frame_text(app: &mut DesignApp, fid: u64, text: &str) {
     let _ = app.run("text.insert", json!({"text": text}));
 }
 
+// ---------------------------------------------------------------------------
+// Table page-targeted translation (select a generated Table page, translate in place)
+// ---------------------------------------------------------------------------
+
+/// A detected translatable Table page: title frame, table frame, and notes/source frame.
+#[derive(Debug, Clone)]
+pub struct TablePageTarget {
+    pub page_idx: usize,
+    /// Frame holding the table title (above the table), if any.
+    pub title_fid: Option<u64>,
+    /// Frame holding the Table.
+    pub table_fid: u64,
+    /// Story ID of the Table.
+    pub table_sid: designcraft_doc::StoryId,
+    /// Table ID within that story.
+    pub table_id: u64,
+    /// Frame holding the notes / sources footnotes (below the table), if any.
+    pub notes_fid: Option<u64>,
+}
+
+/// Returns true if the text only represents a table kicker ("Tabel", "Table", "Tabel\nTable") or a number ("02.01", "1.1").
+pub fn is_pure_kicker_or_num(text: &str) -> bool {
+    let t = text.trim();
+    let lower = t.to_lowercase();
+    let kicker_words = ["tabel", "table"];
+    let lines: Vec<&str> = lower.lines().flat_map(|l| l.split(['\u{2028}', '/'])).map(str::trim).filter(|s| !s.is_empty()).collect();
+    if !lines.is_empty() && lines.iter().all(|l| kicker_words.contains(l)) {
+        return true;
+    }
+    if t.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | ' ' | '-' | '(' | ')')) {
+        return true;
+    }
+    let words: Vec<&str> = t.split_whitespace().collect();
+    if words.len() == 2
+        && kicker_words.contains(&words[0].to_lowercase().as_str())
+        && words[1].chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | '-'))
+    {
+        return true;
+    }
+    false
+}
+
+/// Detect the selected page as a translatable Table page.
+pub fn detect_table_page_target(app: &DesignApp, page_idx: usize) -> Option<TablePageTarget> {
+    let active = app.session.active()?;
+    let (si, pi) = active.doc.page_loc(page_idx)?;
+    let spread = active.doc.spreads.get(si)?;
+    let page = spread.pages.get(pi)?;
+    let page_bounds = page.bounds();
+
+    let is_on_this_page = |b: designcraft_geom::Rect| -> bool {
+        if spread.pages.len() <= 1 {
+            return true;
+        }
+        let mid_x = (b.x0 + b.x1) / 2.0;
+        mid_x >= page_bounds.x0 - 5.0 && mid_x <= page_bounds.x1 + 5.0
+    };
+
+    // 1. Locate the table item on this page
+    let mut table_item = None;
+    for it in &spread.items {
+        let b = it.bounds();
+        if !is_on_this_page(b) {
+            continue;
+        }
+        if let Some(tf) = it.text_frame()
+            && let Some(story) = active.doc.story(tf.story)
+            && let Some((&tid, _)) = story.tables.iter().next()
+        {
+            table_item = Some((it.id.0, tf.story, tid, b));
+            break;
+        }
+    }
+    let (table_fid, table_sid, table_id, table_bounds) = table_item?;
+
+    // 2. Locate title frame on this page (located above the table)
+    let mut title_fid = None;
+    let mut best_score = -1.0;
+    for it in &spread.items {
+        if it.id.0 == table_fid {
+            continue;
+        }
+        let b = it.bounds();
+        if !is_on_this_page(b) {
+            continue;
+        }
+        if b.y0 >= table_bounds.y0 {
+            continue;
+        }
+        if let Some(tf) = it.text_frame()
+            && let Some(story) = active.doc.story(tf.story)
+        {
+            let text = story.text.trim();
+            if text.is_empty() || is_pure_kicker_or_num(text) {
+                continue;
+            }
+            let lower_lbl = it.label.to_lowercase();
+            let mut score = b.width();
+            if lower_lbl.contains("title") || lower_lbl.contains("judul") {
+                score += 1000.0;
+            }
+            let dist = (table_bounds.y0 - b.y1).abs();
+            score -= (dist / 10.0).min(50.0);
+            if score > best_score {
+                best_score = score;
+                title_fid = Some(it.id.0);
+            }
+        }
+    }
+
+    // 3. Locate notes/source frame on this page (located below the table)
+    let mut notes_fid = None;
+    for it in &spread.items {
+        if it.id.0 == table_fid || Some(it.id.0) == title_fid {
+            continue;
+        }
+        let b = it.bounds();
+        if !is_on_this_page(b) {
+            continue;
+        }
+        if b.y0 >= table_bounds.y0 - 5.0
+            && let Some(tf) = it.text_frame()
+            && let Some(story) = active.doc.story(tf.story)
+        {
+            let text = story.text.trim();
+            let lower = text.to_lowercase();
+            let lower_lbl = it.label.to_lowercase();
+            if lower.starts_with("sumber")
+                || lower.starts_with("source")
+                || lower.starts_with("keterangan")
+                || lower.starts_with("ket.")
+                || lower.starts_with("ket ")
+                || lower.starts_with("ket:")
+                || lower == "ket"
+                || lower.starts_with("catatan")
+                || lower.starts_with("note")
+                || lower_lbl.contains("note")
+                || lower_lbl.contains("footnote")
+            {
+                notes_fid = Some(it.id.0);
+                break;
+            }
+        }
+    }
+
+    Some(TablePageTarget { page_idx, title_fid, table_fid, table_sid, table_id, notes_fid })
+}
+
+/// Helper to parse catalog or table title into (clean_title, Option<prefix>).
+/// e.g. "Tabel 01.01 Luas Daerah..." -> ("Luas Daerah...", Some("Tabel 01.01"))
+pub fn extract_table_title_parts(title: &str) -> (String, Option<String>) {
+    let trimmed = title.trim();
+    let words: Vec<&str> = trimmed.split_whitespace().collect();
+    if words.len() >= 3 && (words[0].eq_ignore_ascii_case("tabel") || words[0].eq_ignore_ascii_case("table")) {
+        let prefix = format!("{} {}", words[0], words[1]);
+        if let Some(rest) = trimmed.strip_prefix(&prefix) {
+            return (rest.trim().to_string(), Some(prefix));
+        }
+    }
+    (trimmed.to_string(), None)
+}
+
+/// Helper to parse a single line from a table note or source textbox into (label, colon, content).
+pub fn parse_note_line(line: &str) -> (String, String, String) {
+    if line.contains('\t') {
+        let parts: Vec<&str> = line.split('\t').collect();
+        let label = parts.first().unwrap_or(&"").trim().to_string();
+        let colon = parts.get(1).unwrap_or(&":").trim().to_string();
+        let content = parts.get(2..).map(|p| p.join("\t")).unwrap_or_default().trim().to_string();
+        (label, colon, content)
+    } else if let Some((l, c)) = line.split_once(':') {
+        (l.trim().to_string(), ":".to_string(), c.trim().to_string())
+    } else {
+        (line.trim().to_string(), ":".to_string(), String::new())
+    }
+}
+
+/// Helper to get translated note elements for a given (label, colon, content).
+pub fn translate_note_item(label: &str, colon: &str, content: &str, map: &HashMap<String, String>) -> (String, String, String) {
+    let lower = label.to_lowercase();
+    let label_en = if lower.starts_with("keterangan")
+        || lower.starts_with("ket.")
+        || lower.starts_with("ket ")
+        || lower.starts_with("ket:")
+        || lower == "ket"
+        || lower.starts_with("catatan")
+    {
+        "Note".to_string()
+    } else if lower.starts_with("sumber") {
+        "Source".to_string()
+    } else {
+        map.get(label.trim()).cloned().unwrap_or_else(|| label.to_string())
+    };
+
+    let colon_en = colon.to_string();
+
+    let content_trimmed = content.trim();
+    let content_en = if content_trimmed == "-" || content_trimmed.is_empty() {
+        content.to_string()
+    } else {
+        map.get(content_trimmed).cloned().unwrap_or_else(|| content.to_string())
+    };
+
+    (label_en, colon_en, content_en)
+}
+
+/// Collect translatable units from a table page.
+pub fn collect_table_page_units(app: &DesignApp, target: &TablePageTarget) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut seen: HashMap<String, ()> = HashMap::new();
+    let push = |out: &mut Vec<(String, String)>, seen: &mut HashMap<String, ()>, t: &str| {
+        let t = t.trim();
+        if t.is_empty() || seen.contains_key(t) {
+            return;
+        }
+        seen.insert(t.to_string(), ());
+        out.push((t.to_string(), t.to_string()));
+    };
+
+    // 1. Title
+    if let Some(fid) = target.title_fid
+        && let Some(text) = frame_text(app, fid)
+    {
+        let lines: Vec<&str> = text.split(['\n', '\u{2028}']).map(str::trim).filter(|s| !s.is_empty()).collect();
+        if let Some(first) = lines.first() {
+            let (clean_title, _) = extract_table_title_parts(first);
+            if translatable_cell(&clean_title) {
+                push(&mut out, &mut seen, &clean_title);
+            }
+            if clean_title != *first && translatable_cell(first) {
+                push(&mut out, &mut seen, first);
+            }
+        }
+    }
+
+    // 2. Table cells
+    if let Some(active) = app.session.active()
+        && let Some(story) = active.doc.story(target.table_sid)
+        && let Some(table) = story.tables.get(&target.table_id)
+    {
+        let (nr, nc) = (table.nrows(), table.ncols());
+        for r in 0..nr {
+            for c in 0..nc {
+                if let Some(cell) = table.cell(r, c) {
+                    let text = cell.text.text.trim();
+                    if text.is_empty() || text.contains('\n') || text.contains('\u{2028}') || text.contains(" / ") {
+                        continue;
+                    }
+                    if translatable_cell(text) {
+                        push(&mut out, &mut seen, text);
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Notes / footnotes content
+    if let Some(fid) = target.notes_fid
+        && let Some(text) = frame_text(app, fid)
+    {
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let (label, _, content) = parse_note_line(line);
+            let lower_lbl = label.to_lowercase();
+            if lower_lbl.starts_with("source") || lower_lbl.starts_with("note") {
+                continue;
+            }
+            let c_trimmed = content.trim();
+            if !c_trimmed.is_empty() && c_trimmed != "-" && translatable_cell(c_trimmed) {
+                push(&mut out, &mut seen, c_trimmed);
+            }
+        }
+    }
+
+    out
+}
+
+fn story_is_bold(story: &designcraft_doc::Story) -> bool {
+    story.chars.iter().any(|r| r.format.over.font_style.as_deref().is_some_and(|s| s.to_lowercase().contains("bold")))
+}
+
+/// Apply AI translation result in place onto a detected Table page:
+/// - Title: new line Italic
+/// - Table Header, Footer, and Category cells: in same cell new line [italic]
+/// - Footnotes / Notes: next row [italic] for each line
+pub fn apply_table_page_result(app: &mut DesignApp, st: &PubgenState, target: &TablePageTarget) -> usize {
+    let map = &st.translations;
+    let mut total_replaced = 0usize;
+
+    // 1. Table Title (New line Italic)
+    if let Some(fid) = target.title_fid
+        && let Some(text) = frame_text(app, fid)
+    {
+        let lines: Vec<&str> = text.split(['\n', '\u{2028}']).collect();
+        let first_line = lines.first().copied().unwrap_or(text.as_str()).trim();
+        let (clean_title, prefix_opt) = extract_table_title_parts(first_line);
+        let en_opt = map.get(&clean_title).or_else(|| map.get(first_line)).map(String::as_str).filter(|s| !s.is_empty());
+        if let Some(en) = en_opt {
+            let en_line = match prefix_opt {
+                Some(p) => {
+                    let p_en = if p.to_lowercase().starts_with("tabel") { p.replacen("Tabel", "Table", 1).replacen("tabel", "Table", 1) } else { p };
+                    format!("{p_en} {en}")
+                }
+                None => en.to_string(),
+            };
+            let combined = format!("{first_line}\n{en_line}");
+            let len = text.len();
+            if let Some(active) = app.session.active()
+                && let Some(item) = active.doc.item(designcraft_doc::ItemId(fid))
+                && let Some(tf) = item.text_frame()
+            {
+                let sid = tf.story;
+                let is_bold = active.doc.story(sid).map(story_is_bold).unwrap_or(false);
+
+                let _ = app.run("text.select", json!({"story": sid.0, "anchor": 0, "focus": len}));
+                let _ = app.run("text.insert", json!({"text": combined}));
+
+                // Format line 2 as Italic
+                let _ = app.session.edit(|doc, _| {
+                    if let Some(story) = doc.story_mut(sid)
+                        && let Some(pos) = story.text.find('\n').or_else(|| story.text.find('\u{2028}'))
+                    {
+                        let start = pos + 1;
+                        let end = story.text.len();
+                        if start < end {
+                            story.format_chars(start..end, |f| {
+                                f.over.font_style = Some(if is_bold { "Bold Italic".to_string() } else { "Italic".to_string() });
+                            });
+                            story.rev += 1;
+                        }
+                    }
+                    Ok(serde_json::Value::Null)
+                });
+
+                // Auto-fit title frame height
+                if let Some(active) = app.session.active() {
+                    let cs = designcraft_compose::compose_story(&active.doc, sid, &Default::default());
+                    let h = cs.frames.first().map(|f| f.content_height).unwrap_or(40.0);
+                    let fit_h = (h + 4.0).max(24.0);
+                    let _ = app.session.edit(|doc, _| {
+                        if let Some(it) = doc.item_mut(designcraft_doc::ItemId(fid)) {
+                            let rect = it.bounds();
+                            it.path = designcraft_geom::shapes::rectangle(designcraft_geom::Rect::new(rect.x0, rect.y0, rect.x1, rect.y0 + fit_h));
+                        }
+                        Ok(serde_json::Value::Null)
+                    });
+                }
+
+                total_replaced += 1;
+            }
+        }
+    }
+
+    // 2. Table Cells (in same cell new line [italic])
+    let mut replaced_cells = 0usize;
+    let _ = app.session.edit(|doc, _| {
+        let Some(story) = doc.story_mut(target.table_sid) else {
+            return Ok(serde_json::Value::Null);
+        };
+        let Some(table_arc) = story.tables.get_mut(&target.table_id) else {
+            return Ok(serde_json::Value::Null);
+        };
+        let table = std::sync::Arc::make_mut(table_arc);
+        let (nr, nc) = (table.nrows(), table.ncols());
+        for r in 0..nr {
+            for c in 0..nc {
+                let Some(cell) = table.cell_mut(r, c) else {
+                    continue;
+                };
+                let cur = cell.text.text.trim().to_string();
+                if cur.is_empty() || cur.contains('\n') || cur.contains('\u{2028}') || cur.contains(" / ") {
+                    continue;
+                }
+                let en_opt = alias_en(&cur).map(|s| s.to_string()).or_else(|| map.get(&cur).cloned());
+                if let Some(en) = en_opt
+                    && !en.is_empty()
+                    && !cur.eq_ignore_ascii_case(&en)
+                {
+                    let is_bold = story_is_bold(&cell.text);
+                    let insert_pos = cell.text.len();
+                    let en_str = format!("\n{en}");
+                    cell.text.insert(insert_pos, &en_str);
+                    let en_start = insert_pos + 1;
+                    let en_end = cell.text.len();
+                    if en_start < en_end {
+                        cell.text.format_chars(en_start..en_end, |f| {
+                            f.over.font_style = Some(if is_bold { "Bold Italic".to_string() } else { "Italic".to_string() });
+                        });
+                    }
+                    replaced_cells += 1;
+                }
+            }
+        }
+        Ok(serde_json::Value::Null)
+    });
+    total_replaced += replaced_cells;
+
+    // 2b. Auto-fit table frame height and shift notes if necessary
+    let mut table_new_y1 = None;
+    if let Some(active) = app.session.active() {
+        let (si, pi) = active.doc.page_loc(target.page_idx).unwrap_or((0, 0));
+        let margin_y1 = active.doc.spreads.get(si).and_then(|s| s.pages.get(pi)).map(|p| p.margin_rect().y1).unwrap_or(800.0);
+        let notes_reserve = if target.notes_fid.is_some() { 50.0 } else { 0.0 };
+        let max_table_y1 = (margin_y1 - notes_reserve).max(60.0);
+
+        let mut test_doc = (*active.doc).clone();
+        if let Some(rect) = test_doc.item(designcraft_doc::ItemId(target.table_fid)).map(|it| it.bounds()) {
+            if let Some(it) = test_doc.item_mut(designcraft_doc::ItemId(target.table_fid)) {
+                it.path = designcraft_geom::shapes::rectangle(designcraft_geom::Rect::new(rect.x0, rect.y0, rect.x1, rect.y0 + 10000.0));
+            }
+            let cs = designcraft_compose::compose_story(&test_doc, target.table_sid, &Default::default());
+            let measured_h = cs.frames.first().and_then(|f| f.tables.first().map(|t| t.rect.height()).or(Some(f.content_height)));
+
+            if let Some(th) = measured_h {
+                let (inset_top, inset_bottom) = test_doc
+                    .item(designcraft_doc::ItemId(target.table_fid))
+                    .and_then(|it| it.text_frame())
+                    .map(|tf| (tf.options.inset[0], tf.options.inset[2]))
+                    .unwrap_or((0.0, 0.0));
+                let total_needed = th + inset_top + inset_bottom + 6.0;
+
+                let title_bottom = target.title_fid.and_then(|fid| active.doc.item(designcraft_doc::ItemId(fid))).map(|it| it.bounds().y1);
+                let table_y0 = if let Some(tb) = title_bottom { rect.y0.max(tb + 6.0) } else { rect.y0 };
+
+                let fit_h = total_needed.min(max_table_y1 - table_y0).max(40.0);
+                let new_y1 = table_y0 + fit_h;
+                let _ = app.session.edit(|doc, _| {
+                    if let Some(it) = doc.item_mut(designcraft_doc::ItemId(target.table_fid)) {
+                        it.path = designcraft_geom::shapes::rectangle(designcraft_geom::Rect::new(rect.x0, table_y0, rect.x1, new_y1));
+                    }
+                    Ok(serde_json::Value::Null)
+                });
+                table_new_y1 = Some(new_y1);
+            }
+        }
+    }
+
+    // 3. Notes and Sources Footnotes Textbox
+    let mut notes_updated = false;
+    if let Some(fid) = target.notes_fid
+        && let Some(text) = frame_text(app, fid)
+    {
+        let mut lines_out: Vec<(String, bool)> = Vec::new();
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let (label, colon, content) = parse_note_line(line);
+            let lower_lbl = label.to_lowercase();
+            // If it's already an English line that was generated earlier, skip it
+            if lower_lbl.starts_with("source") || lower_lbl.starts_with("note") {
+                continue;
+            }
+            let (label_en, colon_en, content_en) = translate_note_item(&label, &colon, &content, map);
+            let has_tab = line.contains('\t');
+            let id_line = if has_tab {
+                if content.is_empty() { format!("{label}\t{colon}") } else { format!("{label}\t{colon}\t{content}") }
+            } else {
+                if content.is_empty() { format!("{label} {colon}") } else { format!("{label} {colon} {content}") }
+            };
+            let en_line = if has_tab {
+                if content_en.is_empty() { format!("{label_en}\t{colon_en}") } else { format!("{label_en}\t{colon_en}\t{content_en}") }
+            } else {
+                if content_en.is_empty() { format!("{label_en} {colon_en}") } else { format!("{label_en} {colon_en} {content_en}") }
+            };
+            lines_out.push((id_line, false));
+            lines_out.push((en_line, true));
+        }
+
+        if !lines_out.is_empty()
+            && let Some(active) = app.session.active()
+            && let Some(item) = active.doc.item(designcraft_doc::ItemId(fid))
+            && let Some(tf) = item.text_frame()
+        {
+            let sid = tf.story;
+            let orig_len = text.len();
+            let full_text = lines_out.iter().map(|(l, _)| l.as_str()).collect::<Vec<_>>().join("\n");
+
+            let _ = app.run("text.select", json!({"story": sid.0, "anchor": 0, "focus": orig_len}));
+            let _ = app.run("text.insert", json!({"text": full_text}));
+
+            let _ = app.session.edit(|doc, _| {
+                if let Some(story) = doc.story_mut(sid) {
+                    let ranges = story.para_ranges();
+                    for (idx, (_, is_italic)) in lines_out.iter().enumerate() {
+                        if let Some(r) = ranges.get(idx) {
+                            story.format_chars(r.start..r.end, |f| {
+                                f.over.size = Some(8.5);
+                                f.over.font_style = Some(if *is_italic { "Italic".to_string() } else { "Regular".to_string() });
+                            });
+                        }
+                    }
+                    story.rev += 1;
+                }
+                Ok(serde_json::Value::Null)
+            });
+
+            // Fit note frame height and reposition below the table
+            if let Some(active) = app.session.active() {
+                let (si, pi) = active.doc.page_loc(target.page_idx).unwrap_or((0, 0));
+                let margin_y1 = active.doc.spreads.get(si).and_then(|s| s.pages.get(pi)).map(|p| p.margin_rect().y1).unwrap_or(800.0);
+
+                let mut test_doc = (*active.doc).clone();
+                let old_rect = test_doc.item(designcraft_doc::ItemId(fid)).map(|it| it.bounds()).unwrap_or(designcraft_geom::Rect::ZERO);
+                if let Some(it) = test_doc.item_mut(designcraft_doc::ItemId(fid)) {
+                    it.path =
+                        designcraft_geom::shapes::rectangle(designcraft_geom::Rect::new(old_rect.x0, old_rect.y0, old_rect.x1, old_rect.y0 + 2000.0));
+                }
+                let cs = designcraft_compose::compose_story(&test_doc, sid, &Default::default());
+                let h = cs.frames.first().map(|f| f.content_height).unwrap_or(lines_out.len() as f64 * 16.0);
+                let fit_h = (h + 6.0).max(lines_out.len() as f64 * 14.0 + 8.0).max(24.0);
+
+                let _ = app.session.edit(|doc, _| {
+                    if let Some(it) = doc.item_mut(designcraft_doc::ItemId(fid)) {
+                        let rect = it.bounds();
+                        let target_y0 = if let Some(tbl_y1) = table_new_y1 { (tbl_y1 + 8.0).min(margin_y1 - fit_h) } else { rect.y0 };
+                        it.path = designcraft_geom::shapes::rectangle(designcraft_geom::Rect::new(rect.x0, target_y0, rect.x1, target_y0 + fit_h));
+                    }
+                    Ok(serde_json::Value::Null)
+                });
+            }
+
+            notes_updated = true;
+            total_replaced += 1;
+        }
+    }
+
+    // If notes frame exists but was not updated above, ensure it is still pushed below resized table
+    if !notes_updated
+        && let Some(fid) = target.notes_fid
+        && let Some(tbl_y1) = table_new_y1
+        && let Some(active) = app.session.active()
+    {
+        let (si, pi) = active.doc.page_loc(target.page_idx).unwrap_or((0, 0));
+        let margin_y1 = active.doc.spreads.get(si).and_then(|s| s.pages.get(pi)).map(|p| p.margin_rect().y1).unwrap_or(800.0);
+        let _ = app.session.edit(|doc, _| {
+            if let Some(it) = doc.item_mut(designcraft_doc::ItemId(fid)) {
+                let rect = it.bounds();
+                if rect.y0 < tbl_y1 + 6.0 {
+                    let fit_h = rect.height().max(24.0);
+                    let target_y0 = (tbl_y1 + 8.0).min(margin_y1 - fit_h);
+                    it.path = designcraft_geom::shapes::rectangle(designcraft_geom::Rect::new(rect.x0, target_y0, rect.x1, target_y0 + fit_h));
+                }
+            }
+            Ok(serde_json::Value::Null)
+        });
+    }
+
+    total_replaced
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -904,12 +1464,59 @@ mod tests {
         assert_eq!(paired[0].len(), matrix[0].len());
         assert_eq!(paired[0][0], "No");
         assert_eq!(paired[0][2], "50000");
-        assert_eq!(paired[1][0], "Total");
+        assert_eq!(paired[1][0], "Jumlah\u{2028}Total");
         assert_eq!(paired[1][1], "");
         assert_eq!(paired[1][2], "2024");
         let cell = &paired[0][1];
         assert_eq!(cell.matches('\u{2028}').count(), 1, "{cell}");
         assert_eq!(cell.replace('\u{2028}', " "), "Luas Wilayah Area");
+    }
+
+    #[test]
+    fn test_is_pure_kicker_or_num() {
+        assert!(is_pure_kicker_or_num("Tabel"));
+        assert!(is_pure_kicker_or_num("Tabel\nTable"));
+        assert!(is_pure_kicker_or_num("02.01"));
+        assert!(is_pure_kicker_or_num("Table 02.01"));
+        assert!(!is_pure_kicker_or_num("Jumlah Penduduk Menurut Desa/Kelurahan"));
+        assert!(!is_pure_kicker_or_num("Tabel 02.01 Jumlah Penduduk"));
+    }
+
+    #[test]
+    fn test_extract_table_title_parts() {
+        let (title, prefix) = extract_table_title_parts("Tabel 01.01 Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025");
+        assert_eq!(prefix, Some("Tabel 01.01".to_string()));
+        assert_eq!(title, "Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025");
+
+        let (title2, prefix2) = extract_table_title_parts("Banyaknya Penduduk");
+        assert_eq!(prefix2, None);
+        assert_eq!(title2, "Banyaknya Penduduk");
+    }
+
+    #[test]
+    fn test_parse_and_translate_note_items() {
+        let (l1, c1, cnt1) = parse_note_line("Keterangan\t:\t-");
+        assert_eq!(l1, "Keterangan");
+        assert_eq!(c1, ":");
+        assert_eq!(cnt1, "-");
+
+        let (l2, c2, cnt2) = parse_note_line("Sumber : BPS Kabupaten Karawang/Dinas terkait");
+        assert_eq!(l2, "Sumber");
+        assert_eq!(c2, ":");
+        assert_eq!(cnt2, "BPS Kabupaten Karawang/Dinas terkait");
+
+        let mut map = HashMap::new();
+        map.insert("BPS Kabupaten Karawang/Dinas terkait".into(), "Statistics of Karawang Regency Office/Relevant Agency".into());
+
+        let (en_l1, en_c1, en_cnt1) = translate_note_item(&l1, &c1, &cnt1, &map);
+        assert_eq!(en_l1, "Note");
+        assert_eq!(en_c1, ":");
+        assert_eq!(en_cnt1, "-");
+
+        let (en_l2, en_c2, en_cnt2) = translate_note_item(&l2, &c2, &cnt2, &map);
+        assert_eq!(en_l2, "Source");
+        assert_eq!(en_c2, ":");
+        assert_eq!(en_cnt2, "Statistics of Karawang Regency Office/Relevant Agency");
     }
 
     #[test]
