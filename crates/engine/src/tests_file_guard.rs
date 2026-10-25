@@ -42,6 +42,7 @@ const ALLOWED: &[(&str, &str)] = &[
         "ui-egui/src/panels/pubgen/mod.rs",
         "Pubgen panel reads user-picked publication CSV files and writes generated batch CSV and ZIP files chosen via file picker",
     ),
+    ("ui-egui/src/panels/pubgen/widgets.rs", "Pubgen panel chrome loads the optional PubGen logo image next to the app on first paint"),
     (
         "ui-egui/src/panels/pubgen/excel.rs",
         "Pubgen Excel importer reads user-selected workbook files and writes converted CSV/ZIP files chosen via file picker",
