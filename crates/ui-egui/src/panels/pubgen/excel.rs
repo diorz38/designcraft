@@ -3132,3 +3132,310 @@ mod tests {
         assert_eq!(lines[5], "Source,:,Statistics Indonesia");
     }
 }
+
+// The Card 1 glue: map COVER sheet style names, apply cover values and drive the CSV
+// conversion / generation / download flows from the panel.
+
+fn cover_style_index(spec: &str) -> Option<usize> {
+    let norm = |s: &str| -> String { s.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect() };
+    const NAMES: [&str; 13] = [
+        "Wave Curves",
+        "Geometric Medallion",
+        "Folded Origami",
+        "Chevron Medallion",
+        "Honeycomb Hexagon",
+        "Corporate Headline",
+        "Diagonal Arrow",
+        "Modern Horizon",
+        "Business Report",
+        "Urban Angle",
+        "Tri Color Bands",
+        "Prism Diamonds",
+        "Quarter Stack",
+    ];
+    let want = norm(spec);
+    if want.is_empty() {
+        return None;
+    }
+    NAMES.iter().position(|n| {
+        let n = norm(n);
+        n.contains(&want) || want.contains(&n)
+    })
+}
+
+/// Copy the `COVER` sheet values into the Publication Cover card.
+fn apply_excel_cover(st: &mut PubgenState, cover: &excel::ExcelCoverData, base_dir: Option<&Path>) {
+    if let Some(idx) = cover_style_index(&cover.style) {
+        st.cover_style = idx;
+    }
+
+    // The sheet's `title1` is the card's "Title" (the headline) and `title2` its "Title 2" (the
+    // second headline line); see the frame slots `#slot:text:title` / `#slot:text:title#2`. The
+    // sheet's `level` row has no frame to fill any more: the covers carry no kicker line.
+    if !cover.title1.trim().is_empty() {
+        st.cover_title = cover.title1.trim().to_string();
+    }
+    if !cover.title2.trim().is_empty() {
+        st.cover_title2 = cover.title2.trim().to_string();
+    }
+    if !cover.title_en.trim().is_empty() {
+        st.cover_title_en = cover.title_en.trim().to_string();
+    }
+    if !cover.year.trim().is_empty() {
+        st.cover_year = cover.year.trim().to_string();
+    }
+    if !cover.volume.trim().is_empty() {
+        let vol = cover.volume.trim();
+        st.cover_volume = if vol.to_lowercase().starts_with("vol") { vol.to_string() } else { format!("Volume {vol}") };
+    }
+    if !cover.catalogue.trim().is_empty() {
+        st.cover_catalogue = cover.catalogue.trim().to_string();
+    }
+    if !cover.code.trim().is_empty() {
+        st.cover_code_num = cover.code.trim().to_string();
+    }
+    if !cover.agency.trim().is_empty() {
+        st.cover_agency_text = cover.agency.trim().to_string();
+    }
+
+    // Relative image paths in the sheet are relative to the workbook.
+    let resolve = |p: &str| -> String {
+        let p = p.trim();
+        if p.is_empty() || Path::new(p).is_file() {
+            return p.to_string();
+        }
+        base_dir.map(|d| d.join(p)).filter(|j| j.is_file()).map(|j| j.to_string_lossy().to_string()).unwrap_or_else(|| p.to_string())
+    };
+    if !cover.image_hero.trim().is_empty() {
+        st.cover_image_skyline = resolve(&cover.image_hero);
+    }
+    if !cover.image_landscape.trim().is_empty() {
+        st.cover_image_landscape = resolve(&cover.image_landscape);
+    }
+    if !cover.logo.trim().is_empty() {
+        st.cover_image_logo = resolve(&cover.logo);
+    }
+    if !cover.event_theme.trim().is_empty() {
+        st.cover_image_back = resolve(&cover.event_theme);
+    }
+    if !cover.office_address.trim().is_empty() {
+        st.cover_office_address = cover.office_address.trim().to_string();
+    }
+    if !cover.office_address.trim().is_empty() || !cover.event_theme.trim().is_empty() {
+        st.cover_include_inside_back = true;
+    }
+    if !cover.table_theme.trim().is_empty()
+        && let Some(th) = parse_table_color_theme(&cover.table_theme)
+    {
+        if th == TableColorTheme::new("#FFCB56", "#FFE9A9") {
+            st.card2_color_theme = 0;
+        } else if th == TableColorTheme::new("#F3D2AF", "#F8EADC") {
+            st.card2_color_theme = 1;
+        } else if th == TableColorTheme::new("#9E7EB5", "#C4A4DA") {
+            st.card2_color_theme = 2;
+        } else if th.is_none() {
+            st.card2_color_theme = 3;
+        }
+        st.card2_theme_override = Some(cover.table_theme.trim().to_string());
+    }
+}
+
+pub fn execute_excel_to_csvs(st: &mut PubgenState, path: &str) -> Result<String, String> {
+    let pkg = excel::execute_convert_excel(path)?;
+    st.excel_source_path = path.to_string();
+    st.excel_had_cover = pkg.cover.is_some();
+    if let Some(cover) = &pkg.cover {
+        apply_excel_cover(st, cover, Path::new(path).parent());
+    }
+    // 1. Auto-load generated catalog into Card 1 (Page from CSV)
+    st.card1_path = pkg.catalog_path.clone();
+    load_card1_csv(st, &pkg.catalog_path);
+
+    // 2. Auto-load table CSVs into Card 2 (Table from CSV)
+    st.card2_sheet_tables = pkg.table_paths.clone();
+    st.card2_sheet_idx = 0;
+    if let Some(first_table) = pkg.table_paths.first() {
+        st.card2_path = first_table.clone();
+        load_card2_csv(st, first_table);
+    }
+
+    // 3. Cache ZIP archive metadata and bytes for user download
+    st.generated_csv_files = pkg.csv_files;
+    st.generated_zip_name = pkg.zip_name.clone();
+    st.generated_zip_bytes = pkg.zip_bytes;
+
+    let folder_name = std::path::Path::new(&pkg.parent_dir).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or(pkg.parent_dir);
+    let count = pkg.table_count;
+    let zip_name = pkg.zip_name;
+    Ok(format!("Converted {count} sheets → catalog CSV + {count} table CSVs + {zip_name} in {folder_name} (loaded in Page & Table from CSV)"))
+}
+
+/// Convert multi-sheet Excel workbook and, if `st.excel_auto_generate` is enabled,
+/// automatically run "Page from CSV" with default options and auto-insert each sheet's table.
+pub fn execute_excel_and_generate(app: &mut DesignApp, st: &mut PubgenState, path: &str) -> Result<String, String> {
+    let conv_msg = execute_excel_to_csvs(st, path)?;
+    if !st.excel_auto_generate || st.card1_records.is_empty() {
+        return Ok(conv_msg);
+    }
+
+    // Ensure an active document exists
+    if app.session.active().is_none() {
+        let _ = app.run("file.new", json!({}));
+    }
+
+    // Apply default options for automatic page and table generation
+    st.card1_auto_insert_tables = true;
+    st.card1_range_all = true;
+    st.card2_first_row_header = true;
+    st.card2_col_numbers = true;
+    st.card2_table_footer = true;
+    st.card2_row_conditions = true;
+
+    let mut cover_res_msg = None;
+    if st.excel_had_cover {
+        // The cover pages (front cover and inside cover) go before Page 1. Generating them before the body pages ensures
+        // that all subsequent body pages land on their permanent spreads and page sides (Left vs Right),
+        // preventing spread repagination from flipping inside and outside margins.
+        match execute_generate_front_cover(app, st) {
+            Ok(sname) => {
+                if st.cover_include_inside_back
+                    && let Err(e) = execute_generate_inside_cover(app)
+                {
+                    return Ok(format!("{conv_msg}, but inside cover failed: {e}"));
+                }
+                let cover_msg =
+                    if st.cover_include_inside_back { format!("Front Cover & Inside Cover ({sname})") } else { format!("Cover ({sname})") };
+                st.cover_status = Some((cover_msg.clone(), true));
+                cover_res_msg = Some(cover_msg);
+            }
+            Err(e) => {
+                st.cover_status = Some((e.clone(), false));
+                return Ok(format!("{conv_msg}, but cover failed: {e}"));
+            }
+        }
+    }
+
+    // Run Page from CSV (which auto-inserts the table for each sheet on its corresponding page)
+    let gen_res = execute_generate_pages(app, st);
+    match gen_res {
+        Ok(gen_msg) => {
+            st.card1_status = Some((gen_msg.clone(), true));
+            if st.excel_had_cover && st.cover_include_inside_back {
+                let _ = execute_generate_back_cover(app, st);
+            }
+            ensure_back_cover_at_end(app);
+            let count = st.card2_sheet_tables.len();
+            if let Some(cover_msg) = cover_res_msg {
+                return Ok(format!("Converted {count} sheets & auto-generated pages + cover ({gen_msg}; {cover_msg})!"));
+            }
+            Ok(format!("Converted {count} sheets & auto-generated pages ({gen_msg})!"))
+        }
+        Err(e) => {
+            st.card1_status = Some((e.clone(), false));
+            Err(format!("{conv_msg}, but page generation failed: {e}"))
+        }
+    }
+}
+
+pub fn execute_download_csv_zip(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, String> {
+    // Ensure we have zip bytes in memory
+    if st.generated_zip_bytes.is_empty() {
+        let mut files: Vec<(String, String)> = Vec::new();
+
+        if !st.generated_csv_files.is_empty() {
+            files = st.generated_csv_files.clone();
+        } else {
+            // Check if card1_path exists and can be read
+            if !st.card1_path.is_empty() {
+                let p = std::path::Path::new(&st.card1_path);
+                if p.is_file() {
+                    let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "catalog.csv".into());
+                    if let Ok(content) = std::fs::read_to_string(p) {
+                        files.push((name, content));
+                    }
+                }
+            }
+
+            // Check card2_sheet_tables
+            for tbl_p_str in &st.card2_sheet_tables {
+                let p = std::path::Path::new(tbl_p_str);
+                if p.is_file() {
+                    let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "table.csv".into());
+                    if let Ok(content) = std::fs::read_to_string(p)
+                        && !files.iter().any(|(n, _)| n == &name)
+                    {
+                        files.push((name, content));
+                    }
+                }
+            }
+
+            // If card2_path exists and not already included
+            if !st.card2_path.is_empty() {
+                let p = std::path::Path::new(&st.card2_path);
+                if p.is_file() {
+                    let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "table.csv".into());
+                    if !files.iter().any(|(n, _)| n == &name)
+                        && let Ok(content) = std::fs::read_to_string(p)
+                    {
+                        files.push((name, content));
+                    }
+                }
+            }
+        }
+
+        if files.is_empty() {
+            // Prompt user to pick an Excel file to convert and zip
+            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge")) {
+                execute_excel_to_csvs(st, &path)?;
+            } else {
+                return Err("No CSV files available to download. Please convert an Excel file or load CSVs first.".into());
+            }
+        } else {
+            let files_ref: Vec<(&str, &str)> = files.iter().map(|(n, c)| (n.as_str(), c.as_str())).collect();
+            let bytes = excel::create_csv_zip(&files_ref)?;
+            st.generated_zip_bytes = bytes;
+            if st.generated_zip_name.is_empty() {
+                let stem = if !st.card1_path.is_empty() {
+                    std::path::Path::new(&st.card1_path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "pubgen".into())
+                } else {
+                    "pubgen_data".into()
+                };
+                st.generated_zip_name = format!("{stem}_csvs.zip");
+            }
+        }
+    }
+
+    if st.generated_zip_bytes.is_empty() {
+        return Err("No CSV zip data generated".into());
+    }
+
+    let zip_name = if st.generated_zip_name.is_empty() { "pubgen_csvs.zip".to_string() } else { st.generated_zip_name.clone() };
+
+    // Deliver bytes via Web download or Desktop save dialog
+    if let Some(download) = app.services.download.as_mut() {
+        download(&zip_name, &st.generated_zip_bytes).map_err(|e| format!("Could not download {zip_name}: {e}"))?;
+        Ok(format!("Downloaded {zip_name}"))
+    } else if let Some(pick_save) = app.services.pick_save.as_mut() {
+        if let Some(save_path) = pick_save(&zip_name) {
+            if let Some(w) = app.services.write.as_mut() {
+                w(&save_path, &st.generated_zip_bytes).map_err(|e| format!("Could not save {save_path}: {e}"))?;
+            } else {
+                std::fs::write(&save_path, &st.generated_zip_bytes).map_err(|e| format!("Could not save {save_path}: {e}"))?;
+            }
+            let file_name = std::path::Path::new(&save_path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or(save_path);
+            Ok(format!("Saved {file_name}"))
+        } else {
+            Ok("ZIP download cancelled".into())
+        }
+    } else {
+        // Fallback: save to parent dir of card1_path or current dir
+        let target_dir = if !st.card1_path.is_empty() {
+            std::path::Path::new(&st.card1_path).parent().unwrap_or(std::path::Path::new(".")).to_path_buf()
+        } else {
+            std::path::PathBuf::from(".")
+        };
+        let save_path = target_dir.join(&zip_name);
+        std::fs::write(&save_path, &st.generated_zip_bytes).map_err(|e| format!("Could not save {}: {e}", save_path.display()))?;
+        Ok(format!("Saved {}", save_path.display()))
+    }
+}
