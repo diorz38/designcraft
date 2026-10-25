@@ -198,6 +198,8 @@ PubGen will bundle an authoritative, editable terminology dictionary injected in
 ### 6.1 Motivation & Technical Debt
 Currently, [`crates/ui-egui/src/panels/pubgen/mod.rs`](file:///f:/GitHub/designcraft/crates/ui-egui/src/panels/pubgen/mod.rs) exceeds 17,500 lines of Rust code. It houses UI rendering, state management, Excel conversions, table rendering, 13 cover styles, TOC parsing, and header/footer engines in a single file.
 
+> **Status (2026-10-25): executed.** `mod.rs` is a 198-line panel entrypoint (`show()` + wiring); the domain modules are `state`, `helpers`, `csv`, `themes`, `tables`, `pages`, `page_utils`, `toc`, `covers`, `header_footer`, `excel`, `widgets`, `ai`, `locale`, `cover_art`, `divider_art`, plus `testutil` for shared test helpers. The 154-test suite is distributed across the domain files. Executed as flat single files; the proposed `covers/`, `toc/`, `header_footer/` trees and `charts/`, `audit/` were not created. The compile-time A/B re-measurement was skipped — incremental-build benefit is implied by the split, not measured.
+
 ### 6.2 Proposed Submodule Architecture
 Decompose `crates/ui-egui/src/panels/pubgen/` into decoupled domain modules:
 
