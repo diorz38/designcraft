@@ -46,6 +46,7 @@ const ALLOWED: &[(&str, &str)] = &[
         "ui-egui/src/panels/pubgen/excel.rs",
         "Pubgen Excel importer reads user-selected workbook files and writes converted CSV/ZIP files chosen via file picker",
     ),
+    ("ui-egui/src/panels/pubgen/divider_art.rs", "Pubgen divider art checks for the user-configured background image next to the workbook"),
     ("engine/src/cmd/template/catalog.rs", "scans local template directories to discover canonical page templates and their previews"),
     ("engine/src/cmd/template/mod.rs", "reads template .designcraft document files to apply layout and styles to document pages"),
     (

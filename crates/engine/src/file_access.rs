@@ -415,7 +415,9 @@ mod tests {
     /// a path that passes only because it was resolved is the case being tested and nothing else.
     fn several(name: &str) -> (PathBuf, Arc<AutomationRoots>) {
         let (base, _) = folders(name);
-        let base = std::fs::canonicalize(base).unwrap();
+        // Resolved, as the roots show themselves (`/var` is `/private/var` on macOS, and Windows'
+        // `\\?\` prefix is stripped, so the expectations read like `describe`'s output).
+        let base = plain(std::fs::canonicalize(base).unwrap());
         for d in ["shared", "scratch", "scratch2"] {
             std::fs::create_dir_all(base.join(d)).unwrap();
         }
@@ -493,7 +495,7 @@ mod tests {
         assert!(e.starts_with("cannot open the automation write root"), "{e}");
         // A folder given twice (here once through `..`) counts once.
         let twice = AutomationRoots::new(&[&base.join("in"), &base.join("in/sub/.."), &base.join("in")], &[]).unwrap().unwrap();
-        let real = std::fs::canonicalize(&base).unwrap();
+        let real = plain(std::fs::canonicalize(&base).unwrap());
         assert_eq!(twice.describe(), format!("read {}; write none", s(real.join("in"))));
         let e = twice.check(s(base.join("outside/x")), Access::Read).unwrap_err();
         assert!(e.contains("outside the read root ") && !e.contains("roots"), "{e}");
