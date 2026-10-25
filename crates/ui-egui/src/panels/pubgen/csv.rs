@@ -412,3 +412,100 @@ pub(crate) fn is_numeric_or_dash(text: &str) -> bool {
     }
     false
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::testutil::*;
+    use super::*;
+
+    #[test]
+    fn test_parse_csv_content_rfc4180() {
+        let csv = "type,number,title\n\"Chapter\",01,\"The Beginning, and Future\"\nSection,02,\"Clean Architecture\"\n";
+        let rows = parse_csv_content(csv);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0], vec!["type", "number", "title"]);
+        assert_eq!(rows[1], vec!["Chapter", "01", "The Beginning, and Future"]);
+        assert_eq!(rows[2], vec!["Section", "02", "Clean Architecture"]);
+    }
+
+    #[test]
+    fn test_parse_csv_content_tab_and_semicolon() {
+        let tsv = "Item\tQty\tPrice\nWidget\t10\t$5.00\n";
+        let rows = parse_csv_content(tsv);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0], vec!["Item", "Qty", "Price"]);
+        assert_eq!(rows[1], vec!["Widget", "10", "$5.00"]);
+
+        let semi = "ColA;ColB\nValA;ValB\n";
+        let rows2 = parse_csv_content(semi);
+        assert_eq!(rows2.len(), 2);
+        assert_eq!(rows2[0], vec!["ColA", "ColB"]);
+        assert_eq!(rows2[1], vec!["ValA", "ValB"]);
+    }
+
+    #[test]
+    fn test_detect_delimiter_semicolon_with_commas_in_data() {
+        let content = "type;number;title\n\
+                       Tabel;01.01.;Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006\n\
+                       Tabel;01.02.;Keadaan Curah Hujan Tiap Bulan menurut Kecamatan (mm), 2006\n";
+        assert_eq!(detect_delimiter(content), ';');
+        let rows = parse_csv_content(content);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0], vec!["type", "number", "title"]);
+        assert_eq!(rows[1], vec!["Tabel", "01.01.", "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006"]);
+        assert_eq!(rows[2], vec!["Tabel", "01.02.", "Keadaan Curah Hujan Tiap Bulan menurut Kecamatan (mm), 2006"]);
+    }
+
+    #[test]
+    fn test_detect_delimiter_various_formats() {
+        // Comma with quotes containing semicolon
+        let csv_with_semi = "id,name,tags\n1,Alice,\"tag1;tag2\"\n2,Bob,\"tag3\"\n";
+        assert_eq!(detect_delimiter(csv_with_semi), ',');
+        let r1 = parse_csv_content(csv_with_semi);
+        assert_eq!(r1[1], vec!["1", "Alice", "tag1;tag2"]);
+
+        // Tab with commas in values
+        let tsv_with_commas = "item\tdesc\tprice\npen\tblue, 0.5mm\t$1.50\n";
+        assert_eq!(detect_delimiter(tsv_with_commas), '\t');
+
+        // Pipe delimited
+        let pipe = "ColA | ColB | ColC\nVal1 | Val2 | Val3\n";
+        assert_eq!(detect_delimiter(pipe), '|');
+
+        // Single line
+        assert_eq!(detect_delimiter("type;number;title"), ';');
+        assert_eq!(detect_delimiter("type,number,title"), ',');
+        assert_eq!(detect_delimiter("type\tnumber\ttitle"), '\t');
+        assert_eq!(detect_delimiter("type|number|title"), '|');
+
+        // UTF-8 BOM
+        let with_bom = "\u{FEFF}type;number;title\nTabel;01;Judul\n";
+        assert_eq!(detect_delimiter(with_bom), ';');
+        let rows_bom = parse_csv_content(with_bom);
+        assert_eq!(rows_bom[0], vec!["type", "number", "title"]);
+    }
+
+    #[test]
+    fn test_load_kbda_sample_file_with_semicolon() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plan/pubgen/samples/KBDA2026_chapters.csv");
+        if !std::path::Path::new(path).exists() {
+            return;
+        }
+        let mut st1 = PubgenState::default();
+        load_card1_csv(&mut st1, path);
+
+        assert_eq!(st1.card1_delim, Some(';'));
+        assert_eq!(st1.card1_headers, vec!["type", "number", "title"]);
+        assert_eq!(st1.card1_type_col, 0);
+        assert_eq!(st1.card1_num_col, 1);
+        assert_eq!(st1.card1_title_col, 2);
+        assert_eq!(st1.card1_records.len(), 194);
+        assert_eq!(st1.card1_records[0], vec!["Tabel", "01.01.", "Jarak Antar Kecamatan Di Kabupaten Karawang (km), 2006"]);
+
+        let mut st2 = PubgenState::default();
+        load_card2_csv(&mut st2, path);
+        assert_eq!(st2.card2_delim, Some(';'));
+        assert_eq!(st2.card2_matrix.len(), 195); // 1 header + 194 data
+        assert_eq!(st2.card2_matrix[0], vec!["type", "number", "title"]);
+    }
+}

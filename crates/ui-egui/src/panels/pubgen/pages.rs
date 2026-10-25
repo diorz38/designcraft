@@ -2018,3 +2018,2173 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
     ensure_back_cover_at_end(app);
     Ok(format!("Successfully generated {generated_count} pages{tbl_msg}!"))
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::testutil::*;
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_execute_generate_pages() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let initial_pages = app.session.active().unwrap().doc.page_count();
+
+        let st = PubgenState {
+            card1_records: vec![
+                vec!["Chapter".into(), "1".into(), "Getting Started".into()],
+                vec!["Chapter".into(), "2".into(), "Advanced Layouts".into()],
+            ],
+            card1_headers: vec!["type".into(), "number".into(), "title".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            card1_range_from: 1,
+            card1_range_to: 2,
+            card1_preset: 0,
+            card1_append: true,
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "generate_pages should succeed: {:?}", res);
+
+        let final_pages = app.session.active().unwrap().doc.page_count();
+        assert_eq!(final_pages, initial_pages + 2);
+
+        // Verify the 1-row 3-column frames on the newly created spread
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.last().unwrap();
+        assert!(spread.items.len() >= 3, "Expected at least 3 frames on generated spread");
+        let items = &spread.items;
+        let n = items.len();
+        let f1 = &items[n - 3];
+        let f2 = &items[n - 2];
+        let f3 = &items[n - 1];
+        // Same row: y0 and y1 are identical
+        assert_eq!(f1.bounds().y0, f2.bounds().y0);
+        assert_eq!(f2.bounds().y0, f3.bounds().y0);
+        assert_eq!(f1.bounds().y1, f2.bounds().y1);
+        // 3 columns: side-by-side from left to right (Col 1: Type < Col 2: Number < Col 3: Title)
+        assert!(f1.bounds().x1 < f2.bounds().x0);
+        assert!(f2.bounds().x1 < f3.bounds().x0);
+        // Col 3 leaves space at the end before margin.x1
+        let page_margin = spread.pages.last().unwrap().margin_rect();
+        assert!(f3.bounds().x1 < page_margin.x1);
+
+        // Col 1 is right-aligned
+        let tf1 = f1.text_frame().expect("f1 should be a text frame");
+        let story1 = active.doc.story(tf1.story).expect("story1 should exist");
+        assert_eq!(story1.paras[0].para.align, Some(designcraft_doc::Align::Right));
+    }
+
+    #[test]
+    fn test_execute_generate_pages_separate_textboxes_title_only() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card1_records: vec![vec![
+                "Tabel".into(),
+                "02.01".into(),
+                "Jumlah Rukun Warga (RW) dan Rukun Tetangga (RT) Menurut Desa/Kelurahan di Kecamatan Karawang Timur, 2025".into(),
+            ]],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_preset: 0,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        // Check the 3 text frames created on the generated spread
+        {
+            let active = app.session.active().unwrap();
+            let spread = active.doc.spreads.last().unwrap();
+            let items = &spread.items;
+            let n = items.len();
+            assert!(n >= 3);
+            let f1 = items[n - 3].text_frame().unwrap();
+            let f2 = items[n - 2].text_frame().unwrap();
+            let f3 = items[n - 1].text_frame().unwrap();
+
+            let s1 = active.doc.story(f1.story).unwrap();
+            let s2 = active.doc.story(f2.story).unwrap();
+            let s3 = active.doc.story(f3.story).unwrap();
+
+            // 1st textbox contains the localized "Tabel"
+            assert_eq!(s1.text.trim(), "Tabel");
+            // 2nd textbox contains: "02.01" (correct value)
+            assert_eq!(s2.text.trim(), "02.01");
+            // 3rd textbox contains ONLY title, NOT including type and number!
+            assert_eq!(s3.text.trim(), "Jumlah Rukun Warga (RW) dan Rukun Tetangga (RT) Menurut Desa/Kelurahan di Kecamatan Karawang Timur, 2025");
+        }
+
+        // When Add TOC is executed, verify the generated TOC entry merges type + number + title:
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_add_toc should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let toc_story = active.doc.story(active.doc.tocs.last().unwrap().story).unwrap();
+        let clean_text = toc_story.text.replace(designcraft_doc::story::FORCED_LINE_BREAK, " ");
+        assert!(
+            clean_text
+                .contains("Tabel 02.01 Jumlah Rukun Warga (RW) dan Rukun Tetangga (RT) Menurut Desa/Kelurahan di Kecamatan Karawang Timur, 2025"),
+            "TOC should contain merged type + number + title: {}",
+            toc_story.text
+        );
+    }
+
+    #[test]
+    fn test_execute_generate_pages_auto_inserts_tables_from_file_col() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = std::env::temp_dir().join("pubgen_auto_insert_test");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let cat_path = temp_dir.join("test_catalog.csv");
+        let cat_content = "type,number,title,file\n\
+                           Tabel,01.01,First Table,tbl_1\n\
+                           Tabel,01.02,Second Table,tbl_2\n";
+        std::fs::write(&cat_path, cat_content).unwrap();
+
+        let tbl1_path = temp_dir.join("tbl_1.csv");
+        let tbl1_content = "Col A,Col B\n10,20\n30,40\n";
+        std::fs::write(&tbl1_path, tbl1_content).unwrap();
+
+        let tbl2_path = temp_dir.join("tbl_2.csv");
+        let tbl2_content = "Header X,Header Y\nfoo,bar\nbaz,qux\n";
+        std::fs::write(&tbl2_path, tbl2_content).unwrap();
+
+        let mut st = PubgenState::default();
+        load_card1_csv(&mut st, cat_path.to_str().unwrap());
+        st.card1_auto_insert_tables = true;
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages should succeed: {res:?}");
+        let msg = res.unwrap();
+        assert!(msg.contains("2 pages"), "Message should mention 2 pages: {msg}");
+        assert!(msg.contains("2 tables auto-inserted"), "Message should mention 2 tables auto-inserted: {msg}");
+
+        // Cleanup
+        let _ = std::fs::remove_file(cat_path);
+        let _ = std::fs::remove_file(tbl1_path);
+        let _ = std::fs::remove_file(tbl2_path);
+        let _ = std::fs::remove_dir(temp_dir);
+    }
+
+    #[test]
+    fn test_execute_generate_pages_g_sheet_without_title_names_its_rtf_title() {
+        // The `GXX` sheets carry no title row, only the RTF link, so the page opens with the
+        // RTF's own title line. Word writes that line as direct formatting (bold, caps, centred),
+        // not as a `Heading 1`, so the paragraph table of contents has to read the page's heading
+        // off how it looks or the page is missing from the list.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G02.rtf");
+        let rtf = concat!(
+            r"{\rtf1\ansi\deff0{\fonttbl{\f0 Arial;}}{\stylesheet{\s0 Normal;}}",
+            r"\pard\plain\s0\qc\b\caps\fs30 DAFTAR SINGKATAN/list of Abbreviation\par",
+            r"\pard\plain\s0\fs24 SI : Stasiun Iklim/Climate Station\par}"
+        );
+        std::fs::write(&rtf_path, rtf.as_bytes()).unwrap();
+        let catalog_path = temp_dir.path().join("G02_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nG,02,,\"{escaped}\"\n")).unwrap();
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        st.card1_preset = 0;
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        execute_generate_pages(&mut app, &st).expect("generate pages");
+
+        let active = app.session.active().unwrap();
+        let body = active.doc.stories.values().find(|s| s.text.contains("DAFTAR SINGKATAN")).expect("placed RTF");
+        assert_eq!(body.paras[0].style, TOC_NARRATIVE_STYLE, "the RTF's title line is the page's title");
+        assert_eq!(body.paras[1].style, designcraft_doc::story::BASIC_PARAGRAPH, "the body keeps its own style");
+        assert_eq!(body.paras[0].para.align, Some(designcraft_doc::Align::Center), "the title keeps the RTF's centring");
+
+        let plan = TocPlan::from_state(&PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() });
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+        assert_eq!(rows, [(1, "DAFTAR SINGKATAN/list of Abbreviation".to_string())], "the paragraph list names the page at its own level: {rows:?}");
+    }
+
+    #[test]
+    fn test_execute_generate_pages_g_sheet_without_title_in_template_mode() {
+        // The template flow fills its title slot with the sheet's title: empty for these sheets,
+        // so the RTF's own first line is the page's title there too.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G01.rtf");
+        let rtf = concat!(
+            r"{\rtf1\ansi\deff0{\fonttbl{\f0 Arial;}}{\stylesheet{\s0 Normal;}}",
+            r"\pard\plain\s0\qc\b\caps\fs30 Penjelasan Umum/Explanatory Notes\par",
+            r"\pard\plain\s0\fs24 The publication covers the regency.\par}"
+        );
+        std::fs::write(&rtf_path, rtf.as_bytes()).unwrap();
+        let catalog_path = temp_dir.path().join("G01_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nG,01,,\"{escaped}\"\n")).unwrap();
+
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        st.card1_preset = 6;
+        st.card1_template_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/templates/front_matter/001_publication_note.designcraft").into();
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        execute_generate_pages(&mut app, &st).expect("generate pages");
+
+        let active = app.session.active().unwrap();
+        let body = active.doc.stories.values().find(|s| s.text.contains("Penjelasan Umum")).expect("placed RTF");
+        assert_eq!(body.paras[0].style, TOC_NARRATIVE_STYLE, "the RTF's title line is the page's title");
+
+        let plan = TocPlan::from_state(&PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() });
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+        assert_eq!(rows, [(1, "Penjelasan Umum/Explanatory Notes".to_string())], "the paragraph list names the page: {rows:?}");
+    }
+
+    #[test]
+    fn test_g_sheet_title_skips_the_issn_line_and_the_book_title() {
+        // The compilers' page (a `G` sheet that links only its RTF): a right-aligned ISSN line, a
+        // few empty lines, then the page's own title in the largest centred type, with the
+        // publication's title set smaller below it. Naming the page after its first paragraph
+        // listed the ISSN line; naming it after its largest centred line lists the page.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G00.rtf");
+        let rtf = concat!(
+            r"{\rtf1\ansi\deff0{\fonttbl{\f0 Arial;}}{\stylesheet{\s0 Normal;}}",
+            r"\pard\plain\s0\qr\fs24 ISSN: 2828-7346\par",
+            r"\pard\plain\s0\par",
+            r"\pard\plain\s0\par",
+            r"\pard\plain\s0\par",
+            r"\pard\plain\s0\qc\b\fs28 TIM PENYUSUN/COMPILERS\par",
+            r"\pard\plain\s0\qc\b\fs22 Kecamatan Karawang Timur Dalam Angka 2025\par",
+            r"\pard\plain\s0\qc\fs22 Karawang Timur District in Figures 2025\par}",
+        );
+        std::fs::write(&rtf_path, rtf.as_bytes()).unwrap();
+        let catalog_path = temp_dir.path().join("G00_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nG,00,,\"{escaped}\"\n")).unwrap();
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        st.card1_preset = 0;
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        execute_generate_pages(&mut app, &st).expect("generate pages");
+
+        let active = app.session.active().unwrap();
+        let body = active.doc.stories.values().find(|s| s.text.contains("TIM PENYUSUN")).expect("placed RTF");
+        let style_of = |needle: &str| {
+            let i = body.para_ranges().iter().position(|r| body.text.get(r.clone()).is_some_and(|t| t.contains(needle))).expect("paragraph");
+            body.paras[i].style.clone()
+        };
+        assert_eq!(style_of("TIM PENYUSUN"), TOC_NARRATIVE_STYLE, "the page's title names the page");
+        assert_eq!(style_of("ISSN"), designcraft_doc::story::BASIC_PARAGRAPH, "the ISSN line stays out of the list");
+        assert_eq!(style_of("Kecamatan Karawang"), designcraft_doc::story::BASIC_PARAGRAPH, "so does the publication's title");
+
+        let plan = TocPlan::from_state(&PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() });
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+        assert_eq!(rows, [(1, "TIM PENYUSUN/COMPILERS".to_string())], "the paragraph list names the page once, at its own level: {rows:?}");
+    }
+
+    #[test]
+    fn test_g_sheet_title_skips_an_empty_opening_paragraph() {
+        // The explanatory-notes sheet (G01) opens with an empty paragraph and carries its title
+        // next: searching for the first non-empty paragraph's look finds the title where taking
+        // the very first paragraph found nothing, so the page was missing from the list.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G01.rtf");
+        let rtf = concat!(
+            r"{\rtf1\ansi\deff0{\fonttbl{\f0 Arial;}}{\stylesheet{\s0 Normal;}}",
+            r"\pard\plain\s0\par",
+            r"\pard\plain\s0\qc\b\fs30 Penjelasan Umum/Explanatory Notes\par",
+            r"\pard\plain\s0\ql\fs24 The publication covers the regency and its subdistricts.\par}",
+        );
+        std::fs::write(&rtf_path, rtf.as_bytes()).unwrap();
+        let catalog_path = temp_dir.path().join("G01_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nG,01,,\"{escaped}\"\n")).unwrap();
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        st.card1_preset = 0;
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        execute_generate_pages(&mut app, &st).expect("generate pages");
+
+        let active = app.session.active().unwrap();
+        let body = active.doc.stories.values().find(|s| s.text.contains("Penjelasan Umum")).expect("placed RTF");
+        let ranges = body.para_ranges();
+        let title = ranges.iter().position(|r| body.text.get(r.clone()).is_some_and(|t| t.contains("Penjelasan Umum"))).expect("title paragraph");
+        assert_eq!(body.paras[title].style, TOC_NARRATIVE_STYLE, "the RTF's title line is the page's title");
+        assert_eq!(body.paras[0].para.align, None, "the empty opening paragraph keeps its own look");
+
+        let plan = TocPlan::from_state(&PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() });
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+        assert_eq!(rows, [(1, "Penjelasan Umum/Explanatory Notes".to_string())], "the paragraph list names the page: {rows:?}");
+    }
+
+    #[test]
+    fn test_execute_generate_pages_note_sheet_title_and_rtf() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("A02.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Hello DesignCraft Note!}"#).unwrap();
+        let catalog_path = temp_dir.path().join("A02_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nNote,02,Keterangan Publikasi,\"{escaped}\"\n")).unwrap();
+
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "generate pages should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert!(active.doc.page_count() >= 2, "the note gets its own page");
+
+        // The title is a centred Arial text box with a 100 % transparent background.
+        let title_story =
+            active.doc.stories.values().find(|s| s.text.trim() == "Keterangan Publikasi").unwrap_or_else(|| panic!("note title story should exist"));
+        assert_eq!(title_story.paras[0].para.align, Some(designcraft_doc::Align::Center));
+        assert!(title_story.chars.iter().all(|run| run.format.over.font_family.as_deref() == Some("Arial")), "title runs should all be Arial");
+        let title_item = active
+            .doc
+            .spreads
+            .iter()
+            .flat_map(|sp| &sp.items)
+            .find(|it| it.text_frame().is_some_and(|tf| tf.story == title_story.id))
+            .unwrap_or_else(|| panic!("title frame should exist"));
+        assert_eq!(title_item.fill.swatch, "[None]", "title box has no fill");
+        assert!(title_item.stroke.is_none(), "title box has no stroke");
+
+        // The RTF note is placed on the same page below the title.
+        assert!(active.doc.stories.values().any(|s| s.text.contains("Hello DesignCraft Note!")), "RTF text should be placed on the generated page");
+    }
+
+    #[test]
+    fn test_kata_pengantar_dynamic_signature_placement() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let margin = designcraft_geom::Rect::new(36.0, 36.0, 559.0, 806.0);
+        let (mw, mh) = (margin.x1 - margin.x0, margin.y1 - margin.y0);
+        let default_img2_rect = [margin.x1 - mw * 0.244, margin.y0 + mh * 0.354, margin.x1 - mw * 0.044, margin.y0 + mh * 0.464];
+
+        for sample in ["B01.rtf", "B01_en.rtf"] {
+            let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({})).unwrap();
+
+            // Place image1 with boundingBox wrap before placing RTF, matching execute_generate_pages
+            let img1_rect = [margin.x0, margin.y0 + mh * 0.22, margin.x0 + mw * 0.24, margin.y0 + mh * 0.43];
+            let res_img = app.run("frame.create", json!({"spread": 0, "rect": img1_rect, "content": "graphic"})).unwrap();
+            let img_fid = res_img.get("id").and_then(Value::as_u64).unwrap();
+            let _ = app.run("object.textWrap", json!({"mode": "boundingBox", "offset": 6.0, "ids": [img_fid]}));
+
+            let rtf_rect = [margin.x0, margin.y0 + 50.0, margin.x1, margin.y1];
+            let res = app.run("frame.create", json!({"spread": 0, "rect": rtf_rect, "content": "text", "caret": false})).unwrap();
+            let fid = res.get("id").and_then(Value::as_u64).unwrap();
+            let _ = app.run("selection.set", json!({"ids": [fid]}));
+
+            let mut st = PubgenState::default();
+            let rtf_path = format!("{}/../../plan/pubgen/samples/DUAL_LANG/{}", env!("CARGO_MANIFEST_DIR"), sample);
+            if std::path::Path::new(&rtf_path).exists() {
+                let place_res = execute_page_from_rtf(&mut app, &mut st, &rtf_path);
+                assert!(place_res.is_ok(), "execute_page_from_rtf should place {sample}: {place_res:?}");
+
+                harmonize_signatory_block(&mut app, fid, margin);
+
+                let (target_spread, img2_rect) = compute_signature_placement(&app, fid, default_img2_rect, 0, margin);
+                assert_eq!(target_spread, 0);
+
+                // The dynamic signature rect must be anchored down near the signatory block at the bottom
+                // of the text, significantly lower than the default static position (~308pt).
+                assert!(
+                    img2_rect[1] > default_img2_rect[1] + 50.0,
+                    "Dynamic signature y0 ({}) should be anchored lower than default ({}) for {sample}",
+                    img2_rect[1],
+                    default_img2_rect[1]
+                );
+                assert!(img2_rect[1] >= margin.y0 && img2_rect[3] <= margin.y1);
+                assert!(img2_rect[0] >= margin.x0 && img2_rect[2] <= margin.x1 - 20.0, "Signature must not hug right page edge for {sample}");
+
+                // Verify composed lines: all signatory lines must be well away from the right margin
+                // and must share consistent horizontal centering.
+                let active = app.session.active().unwrap();
+                let sid = story_of_frame(&app, fid).unwrap();
+                let cs = designcraft_compose::compose_story(&active.doc, sid, &Default::default());
+                let non_empty_lines: Vec<&designcraft_compose::Line> = cs
+                    .frames
+                    .iter()
+                    .flat_map(|f| &f.lines)
+                    .filter(|l| l.glyphs.iter().any(|g| g.visible && !g.rendered_char.is_whitespace()))
+                    .collect();
+
+                assert!(non_empty_lines.len() >= 4, "Too few lines for {sample}: {}", non_empty_lines.len());
+                let sig_lines = &non_empty_lines[non_empty_lines.len() - 4..];
+                let mut sig_centers = Vec::new();
+                for l in sig_lines {
+                    let min_x = l.glyphs.iter().filter(|g| g.visible && !g.rendered_char.is_whitespace()).map(|g| g.x).fold(f64::INFINITY, f64::min);
+                    let max_x = l
+                        .glyphs
+                        .iter()
+                        .filter(|g| g.visible && !g.rendered_char.is_whitespace())
+                        .map(|g| g.x + g.adv)
+                        .fold(f64::NEG_INFINITY, f64::max);
+                    assert!(
+                        max_x <= margin.x1 - 25.0,
+                        "Signatory line max_x ({max_x}) must not be too close to margin.x1 ({}) in {sample}",
+                        margin.x1
+                    );
+                    sig_centers.push((min_x + max_x) / 2.0);
+                }
+                // All signatory lines must share matching center alignment (within 3 points)
+                let avg_center: f64 = sig_centers.iter().sum::<f64>() / sig_centers.len() as f64;
+                for &c in &sig_centers {
+                    assert!((c - avg_center).abs() < 3.0, "Signatory line center ({c}) does not match average center ({avg_center}) in {sample}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_execute_generate_pages_g_sheet_tags_its_title_for_the_paragraph_toc() {
+        // `GXX` sheet rows (front matter such as the compiler page, the explanatory notes or the
+        // abbreviations) keep the narrative style on their title, so a paragraph table of contents
+        // names them beside the chapter reviews. The template flow tagged its title slot; the
+        // preset flow left it plain.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G00.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Hello DesignCraft G00 Narrative!}"#).unwrap();
+        let catalog_path = temp_dir.path().join("G00_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        std::fs::write(&catalog_path, format!("type,number,title,file\nG,00,TIM PENYUSUN/COMPILERS,\"{escaped}\"\n")).unwrap();
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        st.card1_preset = 0;
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        execute_generate_pages(&mut app, &st).expect("generate pages");
+
+        let active = app.session.active().unwrap();
+        let title_story = active.doc.stories.values().find(|s| s.text.contains("TIM PENYUSUN/COMPILERS")).expect("title story");
+        assert_eq!(title_story.paras[0].style, TOC_NARRATIVE_STYLE, "the page title carries the narrative style");
+
+        let plan = TocPlan::from_state(&PubgenState { toc_kind: 3, toc_style: "TOC Entry".into(), ..Default::default() });
+        let found = app.session.execute("toc.entries", &json!({"entries": plan.entries_json()})).expect("toc.entries");
+        let rows: Vec<(u8, String)> = found
+            .as_array()
+            .expect("entries")
+            .iter()
+            .map(|e| (e["level"].as_u64().expect("level") as u8, e["text"].as_str().expect("text").to_string()))
+            .collect();
+        assert_eq!(rows, [(1, "TIM PENYUSUN/COMPILERS".to_string())], "the paragraph list names the page with its title alone: {rows:?}");
+    }
+    #[test]
+    fn test_execute_generate_pages_note_or_g_sheet_single_row_no_header() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("G00.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Hello DesignCraft G00 Narrative!}"#).unwrap();
+        let catalog_path = temp_dir.path().join("G00_catalog.csv");
+        let escaped = rtf_path.to_string_lossy().replace('"', "\"\"");
+        // Title column is empty (as produced when sheet only has 1 row: file)
+        std::fs::write(&catalog_path, format!("type,number,title,file\nNote,00,,\"{escaped}\"\n")).unwrap();
+
+        let mut st = PubgenState { card1_range_all: true, ..PubgenState::default() };
+        load_card1_csv(&mut st, &catalog_path.to_string_lossy());
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "generate pages should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert!(active.doc.page_count() >= 2, "narrative sheet gets its own page");
+
+        // Verify NO page header story exists
+        assert!(
+            !active.doc.stories.values().any(|s| s.text.trim() == "Keterangan Publikasi" || s.text.trim() == "Note"),
+            "No Page Header story should be created when sheet only had 1 row file"
+        );
+
+        // Verify the RTF narrative is placed on the page
+        assert!(
+            active.doc.stories.values().any(|s| s.text.contains("Hello DesignCraft G00 Narrative!")),
+            "RTF text should be placed directly on the page"
+        );
+
+        // Verify the RTF frame starts at margin.y0 (not margin.y0 + 64.0)
+        let (margin, _) = {
+            let sp_idx = active.doc.spreads.len().saturating_sub(1);
+            let spread = &active.doc.spreads[sp_idx];
+            let page = spread.pages.last().unwrap();
+            (page.margin_rect(), sp_idx)
+        };
+        let rtf_item = active
+            .doc
+            .spreads
+            .last()
+            .unwrap()
+            .items
+            .iter()
+            .find(|it| it.text_frame().is_some_and(|tf| active.doc.stories.get(&tf.story).is_some_and(|s| s.text.contains("Hello DesignCraft G00"))))
+            .expect("RTF frame should exist");
+        let bounds = rtf_item.bounds();
+        assert_eq!(bounds.y0, margin.y0, "RTF frame should start at top margin without header offset");
+    }
+
+    #[test]
+    fn test_execute_generate_cover_text_formatting() {
+        for style in 0..=10 {
+            let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({})).unwrap();
+            let st = PubgenState { cover_style: style, ..PubgenState::default() };
+            let res = execute_generate_cover(&mut app, &st);
+            assert!(res.is_ok(), "Style {style} failed: {res:?}");
+
+            let active = app.session.active().unwrap();
+            // Assert that every story on the cover page has styled character runs
+            assert!(!active.doc.stories.is_empty(), "Style {style} should create stories");
+            for story in active.doc.stories.values() {
+                for run in &story.chars {
+                    assert!(run.format.over.size.is_some(), "Story text '{}' in style {style} must have custom size", story.text);
+                    assert!(run.format.over.fill.is_some(), "Story text '{}' in style {style} must have custom fill", story.text);
+                    let fam = run.format.over.font_family.as_deref().unwrap_or_default();
+                    let st = run.format.over.font_style.as_deref().unwrap_or_default();
+                    assert!(fam == "Arial" || fam == "Arial Black", "Expected Arial family, got {fam}");
+                    if story.text.contains("KARAWANG TIMUR")
+                        || story.text.contains("KARAWANG\nTIMUR")
+                        || story.text == "2026"
+                        || story.text == "20"
+                        || story.text == "26"
+                    {
+                        assert_eq!(fam, "Arial Black", "Title and Year must use Arial Black in story '{}'", story.text);
+                    }
+                    if story.text.contains("BADAN PUSAT STATISTIK") {
+                        assert_eq!(fam, "Arial", "Logo text must use Arial");
+                        assert_eq!(st, "Bold Italic", "Logo text must use Bold Italic");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_arial_and_arial_black_resolution() {
+        let db = designcraft_fonts::FontDb::with_font_dirs(designcraft_fonts::system_font_dirs());
+        let face_arial = db.face("Arial", "Regular");
+        println!("face Arial Regular: family='{}' style='{}'", face_arial.family, face_arial.style);
+        let face_ariblk = db.face("Arial Black", "Regular");
+        println!("face Arial Black Regular: family='{}' style='{}'", face_ariblk.family, face_ariblk.style);
+        let face_arial_blk = db.face("Arial", "Black");
+        println!("face Arial Black: family='{}' style='{}'", face_arial_blk.family, face_arial_blk.style);
+        let face_arial_bi = db.face("Arial", "Bold Italic");
+        println!("face Arial Bold Italic: family='{}' style='{}'", face_arial_bi.family, face_arial_bi.style);
+    }
+
+    /// Opt-in evidence for review (`CRAFT_UI_VISUAL_FIXTURES=dir cargo test --features pubgen`): the
+    /// whole Pubgen panel body in one image, TOC style set to "TOC Table".
+    #[test]
+    fn test_execute_generate_pages_ulasan_rtf_layout() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("ulasan_test.rtf");
+        let rtf_content = br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Bab satu ulasan pemerintahan daerah di Karawang Timur.}"#;
+        std::fs::write(&rtf_path, rtf_content).unwrap();
+
+        let st = PubgenState {
+            card1_records: vec![vec!["Ulasan".into(), "01".into(), "BAB 01 Pemerintahan".into(), rtf_path.to_string_lossy().to_string()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for Ulasan should succeed: {res:?}");
+        let msg = res.unwrap();
+        assert!(msg.contains("1 RTF chapter(s) placed"), "Summary should confirm RTF placed: {msg}");
+
+        // Verify items on the generated page (page 1)
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2, "1 initial page + 1 generated page");
+
+        let (spread_idx, _) = active.doc.page_loc(1).unwrap();
+        let spread = &active.doc.spreads[spread_idx];
+        let texts: Vec<String> =
+            spread.items.iter().filter_map(|it| it.text_frame()).filter_map(|tf| active.doc.story(tf.story)).map(|st| st.text.clone()).collect();
+
+        // Must contain "BAB 01", "Pemerintahan", and the RTF text
+        assert!(texts.iter().any(|t| t.contains("BAB 01")), "Page should contain 'BAB 01', found: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Pemerintahan")), "Page should contain 'Pemerintahan', found: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Bab satu ulasan pemerintahan")), "Page should contain imported RTF content, found: {texts:?}");
+    }
+
+    #[test]
+    fn test_bxx_sheet_gets_rxx_page_layout() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("B01.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Kata pengantar untuk laporan ini.}"#).unwrap();
+
+        // `B01` converts as `Ulasan` (see `is_b_sheet`), so its catalog row is the RXX shape.
+        let st = PubgenState {
+            card1_records: vec![vec!["Ulasan".into(), "01".into(), "Kata Pengantar".into(), rtf_path.to_string_lossy().to_string()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for a BXX-style Ulasan row should succeed: {res:?}");
+        let msg = res.unwrap();
+        assert!(msg.contains("1 RTF chapter(s) placed"), "Summary should confirm RTF placed: {msg}");
+
+        let active = app.session.active().unwrap();
+        let (spread_idx, _) = active.doc.page_loc(1).unwrap();
+        let spread = &active.doc.spreads[spread_idx];
+        let stories: Vec<&designcraft_doc::Story> =
+            spread.items.iter().filter_map(|it| it.text_frame()).filter_map(|tf| active.doc.story(tf.story)).collect();
+        let texts: Vec<&str> = stories.iter().map(|s| s.text.as_str()).collect();
+
+        assert!(!texts.iter().any(|t| t.contains("BAB 01")), "A title without a BAB prefix gets no chapter-number box, found: {texts:?}");
+        assert!(texts.iter().any(|t| t.eq_ignore_ascii_case("Kata Pengantar")), "Page should contain 'Kata Pengantar', found: {texts:?}");
+        let title_para = stories.iter().find(|s| s.text.contains("KATA PENGANTAR")).and_then(|s| s.paras.first()).expect("the centered title frame");
+        assert_eq!(title_para.style, TOC_NARRATIVE_STYLE, "the title frame must carry the narrative style so the paragraph list names the page");
+        assert_eq!(title_para.para.align, Some(designcraft_doc::Align::Center), "the front-matter title is centered on the margin");
+        assert!(texts.iter().any(|t| t.contains("Kata pengantar untuk laporan ini")), "Page should contain the placed RTF body, found: {texts:?}");
+    }
+
+    #[test]
+    fn test_bxx_bilingual_dual_spread_and_italics() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let id_rtf = temp_dir.path().join("B01.rtf");
+        let en_rtf = temp_dir.path().join("B01_en.rtf");
+        std::fs::write(&id_rtf, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Kata pengantar bahasa Indonesia.}"#).unwrap();
+        std::fs::write(&en_rtf, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Preface narrative text in English.}"#).unwrap();
+        let img1 = sample_image_path();
+        let img2 = sample_image_path();
+
+        let st = PubgenState {
+            card1_records: vec![vec![
+                "Ulasan".into(),
+                "01".into(),
+                "Kata Pengantar".into(),
+                id_rtf.to_string_lossy().to_string(),
+                img1,
+                img2,
+                "Preface".into(),
+                en_rtf.to_string_lossy().to_string(),
+            ]],
+            card1_headers: vec![
+                "type".into(),
+                "number".into(),
+                "title".into(),
+                "file".into(),
+                "image1".into(),
+                "image2".into(),
+                "title_en".into(),
+                "file_en".into(),
+            ],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            bilingual_output: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for bilingual BXX should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // 1 initial + 1 ID page + 1 EN page
+        assert_eq!(active.doc.page_count(), 3);
+
+        // 1. Indonesian page (page 1)
+        let (id_si, _) = active.doc.page_loc(1).unwrap();
+        let id_spread = &active.doc.spreads[id_si];
+        let id_stories: Vec<&designcraft_doc::Story> = id_spread
+            .items
+            .iter()
+            .filter(|it| active.doc.page_of_item(it.id) == Some(1))
+            .filter_map(|it| it.text_frame())
+            .filter_map(|tf| active.doc.story(tf.story))
+            .collect();
+        let id_texts: Vec<&str> = id_stories.iter().map(|s| s.text.as_str()).collect();
+
+        assert!(id_texts.iter().any(|t| t.contains("KATA PENGANTAR")), "Indonesian page must contain 'KATA PENGANTAR', found: {id_texts:?}");
+        assert!(!id_texts.iter().any(|t| t.contains("PREFACE")), "Indonesian page must NOT contain 'PREFACE', found: {id_texts:?}");
+        assert!(!id_texts.iter().any(|t| t.contains("BAB 01")), "Indonesian front matter gets no BAB 01 box, found: {id_texts:?}");
+        let id_graphic_frames = id_spread.items.iter().filter(|it| active.doc.page_of_item(it.id) == Some(1) && it.graphic().is_some()).count();
+        assert_eq!(id_graphic_frames, 2, "Indonesian page must contain image1 and image2 graphic frames");
+
+        // 2. English page (page 2)
+        let (en_si, _) = active.doc.page_loc(2).unwrap();
+        let en_spread = &active.doc.spreads[en_si];
+        let en_stories: Vec<&designcraft_doc::Story> = en_spread
+            .items
+            .iter()
+            .filter(|it| active.doc.page_of_item(it.id) == Some(2))
+            .filter_map(|it| it.text_frame())
+            .filter_map(|tf| active.doc.story(tf.story))
+            .collect();
+        let en_texts: Vec<&str> = en_stories.iter().map(|s| s.text.as_str()).collect();
+
+        assert!(en_texts.iter().any(|t| t.contains("PREFACE")), "English page must contain 'PREFACE', found: {en_texts:?}");
+        assert!(!en_texts.iter().any(|t| t.contains("CHAPTER 01")), "English front matter must NOT contain 'CHAPTER 01', found: {en_texts:?}");
+        assert!(!en_texts.iter().any(|t| t.contains("KATA PENGANTAR")), "English page must NOT contain 'KATA PENGANTAR', found: {en_texts:?}");
+        let en_graphic_frames = en_spread.items.iter().filter(|it| active.doc.page_of_item(it.id) == Some(2) && it.graphic().is_some()).count();
+        assert_eq!(en_graphic_frames, 2, "English page must contain image1 and image2 graphic frames");
+
+        // English page text should all be in italic
+        for s in &en_stories {
+            for run in &s.chars {
+                let style = run.format.over.font_style.as_deref().unwrap_or_default();
+                assert!(
+                    style.eq_ignore_ascii_case("italic") || style.eq_ignore_ascii_case("bold italic"),
+                    "English page text run must be italicized, found style: {style}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_execute_generate_pages_grafik_image_layout() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let img_path = sample_image_path();
+
+        let st = PubgenState {
+            card1_records: vec![vec!["Grafik".into(), "02.01".into(), "Grafik 02.01 Panjang Jalan Kecamatan Karawang Timur 2026".into(), img_path]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for Grafik should succeed: {res:?}");
+        let msg = res.unwrap();
+        assert!(msg.contains("1 chart image(s) placed"), "Summary should confirm chart image placed: {msg}");
+
+        // Verify items on the generated page (page 1)
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2, "1 initial page + 1 generated page");
+
+        let (spread_idx, _) = active.doc.page_loc(1).unwrap();
+        let spread = &active.doc.spreads[spread_idx];
+
+        // 1. Check title text frame
+        let texts: Vec<String> =
+            spread.items.iter().filter_map(|it| it.text_frame()).filter_map(|tf| active.doc.story(tf.story)).map(|st| st.text.clone()).collect();
+        assert!(
+            texts.iter().any(|t| t.contains("Grafik 02.01") && t.contains("Panjang Jalan Kecamatan Karawang Timur 2026")),
+            "Page must contain centered 2-line title, found: {texts:?}"
+        );
+
+        // 2. Check graphic frame placed inside margins
+        let graphic_frame = spread.items.iter().find(|it| matches!(it.content, designcraft_doc::Content::Graphic(_)));
+        assert!(graphic_frame.is_some(), "Page must contain a placed graphic frame");
+    }
+
+    #[test]
+    fn test_generate_all_canonical_templates() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
+        let templates_dir = root.join("assets").join("templates");
+        let dividers_dir = templates_dir.join("dividers");
+        let tables_dir = templates_dir.join("data_tables");
+        let front_matter_dir = templates_dir.join("front_matter");
+
+        // Covers are hand-designed in `covers/` (copied from `covers_original/`), so this test
+        // only generates the interior templates and never writes over them.
+        std::fs::create_dir_all(&dividers_dir).unwrap();
+        std::fs::create_dir_all(&tables_dir).unwrap();
+        std::fs::create_dir_all(&front_matter_dir).unwrap();
+
+        // 1. Divider
+        {
+            let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({"width": 420.0, "height": 595.0, "pages": 1, "facingPages": false})).unwrap();
+            app.run("frame.create", json!({"spread": 0, "rect": [0, 0, 420, 200], "content": "unassigned", "shape": "rectangle"})).unwrap();
+            let _ = app.run("object.color", json!({"color": "#122647", "target": "fill"}));
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 60, 348, 40], "content": "text", "text": "BAB 1"}));
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 110, 348, 60], "content": "text", "text": "GEOGRAFI DAN IKLIM"}));
+            let _ =
+                app.run("frame.create", json!({"spread": 0, "rect": [36, 230, 348, 320], "content": "text", "text": "Deskripsi pengantar bab..."}));
+
+            let active = app.session.active_mut().unwrap();
+            let doc = std::sync::Arc::make_mut(&mut active.doc);
+            for sp in &mut doc.spreads {
+                let sp = std::sync::Arc::make_mut(sp);
+                for it in &mut sp.items {
+                    let it = std::sync::Arc::make_mut(it);
+                    if let designcraft_doc::Content::Text(tf) = &it.content
+                        && let Some(story) = doc.stories.get(&tf.story)
+                    {
+                        if story.text.contains("BAB 1") {
+                            it.label = "#slot:text:chapter_num".to_string();
+                        } else if story.text.contains("GEOGRAFI") {
+                            it.label = "#slot:text:chapter_title".to_string();
+                        } else {
+                            it.label = "#slot:story:narrative_body".to_string();
+                        }
+                    }
+                }
+            }
+            let target = dividers_dir.join("001_simple_chapter.designcraft");
+            app.run("file.saveAs", json!({"path": target.to_string_lossy()})).unwrap();
+        }
+
+        // 2. Data Table
+        {
+            let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({"width": 420.0, "height": 595.0, "pages": 1, "facingPages": false})).unwrap();
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 36, 384, 52], "content": "text", "text": "Tabel 1.1"}));
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 52, 384, 68], "content": "text", "text": "Table 1.1"}));
+            let _ = app.run(
+                "frame.create",
+                json!({"spread": 0, "rect": [36, 70, 384, 90], "content": "text", "text": "Luas Wilayah Menurut Desa/Kelurahan"}),
+            );
+            let _ = app.run(
+                "frame.create",
+                json!({"spread": 0, "rect": [36, 90, 384, 110], "content": "text", "text": "Total Area by Village/Urban Village"}),
+            );
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 120, 384, 520], "content": "unassigned", "shape": "rectangle"}));
+            let _ = app
+                .run("frame.create", json!({"spread": 0, "rect": [36, 530, 384, 555], "content": "text", "text": "Sumber: BPS Kabupaten Karawang"}));
+
+            let active = app.session.active_mut().unwrap();
+            let doc = std::sync::Arc::make_mut(&mut active.doc);
+            for sp in &mut doc.spreads {
+                let sp = std::sync::Arc::make_mut(sp);
+                for it in &mut sp.items {
+                    let it = std::sync::Arc::make_mut(it);
+                    match &it.content {
+                        designcraft_doc::Content::Text(tf) => {
+                            if let Some(story_arc) = doc.stories.get_mut(&tf.story) {
+                                let story = std::sync::Arc::make_mut(story_arc);
+                                if story.text.contains("Tabel") {
+                                    it.label = "#slot:text:table_num".to_string();
+                                } else if story.text.contains("Table") {
+                                    it.label = "#slot:text:table_kind_en".to_string();
+                                    for r in &mut story.chars {
+                                        r.format.over.font_style = Some("Italic".to_string());
+                                    }
+                                } else if story.text.contains("Luas") {
+                                    it.label = "#slot:text:table_title".to_string();
+                                } else if story.text.contains("Total Area") {
+                                    it.label = "#slot:text:table_title_en".to_string();
+                                    for r in &mut story.chars {
+                                        r.format.over.font_style = Some("Italic".to_string());
+                                    }
+                                } else {
+                                    it.label = "#slot:text:source".to_string();
+                                }
+                            }
+                        }
+                        designcraft_doc::Content::Unassigned | designcraft_doc::Content::Graphic(_) => {
+                            it.label = "#slot:table:main".to_string();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            let target = tables_dir.join("001_single_table_standard.designcraft");
+            app.run("file.saveAs", json!({"path": target.to_string_lossy()})).unwrap();
+        }
+
+        // 3. Publication Note
+        {
+            let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({"width": 420.0, "height": 595.0, "pages": 1, "facingPages": false})).unwrap();
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 50, 348, 40], "content": "text", "text": "KATA PENGANTAR"}));
+            let _ = app.run("frame.create", json!({"spread": 0, "rect": [36, 110, 348, 440], "content": "text", "text": "Publikasi Kecamatan Karawang Timur Dalam Angka 2026..."}));
+
+            let active = app.session.active_mut().unwrap();
+            let doc = std::sync::Arc::make_mut(&mut active.doc);
+            for sp in &mut doc.spreads {
+                let sp = std::sync::Arc::make_mut(sp);
+                for it in &mut sp.items {
+                    let it = std::sync::Arc::make_mut(it);
+                    if let designcraft_doc::Content::Text(tf) = &it.content
+                        && let Some(story) = doc.stories.get(&tf.story)
+                    {
+                        if story.text.contains("KATA PENGANTAR") {
+                            it.label = "#slot:text:title".to_string();
+                        } else {
+                            it.label = "#slot:story:note_body".to_string();
+                        }
+                    }
+                }
+            }
+            let target = front_matter_dir.join("001_publication_note.designcraft");
+            app.run("file.saveAs", json!({"path": target.to_string_lossy()})).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_execute_generate_pages_modular_template_divider() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("ch1.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Ulasan wilayah terinci.}"#).unwrap();
+
+        let st = PubgenState {
+            card1_preset: 6,
+            card1_records: vec![vec!["Ulasan".into(), "01".into(), "BAB 01 Geografi".into(), rtf_path.to_string_lossy().to_string()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for modular template divider should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2);
+        let (si, pi) = active.doc.page_loc(1).unwrap();
+        let pg = &active.doc.spreads[si].pages[pi];
+        eprintln!("ULASAN PAGE 1: side={:?}, bounds={:?}, margins={:?}, margin_rect={:?}", pg.side, pg.bounds(), pg.margins, pg.margin_rect());
+        for it in &active.doc.spreads[si].items {
+            eprintln!("  ITEM: label='{}', bounds={:?}", it.label, it.bounds());
+        }
+
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("BAB 01")), "Stories should contain BAB 01: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Geografi")), "Stories should contain Geografi: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Ulasan wilayah terinci")), "Stories should contain RTF text: {texts:?}");
+    }
+
+    #[test]
+    fn test_reordered_csv_columns_resolve_by_header() {
+        // Columns are found by header name, not fixed position.
+        let headers: Vec<String> = ["type", "number", "title", "template", "file", "title_en", "file_en"].into_iter().map(String::from).collect();
+        assert_eq!(effective_col(3, &headers, &["file", "filename"], 3), 4, "'file' found past the legacy slot");
+        assert_eq!(effective_col(4, &headers, &["template"], 4), 3, "'template' found before the legacy slot");
+        // Records set directly (no load_card1_csv): stale default positions re-resolve by name.
+        let headers6: Vec<String> = ["type", "number", "title", "file", "template", "file_en"].into_iter().map(String::from).collect();
+        assert_eq!(effective_col(6, &headers6, &["file_en", "fileen"], 6), 5, "stale default re-resolves");
+        assert_eq!(effective_col(4, &headers6, &["template"], 4), 4, "matching stored column is kept");
+        // Missing header reads as absent: MAX (row.get(MAX) is None, i.e. empty text —
+        // identical behaviour to reading past the end of the row).
+        let headers4: Vec<String> = ["type", "number", "title", "file"].into_iter().map(String::from).collect();
+        assert_eq!(effective_col(6, &headers4, &["file_en", "fileen"], 6), usize::MAX);
+    }
+
+    #[test]
+    fn test_row_template_slots_divider_and_table() {
+        let st = PubgenState { bilingual_output: true, ..Default::default() };
+
+        // Divider in Dual Lang: chapter parts + title_en, no table slots.
+        let s = row_template_slots("Divider", "02", "BAB 02 PEMERINTAHAN", "CHAPTER 02 GOVERNMENT", "", false, &st);
+        assert_eq!(s.text.get("first_word"), Some(&json!("BAB")));
+        assert_eq!(s.text.get("chapter_num"), Some(&json!("02")));
+        assert_eq!(s.text.get("chapter_title"), Some(&json!("PEMERINTAHAN")));
+        assert_eq!(s.text.get("title_en"), Some(&json!("CHAPTER 02 GOVERNMENT")));
+        assert!(s.story.is_empty());
+        assert_eq!(s.images_resolved + s.rtfs_resolved, 0, "no files on disk to resolve");
+
+        // Divider preface never carries title_en.
+        let s = row_template_slots("Divider", "01", "BAB 01 X", "EN X", "", true, &st);
+        assert!(s.text.get("title_en").is_none());
+
+        // Table single lang: localized title, no EN slots.
+        let single = PubgenState::default();
+        let s = row_template_slots("Tabel", "02.01", "Luas Wilayah", "", "", false, &single);
+        assert!(s.text.contains_key("table_num"));
+        assert_eq!(s.text.get("table_kind_en"), Some(&json!("")));
+        assert_eq!(s.text.get("table_title_en"), Some(&json!("")));
+
+        // Table with an EN title: bilingual slots.
+        let s = row_template_slots("Tabel", "02.01", "Luas Wilayah", "Area", "", false, &st);
+        assert_eq!(s.text.get("table_title"), Some(&json!("Luas Wilayah")));
+        assert_eq!(s.text.get("table_title_en"), Some(&json!("Area")));
+        assert!(s.text.get("table_kind_en").is_some());
+    }
+
+    #[test]
+    fn test_effective_col_skips_foreign_fallback() {
+        // User's catalog: 7 columns where image1/image2 sit at the legacy
+        // title_en/file_en positions. file_en must read as ABSENT, not as image2.
+        let headers: Vec<String> = ["type", "number", "title", "file", "template", "image1", "image2"].into_iter().map(String::from).collect();
+        assert_eq!(effective_col(6, &headers, &["file_en", "fileen"], 6), usize::MAX);
+        assert_eq!(effective_col(5, &headers, &["title_en", "titleen"], 5), usize::MAX);
+        // file is found by name at its real position.
+        assert_eq!(effective_col(3, &headers, &["file", "filename"], 3), 3);
+        // Legacy 7-column layout keeps working.
+        let legacy: Vec<String> = ["type", "number", "title", "file", "template", "title_en", "file_en"].into_iter().map(String::from).collect();
+        assert_eq!(effective_col(5, &legacy, &["title_en", "titleen"], 5), 5);
+        assert_eq!(effective_col(6, &legacy, &["file_en", "fileen"], 6), 6);
+    }
+
+    #[test]
+    fn test_find_named_column_mapping() {
+        let headers = vec!["No".into(), "Judul".into(), "Berkas".into(), "File".into(), "FILE_EN".into()];
+        assert_eq!(find_named_col(&headers, &["file", "filename"], 3), 3);
+        assert_eq!(find_named_col(&headers, &["file_en", "fileen"], 6), 4);
+        assert_eq!(find_named_col(&headers, &["title_en", "titleen"], 5), 5, "missing header keeps legacy position");
+        // 'file' must not swallow 'file_en'
+        let only_en = vec!["file_en".to_string()];
+        assert_eq!(find_named_col(&only_en, &["file", "filename"], 3), 3);
+    }
+
+    #[test]
+    fn test_execute_generate_pages_modular_template_note() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("note.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Penjelasan teknis publikasi.}"#).unwrap();
+
+        let st = PubgenState {
+            card1_preset: 6,
+            card1_records: vec![vec!["Note".into(), "".into(), "Keterangan Publikasi".into(), rtf_path.to_string_lossy().to_string()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for modular template note should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2);
+
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("Keterangan Publikasi")), "Stories should contain note title: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Penjelasan teknis publikasi")), "Stories should contain RTF note body: {texts:?}");
+    }
+
+    #[test]
+    fn test_execute_generate_pages_modular_template_table() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let csv_path = temp_dir.path().join("table_1_1.csv");
+        std::fs::write(&csv_path, "Kecamatan,Luas\nKarawang Barat,30.5\nKarawang Timur,25.2\nTotal,55.7\n").unwrap();
+
+        let st = PubgenState {
+            card1_preset: 6,
+            card1_records: vec![vec!["Tabel".into(), "1.1".into(), "Luas Wilayah Menurut Kecamatan".into(), csv_path.to_string_lossy().to_string()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            card1_auto_insert_tables: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for modular template table should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2);
+
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("01.01")), "Stories should contain table number: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Luas Wilayah")), "Stories should contain table title: {texts:?}");
+
+        let has_table = active.doc.stories.values().any(|s| !s.tables.is_empty());
+        assert!(has_table, "Document should contain an inserted table");
+    }
+
+    #[test]
+    fn test_table_bilingual_generation() {
+        // 1. Test split_table_title
+        let (id, en) = locale::split_table_title("Banyaknya Penduduk / Number of Population");
+        assert_eq!(id, "Banyaknya Penduduk");
+        assert_eq!(en.as_deref(), Some("Number of Population"));
+
+        let (id_single, en_none) = locale::split_table_title("Banyaknya Penduduk");
+        assert_eq!(id_single, "Banyaknya Penduduk");
+        assert_eq!(en_none, None);
+
+        // 2. Test Preset 0 bilingual generation
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card1_preset: 0,
+            bilingual_output: true,
+            card1_records: vec![vec!["Tabel".into(), "01.01".into(), "Luas Daerah / Total Area".into(), "".into()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "Bilingual Preset 0 table should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        // Col 1 has Tabel and Table joined by forced line break
+        assert!(texts.iter().any(|t| t.contains("Tabel") && t.contains("Table")), "Col 1 should have Tabel and Table: {texts:?}");
+        // Col 3 has Luas Daerah and Total Area
+        assert!(
+            texts.iter().any(|t| t.contains("Luas Daerah") && t.contains("Total Area")),
+            "Col 3 should have Luas Daerah and Total Area: {texts:?}"
+        );
+
+        // 3. Test Modular Template bilingual generation
+        let mut app2 = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app2.run("file.new", json!({})).unwrap();
+
+        let mut st2 = st.clone();
+        st2.card1_preset = 6;
+        let res2 = execute_generate_pages(&mut app2, &st2);
+        assert!(res2.is_ok(), "Bilingual Modular table should succeed: {res2:?}");
+        let active2 = app2.session.active().unwrap();
+        let texts2: Vec<String> = active2.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts2.iter().any(|t| t.contains("Luas Daerah")), "Template should bind table_title: {texts2:?}");
+        assert!(texts2.iter().any(|t| t.contains("Total Area")), "Template should bind table_title_en: {texts2:?}");
+    }
+
+    #[test]
+    fn test_table_sheet_xx_xx_bilingual_header_textboxes() {
+        let first_row = vec![
+            "Tabel 01.01 Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur / Land Area by Village/Sub-district in East Karawang District, 2025".to_string()
+        ];
+        let (t, n, title, file) = excel::parse_catalog_entry(&first_row, "01_01");
+        assert_eq!(t, "Tabel");
+        assert_eq!(n, "01.01");
+        assert_eq!(file, "01_01");
+        assert_eq!(
+            title,
+            "Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur / Land Area by Village/Sub-district in East Karawang District, 2025"
+        );
+
+        let (id_harmonized, en_harmonized_opt) = excel::split_and_harmonize_table_title(&title, None);
+        assert_eq!(id_harmonized, "Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025");
+        assert_eq!(en_harmonized_opt.as_deref(), Some("Land Area by Village/Sub-district in East Karawang District, 2025"));
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card1_preset: 0,
+            card1_records: vec![vec![t, n, title, file]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "Page generation should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let stories: Vec<_> = active.doc.stories.values().collect();
+
+        // 1. Textbox 1 contains 2 lines: "Tabel\nTable" with "Table" in Italic
+        let box1 = stories.iter().find(|s| s.text.contains("Tabel") && s.text.contains("Table")).expect("Textbox 1 found");
+        let (p_line1, p_line2) = box1.text.split_once(designcraft_doc::story::FORCED_LINE_BREAK).expect("2 lines in textbox 1");
+        assert_eq!(p_line1, "Tabel");
+        assert_eq!(p_line2, "Table");
+
+        // 2. Textbox 2 contains XX.XX ("01.01")
+        let box2 = stories.iter().find(|s| s.text == "01.01").expect("Textbox 2 found with 01.01");
+        assert_eq!(box2.text, "01.01");
+
+        // 3. Textbox 3 contains 2 lines:
+        // Line 1: "Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025"
+        // Line 2: "Land Area by Village/Sub-district in East Karawang District, 2025"
+        let box3 = stories
+            .iter()
+            .find(|s| s.text.contains("Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025"))
+            .expect("Textbox 3 found");
+        let (t3_line1, t3_line2) = box3.text.split_once(designcraft_doc::story::FORCED_LINE_BREAK).expect("2 lines in textbox 3");
+        assert_eq!(t3_line1, "Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025");
+        assert_eq!(t3_line2, "Land Area by Village/Sub-district in East Karawang District, 2025");
+    }
+
+    #[test]
+    fn test_chart_bilingual_parts_and_italics() {
+        let title = "Grafik / Chart 02.01 Panjang Jalan / Road Length, 2026";
+        let parts = locale::split_chart_title_parts(title);
+        assert_eq!(parts.id_kicker, "Grafik");
+        assert_eq!(parts.en_kicker.as_deref(), Some("Chart"));
+        assert_eq!(parts.number, "02.01");
+        assert_eq!(parts.id_subtitle, "Panjang Jalan");
+        assert_eq!(parts.en_subtitle.as_deref(), Some("Road Length"));
+        assert_eq!(parts.suffix, ", 2026");
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card1_preset: 0,
+            bilingual_output: true,
+            card1_records: vec![vec!["Grafik".into(), "02.01".into(), title.into(), "".into()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "Bilingual chart generation should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let chart_story = active.doc.stories.values().find(|s| s.text.contains("Grafik / Chart")).expect("Chart story must exist");
+        assert!(chart_story.text.contains("Grafik / Chart 02.01"), "Line 1 should have kicker and number");
+        assert!(chart_story.text.contains("Panjang Jalan / Road Length, 2026"), "Line 2 should have subtitle and suffix");
+
+        // Verify that 'Chart' and 'Road Length' runs have Bold Italic
+        let has_italic_chart = chart_story
+            .chars
+            .iter()
+            .any(|r| r.format.over.font_style.as_deref() == Some("Bold Italic") || r.format.over.font_style.as_deref() == Some("Italic"));
+        assert!(has_italic_chart, "Chart title must have italicised English parts");
+    }
+
+    #[test]
+    fn test_chart_bilingual_three_line_title_from_title_en() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card1_preset: 0,
+            bilingual_output: true,
+            card1_records: vec![vec![
+                "Grafik".into(),
+                "02.01".into(),
+                "Panjang Jalan Kecamatan Karawang Timur 2026".into(),
+                "".into(),
+                "".into(),
+                "Chart 02.01 Road Length in East Karawang District, 2025".into(),
+            ]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into(), "title_en".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "3-line bilingual chart generation should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let chart_story = active.doc.stories.values().find(|s| s.text.contains("Grafik 02.01")).expect("Chart story must exist");
+
+        // Verify 3 lines separated by FORCED_LINE_BREAK
+        let lines: Vec<&str> = chart_story.text.split(designcraft_doc::story::FORCED_LINE_BREAK).collect();
+        assert_eq!(lines.len(), 3, "Expected 3 lines, got {:?}", lines);
+        assert_eq!(lines[0], "Grafik 02.01");
+        assert_eq!(lines[1], "Panjang Jalan Kecamatan Karawang Timur 2026");
+        assert_eq!(lines[2], "Chart 02.01 Road Length in East Karawang District, 2025");
+
+        // Verify font styling: Line 1 and Line 2 are Bold 11pt, Line 3 is Italic 9pt
+        let en_line_text = "Chart 02.01 Road Length in East Karawang District, 2025";
+        let en_start = chart_story.text.find(en_line_text).expect("EN line must be in text");
+
+        let mut curr_offset = 0;
+        for run in &chart_story.chars {
+            let run_start = curr_offset;
+            let run_end = curr_offset + run.len;
+            curr_offset = run_end;
+
+            if run_end <= en_start {
+                assert_eq!(run.format.over.font_style.as_deref(), Some("Bold"), "Lines 1-2 must be Bold");
+                assert_eq!(run.format.over.size, Some(11.0), "Lines 1-2 must be 11pt");
+            } else if run_start >= en_start {
+                assert_eq!(run.format.over.font_style.as_deref(), Some("Italic"), "Line 3 must be Italic");
+                assert_eq!(run.format.over.size, Some(9.0), "Line 3 must be 9pt (smaller font)");
+            }
+        }
+    }
+
+    #[test]
+    fn test_resolve_template_path_spec() {
+        // Direct template ID resolution from assets/templates/
+        let r1 = resolve_template_path_spec("", "001_simple_chapter");
+        assert!(r1.is_some(), "Should resolve 001_simple_chapter: {r1:?}");
+        assert!(r1.unwrap().contains("001_simple_chapter.designcraft"));
+
+        // Subcategory path resolution
+        let r2 = resolve_template_path_spec("", "dividers/001_simple_chapter");
+        assert!(r2.is_some(), "Should resolve dividers/001_simple_chapter: {r2:?}");
+
+        // Batik infographic divider resolution
+        let r_batik = resolve_template_path_spec("", "002_batik_infographic");
+        assert!(r_batik.is_some(), "Should resolve 002_batik_infographic: {r_batik:?}");
+        assert!(r_batik.unwrap().contains("002_batik_infographic.designcraft"));
+
+        // Legacy / alias resolution
+        let r_legacy1 = resolve_template_path_spec("", "dividers/001_ulasan_chapter");
+        assert!(r_legacy1.is_some(), "Should resolve legacy ulasan: {r_legacy1:?}");
+        assert!(r_legacy1.unwrap().contains("001_simple_chapter.designcraft"));
+
+        let r_legacy2 = resolve_template_path_spec("", "dividers/special_infographic_divider");
+        assert!(r_legacy2.is_some(), "Should resolve special infographic alias: {r_legacy2:?}");
+        assert!(r_legacy2.unwrap().contains("002_batik_infographic.designcraft"));
+
+        // Table template resolution
+        let r3 = resolve_template_path_spec("", "001_single_table_standard");
+        assert!(r3.is_some(), "Should resolve 001_single_table_standard: {r3:?}");
+
+        // Non-existent template returns None
+        let r_none = resolve_template_path_spec("", "completely_fake_template_9999");
+        assert!(r_none.is_none());
+    }
+
+    #[test]
+    fn test_execute_generate_pages_with_explicit_template_column() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("ch2.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Ulasan sosial Bab 2.}"#).unwrap();
+
+        // Note: card1_preset is set to 0 (procedural preset), but column 4 explicitly
+        // specifies a template. It MUST use the modular template!
+        let st = PubgenState {
+            card1_preset: 0,
+            card1_records: vec![vec![
+                "Ulasan".into(),
+                "02".into(),
+                "BAB 02 Sosial".into(),
+                rtf_path.to_string_lossy().to_string(),
+                "dividers/001_ulasan_chapter".into(),
+            ]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages with explicit template column should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2);
+
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("BAB 02")), "Stories should contain BAB 02: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Sosial")), "Stories should contain Sosial: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Ulasan sosial Bab 2")), "Stories should contain RTF text: {texts:?}");
+    }
+
+    #[test]
+    fn test_ulasan_row_with_erroneous_divider_template_places_rtf() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rtf_path = temp_dir.path().join("ch1.rtf");
+        std::fs::write(&rtf_path, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Narasi bab 1 geografi dan iklim.}"#).unwrap();
+
+        // Row has type "Ulasan", but template explicitly says "dividers/special_infographic_divider"
+        // (e.g. from an Excel sheet where the user specified a divider style).
+        // It MUST NOT render as a Batik Infographic divider, and MUST place the RTF text!
+        let st = PubgenState {
+            card1_preset: 0,
+            card1_records: vec![vec![
+                "Ulasan".into(),
+                "01".into(),
+                "BAB 01 Geografi".into(),
+                rtf_path.to_string_lossy().to_string(),
+                "dividers/special_infographic_divider".into(),
+            ]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("Narasi bab 1 geografi")), "Ulasan RTF must be placed into the document: {texts:?}");
+    }
+
+    #[test]
+    fn test_procedural_divider_art_fallback() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // Simulate DIV sheet row without template on disk (e.g. portable app release)
+        let st = PubgenState {
+            card1_preset: 0,
+            card1_records: vec![vec![
+                "Divider".into(),
+                "01".into(),
+                "BAB 01 Geografi".into(),
+                "".into(),
+                "dividers/special_infographic_divider".into(),
+                "Chapter 01 Geography".into(),
+            ]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into(), "title_en".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_title_en_col: 5,
+            card1_range_all: true,
+            bilingual_output: true,
+            cover_color_primary: "#0284c7".into(),
+            cover_color_accent: "#f59e0b".into(),
+            cover_color_dark: "#1e293b".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages should generate procedural divider: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // Page 1 is initial, Page 2 is procedural divider
+        assert_eq!(active.doc.page_count(), 2);
+
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("01")), "Stories should contain chapter num 01: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("BAB")), "Stories should contain prefix BAB: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Geografi")), "Stories should contain title Geografi: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Chapter 01 Geography")), "Stories should contain title_en: {texts:?}");
+    }
+
+    #[test]
+    fn test_execute_generate_pages_divider_with_002_template() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let img_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plan/pubgen/samples/infografik_01.png");
+
+        let st = PubgenState {
+            card1_preset: 0,
+            card1_records: vec![vec!["Divider".into(), "02".into(), "BAB 02 PEMERINTAHAN".into(), img_path.into(), "002".into()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for divider should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2);
+
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        // 3 textbox values from col title:
+        // first_word replacing "BAB" -> "BAB"
+        assert!(texts.iter().any(|t| t.contains("BAB")), "Stories should contain BAB: {texts:?}");
+        // digit number replacing "01" -> "02"
+        assert!(texts.iter().any(|t| t.contains("02")), "Stories should contain 02: {texts:?}");
+        // rest of text replacing "Geografi" -> "PEMERINTAHAN"
+        assert!(texts.iter().any(|t| t.contains("PEMERINTAHAN")), "Stories should contain PEMERINTAHAN: {texts:?}");
+
+        // Shape with color #e5007e has image placed into it
+        let has_image = active.doc.spreads.iter().flat_map(|sp| &sp.items).any(|it| matches!(it.content, designcraft_doc::Content::Graphic(_)));
+        assert!(has_image, "Divider page should contain placed image");
+
+        // Verify page geometry is full A4 (210 x 297 mm)
+        let last_sp = active.doc.spreads.last().unwrap();
+        let last_p = last_sp.pages.last().unwrap();
+        assert!((last_p.width - 595.27559).abs() < 0.1, "Divider page should be full A4 width 595.28: {}", last_p.width);
+        assert!((last_p.height - 841.88976).abs() < 0.1, "Divider page should be full A4 height 841.89: {}", last_p.height);
+
+        // Verify image fits frame with fitContentToFrame
+        let img_item = last_sp.items.iter().find(|it| it.label.contains("image")).unwrap();
+        if let designcraft_doc::Content::Graphic(g) = &img_item.content {
+            let placed_rect = g.xf.transform_rect_bbox(designcraft_geom::Rect::new(0.0, 0.0, g.size.0, g.size.1));
+            let placed_w = placed_rect.width();
+            let placed_h = placed_rect.height();
+            let frame_bounds = img_item.inner_bounds();
+            assert!(
+                (placed_w - frame_bounds.width()).abs() <= 1.0,
+                "Placed width {} must match frame {} for fitContentToFrame",
+                placed_w,
+                frame_bounds.width()
+            );
+            assert!(
+                (placed_h - frame_bounds.height()).abs() <= 1.0,
+                "Placed height {} must match frame {} for fitContentToFrame",
+                placed_h,
+                frame_bounds.height()
+            );
+        }
+
+        // Verify divider page adjusts to Page Size (margins == 0.0)
+        assert_eq!(last_p.margins.top, 0.0, "Divider page margins must be 0 (Page Size)");
+        assert_eq!(last_p.margins.bottom, 0.0, "Divider page margins must be 0 (Page Size)");
+        assert_eq!(last_p.margins.inside, 0.0, "Divider page margins must be 0 (Page Size)");
+        assert_eq!(last_p.margins.outside, 0.0, "Divider page margins must be 0 (Page Size)");
+
+        let mut renderer = designcraft_render::Renderer::new();
+        let cache = designcraft_compose::Cache::new();
+        let opts = designcraft_render::RenderOptions::default();
+        let rendered = renderer.render_page(&active.doc, &cache, 1, 1.0, false, &opts);
+        assert!(rendered.is_some(), "Divider page should render cleanly without panic");
+    }
+
+    #[test]
+    fn test_content_pages_adjust_to_page_margins_while_cover_and_div_adjust_to_page_size() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card1_preset: 0,
+            card1_records: vec![
+                vec!["COVER".into(), "".into(), "PUBLICATION COVER".into(), "".into(), "".into()],
+                vec!["Note".into(), "".into(), "CATATAN TEKNIS".into(), "".into(), "".into()],
+                vec!["DIV".into(), "01".into(), "BAB 01".into(), "".into(), "".into()],
+                vec!["DIV01".into(), "01".into(), "BAB 01".into(), "".into(), "".into()],
+                vec!["DIV1".into(), "02".into(), "BAB 02".into(), "".into(), "".into()],
+                vec!["Tabel".into(), "1.1".into(), "Luas Wilayah".into(), "".into(), "".into()],
+            ],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        // Set document margins (e.g. 54 pt ~ 19mm)
+        let _ = execute_set_page_margins(&mut app);
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // Spreads / pages: Page 0 is initial blank, then 6 added pages -> total 7 pages
+        assert_eq!(active.doc.page_count(), 7);
+
+        const PT_PER_MM: f64 = 72.0 / 25.4;
+        let expected_top = 20.20 * PT_PER_MM;
+
+        // Page 1: COVER -> margins should be 0.0 (adjust to Page Size)
+        let (sp1_idx, p1_idx) = active.doc.page_loc(1).unwrap();
+        let p1 = &active.doc.spreads[sp1_idx].pages[p1_idx];
+        assert_eq!(p1.margins.top, 0.0, "COVER page margins must be 0 (Page Size)");
+
+        // Page 2: Note -> margins should be custom doc_margins (adjust to Page Margin)
+        let (sp2_idx, p2_idx) = active.doc.page_loc(2).unwrap();
+        let p2 = &active.doc.spreads[sp2_idx].pages[p2_idx];
+        assert!(
+            (p2.margins.top - expected_top).abs() < 0.01,
+            "Note content page must retain custom doc margins (expected {expected_top}, got {})",
+            p2.margins.top
+        );
+        let p2_m = p2.margin_rect();
+        // Check that items on page 2 are inside margins
+        let sp2 = &active.doc.spreads[sp2_idx];
+        for it in &sp2.items {
+            let ib = it.bounds();
+            if ib.x0 >= p2.bounds().x0 && ib.x1 <= p2.bounds().x1 {
+                assert!(ib.x0 >= p2_m.x0 - 1.0, "Item left {} must align with margin {}", ib.x0, p2_m.x0);
+                assert!(ib.y0 >= p2_m.y0 - 1.0, "Item top {} must align with margin {}", ib.y0, p2_m.y0);
+                assert!(ib.x1 <= p2_m.x1 + 1.0, "Item right {} must not exceed margin {}", ib.x1, p2_m.x1);
+            }
+        }
+
+        // Page 3: DIV -> margins should be 0.0 (adjust to Page Size)
+        let (sp3_idx, p3_idx) = active.doc.page_loc(3).unwrap();
+        let p3 = &active.doc.spreads[sp3_idx].pages[p3_idx];
+        assert_eq!(p3.margins.top, 0.0, "DIV page margins must be 0 (Page Size)");
+
+        // Page 4: DIV01 -> margins should be 0.0 (adjust to Page Size)
+        let (sp4_idx, p4_idx) = active.doc.page_loc(4).unwrap();
+        let p4 = &active.doc.spreads[sp4_idx].pages[p4_idx];
+        assert_eq!(p4.margins.top, 0.0, "DIV01 page margins must be 0 (Page Size)");
+
+        // Page 5: DIV1 -> margins should be 0.0 (adjust to Page Size)
+        let (sp5_idx, p5_idx) = active.doc.page_loc(5).unwrap();
+        let p5 = &active.doc.spreads[sp5_idx].pages[p5_idx];
+        assert_eq!(p5.margins.top, 0.0, "DIV1 page margins must be 0 (Page Size)");
+
+        // Page 6: Tabel -> margins should be custom doc_margins (adjust to Page Margin)
+        let (sp6_idx, p6_idx) = active.doc.page_loc(6).unwrap();
+        let p6 = &active.doc.spreads[sp6_idx].pages[p6_idx];
+        assert!(
+            (p6.margins.top - expected_top).abs() < 0.01,
+            "Tabel content page must retain custom doc margins (expected {expected_top}, got {})",
+            p6.margins.top
+        );
+        let p6_m = p6.margin_rect();
+        let sp6 = &active.doc.spreads[sp6_idx];
+        for it in &sp6.items {
+            let ib = it.bounds();
+            if ib.x0 >= p6.bounds().x0 && ib.x1 <= p6.bounds().x1 {
+                assert!(ib.x0 >= p6_m.x0 - 1.0, "Header/table item left {} must align with margin {}", ib.x0, p6_m.x0);
+                assert!(ib.y0 >= p6_m.y0 - 1.0, "Header/table item top {} must align with margin {}", ib.y0, p6_m.y0);
+                assert!(ib.x1 <= p6_m.x1 + 1.0, "Header/table item right {} must not exceed margin {}", ib.x1, p6_m.x1);
+            }
+        }
+    }
+
+    #[test]
+    fn test_custom_page_margins_from_margins_and_columns_applied_to_content() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // User sets custom margins via layout.marginsAndColumns (e.g. top: 48, bottom: 50, inside: 60, outside: 40)
+        app.run(
+            "layout.marginsAndColumns",
+            json!({
+                "margins": {
+                    "top": 48.0,
+                    "bottom": 50.0,
+                    "inside": 60.0,
+                    "outside": 40.0
+                }
+            }),
+        )
+        .unwrap();
+
+        let st = PubgenState {
+            card1_preset: 0,
+            card1_records: vec![vec!["Tabel".into(), "01.01".into(), "Data Penduduk".into(), "".into(), "".into()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let (si, pi) = active.doc.page_loc(1).unwrap();
+        let page = &active.doc.spreads[si].pages[pi];
+        assert_eq!(page.margins.top, 48.0);
+        assert_eq!(page.margins.bottom, 50.0);
+        assert_eq!(page.margins.inside, 60.0);
+        assert_eq!(page.margins.outside, 40.0);
+
+        let m = page.margin_rect();
+        let sp = &active.doc.spreads[si];
+        for it in &sp.items {
+            let ib = it.bounds();
+            if ib.x0 >= page.bounds().x0 && ib.x1 <= page.bounds().x1 {
+                assert!(ib.x0 >= m.x0 - 1.0, "Item left {} must align with margin {}", ib.x0, m.x0);
+                assert!(ib.y0 >= m.y0 - 1.0, "Item top {} must align with margin {}", ib.y0, m.y0);
+                assert!(ib.x1 <= m.x1 + 1.0, "Item right {} must not exceed margin {}", ib.x1, m.x1);
+            }
+        }
+    }
+
+    #[test]
+    fn test_divider_bilingual_slots() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card1_preset: 0,
+            bilingual_output: true,
+            card1_records: vec![vec![
+                "Divider".into(),
+                "01".into(),
+                "BAB 01 GEOGRAFI".into(),
+                "".into(),
+                "002".into(),
+                "GEOGRAPHY AND CLIMATE".into(),
+            ]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into(), "title_en".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for bilingual divider should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("GEOGRAFI")), "Stories should contain Indonesian title GEOGRAFI: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("GEOGRAPHY AND CLIMATE")), "Stories should contain English title: {texts:?}");
+
+        // Dual Lang Mode: the title_en textbox is 22 pt italic, black stroke behind the fill.
+        let en_story = active.doc.stories.values().find(|s| s.text.contains("GEOGRAPHY AND CLIMATE")).expect("EN title story exists");
+        assert!(!en_story.chars.is_empty(), "EN title story has runs");
+        for run in &en_story.chars {
+            assert_eq!(run.format.over.size, Some(22.0), "title_en run size: {run:?}");
+            assert_eq!(run.format.over.font_style.as_deref(), Some("Italic"), "title_en run style: {run:?}");
+            assert_eq!(run.format.over.stroke.as_deref(), Some("[Black]"), "title_en run stroke: {run:?}");
+            assert_eq!(run.format.over.stroke_behind_fill, Some(true), "title_en stroke behind fill: {run:?}");
+        }
+    }
+
+    #[test]
+    fn test_ulasan_dual_spread() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let dir = std::env::temp_dir().join(format!("designcraft_pubgen_dual_ulasan_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let id_rtf = dir.join("R01_id.rtf");
+        let en_rtf = dir.join("R01_en.rtf");
+        std::fs::write(&id_rtf, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Ulasan wilayah Indonesia.}"#).unwrap();
+        std::fs::write(&en_rtf, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 CHAPTER 01 GEOGRAPHY\par Narrative review in English.}"#)
+            .unwrap();
+
+        let st = PubgenState {
+            card1_preset: 6,
+            bilingual_output: true,
+            card1_records: vec![vec![
+                "Ulasan".into(),
+                "01".into(),
+                "BAB 01 Geografi".into(),
+                id_rtf.to_string_lossy().to_string(),
+                "".into(),
+                en_rtf.to_string_lossy().to_string(),
+            ]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into(), "file_en".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for dual Ulasan should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // Initial page (1) + Spread 1 (1) + Spread 2 (1) = 3 pages
+        assert_eq!(active.doc.page_count(), 3, "Should generate two spreads for dual Ulasan");
+
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("Ulasan wilayah Indonesia")), "Should contain ID RTF body: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Narrative review in English")), "Should contain EN RTF body: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("GEOGRAPHY")), "Should contain derived EN chapter title: {texts:?}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_ai_translated_body_drives_the_en_spread_without_file_en() {
+        // The user's report: reviews-only AI run reaches 100%, but the R01 page shows
+        // Indonesian only — the English spread never appears. With the translations map
+        // filled (as the worker leaves it) and no file_en, the spread must still come.
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let dir = std::env::temp_dir().join(format!("designcraft_pubgen_ai_ulasan_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let id_rtf = dir.join("R01_id.rtf");
+        std::fs::write(&id_rtf, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Ulasan wilayah Indonesia."#).unwrap();
+
+        let mut st = PubgenState {
+            card1_preset: 6,
+            bilingual_output: true,
+            translate_with_ai: true,
+            card1_records: vec![vec![
+                "Ulasan".into(),
+                "01".into(),
+                "BAB 01 Geografi".into(),
+                id_rtf.to_string_lossy().to_string(),
+                "".into(),
+                "".into(),
+            ]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into(), "file_en".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            translations: HashMap::from([("Ulasan wilayah Indonesia.".to_string(), "Indonesian region review.".to_string())]),
+            ..Default::default()
+        };
+
+        // The temp RTF the panel writes from the translated paragraphs.
+        let en_rtf = ai::translated_body_rtf(&st, id_rtf.to_string_lossy().as_ref());
+        assert!(en_rtf.is_some(), "translated body RTF should be written from the map");
+        let en_rtf = en_rtf.expect("checked");
+        let en_text = std::fs::read_to_string(&en_rtf).expect("temp rtf readable");
+        assert!(en_text.contains("Indonesian region review"), "{en_text}");
+
+        // Point the record's file_en column at the temp RTF, exactly as the spread gate does.
+        st.card1_records[0][5] = en_rtf.to_string_lossy().to_string();
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "generate should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 3, "ID spread + EN spread expected");
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("Indonesian region review")), "EN body placed: {texts:?}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_file(&en_rtf);
+    }
+
+    #[test]
+    fn test_rxx_bilingual_dual_column_layout() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let dir = std::env::temp_dir().join(format!("pubgen_rxx_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let id_rtf = dir.join("R01.rtf");
+        let en_rtf = dir.join("R01_en.rtf");
+        std::fs::write(&id_rtf, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 Kecamatan Karawang Timur merupakan bagian tak terpisahkan.}"#)
+            .unwrap();
+        std::fs::write(&en_rtf, br#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 East Karawang District is an integral part of Karawang.}"#)
+            .unwrap();
+
+        let st = PubgenState {
+            card1_preset: 0,
+            bilingual_output: true,
+            card1_records: vec![vec![
+                "Ulasan".into(),
+                "01".into(),
+                "Bab 01 Geografi".into(),
+                id_rtf.to_string_lossy().to_string(),
+                "".into(),
+                "Chapter 01 Geography".into(),
+                en_rtf.to_string_lossy().to_string(),
+            ]],
+            card1_headers: vec![
+                "type".into(),
+                "number".into(),
+                "title".into(),
+                "file".into(),
+                "template".into(),
+                "title_en".into(),
+                "file_en".into(),
+            ],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for RXX bilingual should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // Page 1 created (plus initial page 0 = 2 pages)
+        assert_eq!(active.doc.page_count(), 2);
+
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("BAB 01")), "Should contain Line 1 header 'BAB 01': {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Geografi")), "Should contain Line 2 header 'Geografi': {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Chapter 01 Geography")), "Should contain Line 3 header 'Chapter 01 Geography': {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("Kecamatan Karawang Timur")), "Should contain Indonesian body text: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("East Karawang District")), "Should contain English body text: {texts:?}");
+
+        // Verify side-by-side layout: left frame and right frame
+        let (si, pi) = active.doc.page_loc(1).unwrap();
+        let sp = &active.doc.spreads[si];
+        let pg = &sp.pages[pi];
+        let margin = pg.margin_rect();
+
+        let mut left_found = false;
+        let mut right_found = false;
+        let mut en_story_id = None;
+        let mut id_story_id = None;
+
+        for it in &sp.items {
+            if let Some(tf) = it.text_frame()
+                && let Some(story) = active.doc.stories.get(&tf.story)
+            {
+                let b = it.bounds();
+                if story.text.contains("Kecamatan Karawang Timur") {
+                    left_found = true;
+                    id_story_id = Some(tf.story);
+                    // Left column starts at margin.x0
+                    assert!((b.x0 - margin.x0).abs() < 2.0, "Left frame x0 ({}) should align with margin.x0 ({})", b.x0, margin.x0);
+                    assert!(b.x1 < margin.x1 - 50.0, "Left frame x1 ({}) should be ~half width", b.x1);
+                } else if story.text.contains("East Karawang District") {
+                    right_found = true;
+                    en_story_id = Some(tf.story);
+                    // Right column ends at margin.x1
+                    assert!((b.x1 - margin.x1).abs() < 2.0, "Right frame x1 ({}) should align with margin.x1 ({})", b.x1, margin.x1);
+                    assert!(b.x0 > margin.x0 + 50.0, "Right frame x0 ({}) should start past center", b.x0);
+                }
+            }
+        }
+
+        assert!(left_found, "Should find left column Indonesian text frame");
+        assert!(right_found, "Should find right column English text frame");
+
+        // Verify font styling: English text is Italic, Indonesian text is upright
+        let en_story = active.doc.stories.get(&en_story_id.unwrap()).unwrap();
+        assert!(!en_story.chars.is_empty());
+        for run in &en_story.chars {
+            let style = run.format.over.font_style.as_deref().unwrap_or("Regular");
+            assert!(
+                style.eq_ignore_ascii_case("italic") || style.eq_ignore_ascii_case("bold italic"),
+                "All English story runs should be italic, got: {style}"
+            );
+        }
+
+        let id_story = active.doc.stories.get(&id_story_id.unwrap()).unwrap();
+        assert!(!id_story.chars.is_empty());
+        for run in &id_story.chars {
+            let style = run.format.over.font_style.as_deref().unwrap_or("Regular");
+            assert!(!style.eq_ignore_ascii_case("italic"), "Indonesian story runs should NOT be converted to italic, got: {style}");
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_rxx_bilingual_multi_page_continuation() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let dir = std::env::temp_dir().join(format!("pubgen_rxx_multi_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let id_rtf = dir.join("R01.rtf");
+        let en_rtf = dir.join("R01_en.rtf");
+
+        // Generate ~40 paragraphs of text to guarantee overset on a half-page column
+        let mut id_body = String::from(r#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 "#);
+        for i in 0..40 {
+            id_body.push_str(&format!(r#"Paragraf narasi bahasa Indonesia nomor {i} mendeskripsikan secara mendalam wilayah administratif dan tata ruang Karawang Timur.\par "#));
+        }
+        id_body.push('}');
+        std::fs::write(&id_rtf, id_body.as_bytes()).unwrap();
+
+        let mut en_body = String::from(r#"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0\fs24 "#);
+        for i in 0..40 {
+            en_body.push_str(&format!(
+                r#"English narrative paragraph number {i} describing in detail the spatial planning and governance of East Karawang.\par "#
+            ));
+        }
+        en_body.push('}');
+        std::fs::write(&en_rtf, en_body.as_bytes()).unwrap();
+
+        let st = PubgenState {
+            card1_preset: 0,
+            bilingual_output: true,
+            card1_records: vec![vec![
+                "Ulasan".into(),
+                "01".into(),
+                "Bab 01 Geografi".into(),
+                id_rtf.to_string_lossy().to_string(),
+                "".into(),
+                "Chapter 01 Geography".into(),
+                en_rtf.to_string_lossy().to_string(),
+            ]],
+            card1_headers: vec![
+                "type".into(),
+                "number".into(),
+                "title".into(),
+                "file".into(),
+                "template".into(),
+                "title_en".into(),
+                "file_en".into(),
+            ],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_pages for multi-page RXX should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // Since 40 paragraphs exceed 1 page, total pages must be >= 3 (page 0 blank + page 1 + page 2...)
+        assert!(active.doc.page_count() >= 3, "Should create continuation page(s) for overset, got: {}", active.doc.page_count());
+
+        // Check continuation page (Page 2)
+        let (si2, pi2) = active.doc.page_loc(2).unwrap();
+        let sp2 = &active.doc.spreads[si2];
+        let pg2 = &sp2.pages[pi2];
+        let m2 = pg2.margin_rect();
+
+        let mut left_cont_found = false;
+        let mut right_cont_found = false;
+
+        for it in &sp2.items {
+            if active.doc.page_of_item(it.id) != Some(2) {
+                continue;
+            }
+            if let Some(tf) = it.text_frame()
+                && let Some(story) = active.doc.stories.get(&tf.story)
+            {
+                let b = it.bounds();
+                if story.text.contains("Paragraf narasi bahasa Indonesia") {
+                    left_cont_found = true;
+                    // On continuation page, frame starts directly at top margin (no chapter header)
+                    assert!((b.y0 - m2.y0).abs() < 2.0, "Continuation left frame y0 ({}) should be at m2.y0 ({})", b.y0, m2.y0);
+                    assert!((b.x0 - m2.x0).abs() < 2.0, "Continuation left frame x0 ({}) should align with m2.x0 ({})", b.x0, m2.x0);
+                } else if story.text.contains("English narrative paragraph") {
+                    right_cont_found = true;
+                    assert!((b.y0 - m2.y0).abs() < 2.0, "Continuation right frame y0 ({}) should be at m2.y0 ({})", b.y0, m2.y0);
+                    assert!((b.x1 - m2.x1).abs() < 2.0, "Continuation right frame x1 ({}) should align with m2.x1 ({})", b.x1, m2.x1);
+
+                    // Verify English story runs on continuation page remain italic
+                    for run in &story.chars {
+                        let style = run.format.over.font_style.as_deref().unwrap_or("Regular");
+                        assert!(
+                            style.eq_ignore_ascii_case("italic") || style.eq_ignore_ascii_case("bold italic"),
+                            "English runs on continuation page should be italic, got: {style}"
+                        );
+                    }
+                }
+            }
+        }
+
+        assert!(left_cont_found, "Should find left continuation frame on Page 2");
+        assert!(right_cont_found, "Should find right continuation frame on Page 2");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_table_sheet_note_and_source_rows_extracted_to_textbox() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let matrix = vec![
+            vec!["Kecamatan".into(), "Luas".into()],
+            vec!["Karawang Timur".into(), "35.2".into()],
+            vec!["Catatan".into(), ":".into(), "Desa pada tabel ini termasuk UPT".into()],
+            vec!["Note".into(), ":".into(), "Villages in this table include UPT".into()],
+            vec!["Sumber".into(), ":".into(), "Badan Pusat Statistik".into()],
+            vec!["Source".into(), ":".into(), "BPS-Statistics Indonesia".into()],
+        ];
+
+        let st = PubgenState { card2_placement: 1, card2_col_numbers: false, ..Default::default() };
+        let res = execute_insert_table_matrix(&mut app, &st, Some(&matrix), Some(0));
+        assert!(res.is_ok(), "execute_insert_table_matrix failed: {:?}", res.err());
+        let msg = res.unwrap();
+        assert!(msg.contains("+ notes"), "Must indicate + notes: {msg}");
+
+        let doc = &app.session.active().unwrap().doc;
+        let spread = doc.spreads.first().unwrap();
+        // The spread must have the table frame AND the note textbox frame!
+        assert_eq!(spread.items.len(), 2, "Must create 2 frames: table frame and note textbox frame");
+
+        // First frame: table frame. The table must have ONLY 2 rows (header + 1 data row)! The 4 note rows are NOT in the table!
+        let table_item = &spread.items[0];
+        let table_tf = table_item.text_frame().unwrap();
+        let table_story = doc.story(table_tf.story).unwrap();
+        let table_id = *table_story.tables.keys().next().unwrap();
+        let table = table_story.tables.get(&table_id).unwrap();
+        assert_eq!(table.nrows(), 2, "Table must have 2 rows, notes must be excluded from table");
+
+        // Second frame: note textbox frame below the table.
+        let note_item = &spread.items[1];
+        let note_tf = note_item.text_frame().unwrap();
+        let note_story = doc.story(note_tf.story).unwrap();
+        assert_eq!(note_story.paras.len(), 4, "Note textbox must have 4 paragraphs");
+
+        // Check hanging indent and tab stops on paragraphs:
+        for p in &note_story.paras {
+            assert!(p.para.left_indent.is_some(), "Must have left_indent");
+            assert!(p.para.first_line_indent.is_some(), "Must have negative first_line_indent");
+            assert_eq!(p.para.first_line_indent.unwrap(), -p.para.left_indent.unwrap());
+            let tabs = p.para.tabs.as_ref().unwrap();
+            assert_eq!(tabs.len(), 2, "Must have 2 tab stops: colon and text");
+            assert_eq!(tabs[0].position, 46.0, "Colon tab position at 46.0");
+            assert_eq!(tabs[1].position, 54.0, "Text tab position at 54.0");
+        }
+
+        // Check Italic formatting:
+        // Paras: 0=Catatan (Regular), 1=Note (Italic), 2=Sumber (Regular), 3=Source (Italic)
+        let ranges = note_story.para_ranges();
+        let get_style_at = |pos: usize| note_story.format_after(pos).over.font_style.clone();
+        assert_eq!(get_style_at(ranges[0].start), Some("Regular".to_string()));
+        assert_eq!(get_style_at(ranges[1].start), Some("Italic".to_string()));
+        assert_eq!(get_style_at(ranges[2].start), Some("Regular".to_string()));
+        assert_eq!(get_style_at(ranges[3].start), Some("Italic".to_string()));
+
+        // Check textbox height adjusted:
+        let note_bounds = note_item.bounds();
+        let table_bounds = table_item.bounds();
+        assert!(note_bounds.y0 >= table_bounds.y1, "Note textbox must be placed below table");
+        assert!(note_bounds.height() >= 18.0 && note_bounds.height() < 120.0, "Textbox height must be fitted to content");
+    }
+}

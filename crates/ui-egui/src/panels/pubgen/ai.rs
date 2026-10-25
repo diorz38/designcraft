@@ -1558,3 +1558,135 @@ mod tests {
         assert!(!texts.iter().any(|t| t.chars().next().is_some_and(|c| c.is_ascii_digit())), "{texts:?}");
     }
 }
+
+#[cfg(test)]
+pub(crate) mod flow_tests {
+    use super::super::ai;
+    use super::super::testutil::*;
+    use super::super::*;
+    use super::*;
+
+    #[test]
+    fn test_table_page_ai_translation_end_to_end() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // 1. Create Title frame on page 0
+        let res_title = app
+            .run(
+                "frame.create",
+                json!({
+                    "spread": 0,
+                    "rect": [36.0, 36.0, 400.0, 60.0],
+                    "content": "text",
+                    "text": "Tabel 01.01 Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025",
+                    "caret": false
+                }),
+            )
+            .unwrap();
+        let _title_fid = res_title["id"].as_u64().unwrap();
+
+        // 2. Insert table with note rows on page 0
+        let matrix = vec![
+            vec!["Desa/Kelurahan".into(), "Luas (km2)".into(), "Persentase".into()],
+            vec!["Warungbambu".into(), "1.65".into(), "21.32".into()],
+            vec!["Jumlah".into(), "1.65".into(), "21.32".into()],
+            vec!["Keterangan".into(), ":".into(), "-".into()],
+            vec!["Sumber".into(), ":".into(), "BPS Kabupaten Karawang/Dinas terkait".into()],
+        ];
+        let st = PubgenState { card2_placement: 1, card2_first_row_header: true, card2_table_footer: true, ..Default::default() };
+        let ins_res = execute_insert_table_matrix(&mut app, &st, Some(&matrix), Some(0));
+        assert!(ins_res.is_ok(), "Table insert should succeed: {ins_res:?}");
+
+        // 3. Detect table page target
+        let target_opt = ai::detect_table_page_target(&app, 0);
+        assert!(target_opt.is_some(), "Should detect TablePageTarget on page 0");
+        let target = target_opt.unwrap();
+        assert!(target.title_fid.is_some(), "Must detect title frame");
+        assert!(target.notes_fid.is_some(), "Must detect notes frame");
+
+        // 4. Collect units
+        let units = ai::collect_table_page_units(&app, &target);
+        let texts: Vec<&str> = units.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(
+            texts.contains(&"Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025"),
+            "Units must contain clean title: {texts:?}"
+        );
+        assert!(texts.contains(&"Desa/Kelurahan"), "Units must contain header cell: {texts:?}");
+        assert!(texts.contains(&"Luas (km2)"), "Units must contain header cell: {texts:?}");
+        assert!(texts.contains(&"Warungbambu"), "Units must contain data label: {texts:?}");
+        assert!(texts.contains(&"BPS Kabupaten Karawang/Dinas terkait"), "Units must contain source text: {texts:?}");
+        // Numbers and '-' must NEVER be collected
+        assert!(!texts.contains(&"1.65"), "Must not contain numbers");
+        assert!(!texts.contains(&"21.32"), "Must not contain numbers");
+        assert!(!texts.contains(&"-"), "Must not contain dash");
+
+        // 5. Populate translations map
+        let mut translate_st = PubgenState::default();
+        translate_st.translations.insert(
+            "Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025".into(),
+            "Area by Village/Urban Village in Karawang Timur Subdistrict, 2025".into(),
+        );
+        translate_st.translations.insert("Desa/Kelurahan".into(), "Village/Urban Village".into());
+        translate_st.translations.insert("Luas (km2)".into(), "Area (sq km)".into());
+        translate_st.translations.insert("Persentase".into(), "Percentage".into());
+        translate_st.translations.insert("Warungbambu".into(), "Warungbambu".into());
+        translate_st
+            .translations
+            .insert("BPS Kabupaten Karawang/Dinas terkait".into(), "Statistics of Karawang Regency Office/Relevant Agency".into());
+
+        // 6. Apply table page result
+        let replaced = ai::apply_table_page_result(&mut app, &translate_st, &target);
+        assert!(replaced > 0, "Must replace items: {replaced}");
+
+        // 7. Verify Title: Line 1 Regular, Line 2 Italic
+        let doc = &app.session.active().unwrap().doc;
+        let title_it = doc.item(designcraft_doc::ItemId(target.title_fid.unwrap())).unwrap();
+        let title_story = doc.story(title_it.text_frame().unwrap().story).unwrap();
+        assert!(title_story.text.contains("Tabel 01.01 Luas Daerah"));
+        assert!(title_story.text.contains("Table 01.01 Area by Village/Urban Village"));
+        let title_lines: Vec<&str> = title_story.text.lines().collect();
+        assert_eq!(title_lines.len(), 2, "Title must have 2 lines");
+        let line2_pos = title_lines[0].len() + 1;
+        assert_eq!(title_story.format_after(line2_pos).over.font_style.as_deref(), Some("Italic"));
+
+        // 8. Verify Table cells: in same cell new line [italic]
+        let table_story = doc.story(target.table_sid).unwrap();
+        let table = table_story.tables.get(&target.table_id).unwrap();
+        let header_cell = table.cell(0, 0).unwrap();
+        assert!(header_cell.text.text.contains("Desa/Kelurahan\nVillage/Urban Village"));
+        let en_pos = "Desa/Kelurahan\n".len();
+        assert_eq!(header_cell.text.format_after(en_pos).over.font_style.as_deref(), Some("Italic"));
+
+        let col_num_cell = table.cell(1, 0).unwrap();
+        assert_eq!(col_num_cell.text.text.trim(), "(1)", "Column numbers row must be untouched");
+
+        let jumlah_cell = table.cell(3, 0).unwrap();
+        assert!(jumlah_cell.text.text.contains("Jumlah\nTotal"));
+        let total_pos = "Jumlah\n".len();
+        assert_eq!(jumlah_cell.text.format_after(total_pos).over.font_style.as_deref(), Some("Italic"));
+
+        let num_cell = table.cell(2, 1).unwrap();
+        assert_eq!(num_cell.text.text.trim(), "1.65", "Numeric cell must remain untouched");
+
+        // 9. Verify Notes:
+        // Keterangan : -
+        // [italic]Note: -
+        // Sumber: BPS Kabupaten Karawang/Dinas terkait
+        // [italic]Source : Statistics of Karawang Regency Office/Relevant Agency
+        let note_it = doc.item(designcraft_doc::ItemId(target.notes_fid.unwrap())).unwrap();
+        let note_story = doc.story(note_it.text_frame().unwrap().story).unwrap();
+        let note_lines: Vec<&str> = note_story.text.lines().collect();
+        assert_eq!(note_lines.len(), 4, "Must have 4 note lines: {note_lines:?}");
+        assert!(note_lines[0].starts_with("Keterangan"));
+        assert!(note_lines[1].starts_with("Note"));
+        assert!(note_lines[2].starts_with("Sumber"));
+        assert!(note_lines[3].starts_with("Source"));
+
+        let note_ranges = note_story.para_ranges();
+        assert_ne!(note_story.format_after(note_ranges[0].start).over.font_style.as_deref(), Some("Italic"));
+        assert_eq!(note_story.format_after(note_ranges[1].start).over.font_style.as_deref(), Some("Italic"));
+        assert_ne!(note_story.format_after(note_ranges[2].start).over.font_style.as_deref(), Some("Italic"));
+        assert_eq!(note_story.format_after(note_ranges[3].start).over.font_style.as_deref(), Some("Italic"));
+    }
+}

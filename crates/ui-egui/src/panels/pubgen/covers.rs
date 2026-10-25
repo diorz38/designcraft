@@ -1109,3 +1109,549 @@ pub(super) fn add_cover_text_frame(
 
     Ok(id)
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::testutil::*;
+    use super::*;
+
+    #[test]
+    fn test_cover_card_carries_one_title_and_a_second_title_line() {
+        let st = PubgenState::default();
+        // The card takes a single headline and keeps the second headline line, with its dummy text.
+        assert_eq!(st.cover_title, default_cover_title());
+        assert_eq!(st.cover_title2, "Title 2");
+    }
+
+    #[test]
+    fn test_export_design_3_sample() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
+        let mut st = PubgenState {
+            cover_style: 5,
+            cover_color_primary: "#6c5ce7".into(),
+            cover_color_accent: "#a29bfe".into(),
+            cover_color_dark: "#1e293b".into(),
+            ..PubgenState::default()
+        };
+        st.cover_image_skyline = root.join("outputs").join("city_skyline.jpg").to_string_lossy().to_string();
+        st.cover_image_logo = root.join("outputs").join("bps_logo.png").to_string_lossy().to_string();
+        execute_generate_cover(&mut app, &st).unwrap();
+        let _ = app.run("layout.pages.delete", json!({"page": 1}));
+        // A scratch file, never `design-3.designcraft`: running the tests used to overwrite that
+        // tracked sample with every run (the scratch document is the default page size, not the
+        // size the sample was drawn at), so the export must not touch it.
+        let path = std::env::temp_dir().join(format!("designcraft-cover-style-5-{}.designcraft", std::process::id()));
+        let res = app.run("file.saveAs", json!({"path": path.to_string_lossy()}));
+        assert!(res.is_ok(), "Failed to save: {res:?}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_export_design_4_sample() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
+        let st = PubgenState {
+            cover_style: 6,
+            cover_image_skyline: root.join("outputs").join("city_skyline.jpg").to_string_lossy().to_string(),
+            cover_image_logo: root.join("outputs").join("bps_logo.png").to_string_lossy().to_string(),
+            ..PubgenState::default()
+        };
+        execute_generate_cover(&mut app, &st).unwrap();
+        let _ = app.run("layout.pages.delete", json!({"page": 1}));
+        // A scratch file, never `design-4.designcraft`: that one is the hand-authored reference this
+        // style was derived from, so the export must not overwrite it.
+        let path = std::env::temp_dir().join(format!("designcraft-cover-style-6-{}.designcraft", std::process::id()));
+        let res = app.run("file.saveAs", json!({"path": path.to_string_lossy()}));
+        assert!(res.is_ok(), "Failed to save: {res:?}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_cover_style_8_text_is_options_only() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let st = PubgenState { cover_style: BUSINESS_STYLE, ..PubgenState::default() };
+        execute_generate_cover(&mut app, &st).unwrap();
+
+        let active = app.session.active().unwrap();
+        let allowed = [
+            "KECAMATAN",
+            "KABUPATEN",
+            "KARAWANG TIMUR",
+            "KARAWANG\nTIMUR",
+            "2026",
+            "VOLUME 23",
+            "KATALOG BPS",
+            "ISSN",
+            "ISBN",
+            "BADAN PUSAT STATISTIK",
+            "DALAM ANGKA",
+            "TITLE 2",
+            "20",
+            "26",
+        ];
+        for story in active.doc.stories.values() {
+            if story.text.is_empty() {
+                continue;
+            }
+            for banned in ["COMPANY NAME", "YOUR HEADLINE HERE", "LOREM IPSUM", "BUSINESS REPORT 2050"] {
+                assert!(!story.text.contains(banned), "template text '{banned}' must not reach the cover: {}", story.text);
+            }
+            let upper = story.text.to_uppercase();
+            assert!(allowed.iter().any(|a| upper.contains(a)), "text must come from the cover options: {}", story.text);
+        }
+
+        // The headline title stays on one full-width line (it used to hyphenate across two).
+        let title = active.doc.stories.values().find(|s| s.text.contains("KARAWANG")).expect("the title story");
+        assert!(!title.text.contains('\n'), "the headline title stays on one line: {}", title.text);
+
+        // Every object on the cover is upright: the wedges carry the angles, not the type.
+        let turned =
+            active.doc.spreads.iter().flat_map(|s| s.items.iter()).any(|it| designcraft_geom::decompose::decompose(it.xf).rotation.abs() > 1.0);
+        assert!(!turned, "every object on the Business Report cover is upright");
+    }
+
+    #[test]
+    fn test_export_design_5_sample() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        // A4: the size the cover designs are drawn for.
+        app.run("file.new", json!({"width": 595.275591, "height": 841.889764})).unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
+        let mut st = PubgenState {
+            cover_style: HORIZON_STYLE,
+            cover_image_skyline: root.join("outputs").join("city_skyline.jpg").to_string_lossy().to_string(),
+            cover_image_logo: root.join("outputs").join("bps_logo.png").to_string_lossy().to_string(),
+            ..PubgenState::default()
+        };
+        apply_report_palette(&mut st);
+        execute_generate_cover(&mut app, &st).unwrap();
+        let _ = app.run("layout.pages.delete", json!({"page": 1}));
+        // A scratch file, never `design-5.designcraft`: that one is the traced reference this style
+        // was derived from, so the export must not overwrite it.
+        let path = std::env::temp_dir().join(format!("designcraft-cover-style-7-{}.designcraft", std::process::id()));
+        let res = app.run("file.saveAs", json!({"path": path.to_string_lossy()}));
+        assert!(res.is_ok(), "Failed to save: {res:?}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_cover_style_9_text_is_options_only() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let st = PubgenState { cover_style: URBAN_STYLE, ..PubgenState::default() };
+        execute_generate_cover(&mut app, &st).unwrap();
+
+        let active = app.session.active().unwrap();
+        let allowed = ["KECAMATAN", "KARAWANG", "2026", "20", "26", "VOLUME", "KATALOG", "ISSN", "ISBN", "BADAN PUSAT", "DALAM ANGKA", "TITLE 2"];
+        for story in active.doc.stories.values() {
+            if story.text.is_empty() {
+                continue;
+            }
+            let upper = story.text.to_uppercase();
+            assert!(allowed.iter().any(|a| upper.contains(a)), "text must come from the cover options: {}", story.text);
+        }
+    }
+
+    #[test]
+    fn test_cover_style_10_uses_the_tri_color_template() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let st = PubgenState {
+            cover_style: TRICOLOR_STYLE,
+            cover_title: "KECAMATAN KARAWANG TIMUR".into(),
+            cover_title2: "DALAM ANGKA".into(),
+            ..PubgenState::default()
+        };
+        let res = execute_generate_cover(&mut app, &st);
+        assert!(res.is_ok(), "Tri-Color Bands must apply its template: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // The template brings its own three-colour swatches.
+        for name in ["Cover Blue", "Cover Green", "Cover Orange"] {
+            assert!(active.doc.swatches.iter().any(|s| s.name == name), "swatch `{name}` comes with the template");
+        }
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("KARAWANG TIMUR")), "the headline is bound: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("DALAM ANGKA")), "the second headline line is bound: {texts:?}");
+    }
+
+    #[test]
+    fn test_cover_style_11_uses_the_prism_diamonds_template() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let st = PubgenState {
+            cover_style: PRISM_STYLE,
+            cover_title: "KESEJAHTERAAN RAKYAT".into(),
+            cover_title2: "DALAM ANGKA".into(),
+            ..PubgenState::default()
+        };
+        let res = execute_generate_cover(&mut app, &st);
+        assert!(res.is_ok(), "Prism Diamonds must apply its template: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // The template brings its own midnight and jewel swatches.
+        for name in ["Prism Night", "Prism Deep", "Prism Blue", "Prism Green", "Prism Orange", "Prism Mint", "Prism Ice", "Prism Sky"] {
+            assert!(active.doc.swatches.iter().any(|s| s.name == name), "swatch `{name}` comes with the template");
+        }
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("KESEJAHTERAAN RAKYAT")), "the headline is bound: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("DALAM ANGKA")), "the second headline line is bound: {texts:?}");
+        // The photograph is cut as a diamond, not boxed in a rectangle.
+        let hero = active
+            .doc
+            .spreads
+            .iter()
+            .flat_map(|s| s.items.iter())
+            .find(|it| it.label == "#slot:image:hero")
+            .expect("the hero photograph frame comes with the template");
+        assert_eq!(hero.path.subpaths.first().map(|p| p.anchors.len()), Some(4), "the hero frame is a diamond");
+    }
+
+    #[test]
+    fn test_cover_style_12_uses_the_quarter_stack_template() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let st = PubgenState {
+            cover_style: QUARTER_STYLE,
+            cover_title: "KESEJAHTERAAN RAKYAT".into(),
+            cover_title2: "DALAM ANGKA".into(),
+            ..PubgenState::default()
+        };
+        let res = execute_generate_cover(&mut app, &st);
+        assert!(res.is_ok(), "Quarter Stack must apply its template: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // The template brings its own warm palette.
+        for name in ["Stack Paper", "Stack Ink", "Stack Clay", "Stack Marigold", "Stack Sage", "Stack Blush", "Stack Teal"] {
+            assert!(active.doc.swatches.iter().any(|s| s.name == name), "swatch `{name}` comes with the template");
+        }
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("KESEJAHTERAAN RAKYAT")), "the headline is bound: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("DALAM ANGKA")), "the second headline line is bound: {texts:?}");
+        // The photograph sits in a card with exactly one rounded corner.
+        let hero = active
+            .doc
+            .spreads
+            .iter()
+            .flat_map(|s| s.items.iter())
+            .find(|it| it.label == "#slot:image:hero")
+            .expect("the hero photograph frame comes with the template");
+        let rounded = hero.corners.corners.iter().filter(|c| c.shape != designcraft_geom::corners::CornerShape::None).count();
+        assert_eq!(rounded, 1, "the hero card rounds one corner only: {:?}", hero.corners.corners);
+    }
+
+    #[test]
+    fn test_cover_style_6_text_is_options_only() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let st = PubgenState { cover_style: 6, ..PubgenState::default() };
+        execute_generate_cover(&mut app, &st).unwrap();
+
+        let active = app.session.active().unwrap();
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        // The only sources of cover text: the Publication Cover options and the fixed suffix.
+        let allowed = [
+            "KECAMATAN",
+            "KABUPATEN",
+            "KARAWANG TIMUR",
+            "KARAWANG\nTIMUR",
+            "2026",
+            "VOLUME 23",
+            "KATALOG BPS",
+            "ISSN",
+            "ISBN",
+            "BADAN PUSAT STATISTIK",
+            "DALAM ANGKA",
+            "TITLE 2",
+        ];
+        for text in &texts {
+            if text.is_empty() {
+                continue;
+            }
+            // Nothing from the reference template survives: no brand, no lorem, no subtitle.
+            for banned in ["COMPANY NAME", "YOUR HEADLINE HERE", "LOREM IPSUM", "BUSINESS REPORT"] {
+                assert!(!text.contains(banned), "template text '{banned}' must not reach the cover: {text}");
+            }
+            let upper = text.to_uppercase();
+            assert!(allowed.iter().any(|a| upper.contains(a)), "text must come from the cover options: {text}");
+        }
+
+        // The year sits upright and centred in the forward wedge, and the title runs on one line.
+        let year = active.doc.stories.values().find(|s| s.text == "2026").expect("the year story");
+        assert_eq!(year.paras[0].para.align, Some(designcraft_doc::Align::Center), "the year is centred in the wedge");
+        let title = active.doc.stories.values().find(|s| s.text.contains("KARAWANG")).expect("the title story");
+        assert!(!title.text.contains('\n'), "the headline title stays on one line: {}", title.text);
+
+        let turned =
+            active.doc.spreads.iter().flat_map(|s| s.items.iter()).any(|it| designcraft_geom::decompose::decompose(it.xf).rotation.abs() > 1.0);
+        assert!(!turned, "every object on the Diagonal Arrow cover is upright");
+    }
+
+    #[test]
+    fn test_cover_style_7_text_is_options_only_and_position_locked() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let st = PubgenState { cover_style: HORIZON_STYLE, ..PubgenState::default() };
+        execute_generate_cover(&mut app, &st).unwrap();
+
+        let active = app.session.active().unwrap();
+        let (si, pi) = active.doc.page_loc(0).unwrap();
+        let page = active.doc.spreads[si].pages[pi].bounds();
+
+        // Nothing but the cover options and the fixed suffix reaches the page.
+        let allowed = [
+            "KECAMATAN",
+            "KABUPATEN",
+            "KARAWANG TIMUR",
+            "KARAWANG\nTIMUR",
+            "2026",
+            "VOLUME 23",
+            "KATALOG BPS",
+            "ISSN",
+            "ISBN",
+            "BADAN PUSAT STATISTIK",
+            "DALAM ANGKA",
+            "TITLE 2",
+        ];
+        for story in active.doc.stories.values() {
+            if story.text.is_empty() {
+                continue;
+            }
+            for banned in ["COMPANY NAME", "YOUR HEADLINE HERE", "LOREM IPSUM", "BUSINESS REPORT"] {
+                assert!(!story.text.contains(banned), "template text '{banned}' must not reach the cover: {}", story.text);
+            }
+            let upper = story.text.to_uppercase();
+            assert!(allowed.iter().any(|a| upper.contains(a)), "text must come from the cover options: {}", story.text);
+        }
+
+        // Bounds of every text frame, keyed by the story it flows.
+        let placed: Vec<(String, designcraft_geom::Rect)> = active.doc.spreads[si]
+            .items
+            .iter()
+            .filter_map(|it| match &it.content {
+                designcraft_doc::Content::Text(tf) => active.doc.story(tf.story).map(|s| (s.text.clone(), it.bounds())),
+                _ => None,
+            })
+            .collect();
+        let frame = |needle: &str| {
+            placed.iter().find(|(text, _)| text.contains(needle)).map(|(_, r)| *r).unwrap_or_else(|| panic!("no frame holds '{needle}'"))
+        };
+        let frame_exact = |text_wanted: &str| {
+            placed.iter().find(|(text, _)| text == text_wanted).map(|(_, r)| *r).unwrap_or_else(|| panic!("no frame holds exactly '{text_wanted}'"))
+        };
+
+        // Position lock: catalogue, then ISSN/ISBN, in the top-right corner over the photograph.
+        let cat = frame("Katalog BPS");
+        let code = frame("ISSN");
+        assert!(cat.y1 < page.y0 + 60.0 && cat.x0 > page.center().x, "the catalogue sits in the top-right: {cat:?}");
+        assert!(code.y0 >= cat.y1 - 1.0 && code.y1 < page.y0 + 70.0, "ISSN/ISBN sit under the catalogue: {code:?}");
+
+        // Headline: the title and its second line down the left of the dark block.
+        let title = frame("KARAWANG");
+        let suffix = frame("Title 2");
+        assert!(title.y1 <= suffix.y0 + 1.0, "headline order: {title:?} {suffix:?}");
+        assert!(suffix.y1 < page.y0 + 740.0, "the headline sits inside the dark block: {suffix:?}");
+
+        // Year in the accent block, with the volume directly underneath it.
+        let year = frame_exact("2026");
+        let volume = frame("Volume");
+        assert!(year.x0 > page.center().x, "the year sits in the accent block: {year:?}");
+        assert!(volume.y0 >= year.y1 - 1.0, "the volume sits directly under the year: {year:?} {volume:?}");
+
+        // Position lock: agency logo text in the bottom-left corner.
+        let agency = frame("BADAN PUSAT STATISTIK");
+        assert!(agency.y0 > page.y0 + 700.0 && agency.x0 < page.center().x, "the agency sits in the bottom-left: {agency:?}");
+
+        // Every object is upright: nothing on this cover is rotated.
+        let turned =
+            active.doc.spreads.iter().flat_map(|s| s.items.iter()).any(|it| designcraft_geom::decompose::decompose(it.xf).rotation.abs() > 1.0);
+        assert!(!turned, "every object on the Modern Horizon cover is upright");
+    }
+
+    /// A paragraph list nests chapter titles over the heading styles the RTF imports carry.
+    #[test]
+    fn test_cover_bilingual() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // 1. Single Lang mode (bilingual_output = false)
+        let mut st = PubgenState {
+            cover_style: 0,
+            cover_title: "KARAWANG TIMUR".into(),
+            cover_title2: "DALAM ANGKA".into(),
+            cover_title_en: "IN FIGURES".into(),
+            bilingual_output: false,
+            ..Default::default()
+        };
+
+        let res = execute_generate_cover(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_cover single lang should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("KARAWANG TIMUR")), "Should contain ID title: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("DALAM ANGKA")), "Should contain ID title2: {texts:?}");
+        assert!(!texts.iter().any(|t| t.contains("IN FIGURES")), "Should NOT contain title_en when bilingual_output is false: {texts:?}");
+
+        // 2. Dual Lang mode (bilingual_output = true)
+        let mut app_dual = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app_dual.run("file.new", json!({})).unwrap();
+        st.bilingual_output = true;
+
+        let res_dual = execute_generate_cover(&mut app_dual, &st);
+        assert!(res_dual.is_ok(), "execute_generate_cover dual lang should succeed: {res_dual:?}");
+
+        let active_dual = app_dual.session.active().unwrap();
+        let texts_dual: Vec<String> = active_dual.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts_dual.iter().any(|t| t.contains("KARAWANG TIMUR")), "Should contain ID title: {texts_dual:?}");
+        assert!(texts_dual.iter().any(|t| t.contains("DALAM ANGKA")), "Should contain ID title2: {texts_dual:?}");
+        assert!(texts_dual.iter().any(|t| t.contains("IN FIGURES")), "Should contain title_en in bilingual mode: {texts_dual:?}");
+
+        // 3. User scenario: title2 in template already contains the English title (test across all 13 styles)
+        for style in 0..13 {
+            let mut app_s = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app_s.run("file.new", json!({})).unwrap();
+            let st_s = PubgenState {
+                cover_style: style,
+                cover_title: "KECAMATAN KARAWANG".into(),
+                cover_title2: "EAST KARAWANG DISTRICT IN FIGURES".into(),
+                cover_title_en: "EAST KARAWANG DISTRICT IN FIGURES".into(),
+                bilingual_output: true,
+                ..Default::default()
+            };
+            let res_s = execute_generate_cover(&mut app_s, &st_s);
+            assert!(res_s.is_ok(), "Style {style} should succeed: {res_s:?}");
+            let active_s = app_s.session.active().unwrap();
+            let texts_s: Vec<String> = active_s.doc.stories.values().map(|s| s.text.clone()).collect();
+            let count_en = texts_s.iter().filter(|t| t.contains("EAST KARAWANG DISTRICT IN FIGURES")).count();
+            assert_eq!(count_en, 1, "Style {style}: English title must appear exactly once, got {count_en}: {texts_s:?}");
+            let en_story = active_s.doc.stories.values().find(|s| s.text.contains("EAST KARAWANG DISTRICT IN FIGURES")).unwrap();
+            let has_bold_italic = en_story.chars.iter().any(|r| r.format.over.font_style.as_deref() == Some("Bold Italic"));
+            assert!(has_bold_italic, "Style {style}: English title runs must be Bold Italic: {:?}", en_story.chars);
+        }
+    }
+
+    #[test]
+    fn test_cover_include_inside_and_back_cover_generation() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            cover_style: 0,
+            cover_color_primary: "#1e3a8a".into(),
+            cover_color_accent: "#d97706".into(),
+            cover_image_skyline: "plan/pubgen/samples/images/bps_logo.png".into(),
+            cover_include_inside_back: true,
+            cover_image_back: "plan/pubgen/samples/images/se2026.png".into(),
+            cover_office_address: "Jl. Cakradireja No.36 Karawang 41312\nJawa Barat".into(),
+            cover_code_type: 0,
+            cover_code_num: "2807-6302".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_cover(&mut app, &st);
+        assert!(res.is_ok(), "Cover generation with inside and back cover should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // Document should now have 4 pages: Front Cover, Inside Cover, initial page, Back Cover
+        assert_eq!(active.doc.page_count(), 4, "Expected 4 pages (Front, Inside, initial page, Back)");
+        assert_eq!(find_back_cover_page(&active.doc), Some(3), "Back cover must be the last page (page 3)");
+
+        // Spread 0: Front Cover
+        let sp0 = &active.doc.spreads[0];
+        assert_eq!(sp0.pages[0].margins, designcraft_doc::Margins::uniform(0.0));
+
+        // Spread 1: Inside Cover
+        let sp1 = &active.doc.spreads[1];
+        assert_eq!(sp1.pages[0].margins, designcraft_doc::Margins::uniform(0.0));
+        // All unassigned vector shapes on Inside Cover must have Fill [Paper] and Black stroke
+        for it in &sp1.items {
+            if matches!(it.content, designcraft_doc::Content::Unassigned) {
+                assert_eq!(it.fill.swatch, "[Paper]", "Inside cover shape must have white fill: {:?}", it.id);
+                assert_eq!(it.stroke.swatch, designcraft_color::swatch::BLACK, "Inside cover shape must have black stroke");
+                assert_eq!(it.stroke.weight, 1.0);
+            }
+        }
+
+        // Last Spread: Back Cover
+        let sp_back = active.doc.spreads.last().unwrap();
+        assert_eq!(sp_back.pages[0].margins, designcraft_doc::Margins::uniform(0.0));
+
+        // All items on Back Cover must have locked = true
+        for it in &sp_back.items {
+            assert!(it.locked, "Item {:?} on Back Cover must be locked", it.id);
+        }
+
+        fn has_white_unassigned(it: &designcraft_doc::Item) -> bool {
+            if matches!(it.content, designcraft_doc::Content::Unassigned) && it.fill.swatch == "[Paper]" {
+                return true;
+            }
+            if let designcraft_doc::Content::Group { items } = &it.content {
+                return items.iter().any(|sub| has_white_unassigned(sub));
+            }
+            false
+        }
+
+        // Shapes that had image background (hero frame) must be converted to white fill ([Paper])
+        let has_white_shape = sp_back.items.iter().any(|it| has_white_unassigned(it));
+        assert!(has_white_shape, "Back cover must have white shape converted from image background");
+
+        // Must contain graphic frames (top-right stack, center slogan, camera placeholder, office logo)
+        let graphic_frames_count = sp_back.items.iter().filter(|it| matches!(it.content, designcraft_doc::Content::Graphic(_))).count();
+        assert!(graphic_frames_count >= 4, "Back cover must have at least 4 graphic frames (got {graphic_frames_count})");
+
+        // Must contain text frames for agency name, office address, and ISSN/ISBN
+        let text_frames_count = sp_back.items.iter().filter(|it| matches!(it.content, designcraft_doc::Content::Text(_))).count();
+        assert!(text_frames_count >= 3, "Back cover must have at least 3 text frames (agency, address, ISSN)");
+
+        let ph = sp_back.pages[0].height;
+        let pw = sp_back.pages[0].width;
+
+        // Verify Office Logo position at bottom left:
+        let logo_item = sp_back.items.iter().find(|it| it.label == "#slot:back_cover:logo").expect("Logo item on back cover");
+        assert!(logo_item.bounds().y0 >= ph - 110.0, "Logo must be at bottom left (y0: {})", logo_item.bounds().y0);
+        assert!((logo_item.bounds().x0 - 36.0).abs() < 1.0, "Logo x0 must be at margin 36");
+
+        // Verify Office Name position at bottom left beside logo:
+        let agency_item = sp_back.items.iter().find(|it| it.label == "#slot:back_cover:agency").expect("Agency item on back cover");
+        assert!(agency_item.bounds().y0 >= ph - 110.0, "Agency name must be at bottom left (y0: {})", agency_item.bounds().y0);
+        assert!(agency_item.bounds().x0 >= 80.0, "Agency name x0 must be beside logo");
+
+        // Verify Office Address position below logo & name on bottom left:
+        let addr_item = sp_back.items.iter().find(|it| it.label == "#slot:back_cover:address").expect("Address item on back cover");
+        assert!(addr_item.bounds().y0 >= ph - 65.0, "Address must be below logo and name (y0: {})", addr_item.bounds().y0);
+        assert!((addr_item.bounds().x0 - 36.0).abs() < 1.0, "Address x0 must be at margin 36");
+        if let designcraft_doc::Content::Text(tf) = &addr_item.content {
+            let story = active.doc.story(tf.story).expect("Address story");
+            for r in &story.chars {
+                assert_eq!(r.format.over.font_style.as_deref(), Some("Regular"), "Address must not be bold");
+                assert!(r.format.over.size.unwrap_or(0.0) <= 8.0, "Address must use standard font size");
+            }
+        }
+
+        // Verify ISSN/ISBN position at bottom right side:
+        let code_item = sp_back.items.iter().find(|it| it.label == "#slot:back_cover:code").expect("Code item on back cover");
+        assert!(code_item.bounds().x0 >= pw - 180.0, "ISSN must be on bottom right side (x0: {})", code_item.bounds().x0);
+        assert!(code_item.bounds().y0 >= ph - 65.0, "ISSN must be on bottom right side (y0: {})", code_item.bounds().y0);
+        if let designcraft_doc::Content::Text(tf) = &code_item.content {
+            let story = active.doc.story(tf.story).expect("ISSN story");
+            for r in &story.chars {
+                assert_eq!(r.format.over.font_style.as_deref(), Some("Regular"), "ISSN must not be bold");
+                assert!(r.format.over.size.unwrap_or(0.0) <= 8.0, "ISSN must use standard font size");
+            }
+            for p in &story.paras {
+                assert_eq!(p.para.align, Some(designcraft_doc::Align::Right), "ISSN must be right-aligned");
+            }
+        }
+
+        // Test that adding body pages afterwards still keeps Back Cover at the very end
+        app.run("layout.pages.insert", json!({"count": 2})).unwrap();
+        ensure_back_cover_at_end(&mut app);
+        let active2 = app.session.active().unwrap();
+        assert_eq!(active2.doc.page_count(), 6, "Now 6 pages total");
+        assert_eq!(find_back_cover_page(&active2.doc), Some(5), "Back cover must move to the last page (page 5)");
+    }
+}

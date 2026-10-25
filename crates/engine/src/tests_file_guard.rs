@@ -39,6 +39,7 @@ const ALLOWED: &[(&str, &str)] = &[
         "`screenshot` reads back the PNG the connected app just wrote. Connected mode cannot be combined with the roots (the CLI refuses the pair), and the app's own engine checks the path it writes",
     ),
     ("ui-egui/src/panels/pubgen/widgets.rs", "Pubgen panel chrome loads the optional PubGen logo image next to the app on first paint"),
+    ("ui-egui/src/panels/pubgen/tables.rs", "Pubgen table tests probe for the sample CSV fixtures the panel ships"),
     (
         "ui-egui/src/panels/pubgen/excel.rs",
         "Pubgen Excel importer reads user-selected workbook files and writes converted CSV/ZIP files chosen via file picker",

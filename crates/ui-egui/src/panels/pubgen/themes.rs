@@ -75,3 +75,22 @@ pub(crate) fn ensure_swatch(doc: &mut designcraft_doc::Document, hex: &str) -> S
     }
     upper
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::testutil::*;
+    use super::*;
+
+    #[test]
+    fn test_parse_table_color_theme() {
+        assert_eq!(parse_table_color_theme("0"), Some(TableColorTheme::new("#FFCB56", "#FFE9A9")));
+        assert_eq!(parse_table_color_theme("gold"), Some(TableColorTheme::new("#FFCB56", "#FFE9A9")));
+        assert_eq!(parse_table_color_theme("1"), Some(TableColorTheme::new("#F3D2AF", "#F8EADC")));
+        assert_eq!(parse_table_color_theme("peach"), Some(TableColorTheme::new("#F3D2AF", "#F8EADC")));
+        assert_eq!(parse_table_color_theme("2"), Some(TableColorTheme::new("#9E7EB5", "#C4A4DA")));
+        assert_eq!(parse_table_color_theme("lilac"), Some(TableColorTheme::new("#9E7EB5", "#C4A4DA")));
+        assert_eq!(parse_table_color_theme("none"), Some(TableColorTheme::new("", "")));
+        assert_eq!(parse_table_color_theme("plain"), Some(TableColorTheme::new("", "")));
+        assert_eq!(parse_table_color_theme("#112233 - #445566"), Some(TableColorTheme::new("#112233", "#445566")));
+    }
+}

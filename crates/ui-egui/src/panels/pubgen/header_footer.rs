@@ -544,3 +544,161 @@ pub fn execute_delete_hf_template(app: &mut DesignApp, st: &mut PubgenState, nam
     st.hf_style = "Modern Minimal".to_string();
     Ok(format!("Template '{name}' deleted"))
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::testutil::*;
+    use super::*;
+
+    #[test]
+    fn test_execute_apply_and_remove_header_footer() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({ "facingPages": true, "pages": 4 })).unwrap();
+
+        let st = PubgenState {
+            hf_style: "Corporate Report".into(),
+            hf_sided: 0,
+            hf_header_left: "{title}".into(),
+            hf_header_right: "{section}".into(),
+            hf_footer_left: "{page}".into(),
+            hf_footer_right: "Confidential".into(),
+            hf_top_accent_bar: true,
+            hf_top_accent_bar_height: 5.0,
+            hf_top_accent_bar_bleed: true,
+            hf_footer_rule: true,
+            hf_color_primary: "#0072bc".into(),
+            ..Default::default()
+        };
+
+        let res = execute_apply_header_footer(&mut app, &st);
+        assert!(res.is_ok(), "apply should succeed: {res:?}");
+
+        let doc = &app.session.active().unwrap().doc;
+        let hf = doc.header_footer.as_ref().expect("header_footer present");
+        assert_eq!(hf.preset, "Corporate Report");
+        assert!(hf.objects.top_accent_bar);
+        assert!(hf.accent_bar_items.left.is_some());
+        assert!(hf.accent_bar_items.right.is_some());
+
+        // Now set custom page margins and verify header_footer parent spread is synchronized
+        let set_m_res = execute_set_page_margins(&mut app);
+        assert!(set_m_res.is_ok());
+
+        let doc_with_m = &app.session.active().unwrap().doc;
+        let hf_with_m = doc_with_m.header_footer.as_ref().unwrap();
+        let parent_sp = doc_with_m.parents.iter().find(|p| Some(p.id) == hf_with_m.parent).unwrap();
+        assert!((parent_sp.pages[0].margins.inside - 19.0 * 72.0 / 25.4).abs() < 1e-3);
+        assert!((parent_sp.pages[0].margins.outside - 15.0 * 72.0 / 25.4).abs() < 1e-3);
+
+        let rem_res = execute_remove_header_footer(&mut app);
+        assert!(rem_res.is_ok());
+        let doc_after = &app.session.active().unwrap().doc;
+        assert!(doc_after.header_footer.is_none());
+    }
+
+    #[test]
+    fn test_execute_apply_header_footer_scopes_to_range_and_section() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({ "pages": 11 })).unwrap();
+        // A section starting at page 5: section 0 covers pages 1-4, section 1 pages 5-11.
+        app.run("layout.section", json!({ "page": 5, "startNumber": 1, "style": "arabic" })).unwrap();
+
+        // Range scope: the template's parent lands on pages 5-8 only.
+        let st = PubgenState { hf_scope: 2, hf_scope_start: 5, hf_scope_end: 8, ..Default::default() };
+        execute_apply_header_footer(&mut app, &st).unwrap_or_else(|e| panic!("range apply: {e}"));
+        {
+            let doc = &app.session.active().unwrap().doc;
+            let hf = doc.header_footer.as_ref().expect("header_footer present");
+            assert_eq!(hf.scope, designcraft_doc::HfScope::Range { first: 5, last: 8 });
+            let parent = hf.parent;
+            let on_page = |i: usize| doc.page(i).is_some_and(|p| p.parent == parent);
+            assert!((4..=7).all(on_page), "pages 5-8 carry the header/footer parent");
+            assert!((0..4).all(|i| !on_page(i)) && (8..11).all(|i| !on_page(i)), "pages outside the range do not");
+        }
+
+        // Section scope: re-apply scoped to section index 1 (pages 5-11).
+        let st = PubgenState { hf_scope: 1, hf_scope_section: 1, ..Default::default() };
+        execute_apply_header_footer(&mut app, &st).unwrap_or_else(|e| panic!("section apply: {e}"));
+        {
+            let doc = &app.session.active().unwrap().doc;
+            let hf = doc.header_footer.as_ref().expect("header_footer present");
+            assert_eq!(hf.scope, designcraft_doc::HfScope::Section(1));
+            let parent = hf.parent;
+            let on_page = |i: usize| doc.page(i).is_some_and(|p| p.parent == parent);
+            assert!((4..11).all(on_page), "section pages carry the parent");
+            assert!((0..4).all(|i| !on_page(i)), "pages before the section do not");
+        }
+    }
+
+    #[test]
+    fn test_execute_save_and_delete_hf_template() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            hf_custom_name: "Annual Audit 2026".into(),
+            hf_sided: 1,
+            hf_header_single: "Audit Report | {page}".into(),
+            hf_footer_single: "Internal Use Only".into(),
+            hf_header_rule: true,
+            hf_color_primary: "#990000".into(),
+            ..Default::default()
+        };
+
+        let save_res = execute_save_hf_template(&mut app, &mut st);
+        assert!(save_res.is_ok(), "{:?}", save_res.err());
+        assert_eq!(st.hf_style, "Annual Audit 2026");
+        assert!(st.hf_custom_name.is_empty());
+
+        let templates = designcraft_engine::cmd::header_footer::all_templates(&app.session);
+        assert!(templates.iter().any(|t| t.get("name").and_then(Value::as_str) == Some("Annual Audit 2026")));
+
+        let del_res = execute_delete_hf_template(&mut app, &mut st, "Annual Audit 2026");
+        assert!(del_res.is_ok());
+        assert_eq!(st.hf_style, "Modern Minimal");
+    }
+
+    #[test]
+    fn test_load_hf_template_to_state() {
+        let mut st = PubgenState::default();
+        let tpl = json!({
+            "name": "Custom Editorial",
+            "sided": "single",
+            "headerOffset": 30.0,
+            "footerOffset": 32.0,
+            "header": { "single": "Chapter | {page}" },
+            "footer": { "single": "Footer Notes" },
+            "objects": {
+                "headerRule": true,
+                "headerRuleWeight": 1.25,
+                "footerRule": false,
+                "topAccentBar": true,
+                "topAccentBarHeight": 8.0,
+                "topAccentBarBleed": false
+            },
+            "colors": {
+                "primary": "#334455",
+                "accent": "#ffaa00",
+                "dark": "#112233",
+                "ruleColor": "#888888",
+                "textColor": "#222222"
+            }
+        });
+
+        load_hf_template_to_state(&mut st, &tpl);
+        assert_eq!(st.hf_style, "Custom Editorial");
+        assert_eq!(st.hf_sided, 1);
+        assert_eq!(st.hf_header_offset, 30.0);
+        assert_eq!(st.hf_footer_offset, 32.0);
+        assert_eq!(st.hf_header_single, "Chapter | {page}");
+        assert_eq!(st.hf_footer_single, "Footer Notes");
+        assert!(st.hf_header_rule);
+        assert_eq!(st.hf_header_rule_weight, 1.25);
+        assert!(!st.hf_footer_rule);
+        assert!(st.hf_top_accent_bar);
+        assert_eq!(st.hf_top_accent_bar_height, 8.0);
+        assert!(!st.hf_top_accent_bar_bleed);
+        assert_eq!(st.hf_color_primary, "#334455");
+        assert_eq!(st.hf_color_accent, "#ffaa00");
+    }
+}

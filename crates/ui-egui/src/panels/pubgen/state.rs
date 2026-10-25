@@ -48,12 +48,12 @@ pub(super) fn default_toc_style() -> String {
     "TOC Entry".into()
 }
 
-pub(super) fn default_cover_title() -> String {
+pub(crate) fn default_cover_title() -> String {
     "KARAWANG TIMUR".into()
 }
 
 /// The second headline line of the cover: the templates give it its own frame and style.
-pub(super) fn default_cover_title2() -> String {
+pub(crate) fn default_cover_title2() -> String {
     "Title 2".into()
 }
 
@@ -578,5 +578,80 @@ impl Default for PubgenState {
             hf_initialized: false,
             hf_show_save_row: false,
         }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::super::testutil::*;
+    use super::super::*;
+    use super::*;
+
+    #[test]
+    fn test_pubgen_state_bilingual_defaults_and_serde() {
+        let st = PubgenState::default();
+        assert!(!st.bilingual_output);
+        assert!(!st.show_about_dialog);
+        assert_eq!(st.locale, Locale::Id);
+        assert_eq!(st.doc_language, "");
+
+        let json_str = serde_json::to_string(&st).unwrap();
+        let deser: PubgenState = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(deser.bilingual_output, st.bilingual_output);
+        assert_eq!(deser.locale, st.locale);
+        assert_eq!(deser.doc_language, st.doc_language);
+        assert_eq!(deser.excel_source_path, st.excel_source_path);
+        assert_eq!(deser.excel_status, st.excel_status);
+        assert_eq!(deser.toc_status, st.toc_status);
+        assert_eq!(deser.utilities_status, st.utilities_status);
+        assert_eq!(deser.toc_insert_after, st.toc_insert_after);
+
+        // Deserializing older JSON lacking the bilingual fields falls back to defaults safely
+        let old_json = r#"{"card1_path":"","card1_records":[],"card1_headers":[],"card1_type_col":0,"card1_num_col":1,"card1_title_col":2,"card1_preset":0,"card1_range_all":true,"card1_range_from":1,"card1_range_to":10,"card1_append":true,"card1_status":null,"card2_path":"","card2_matrix":[],"card2_first_row_header":true,"card2_col_numbers":true,"card2_table_footer":true,"card2_style":3,"card2_placement":2,"card2_status":null}"#;
+        let old_deser: PubgenState = serde_json::from_str(old_json).unwrap();
+        assert!(!old_deser.bilingual_output);
+        assert_eq!(old_deser.locale, Locale::Id);
+        assert_eq!(old_deser.doc_language, "");
+        assert_eq!(old_deser.excel_source_path, "");
+        assert_eq!(old_deser.excel_status, None);
+        assert_eq!(old_deser.toc_status, None);
+        assert_eq!(old_deser.utilities_status, None);
+        assert!(!old_deser.toc_insert_after);
+    }
+
+    #[test]
+    fn test_workflow_redesign_state_and_paths() {
+        let mut st = PubgenState::default();
+        // Master Excel auto-generate is enabled by default for seamless 1-click publishing
+        assert!(st.excel_auto_generate);
+        assert!(st.excel_source_path.is_empty());
+        assert!(st.excel_status.is_none());
+        assert!(st.toc_status.is_none());
+        assert!(st.utilities_status.is_none());
+
+        // Simulate importing an Excel file
+        st.excel_source_path = "C:/data/KBDA2026.xlsx".into();
+        assert_eq!(std::path::Path::new(&st.excel_source_path).file_name().unwrap(), "KBDA2026.xlsx");
+
+        // Status messaging is localized per section
+        st.excel_status = Some(("Converted 12 sheets successfully".into(), true));
+        st.toc_status = Some(("Table of Contents added".into(), true));
+        st.utilities_status = Some(("Switched to Single-sided layout".into(), true));
+
+        assert!(st.excel_status.as_ref().unwrap().1);
+        assert!(st.toc_status.as_ref().unwrap().1);
+        assert!(st.utilities_status.as_ref().unwrap().1);
+    }
+
+    #[test]
+    fn test_bilingual_toggle_flip() {
+        let mut st = PubgenState::default();
+        assert!(!st.bilingual_output);
+        st.bilingual_output = !st.bilingual_output;
+        assert!(st.bilingual_output);
+        let mode_label = if st.bilingual_output { "Dual Lang" } else { "Single Lang" };
+        assert_eq!(mode_label, "Dual Lang");
+        st.bilingual_output = !st.bilingual_output;
+        assert!(!st.bilingual_output);
     }
 }

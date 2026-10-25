@@ -3165,7 +3165,7 @@ fn cover_style_index(spec: &str) -> Option<usize> {
 }
 
 /// Copy the `COVER` sheet values into the Publication Cover card.
-fn apply_excel_cover(st: &mut PubgenState, cover: &ExcelCoverData, base_dir: Option<&Path>) {
+pub(crate) fn apply_excel_cover(st: &mut PubgenState, cover: &ExcelCoverData, base_dir: Option<&Path>) {
     if let Some(idx) = cover_style_index(&cover.style) {
         st.cover_style = idx;
     }
@@ -3497,5 +3497,496 @@ pub(crate) fn master_excel_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
     if let Some((msg, ok)) = &st.excel_status {
         let color = if *ok { Color32::from_rgb(80, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
         ui.add(egui::Label::new(RichText::new(msg).size(11.0).color(color)).wrap());
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod flow_tests {
+    use super::testutil::*;
+    use super::*;
+
+    #[test]
+    fn test_excel_cover_sheet_fills_title_and_title2() {
+        let mut st = PubgenState::default();
+        let cover = excel::ExcelCoverData {
+            level: "KABUPATEN".to_string(),
+            title1: "PRODUK DOMESTIK REGIONAL BRUTO".to_string(),
+            title2: "KABUPATEN KARAWANG".to_string(),
+            ..Default::default()
+        };
+        apply_excel_cover(&mut st, &cover, None);
+        assert_eq!(st.cover_title, "PRODUK DOMESTIK REGIONAL BRUTO");
+        assert_eq!(st.cover_title2, "KABUPATEN KARAWANG");
+    }
+
+    #[test]
+    fn test_load_card1_csv_restricts_to_first_three_columns() {
+        let temp_dir = std::env::temp_dir();
+        let csv_path = temp_dir.join("test_extra_cols.csv");
+        let csv_content = "type;number;title;file;notes\n\
+                           Tabel;01.01.;Jarak Antar Kecamatan;data1.csv;extra info\n\
+                           Grafik;02.01.;Distribusi Penduduk;data2.csv;sample note\n";
+        std::fs::write(&csv_path, csv_content).unwrap();
+
+        let mut st = PubgenState::default();
+        load_card1_csv(&mut st, csv_path.to_str().unwrap());
+
+        // Column indexes must be strictly restricted to first 3 columns
+        assert_eq!(st.card1_type_col, 0);
+        assert_eq!(st.card1_num_col, 1);
+        assert_eq!(st.card1_title_col, 2);
+
+        // Headers and records keep extra columns (e.g. column 3 for 'file')
+        assert_eq!(st.card1_headers.len(), 5);
+        assert_eq!(st.card1_records.len(), 2);
+        assert_eq!(st.card1_records[0].get(0..3).unwrap(), &["Tabel", "01.01.", "Jarak Antar Kecamatan"]);
+        assert_eq!(st.card1_records[0].get(3).map(String::as_str), Some("data1.csv"));
+        assert_eq!(st.card1_records[1].get(0..3).unwrap(), &["Grafik", "02.01.", "Distribusi Penduduk"]);
+        assert_eq!(st.card1_records[1].get(3).map(String::as_str), Some("data2.csv"));
+
+        let _ = std::fs::remove_file(csv_path);
+    }
+
+    #[test]
+    fn test_execute_excel_to_csvs_populates_card1_and_card2() {
+        let sample_xlsx = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("plan").join("pubgen").join("samples").join("BAB_02_2025.xlsx"))
+            .unwrap_or_default();
+        if !sample_xlsx.exists() {
+            return;
+        }
+
+        // The converter writes its CSVs beside the workbook, so convert a copy in a scratch folder:
+        // the sample folder holds tracked CSVs that a test run must not rewrite.
+        let dir = std::env::temp_dir().join(format!("dc-pubgen-excel-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let workbook = dir.join("BAB_02_2025.xlsx");
+        std::fs::copy(&sample_xlsx, &workbook).unwrap();
+
+        let mut st = PubgenState::default();
+        let res = execute_excel_to_csvs(&mut st, workbook.to_str().unwrap());
+        assert!(res.is_ok(), "Conversion should succeed: {res:?}");
+
+        // Card 1 must have catalog loaded
+        assert!(st.card1_path.ends_with("BAB_02_2025_catalog.csv"));
+        assert_eq!(st.card1_records.len(), 6, "6 catalog rows in BAB_02_2025.xlsx: DIV, R02, 3 tables, C02_01");
+        assert_eq!(st.card1_records.first().and_then(|r| r.first()), Some(&"Divider".to_string()), "the DIV sheet becomes the first catalog row");
+        assert!(st.card1_headers.contains(&"file".to_string()));
+
+        // Card 2 must have first table loaded and sheet table list populated
+        assert!(st.card2_path.ends_with("02_01.csv"));
+        assert_eq!(st.card2_sheet_tables.len(), 3, "Only the 3 tabular sheets produce table CSVs");
+        assert_eq!(st.card2_sheet_idx, 0);
+        assert!(!st.card2_matrix.is_empty());
+
+        // ZIP metadata and bytes must be cached
+        assert!(!st.generated_zip_bytes.is_empty(), "ZIP archive bytes should be cached in state");
+        assert!(st.generated_zip_name.ends_with(".zip"), "ZIP archive name should end with .zip");
+        assert_eq!(st.generated_csv_files.len(), 4, "Catalog + 3 tables in generated_csv_files");
+
+        // The workbook has no COVER sheet, so the cover fields keep their defaults.
+        assert!(!st.excel_had_cover, "this workbook has no COVER sheet");
+        assert_eq!(st.cover_title, default_cover_title());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_execute_excel_and_generate_auto_runs_pages_and_tables() {
+        let sample_xlsx = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("plan").join("pubgen").join("samples").join("BAB_02_2025.xlsx"))
+            .unwrap_or_default();
+        if !sample_xlsx.exists() {
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("dc-pubgen-excel-autogen-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let workbook = dir.join("BAB_02_2025.xlsx");
+        std::fs::copy(&sample_xlsx, &workbook).unwrap();
+        // The workbook's `file` cells carry paths from the machine that authored it; copy the
+        // sidecar assets beside it so the file-name fallback resolves them here too.
+        for sidecar in ["C02_01.png", "infografik_01.png", "ulasan_bab_1.rtf", "A02.rtf", "R02.rtf"] {
+            let src = sample_xlsx.parent().unwrap().join(sidecar);
+            if src.is_file() {
+                std::fs::copy(&src, dir.join(sidecar)).unwrap();
+            }
+        }
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState::default();
+        assert!(st.excel_auto_generate, "excel_auto_generate should be true by default");
+
+        let res = execute_excel_and_generate(&mut app, &mut st, workbook.to_str().unwrap());
+        assert!(res.is_ok(), "execute_excel_and_generate should succeed: {res:?}");
+        let msg = res.unwrap();
+        assert!(msg.contains("auto-generated pages"), "Status should confirm auto-generated pages: {msg}");
+        assert!(msg.contains("3 tables auto-inserted"), "Status should confirm 3 tables auto-inserted: {msg}");
+        assert!(msg.contains("1 RTF chapter(s) placed"), "Status should confirm 1 RTF placed (R02 ulasan): {msg}");
+        assert!(msg.contains("2 chart image(s) placed"), "Status should confirm 2 images placed (DIV divider + C02_01 chart): {msg}");
+        assert!(!msg.contains("cover"), "This workbook has no COVER sheet, so no cover page: {msg}");
+
+        let page_texts = |page: usize| -> Vec<String> {
+            let doc = &app.session.active().unwrap().doc;
+            doc.spreads[doc.page_loc(page).unwrap().0]
+                .items
+                .iter()
+                .filter(|it| doc.page_of_item(it.id) == Some(page))
+                .filter_map(|it| it.text_frame())
+                .map(|tf| doc.stories.get(&tf.story).map(|s| s.text.clone()).unwrap_or_default())
+                .collect()
+        };
+
+        let doc = &app.session.active().unwrap().doc;
+        assert_eq!(doc.page_count(), 8, "6 sheet records + 1 RTF autoflow continuation page, no cover");
+
+        // Page 1: the DIV divider (full-bleed, no margins).
+        let divider = page_texts(1);
+        assert!(divider.iter().any(|t| t.contains("BAB")), "Page 1 should contain Divider prefix: {divider:?}");
+        assert!(divider.iter().any(|t| t.contains("PEMERINTAHAN")), "Page 1 should contain Divider title: {divider:?}");
+        assert_eq!(doc.spreads[doc.page_loc(1).unwrap().0].pages[doc.page_loc(1).unwrap().1].margins.top, 0.0, "DIV page must have 0 margins");
+
+        // Page 2: the R02 Ulasan chapter, then its autoflow continuation.
+        let ulasan = page_texts(2);
+        assert!(ulasan.iter().any(|t| t.contains("BAB 02")), "Page 2 should contain the chapter line: {ulasan:?}");
+        assert!(ulasan.iter().any(|t| t.contains("Pemerintahan")), "Page 2 should contain the chapter title: {ulasan:?}");
+        assert!(ulasan.iter().any(|t| t.contains("ULASAN")), "Page 2 should contain the RTF narrative: {ulasan:?}");
+
+        // Content pages follow the document margins (BPS catalog).
+        let pt_per_mm = 72.0 / 25.4;
+        let expected_top = 20.20 * pt_per_mm;
+        let expected_inside = 19.0 * pt_per_mm;
+        let expected_outside = 15.0 * pt_per_mm;
+
+        let (si2, pi2) = doc.page_loc(2).unwrap();
+        let ulasan_pg = &doc.spreads[si2].pages[pi2];
+        assert!((ulasan_pg.margins.top - expected_top).abs() < 0.1, "Ulasan page top margin must follow doc margin");
+        assert!((ulasan_pg.margins.inside - expected_inside).abs() < 0.1, "Ulasan page inside margin must follow doc margin");
+        assert!((ulasan_pg.margins.outside - expected_outside).abs() < 0.1, "Ulasan page outside margin must follow doc margin");
+
+        let ulasan_margin = ulasan_pg.margin_rect();
+        let ulasan_items: Vec<_> = doc.spreads[si2].items.iter().filter(|it| doc.page_of_item(it.id) == Some(2)).collect();
+        assert!(ulasan_items.iter().any(|it| (it.bounds().x0 - ulasan_margin.x0).abs() < 1.0), "Ulasan item should start at left margin");
+        for it in &ulasan_items {
+            let ib = it.bounds();
+            assert!(ib.x0 >= ulasan_margin.x0 - 1.0, "Item left {} must align within margin {}", ib.x0, ulasan_margin.x0);
+            assert!(ib.x1 <= ulasan_margin.x1 + 1.0, "Item right {} must not exceed margin {}", ib.x1, ulasan_margin.x1);
+        }
+
+        // Verify Table page (Page 4: Tabel 02.01) follows page margins
+        let (si6, pi6) = doc.page_loc(4).unwrap();
+        let tbl_pg = &doc.spreads[si6].pages[pi6];
+        assert!((tbl_pg.margins.top - expected_top).abs() < 0.1);
+        let tbl_margin = tbl_pg.margin_rect();
+        let tbl_items: Vec<_> = doc.spreads[si6].items.iter().filter(|it| doc.page_of_item(it.id) == Some(4)).collect();
+        assert!(tbl_items.iter().any(|it| (it.bounds().x0 - tbl_margin.x0).abs() < 1.0), "Table item should start at left margin");
+        for it in &tbl_items {
+            let ib = it.bounds();
+            assert!(ib.x0 >= tbl_margin.x0 - 1.0, "Item left {} must align within margin {}", ib.x0, tbl_margin.x0);
+            assert!(ib.x1 <= tbl_margin.x1 + 1.0, "Item right {} must not exceed margin {}", ib.x1, tbl_margin.x1);
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_excel_g02_page_keeps_the_rtf_abbreviation_list_hanging_indent() {
+        // The `G02` sheet only links `G02.rtf`, whose entries are Word hanging indents
+        // (`\li1710\fi-1710\tx1530`): "SI\t:\tStasiun …". The tab after the colon has no explicit
+        // stop past it, so it must reach the hanging indent (85.5 pt), where wrapped lines start,
+        // and not the next default half-inch stop — otherwise every wrapped line sits to the left
+        // of the definition it belongs to.
+        let sample_xlsx = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("plan").join("pubgen").join("samples").join("SINGLE_LANG").join("BAB_01_2025.xlsx"))
+            .unwrap_or_default();
+        if !sample_xlsx.exists() || !sample_xlsx.parent().is_some_and(|dir| dir.join("G02.rtf").is_file()) {
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("dc-pubgen-g02-indent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let workbook = dir.join("BAB_01_2025.xlsx");
+        std::fs::copy(&sample_xlsx, &workbook).unwrap();
+        // The workbook's `file` cells carry the authoring machine's paths; place the sidecars
+        // beside the copy so its file-name fallback finds them here.
+        if let Some(samples) = sample_xlsx.parent() {
+            for sidecar in ["A02.rtf", "B01.rtf", "B01_pict1.jpg", "B01_pict2.png", "G00.rtf", "G01.rtf", "G02.rtf", "R01.rtf"] {
+                if samples.join(sidecar).is_file() {
+                    let _ = std::fs::copy(samples.join(sidecar), dir.join(sidecar));
+                }
+            }
+        }
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let mut st = PubgenState::default();
+        let converted = execute_excel_to_csvs(&mut st, workbook.to_str().unwrap());
+        assert!(converted.is_ok(), "the workbook converts to CSV data: {converted:?}");
+
+        // Keep only the G02 page so the test does not need every other sheet's assets.
+        let g02 = st
+            .card1_records
+            .iter()
+            .position(|row| row.get(3).is_some_and(|file| file.to_lowercase().ends_with("g02.rtf")))
+            .expect("the G02 sheet becomes a catalog row");
+        st.card1_records = vec![st.card1_records[g02].clone()];
+        st.card1_range_all = true;
+        st.card1_auto_insert_tables = false;
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "Page from CSV generates the G02 page: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let sid = active
+            .doc
+            .stories
+            .iter()
+            .find(|(_, story)| story.text.contains("Stasiun Meterologi") && story.text.contains("SMPK"))
+            .map(|(id, _)| *id)
+            .expect("the G02 RTF is placed as a page");
+        let (smpk, description) = {
+            let story = &active.doc.stories[&sid];
+            (story.text.find("SMPK").expect("SMPK"), story.text.find("Stasiun Meterologi").expect("its definition"))
+        };
+        let para = active.doc.stories[&sid].para_at(smpk);
+        let cs = designcraft_compose::compose_story(&active.doc, sid, &Default::default());
+        let lines: Vec<_> = cs.frames.iter().flat_map(|frame| frame.lines.iter().map(move |line| (frame, line))).collect();
+        let (frame, first) = lines.iter().find(|(_, line)| line.para == para && line.first_in_para).copied().expect("the SMPK line");
+        let col = frame.columns[first.column as usize];
+        let starts_at = |line: &designcraft_compose::Line| line.glyphs.iter().find(|g| g.len > 0 && g.visible).map(|g| g.x - col.x0).expect("text");
+        let description_x = first.glyphs.iter().find(|g| g.byte == description).map(|g| g.x - col.x0).expect("the definition text");
+        assert!((description_x - 85.5).abs() < 0.6, "the definition starts at the hanging indent, not {description_x}");
+        let continuations: Vec<_> = lines.iter().filter(|(_, line)| line.para == para && !line.first_in_para).map(|(_, line)| *line).collect();
+        assert!(!continuations.is_empty(), "SMPK's definition wraps");
+        for line in continuations {
+            let x = starts_at(line);
+            assert!((x - 85.5).abs() < 0.6, "the wrapped line starts with its definition at 85.5, not {x}");
+        }
+        assert!((starts_at(first)).abs() < 0.6, "the abbreviation stays at the margin");
+
+        // The last two rows (`TDP`, `API`) carry a far `\tx4000` stop besides `\tx1530`; their
+        // definitions must still start at the hanging indent, like the rows above them.
+        for (abbreviation, definition) in [("TDP", "Tanda Daftar Perusahaan"), ("API", "Angka Pengenal Importir")] {
+            let story = &active.doc.stories[&sid];
+            let label = story.text.find(abbreviation).expect("the abbreviation");
+            let para = story.para_at(label);
+            let definition_byte = story.text.find(definition).expect("its definition");
+            let (frame, line) =
+                lines.iter().find(|(_, line)| line.para == para && line.first_in_para).copied().expect("the abbreviation's first line");
+            let col = frame.columns[line.column as usize];
+            let x = line.glyphs.iter().find(|g| g.byte == definition_byte && g.len > 0).map(|g| g.x - col.x0).expect("the definition text");
+            assert!((x - 85.5).abs() < 0.6, "{abbreviation}'s definition starts at the hanging indent, not {x}");
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_execute_excel_and_generate_when_disabled_only_converts() {
+        let sample_xlsx = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("plan").join("pubgen").join("samples").join("BAB_02_2025.xlsx"))
+            .unwrap_or_default();
+        if !sample_xlsx.exists() {
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("dc-pubgen-excel-noautogen-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let workbook = dir.join("BAB_02_2025.xlsx");
+        std::fs::copy(&sample_xlsx, &workbook).unwrap();
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState { excel_auto_generate: false, ..Default::default() };
+
+        let res = execute_excel_and_generate(&mut app, &mut st, workbook.to_str().unwrap());
+        assert!(res.is_ok(), "Conversion should succeed: {res:?}");
+        let msg = res.unwrap();
+        assert!(msg.contains("Converted 3 sheets"), "Message should mention converted sheets: {msg}");
+
+        // Page count should remain 1 because auto-generate was false
+        let page_count = app.session.active().unwrap().doc.page_count();
+        assert_eq!(page_count, 1, "Page count should remain 1 when excel_auto_generate is false");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_execute_download_csv_zip_workflow() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let temp_dir = std::env::temp_dir().join("pubgen_zip_test_workflow");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let cat_path = temp_dir.join("test_catalog.csv");
+        let cat_content = "type,number,title,file\nTabel,01.01,Title 1,01_01\n";
+        std::fs::write(&cat_path, cat_content).unwrap();
+
+        let tbl_path = temp_dir.join("01_01.csv");
+        let tbl_content = "Col 1,Col 2\nVal 1,Val 2\n";
+        std::fs::write(&tbl_path, tbl_content).unwrap();
+
+        let mut st = PubgenState::default();
+        load_card1_csv(&mut st, cat_path.to_str().unwrap());
+        st.card2_sheet_tables = vec![tbl_path.to_str().unwrap().to_string()];
+
+        // Configure mock pick_save to save to a destination path
+        let save_dest = temp_dir.join("downloaded.zip");
+        let dest_clone = save_dest.to_str().unwrap().to_string();
+        app.services.pick_save = Some(Box::new(move |_| Some(dest_clone.clone())));
+
+        let res = execute_download_csv_zip(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_download_csv_zip should succeed: {res:?}");
+        assert!(save_dest.exists(), "Downloaded ZIP archive should exist at save_dest");
+
+        // Verify ZIP entries inside downloaded.zip
+        let f = std::fs::File::open(&save_dest).unwrap();
+        let mut archive = zip::ZipArchive::new(f).unwrap();
+        assert_eq!(archive.len(), 2);
+        assert!(archive.by_name("test_catalog.csv").is_ok());
+        assert!(archive.by_name("01_01.csv").is_ok());
+
+        // Cleanup
+        let _ = std::fs::remove_file(cat_path);
+        let _ = std::fs::remove_file(tbl_path);
+        let _ = std::fs::remove_file(save_dest);
+        let _ = std::fs::remove_dir(temp_dir);
+    }
+
+    #[test]
+    fn test_execute_download_csv_zip_via_download_service() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let downloaded_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let d_clone = downloaded_data.clone();
+        app.services.download = Some(Box::new(move |_name, bytes| {
+            let mut guard = d_clone.lock().unwrap();
+            *guard = bytes.to_vec();
+            Ok(())
+        }));
+
+        let mut st = PubgenState {
+            generated_csv_files: vec![("cat.csv".into(), "type,number,title\nT,1,Test\n".into()), ("tbl.csv".into(), "A,B\n1,2\n".into())],
+            generated_zip_name: "test_export.zip".into(),
+            ..Default::default()
+        };
+
+        let res = execute_download_csv_zip(&mut app, &mut st);
+        assert!(res.is_ok(), "Download via service should succeed: {res:?}");
+
+        let data = downloaded_data.lock().unwrap().clone();
+        assert!(!data.is_empty(), "Downloaded bytes should be captured");
+
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(data)).unwrap();
+        assert_eq!(archive.len(), 2);
+        assert!(archive.by_name("cat.csv").is_ok());
+        assert!(archive.by_name("tbl.csv").is_ok());
+    }
+
+    #[test]
+    fn test_excel_with_cover_generates_table_sheet_page() {
+        let cover_sheet = excel::ExcelSheetData {
+            name: "COVER".into(),
+            grid: vec![
+                vec!["style".into(), "Wave Curves".into()],
+                vec!["title1".into(), "KECAMATAN KARAWANG".into()],
+                vec!["office_address".into(), "Jl. Cakradireja No.36".into()],
+            ],
+            merges: vec![],
+        };
+        let tbl_sheet = excel::ExcelSheetData {
+            name: "01_01".into(),
+            grid: vec![vec!["Tabel 01.01 Luas Wilayah".into()], vec!["Desa".into(), "Luas".into()], vec!["Adiarsa".into(), "10".into()]],
+            merges: vec![],
+        };
+        let res = excel::convert_excel_to_csv_data(&[cover_sheet, tbl_sheet], "TEST_CONV");
+        assert!(res.cover.is_some());
+        assert_eq!(res.table_csvs.len(), 1);
+
+        let dir = std::env::temp_dir().join(format!("dc-pubgen-cover-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let cat_path = dir.join("catalog.csv");
+        std::fs::write(&cat_path, &res.catalog_csv_content).unwrap();
+
+        let tbl_path = dir.join("01_01.csv");
+        std::fs::write(&tbl_path, &res.table_csvs[0].1).unwrap();
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState::default();
+        apply_excel_cover(&mut st, res.cover.as_ref().unwrap(), None);
+        st.card1_path = cat_path.to_str().unwrap().to_string();
+        load_card1_csv(&mut st, cat_path.to_str().unwrap());
+        st.card2_sheet_tables = vec![tbl_path.to_str().unwrap().to_string()];
+        load_card2_csv(&mut st, tbl_path.to_str().unwrap());
+
+        st.excel_had_cover = true;
+        st.card1_auto_insert_tables = true;
+        st.card1_range_all = true;
+
+        if st.excel_had_cover {
+            match execute_generate_front_cover(&mut app, &st) {
+                Ok(_) => {
+                    if st.cover_include_inside_back {
+                        execute_generate_inside_cover(&mut app).unwrap();
+                    }
+                }
+                Err(e) => panic!("Cover failed: {e}"),
+            }
+        }
+
+        let gen_res = execute_generate_pages(&mut app, &st);
+        assert!(gen_res.is_ok(), "generate pages failed: {gen_res:?}");
+
+        // Verify that the table sheet (01_01) was generated before adding back cover
+        {
+            let doc = &app.session.active().unwrap().doc;
+            let has_table = doc.stories.values().any(|s| s.text.contains("01.01") || s.text.contains("Luas Wilayah"));
+            assert!(has_table, "Table sheet 01_01 should have been generated into the document");
+        }
+
+        if st.excel_had_cover && st.cover_include_inside_back {
+            execute_generate_back_cover(&mut app, &st).unwrap();
+        }
+        ensure_back_cover_at_end(&mut app);
+
+        // Verify that the table sheet (01_01) was NOT deleted or corrupted by back cover generation
+        let doc = &app.session.active().unwrap().doc;
+        let has_table_after = doc.stories.values().any(|s| s.text.contains("01.01") || s.text.contains("Luas Wilayah"));
+        assert!(has_table_after, "Table sheet 01_01 must still be present after generating back cover");
+
+        // Verify back cover page exists at the end
+        let back_page_idx = doc.page_count() - 1;
+        let (back_si, _) = doc.page_loc(back_page_idx).unwrap();
+        let back_spread = &doc.spreads[back_si];
+        let has_back_branding = back_spread.items.iter().any(|it| {
+            if let designcraft_doc::Content::Text(tf) = &it.content {
+                doc.story(tf.story).is_some_and(|s| s.text.contains("BADAN PUSAT STATISTIK"))
+            } else {
+                false
+            }
+        });
+        assert!(has_back_branding, "Back cover must contain agency text branding");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

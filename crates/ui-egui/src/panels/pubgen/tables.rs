@@ -1116,3 +1116,1394 @@ pub(crate) fn estimate_text_width(text: &str, is_uppercase_kicker: bool) -> f64 
     let buffer = if is_uppercase_kicker { 12.0 } else { 8.0 };
     (w + buffer).max(20.0)
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::testutil::*;
+    use super::*;
+
+    #[test]
+    fn test_table_from_csv_defaults_tick_column_numbers_and_footer() {
+        let st = PubgenState::default();
+        assert!(st.card2_first_row_header, "First row is header is on by default");
+        assert!(st.card2_col_numbers, "Add column numbers is on by default");
+        assert!(st.card2_table_footer, "Table footer is on by default");
+    }
+
+    #[test]
+    fn test_execute_insert_table() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Header 1".into(), "Header 2".into()],
+                vec!["Cell A1".into(), "Cell A2".into()],
+                vec!["Cell B1".into(), "Cell B2".into()],
+            ],
+            card2_first_row_header: true,
+            card2_placement: 1, // New frame
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "insert_table with Horizontal Rules should succeed: {:?}", res);
+    }
+
+    #[test]
+    fn test_execute_insert_table_at_page() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // 1. Generate pages with Card 1 (preset 0: 1 Row · 3 Columns)
+        let st_card1 = PubgenState {
+            card1_records: vec![vec!["Chapter".into(), "1".into(), "Introduction to Layout".into()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            card1_range_from: 1,
+            card1_range_to: 1,
+            card1_preset: 0,
+            card1_append: true,
+            ..Default::default()
+        };
+        let res1 = execute_generate_pages(&mut app, &st_card1);
+        assert!(res1.is_ok(), "generate_pages should succeed: {:?}", res1);
+
+        // 2. Insert table with placement = 2 ("At page")
+        let st_card2 = PubgenState {
+            card2_matrix: vec![vec!["Item".into(), "Price".into()], vec!["Widget A".into(), "$10".into()], vec!["Widget B".into(), "$20".into()]],
+            card2_first_row_header: true,
+            card2_placement: 2, // At page
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+        let res2 = execute_insert_table(&mut app, &st_card2);
+        assert!(res2.is_ok(), "insert_table at page should succeed: {:?}", res2);
+
+        // 3. Verify table frame position is below generated title
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.last().unwrap();
+        let page = spread.pages.last().unwrap();
+        let margin = page.margin_rect();
+
+        // Find the table frame (its story contains tables)
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|st| !st.tables.is_empty()))
+            .expect("Table item should exist on spread");
+
+        // In preset 0, title row has row_y1 = margin.y0 + 60.0 and gap_below_title = 12.0
+        // The table frame should start at margin.y0 + 60.0 + 12.0 = margin.y0 + 72.0
+        assert_eq!(table_item.bounds().y0, margin.y0 + 72.0);
+        assert_eq!(table_item.bounds().x0, margin.x0);
+        assert_eq!(table_item.bounds().x1, margin.x1);
+    }
+
+    #[test]
+    fn test_execute_insert_table_with_col_numbers() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Item".into(), "Category".into(), "Price".into()],
+                vec!["Paper".into(), "Stock".into(), "$20".into()],
+                vec!["Pen".into(), "Tools".into(), "$10".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_placement: 1, // New frame
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "insert_table with col numbers should succeed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().expect("Table should exist in story");
+
+        // Total rows should be 4 (Header + Col numbers + 2 data rows)
+        assert_eq!(table.rows.len(), 4);
+        assert_eq!(table.columns.len(), 3);
+
+        // Row 0 is header
+        assert_eq!(table.cell(0, 0).unwrap().text.text.trim(), "Item");
+        assert_eq!(table.cell(0, 1).unwrap().text.text.trim(), "Category");
+        assert_eq!(table.cell(0, 2).unwrap().text.text.trim(), "Price");
+
+        // Row 1 is column numbers (1), (2), (3)
+        assert_eq!(table.cell(1, 0).unwrap().text.text.trim(), "(1)");
+        assert_eq!(table.cell(1, 1).unwrap().text.text.trim(), "(2)");
+        assert_eq!(table.cell(1, 2).unwrap().text.text.trim(), "(3)");
+
+        // Row 2 is data
+        assert_eq!(table.cell(2, 0).unwrap().text.text.trim(), "Paper");
+    }
+
+    #[test]
+    fn test_execute_insert_table_horizontal_rules() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Header A".into(), "Header B".into()],
+                vec!["Data 1A".into(), "Data 1B".into()],
+                vec!["Data 2A".into(), "Data 2B".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_table_footer: false, // pin it off: this test wants plain interior data rows
+            card2_placement: 1,        // New frame
+            card2_style: 3,            // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "insert_table with Horizontal Rules should succeed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().expect("Table should exist in story");
+
+        // 4 rows: 0 (Header), 1 (Col numbers), 2 (Data 1), 3 (Data 2)
+        assert_eq!(table.rows.len(), 4);
+        assert_eq!(table.columns.len(), 2);
+
+        // Verify table-level border is none
+        assert_eq!(table.options.border.weight, 0.0);
+
+        // Row 0: Table Header
+        // Top border should be 1.0pt, bottom border should be 0.5pt, left/right 0.0pt
+        let r0_c0 = table.cell(0, 0).unwrap();
+        assert_eq!(r0_c0.strokes[0].weight, 1.0, "Header top border must be 1.0pt");
+        assert_eq!(r0_c0.strokes[2].weight, 0.5, "Header bottom border must be 0.5pt");
+        assert_eq!(r0_c0.strokes[1].weight, 0.0, "No vertical left border");
+        assert_eq!(r0_c0.strokes[3].weight, 0.0, "No vertical right border");
+
+        // Row 1: Col Numbers
+        // Top border 0.5pt, bottom border 0.5pt, left/right 0.0pt
+        let r1_c0 = table.cell(1, 0).unwrap();
+        assert_eq!(r1_c0.strokes[0].weight, 0.5, "Col numbers top border must be 0.5pt");
+        assert_eq!(r1_c0.strokes[2].weight, 0.5, "Col numbers bottom border must be 0.5pt");
+        assert_eq!(r1_c0.strokes[1].weight, 0.0, "No vertical left border");
+        assert_eq!(r1_c0.strokes[3].weight, 0.0, "No vertical right border");
+
+        // Row 2: Data Row 1 (Interior data row)
+        // Top border 0.5pt (from row 1 bottom), bottom border 0.0pt (no border between data rows!)
+        let r2_c0 = table.cell(2, 0).unwrap();
+        assert_eq!(r2_c0.strokes[0].weight, 0.5);
+        assert_eq!(r2_c0.strokes[2].weight, 0.0, "Interior data row bottom must have no border");
+        assert_eq!(r2_c0.strokes[1].weight, 0.0, "No vertical left border");
+        assert_eq!(r2_c0.strokes[3].weight, 0.0, "No vertical right border");
+
+        // Row 3: Data Row 2 (Bottom table row)
+        // Top border 0.0pt, bottom border 1.0pt (bottom of table rule!)
+        let r3_c0 = table.cell(3, 0).unwrap();
+        assert_eq!(r3_c0.strokes[0].weight, 0.0, "Interior data row top must have no border");
+        assert_eq!(r3_c0.strokes[2].weight, 1.0, "Bottom of table must have 1.0pt border");
+        assert_eq!(r3_c0.strokes[1].weight, 0.0, "No vertical left border");
+        assert_eq!(r3_c0.strokes[3].weight, 0.0, "No vertical right border");
+    }
+
+    #[test]
+    fn test_execute_insert_table_horizontal_rules_no_col_numbers() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Header A".into(), "Header B".into()],
+                vec!["Data 1A".into(), "Data 1B".into()],
+                vec!["Data 2A".into(), "Data 2B".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: false,
+            card2_table_footer: false, // pin it off: this test wants plain interior data rows
+            card2_placement: 1,        // New frame
+            card2_style: 3,            // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok());
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().expect("Table should exist in story");
+
+        // 3 rows: 0 (Header), 1 (Data 1), 2 (Data 2)
+        assert_eq!(table.rows.len(), 3);
+
+        // Row 0: Header (top 1.0, bottom 0.5)
+        let r0 = table.cell(0, 0).unwrap();
+        assert_eq!(r0.strokes[0].weight, 1.0);
+        assert_eq!(r0.strokes[2].weight, 0.5);
+        assert_eq!(r0.strokes[1].weight, 0.0);
+        assert_eq!(r0.strokes[3].weight, 0.0);
+
+        // Row 1: Data 1 (top 0.5, bottom 0.0)
+        let r1 = table.cell(1, 0).unwrap();
+        assert_eq!(r1.strokes[0].weight, 0.5);
+        assert_eq!(r1.strokes[2].weight, 0.0);
+        assert_eq!(r1.strokes[1].weight, 0.0);
+        assert_eq!(r1.strokes[3].weight, 0.0);
+
+        // Row 2: Data 2 (top 0.0, bottom 1.0)
+        let r2 = table.cell(2, 0).unwrap();
+        assert_eq!(r2.strokes[0].weight, 0.0);
+        assert_eq!(r2.strokes[2].weight, 1.0);
+        assert_eq!(r2.strokes[1].weight, 0.0);
+        assert_eq!(r2.strokes[3].weight, 0.0);
+    }
+
+    #[test]
+    fn test_execute_insert_table_auto_merged_headers() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Item Name".into(), "Category".into(), "Item--Price".into(), "Item--Stock".into(), "Rating".into()],
+                vec!["A4 Coated Art Paper".into(), "Print Stock".into(), "$24.50".into(), "150".into(), "4.8".into()],
+                vec!["Pantone Color Bridge".into(), "Tools".into(), "$185.00".into(), "24".into(), "4.9".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: false,
+            card2_placement: 1, // New frame
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "insert_table with auto merged headers should succeed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().expect("Table should exist in story");
+
+        // 2 header rows + 2 data rows = 4 total rows
+        assert_eq!(table.rows.len(), 4);
+        assert_eq!(table.columns.len(), 5);
+
+        // Header has 2 rows
+        assert_eq!(table.header_rows(), 2);
+
+        // Row 0 Col 0 ("Item Name"): vertical merge (row_span 2, col_span 1)
+        let c00 = table.cell(0, 0).unwrap();
+        assert_eq!(c00.row_span, 2);
+        assert_eq!(c00.col_span, 1);
+        assert_eq!(c00.text.text.trim(), "Item Name");
+        assert_eq!(c00.vj, designcraft_doc::VerticalJustification::Center);
+        assert_eq!(c00.text.paras[0].para.align, Some(designcraft_doc::Align::Center));
+
+        // Row 0 Col 1 ("Category"): vertical merge (row_span 2, col_span 1)
+        let c01 = table.cell(0, 1).unwrap();
+        assert_eq!(c01.row_span, 2);
+        assert_eq!(c01.col_span, 1);
+        assert_eq!(c01.text.text.trim(), "Category");
+        assert_eq!(c01.vj, designcraft_doc::VerticalJustification::Center);
+
+        // Row 0 Col 2 ("Item"): horizontal merge across Col 2 and Col 3 (row_span 1, col_span 2)
+        let c02 = table.cell(0, 2).unwrap();
+        assert_eq!(c02.row_span, 1);
+        assert_eq!(c02.col_span, 2);
+        assert_eq!(c02.text.text.trim(), "Item");
+        assert_eq!(c02.vj, designcraft_doc::VerticalJustification::Center);
+        assert_eq!(c02.text.paras[0].para.align, Some(designcraft_doc::Align::Center));
+
+        // Row 1 Col 2 ("Price"): sub-header cell
+        let c12 = table.cell(1, 2).unwrap();
+        assert_eq!(c12.row_span, 1);
+        assert_eq!(c12.col_span, 1);
+        assert_eq!(c12.text.text.trim(), "Price");
+        assert_eq!(c12.vj, designcraft_doc::VerticalJustification::Center);
+
+        // Row 1 Col 3 ("Stock"): sub-header cell
+        let c13 = table.cell(1, 3).unwrap();
+        assert_eq!(c13.row_span, 1);
+        assert_eq!(c13.col_span, 1);
+        assert_eq!(c13.text.text.trim(), "Stock");
+        assert_eq!(c13.vj, designcraft_doc::VerticalJustification::Center);
+
+        // Row 0 Col 4 ("Rating"): vertical merge (row_span 2, col_span 1)
+        let c04 = table.cell(0, 4).unwrap();
+        assert_eq!(c04.row_span, 2);
+        assert_eq!(c04.col_span, 1);
+        assert_eq!(c04.text.text.trim(), "Rating");
+        assert_eq!(c04.vj, designcraft_doc::VerticalJustification::Center);
+
+        // Row 2 is first data row
+        assert_eq!(table.cell(2, 0).unwrap().text.text.trim(), "A4 Coated Art Paper");
+        assert_eq!(table.cell(2, 1).unwrap().text.text.trim(), "Print Stock");
+        assert_eq!(table.cell(2, 2).unwrap().text.text.trim(), "$24.50");
+        assert_eq!(table.cell(2, 3).unwrap().text.text.trim(), "150");
+        assert_eq!(table.cell(2, 4).unwrap().text.text.trim(), "4.8");
+    }
+
+    #[test]
+    fn test_execute_insert_table_auto_merged_headers_with_col_numbers() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Item Name".into(), "Category".into(), "Item--Price".into(), "Item--Stock".into(), "Rating".into()],
+                vec!["A4 Coated Art Paper".into(), "Print Stock".into(), "$24.50".into(), "150".into(), "4.8".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_placement: 1, // New frame
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "insert_table with auto merged headers + col numbers should succeed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().expect("Table should exist in story");
+
+        // 2 header rows + 1 col numbers row + 1 data row = 4 total rows
+        assert_eq!(table.rows.len(), 4);
+        assert_eq!(table.columns.len(), 5);
+
+        // Row 2 is column numbers row: (1), (2), (3), (4), (5)
+        assert_eq!(table.cell(2, 0).unwrap().text.text.trim(), "(1)");
+        assert_eq!(table.cell(2, 1).unwrap().text.text.trim(), "(2)");
+        assert_eq!(table.cell(2, 2).unwrap().text.text.trim(), "(3)");
+        assert_eq!(table.cell(2, 3).unwrap().text.text.trim(), "(4)");
+        assert_eq!(table.cell(2, 4).unwrap().text.text.trim(), "(5)");
+
+        // Row 3 is data row
+        assert_eq!(table.cell(3, 0).unwrap().text.text.trim(), "A4 Coated Art Paper");
+    }
+
+    #[test]
+    fn test_multiline_csv_header_cells_stay_in_one_table_row() {
+        // Excel wraps long header cells; the generated CSV quotes the line break. It must not
+        // become extra table rows when the CSV is converted to a table.
+        let csv = concat!(
+            "Desa/Kelurahan / Village/Subdistric,\"Luas / Total Area\n(km2 / sq.km)\",",
+            "\"Persentase terhadap Luas Kecamatan\n/ Percentage to District Area\"\n",
+            "Warungbambu,1.65,21.32\n",
+        );
+        let matrix = parse_csv_content(csv);
+        assert_eq!(matrix.len(), 2);
+        assert!(matrix[0][1].contains('\n'));
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: matrix,
+            card2_first_row_header: true,
+            card2_col_numbers: false,
+            card2_placement: 1,
+            card2_style: 3,
+            ..Default::default()
+        };
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "multiline header table should insert: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let table = active.doc.stories.values().find_map(|s| s.tables.values().next()).expect("Table should exist in story");
+        assert_eq!(table.rows.len(), 2, "one header row + one data row");
+        assert_eq!(table.header_rows(), 1);
+        assert_eq!(table.cell(0, 1).unwrap().text.text.trim(), "Luas / Total Area\u{2028}(km2 / sq.km)", "the header keeps its Excel line break");
+        assert_eq!(table.cell(0, 2).unwrap().text.text.trim(), "Persentase terhadap Luas Kecamatan\u{2028}/ Percentage to District Area");
+    }
+
+    #[test]
+    fn test_execute_insert_table_3stack_headers() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec![
+                    "Item".into(),
+                    "Category".into(),
+                    "Item--Price".into(),
+                    "Item--Stock".into(),
+                    "Item--Location--Province".into(),
+                    "Item--Location--Region".into(),
+                    "Rating".into(),
+                ],
+                vec![
+                    "A4 Coated Art Paper".into(),
+                    "Print Stock".into(),
+                    "$24.50".into(),
+                    "150".into(),
+                    "West Java".into(),
+                    "Bekasi".into(),
+                    "48".into(),
+                ],
+                vec![
+                    "Pantone Color Bridge".into(),
+                    "Tools".into(),
+                    "$185.00".into(),
+                    "24".into(),
+                    "West Java".into(),
+                    "Karawang".into(),
+                    "49".into(),
+                ],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: false,
+            card2_placement: 1, // New frame
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "insert_table with 3-stack headers should succeed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().expect("Table should exist in story");
+
+        // 3 header rows + 2 data rows = 5 total rows
+        assert_eq!(table.rows.len(), 5);
+        assert_eq!(table.columns.len(), 7);
+        assert_eq!(table.header_rows(), 3);
+
+        // Col 0 ("Item"): 3-row vertical merge
+        let c0 = table.cell(0, 0).unwrap();
+        assert_eq!(c0.row_span, 3);
+        assert_eq!(c0.col_span, 1);
+        assert_eq!(c0.text.text.trim(), "Item");
+        assert_eq!(c0.vj, designcraft_doc::VerticalJustification::Center);
+        assert_eq!(c0.text.paras[0].para.align, Some(designcraft_doc::Align::Center));
+
+        // Col 1 ("Category"): 3-row vertical merge
+        let c1 = table.cell(0, 1).unwrap();
+        assert_eq!(c1.row_span, 3);
+        assert_eq!(c1.col_span, 1);
+        assert_eq!(c1.text.text.trim(), "Category");
+        assert_eq!(c1.vj, designcraft_doc::VerticalJustification::Center);
+
+        // Row 0 Col 2 ("Item"): 4-column horizontal merge across Cols 2..=5
+        let c2_r0 = table.cell(0, 2).unwrap();
+        assert_eq!(c2_r0.row_span, 1);
+        assert_eq!(c2_r0.col_span, 4);
+        assert_eq!(c2_r0.text.text.trim(), "Item");
+        assert_eq!(c2_r0.vj, designcraft_doc::VerticalJustification::Center);
+
+        // Row 1 Col 2 ("Price"): 2-row vertical merge across Rows 1..=2
+        let c2_r1 = table.cell(1, 2).unwrap();
+        assert_eq!(c2_r1.row_span, 2);
+        assert_eq!(c2_r1.col_span, 1);
+        assert_eq!(c2_r1.text.text.trim(), "Price");
+        assert_eq!(c2_r1.vj, designcraft_doc::VerticalJustification::Center);
+
+        // Row 1 Col 3 ("Stock"): 2-row vertical merge across Rows 1..=2
+        let c3_r1 = table.cell(1, 3).unwrap();
+        assert_eq!(c3_r1.row_span, 2);
+        assert_eq!(c3_r1.col_span, 1);
+        assert_eq!(c3_r1.text.text.trim(), "Stock");
+        assert_eq!(c3_r1.vj, designcraft_doc::VerticalJustification::Center);
+
+        // Row 1 Col 4 ("Location"): 2-column horizontal merge across Cols 4..=5
+        let c4_r1 = table.cell(1, 4).unwrap();
+        assert_eq!(c4_r1.row_span, 1);
+        assert_eq!(c4_r1.col_span, 2);
+        assert_eq!(c4_r1.text.text.trim(), "Location");
+        assert_eq!(c4_r1.vj, designcraft_doc::VerticalJustification::Center);
+
+        // Row 2 Col 4 ("Province"): 1x1 leaf cell
+        let c4_r2 = table.cell(2, 4).unwrap();
+        assert_eq!(c4_r2.row_span, 1);
+        assert_eq!(c4_r2.col_span, 1);
+        assert_eq!(c4_r2.text.text.trim(), "Province");
+        assert_eq!(c4_r2.vj, designcraft_doc::VerticalJustification::Center);
+
+        // Row 2 Col 5 ("Region"): 1x1 leaf cell
+        let c5_r2 = table.cell(2, 5).unwrap();
+        assert_eq!(c5_r2.row_span, 1);
+        assert_eq!(c5_r2.col_span, 1);
+        assert_eq!(c5_r2.text.text.trim(), "Region");
+        assert_eq!(c5_r2.vj, designcraft_doc::VerticalJustification::Center);
+
+        // Col 6 ("Rating"): 3-row vertical merge
+        let c6 = table.cell(0, 6).unwrap();
+        assert_eq!(c6.row_span, 3);
+        assert_eq!(c6.col_span, 1);
+        assert_eq!(c6.text.text.trim(), "Rating");
+        assert_eq!(c6.vj, designcraft_doc::VerticalJustification::Center);
+
+        // Row 3 (first data row)
+        assert_eq!(table.cell(3, 0).unwrap().text.text.trim(), "A4 Coated Art Paper");
+        assert_eq!(table.cell(3, 1).unwrap().text.text.trim(), "Print Stock");
+        assert_eq!(table.cell(3, 2).unwrap().text.text.trim(), "$24.50");
+        assert_eq!(table.cell(3, 3).unwrap().text.text.trim(), "150");
+        assert_eq!(table.cell(3, 4).unwrap().text.text.trim(), "West Java");
+        assert_eq!(table.cell(3, 5).unwrap().text.text.trim(), "Bekasi");
+        assert_eq!(table.cell(3, 6).unwrap().text.text.trim(), "48");
+    }
+
+    #[test]
+    fn test_execute_insert_table_3stack_headers_with_col_numbers_and_horizontal_rules() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec![
+                    "Item".into(),
+                    "Category".into(),
+                    "Item--Price".into(),
+                    "Item--Stock".into(),
+                    "Item--Location--Province".into(),
+                    "Item--Location--Region".into(),
+                    "Rating".into(),
+                ],
+                vec![
+                    "A4 Coated Art Paper".into(),
+                    "Print Stock".into(),
+                    "$24.50".into(),
+                    "150".into(),
+                    "West Java".into(),
+                    "Bekasi".into(),
+                    "48".into(),
+                ],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_placement: 1, // New frame
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "insert_table with 3-stack headers + col numbers should succeed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().expect("Table should exist in story");
+
+        // 3 header rows + 1 col numbers row + 1 data row = 5 total rows
+        assert_eq!(table.rows.len(), 5);
+        assert_eq!(table.columns.len(), 7);
+
+        // Row 3 is column numbers row: (1), (2), (3), (4), (5), (6), (7)
+        for c in 0..7 {
+            assert_eq!(table.cell(3, c).unwrap().text.text.trim(), format!("({})", c + 1));
+        }
+
+        // Row 4 is first data row
+        assert_eq!(table.cell(4, 0).unwrap().text.text.trim(), "A4 Coated Art Paper");
+
+        // Check horizontal rules stroke weights:
+        // Top of table (row 0, col 0)
+        assert_eq!(table.cell(0, 0).unwrap().strokes[0].weight, 1.0);
+        // Sub-header under "Item" (row 0, col 2)
+        assert_eq!(table.cell(0, 2).unwrap().strokes[2].weight, 0.5);
+        // Sub-header under "Location" (row 1, col 4)
+        assert_eq!(table.cell(1, 4).unwrap().strokes[2].weight, 0.5);
+        // Bottom of header (row 2, col 0)
+        assert_eq!(table.cell(2, 0).unwrap().strokes[2].weight, 0.5);
+        // Bottom of column numbers row (row 3, col 0)
+        assert_eq!(table.cell(3, 0).unwrap().strokes[2].weight, 0.5);
+        // Bottom of table (row 4, col 0)
+        assert_eq!(table.cell(4, 0).unwrap().strokes[2].weight, 1.0);
+    }
+
+    #[test]
+    fn test_detect_footnote_row() {
+        let rows = vec![
+            vec!["Header 1".into(), "Header 2".into()],
+            vec!["Data 1".into(), "Data 2".into()],
+            vec!["Sources: Karawang Region Government Office".into(), "".into()],
+        ];
+        assert_eq!(detect_footnote_row(&rows), Some("Sources: Karawang Region Government Office".to_string()));
+
+        let rows_normal = vec![vec!["Header 1".into(), "Header 2".into()], vec!["Data 1".into(), "Data 2".into()]];
+        assert_eq!(detect_footnote_row(&rows_normal), None);
+
+        let rows_single_col = vec![vec!["Single 1".into()], vec!["Single 2".into()]];
+        assert_eq!(detect_footnote_row(&rows_single_col), None);
+    }
+
+    #[test]
+    fn test_execute_insert_table_footer_and_footnote() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Item".into(), "Category".into(), "Price".into()],
+                vec!["Paper".into(), "Stock".into(), "$20".into()],
+                vec!["Pen".into(), "Tools".into(), "$10".into()],
+                vec!["Total".into(), "".into(), "$30".into()],
+                vec!["Sources: Karawang Region Government Office".into(), "".into(), "".into()],
+            ],
+            card2_first_row_header: true,
+            card2_table_footer: true,
+            card2_col_numbers: false, // pin it off: the row indices below count from the header only
+            card2_placement: 1,       // New frame
+            card2_style: 3,           // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "insert_table with footer and footnote should succeed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+
+        // 1. Verify table exists and has 4 rows (1 header + 2 data + 1 total) - NOT 5 rows!
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().expect("Table should exist in story");
+
+        assert_eq!(table.rows.len(), 4);
+        assert_eq!(table.columns.len(), 3);
+
+        // Row 3 is footer row ("Total")
+        assert_eq!(table.cell(3, 0).unwrap().text.text.trim(), "Total");
+        assert_eq!(table.cell(3, 2).unwrap().text.text.trim(), "$30");
+        assert_eq!(table.rows[3].kind, designcraft_doc::RowKind::Footer);
+
+        // Verify Horizontal Rules styling on footer row:
+        // Top border of footer row (strokes[0]) is rule_thin (0.5)
+        assert_eq!(table.cell(3, 0).unwrap().strokes[0].weight, 0.5);
+        // Bottom border of preceding row (strokes[2]) is rule_thin (0.5)
+        assert_eq!(table.cell(2, 0).unwrap().strokes[2].weight, 0.5);
+        // Bottom border of footer row (strokes[2]) is rule_thick (1.0)
+        assert_eq!(table.cell(3, 0).unwrap().strokes[2].weight, 1.0);
+
+        // 2. Verify normal text box below table was created with footnote text
+        let fn_item = spread
+            .items
+            .iter()
+            .find(|it| {
+                if it.id == table_item.id {
+                    return false;
+                }
+                it.text_frame()
+                    .and_then(|tf| active.doc.story(tf.story))
+                    .is_some_and(|s| s.text.contains("Sources: Karawang Region Government Office"))
+            })
+            .expect("Footnote text frame should exist on spread");
+
+        // Footnote frame is positioned below table frame
+        assert!(fn_item.bounds().y0 >= table_item.bounds().y1);
+    }
+
+    #[test]
+    fn test_execute_insert_table_3stack_sample_file_with_footer_and_footnote() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_table_footer: true,
+            card2_placement: 1, // New frame
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+
+        // Load actual sample CSV file
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plan/pubgen/samples/sample_3stack_table.csv");
+        if !std::path::Path::new(path).exists() {
+            return;
+        }
+        load_card2_csv(&mut st, path);
+        assert_eq!(st.card2_matrix.len(), 8);
+        assert_eq!(detect_footnote_row(&st.card2_matrix), Some("Sources: Karawang Region Government Office".to_string()));
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "insert_table with sample_3stack_table.csv should succeed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().expect("Table should exist in story");
+
+        // 3 header rows + 1 col numbers row + 5 data rows + 1 total row = 10 rows
+        assert_eq!(table.rows.len(), 10);
+        assert_eq!(table.columns.len(), 7);
+
+        // Row 9 is the Total row (footer)
+        assert_eq!(table.cell(9, 0).unwrap().text.text.trim(), "Total");
+        assert_eq!(table.cell(9, 2).unwrap().text.text.trim(), "$298.50");
+        assert_eq!(table.cell(9, 3).unwrap().text.text.trim(), "359");
+        assert_eq!(table.rows[9].kind, designcraft_doc::RowKind::Footer);
+
+        // Footer borders: top is thin (0.5), bottom is thick (1.0)
+        assert_eq!(table.cell(9, 0).unwrap().strokes[0].weight, 0.5);
+        assert_eq!(table.cell(9, 0).unwrap().strokes[2].weight, 1.0);
+
+        // Footnote frame exists below table
+        let fn_item = spread
+            .items
+            .iter()
+            .find(|it| {
+                if it.id == table_item.id {
+                    return false;
+                }
+                it.text_frame()
+                    .and_then(|tf| active.doc.story(tf.story))
+                    .is_some_and(|s| s.text.contains("Sources: Karawang Region Government Office"))
+            })
+            .expect("Footnote text frame should exist on spread");
+
+        assert!(fn_item.bounds().y0 >= table_item.bounds().y1);
+    }
+
+    #[test]
+    fn test_user_reproduction_at_page() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // 1. Generate pages with Card 1
+        let st_card1 = PubgenState {
+            card1_records: vec![
+                vec!["Table".into(), "01.01".into(), "The Rise of Computational Layouts".into()],
+                vec!["Table".into(), "01.02".into(), "Typography in the Digital Renaissance and Print Production in the 21st Century".into()],
+            ],
+            card1_headers: vec!["type".into(), "number".into(), "title".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_range_all: true,
+            card1_preset: 0,
+            card1_append: true,
+            ..Default::default()
+        };
+        execute_generate_pages(&mut app, &st_card1).unwrap();
+
+        // 2. Insert table with Card 2 at page
+        let mut st_card2 = PubgenState {
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_table_footer: true,
+            card2_placement: 2, // At page
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plan/pubgen/samples/sample_3stack_table.csv");
+        if !std::path::Path::new(path).exists() {
+            return;
+        }
+        load_card2_csv(&mut st_card2, path);
+
+        let res = execute_insert_table(&mut app, &st_card2);
+        assert!(res.is_ok(), "insert_table should succeed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.last().unwrap();
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().expect("Table should exist in story");
+
+        for (i, row) in table.rows.iter().enumerate() {
+            let col0 = table.cell(i, 0).map(|c| c.text.text.trim().to_string()).unwrap_or_default();
+            println!("Row {i} (kind={:?}): col0 = '{col0}'", row.kind);
+        }
+        assert_eq!(table.rows.len(), 10);
+
+        let cs = designcraft_compose::compose_story(&active.doc, tf.story, &Default::default());
+        println!("Composed story overset: {:?}", cs.is_overset());
+        assert!(!cs.is_overset(), "Story must not be overset! All rows must fit in table frame");
+        if let Some(frame) = cs.frames.first() {
+            println!("Frame content_height: {}", frame.content_height);
+            if let Some(tfrag) = frame.tables.first() {
+                println!("TableFrag rect: {:?}", tfrag.rect);
+                println!("TableFrag placed cells count: {}", tfrag.cells.len());
+                let placed_rows: std::collections::BTreeSet<_> = tfrag.cells.iter().map(|c| c.row).collect();
+                println!("Placed rows in frame: {:?}", placed_rows);
+                assert_eq!(placed_rows.len(), 10, "All 10 rows must be placed in the frame");
+                for r in 0..10 {
+                    assert!(placed_rows.contains(&r), "Row {r} should be placed in the frame");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_matches_pubgen_row_condition_keywords() {
+        assert!(matches_pubgen_row_condition("Jumlah"));
+        assert!(matches_pubgen_row_condition("JUMLAH / TOTAL"));
+        assert!(matches_pubgen_row_condition("Jumlah:"));
+        assert!(matches_pubgen_row_condition("Tahun 2005"));
+        assert!(matches_pubgen_row_condition("TAHUN"));
+        assert!(matches_pubgen_row_condition("- Jumlah Subtotal"));
+        assert!(matches_pubgen_row_condition("Total"));
+        assert!(matches_pubgen_row_condition("Sum"));
+        assert!(matches_pubgen_row_condition("Subtotal"));
+        assert!(matches_pubgen_row_condition("Year 2026"));
+
+        // Negative tests (Kecamatan / Kabupaten / Desa are region names, not summary break rows)
+        assert!(!matches_pubgen_row_condition("Kab. Karawang"));
+        assert!(!matches_pubgen_row_condition("Kabupaten Karawang"));
+        assert!(!matches_pubgen_row_condition("Kec. Klari"));
+        assert!(!matches_pubgen_row_condition("Kecamatan Klari"));
+        assert!(!matches_pubgen_row_condition("District 1"));
+        assert!(!matches_pubgen_row_condition("Subdistrict"));
+        assert!(!matches_pubgen_row_condition("Kabel Listrik"));
+        assert!(!matches_pubgen_row_condition("Kecap"));
+        assert!(!matches_pubgen_row_condition("Tahunan"));
+        assert!(!matches_pubgen_row_condition("Meninggal Dunia"));
+        assert!(!matches_pubgen_row_condition(""));
+    }
+
+    #[test]
+    fn test_execute_insert_table_row_conditions_kbda_2005() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState {
+            card2_first_row_header: true,
+            card2_col_numbers: false,
+            card2_table_footer: false, // Notice table_footer is FALSE, row condition formats it!
+            card2_row_conditions: true,
+            card2_placement: 1, // New frame
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+
+        let content = "\
+Keadaan Korban (Condition of Victims);Persentase 2005 (%);Korban 2005 (Orang);Persentase 2006 (%);Korban 2006 (Orang)
+Meninggal Dunia (Died);8,96;10;42,54;77
+Luka Berat (Badly Injured);28,89;33;34,81;63
+Luka Ringan (Slightly Injured);62,15;70;22,65;41
+JUMLAH / TOTAL;100,00;113;100,00;181";
+        st.card2_delim = Some(detect_delimiter(content));
+        st.card2_matrix = parse_csv_content(content);
+        assert_eq!(st.card2_matrix.len(), 5);
+        assert_eq!(st.card2_delim, Some(';'));
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "insert_table with kbda_2005.csv should succeed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+
+        let table_item = spread
+            .items
+            .iter()
+            .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty()))
+            .expect("Table item should exist on spread");
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().expect("Table should exist in story");
+
+        assert_eq!(table.rows.len(), 5);
+        assert_eq!(table.columns.len(), 5);
+
+        // Row 0: Header
+        assert_eq!(table.cell(0, 0).unwrap().strokes[0].weight, 1.0, "Top of table rule 1.0pt");
+        assert_eq!(table.cell(0, 0).unwrap().strokes[2].weight, 0.5, "Header bottom rule 0.5pt");
+
+        // Row 1: Data row 1 ("Meninggal Dunia")
+        assert_eq!(table.cell(1, 0).unwrap().strokes[0].weight, 0.5);
+        assert_eq!(table.cell(1, 0).unwrap().strokes[2].weight, 0.0, "Interior data row unbordered");
+
+        // Row 2: Data row 2 ("Luka Berat")
+        assert_eq!(table.cell(2, 0).unwrap().strokes[0].weight, 0.0);
+        assert_eq!(table.cell(2, 0).unwrap().strokes[2].weight, 0.0);
+
+        // Row 3: Data row 3 ("Luka Ringan")
+        assert_eq!(table.cell(3, 0).unwrap().strokes[0].weight, 0.0);
+        // Bottom of Row 3 is top of Row 4 (0.5pt)!
+        assert_eq!(table.cell(3, 0).unwrap().strokes[2].weight, 0.5);
+
+        // Row 4: JUMLAH / TOTAL
+        assert_eq!(table.cell(4, 0).unwrap().text.text.trim(), "JUMLAH / TOTAL");
+        assert_eq!(table.cell(4, 0).unwrap().strokes[0].weight, 0.5, "Row 4 top border 0.5pt");
+        assert_eq!(table.cell(4, 0).unwrap().strokes[2].weight, 1.0, "Row 4 bottom border 1.0pt (bottom of table)");
+    }
+
+    #[test]
+    fn test_execute_insert_table_intermediate_condition_rows() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Kategori".into(), "Jumlah Kasus".into()],
+                vec!["Tahun 2005".into(), "100".into()], // Condition row 1 (intermediate)
+                vec!["Penyakit A".into(), "40".into()],
+                vec!["Penyakit B".into(), "60".into()],
+                vec!["Jumlah Subtotal".into(), "100".into()], // Condition row 2 (intermediate)
+                vec!["Tahun 2006".into(), "150".into()],      // Condition row 3 (intermediate)
+                vec!["Penyakit A".into(), "70".into()],
+                vec!["Jumlah Total".into(), "250".into()], // Condition row 4 (last row)
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: false,
+            card2_table_footer: false,
+            card2_row_conditions: true,
+            card2_placement: 1,
+            card2_style: 3, // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok());
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item =
+            spread.items.iter().find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty())).unwrap();
+
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        assert_eq!(table.rows.len(), 8);
+
+        // Row 1: "Tahun 2005" (intermediate condition row)
+        assert_eq!(table.cell(1, 0).unwrap().strokes[0].weight, 0.5);
+        assert_eq!(table.cell(1, 0).unwrap().strokes[2].weight, 0.5);
+
+        // Row 2: "Penyakit A" (normal data row)
+        assert_eq!(table.cell(2, 0).unwrap().strokes[0].weight, 0.5); // from row 1 bottom
+        assert_eq!(table.cell(2, 0).unwrap().strokes[2].weight, 0.0); // unbordered
+
+        // Row 4: "Jumlah Subtotal" (intermediate condition row)
+        assert_eq!(table.cell(4, 0).unwrap().strokes[0].weight, 0.5);
+        assert_eq!(table.cell(4, 0).unwrap().strokes[2].weight, 0.5);
+
+        // Row 7: "Jumlah Total" (last row)
+        assert_eq!(table.cell(7, 0).unwrap().strokes[0].weight, 0.5);
+        assert_eq!(table.cell(7, 0).unwrap().strokes[2].weight, 1.0);
+    }
+
+    #[test]
+    fn test_is_numeric_or_dash() {
+        // Dashes and missing data symbols
+        assert!(is_numeric_or_dash("-"));
+        assert!(is_numeric_or_dash("—"));
+        assert!(is_numeric_or_dash("–"));
+        assert!(is_numeric_or_dash("- "));
+        assert!(is_numeric_or_dash("--"));
+        assert!(is_numeric_or_dash("−"));
+        assert!(is_numeric_or_dash("..."));
+        assert!(is_numeric_or_dash("…"));
+        assert!(is_numeric_or_dash("N/A"));
+        assert!(is_numeric_or_dash("n/a"));
+        assert!(is_numeric_or_dash("NA"));
+        assert!(is_numeric_or_dash("na"));
+
+        // Integers and floats
+        assert!(is_numeric_or_dash("0"));
+        assert!(is_numeric_or_dash("7"));
+        assert!(is_numeric_or_dash("4.02"));
+        assert!(is_numeric_or_dash("1.65"));
+        assert!(is_numeric_or_dash("-12.5"));
+        assert!(is_numeric_or_dash("−12.5"));
+        assert!(is_numeric_or_dash("100"));
+
+        // Accounting parentheses
+        assert!(is_numeric_or_dash("(12.5)"));
+        assert!(is_numeric_or_dash("(100)"));
+
+        // Thousands and European / Indonesian formats
+        assert!(is_numeric_or_dash("1,234.56"));
+        assert!(is_numeric_or_dash("1.234,56"));
+        assert!(is_numeric_or_dash("1,000"));
+
+        // Percentages
+        assert!(is_numeric_or_dash("21.32%"));
+        assert!(is_numeric_or_dash("100%"));
+
+        // Text strings (must return false)
+        assert!(!is_numeric_or_dash(""));
+        assert!(!is_numeric_or_dash("   "));
+        assert!(!is_numeric_or_dash("Warungbambu"));
+        assert!(!is_numeric_or_dash("Desa / Village"));
+        assert!(!is_numeric_or_dash("Jumlah"));
+        assert!(!is_numeric_or_dash("Total"));
+        assert!(!is_numeric_or_dash("Plawad"));
+    }
+
+    #[test]
+    fn test_execute_insert_table_header_and_col_alignments() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Desa/Kelurahan".into(), "Luas Wilayah".into(), "Persentase".into(), "Keterangan".into()],
+                vec!["Warungbambu".into(), "1.65".into(), "21.32".into(), "Valid".into()],
+                vec!["Kondangjaya".into(), "2.44".into(), "8.84".into(), "Valid".into()],
+                vec!["Tegalsawah".into(), "-".into(), "13.48".into(), "Special".into()],
+                vec!["Total".into(), "4.09".into(), "43.64".into(), "Summary".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_placement: 1, // New frame
+            card2_style: 3,     // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "Table insertion failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item =
+            spread.items.iter().find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty())).unwrap();
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        // 1 header row + 1 column number row + 4 data rows = 6 rows
+        assert_eq!(table.rows.len(), 6);
+        assert_eq!(table.columns.len(), 4);
+
+        // Row 0: Table Header -> all cells must be Center aligned and VerticalJustification::Center
+        for c in 0..4 {
+            let cell = table.cell(0, c).unwrap();
+            assert_eq!(cell.vj, designcraft_doc::VerticalJustification::Center, "Header col {c} vj should be Center");
+            assert_eq!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Header col {c} align should be Center");
+        }
+
+        // Row 1: Column number row (1), (2), (3), (4) -> all cells must be Center aligned
+        for c in 0..4 {
+            let cell = table.cell(1, c).unwrap();
+            assert_eq!(cell.vj, designcraft_doc::VerticalJustification::Center, "Col number {c} vj should be Center");
+            assert_eq!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Col number {c} align should be Center");
+        }
+
+        // Data rows (rows 2..6):
+        // Col 0: Column 1 (index 0) is excluded from centering -> align should NOT be Center
+        for r in 2..6 {
+            let cell = table.cell(r, 0).unwrap();
+            assert_ne!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Data row {r} col 0 should remain left aligned");
+        }
+
+        // Col 1: Majority numeric / dash ("1.65", "2.44", "-", "4.09") -> must be Center aligned
+        for r in 2..6 {
+            let cell = table.cell(r, 1).unwrap();
+            assert_eq!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Data row {r} col 1 should be Center aligned");
+        }
+
+        // Col 2: All numeric ("21.32", "8.84", "13.48", "43.64") -> must be Center aligned
+        for r in 2..6 {
+            let cell = table.cell(r, 2).unwrap();
+            assert_eq!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Data row {r} col 2 should be Center aligned");
+        }
+
+        // Col 3: Text descriptions ("Valid", "Special", "Summary") -> must NOT be Center aligned
+        for r in 2..6 {
+            let cell = table.cell(r, 3).unwrap();
+            assert_ne!(cell.text.paras[0].para.align, Some(designcraft_doc::Align::Center), "Data row {r} col 3 should remain left aligned");
+        }
+    }
+
+    #[test]
+    fn test_execute_insert_table_color_theme_default() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Kecamatan".into(), "2021".into(), "2022".into(), "2025".into()],
+                vec!["Cikampek".into(), "10".into(), "20".into(), "30".into()],
+                vec!["Klari".into(), "15".into(), "25".into(), "35".into()],
+                vec!["Karawang".into(), "25".into(), "45".into(), "65".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_table_footer: true,
+            card2_color_theme: 0, // Default: #FFCB56 - #FFE9A9
+            card2_placement: 1,   // New frame
+            card2_style: 3,       // Horizontal Rules
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "Table insertion failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item =
+            spread.items.iter().find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty())).unwrap();
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        // 1 header row + 1 col numbers row + 3 data rows (last is footer) = 5 rows
+        assert_eq!(table.rows.len(), 5);
+
+        // Header row (row 0) must have fill == "#FFCB56"
+        for c in 0..4 {
+            let cell = table.cell(0, c).unwrap();
+            assert_eq!(cell.fill, "#FFCB56");
+            assert_eq!(cell.fill_tint, 1.0);
+        }
+
+        // Col number row (row 1) must have fill == "#FFE9A9"
+        for c in 0..4 {
+            let cell = table.cell(1, c).unwrap();
+            assert_eq!(cell.fill, "#FFE9A9");
+            assert_eq!(cell.fill_tint, 1.0);
+        }
+
+        // Interior data rows (rows 2, 3) must have uncolored fill
+        for r in 2..4 {
+            for c in 0..4 {
+                let cell = table.cell(r, c).unwrap();
+                assert_eq!(cell.fill, designcraft_color::swatch::NONE);
+            }
+        }
+
+        // Footer row (row 4) must have fill == "#FFCB56"
+        for c in 0..4 {
+            let cell = table.cell(4, c).unwrap();
+            assert_eq!(cell.fill, "#FFCB56");
+            assert_eq!(cell.fill_tint, 1.0);
+        }
+
+        // Swatches must be registered in doc
+        assert!(active.doc.swatches.iter().any(|s| s.name == "#FFCB56"));
+        assert!(active.doc.swatches.iter().any(|s| s.name == "#FFE9A9"));
+    }
+
+    #[test]
+    fn test_execute_insert_table_color_theme_metadata_override() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["theme".into(), "#F3D2AF - #F8EADC".into()],
+                vec!["Kecamatan".into(), "2021".into(), "2025".into()],
+                vec!["Cikampek".into(), "10".into(), "30".into()],
+                vec!["Karawang".into(), "25".into(), "65".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_table_footer: true,
+            card2_color_theme: 0, // default is 0, but metadata overrides to #F3D2AF - #F8EADC
+            card2_placement: 1,
+            card2_style: 3,
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "Table insertion failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item =
+            spread.items.iter().find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty())).unwrap();
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        // 1 header row + 1 col numbers row + 2 data rows = 4 rows
+        assert_eq!(table.rows.len(), 4);
+
+        // Header row must have #F3D2AF
+        assert_eq!(table.cell(0, 0).unwrap().fill, "#F3D2AF");
+        // Col number row must have #F8EADC
+        assert_eq!(table.cell(1, 0).unwrap().fill, "#F8EADC");
+        // Interior data row must have NONE
+        assert_eq!(table.cell(2, 0).unwrap().fill, designcraft_color::swatch::NONE);
+        // Footer row must have #F3D2AF
+        assert_eq!(table.cell(3, 0).unwrap().fill, "#F3D2AF");
+    }
+
+    #[test]
+    fn test_execute_insert_table_bilingual_english_italic() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            card2_matrix: vec![
+                vec!["Kecamatan / District".into(), "Luas / Area".into(), "Keterangan\nDescription".into()],
+                vec!["Cikampek".into(), "10".into(), "Aktif / Active".into()],
+                vec!["Karawang".into(), "25".into(), "Selesai / Finished".into()],
+            ],
+            card2_first_row_header: true,
+            card2_col_numbers: false,
+            card2_table_footer: false,
+            card2_placement: 1,
+            card2_style: 3,
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "Table insertion failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item =
+            spread.items.iter().find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty())).unwrap();
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        // Check Header Cell (0, 0): "Kecamatan / District"
+        let cell_0_0 = table.cell(0, 0).unwrap();
+        assert_eq!(cell_0_0.text.text, "Kecamatan / District");
+        // "Kecamatan / " is upright (not italic)
+        let fmt_id = cell_0_0.text.char_format_of(0);
+        assert_ne!(fmt_id.over.font_style.as_deref(), Some("Italic"));
+        assert_ne!(fmt_id.over.font_style.as_deref(), Some("Bold Italic"));
+        // "District" (starting at byte 12) must be Italic / Bold Italic
+        let fmt_en = cell_0_0.text.char_format_of(12);
+        let en_style = fmt_en.over.font_style.as_deref().unwrap_or("");
+        assert!(en_style.contains("Italic"), "English text 'District' must be italic, got: {en_style}");
+
+        // Check Data Cell (1, 2): "Aktif / Active"
+        let cell_1_2 = table.cell(1, 2).unwrap();
+        assert_eq!(cell_1_2.text.text, "Aktif / Active");
+        let fmt_aktif = cell_1_2.text.char_format_of(0);
+        assert_ne!(fmt_aktif.over.font_style.as_deref(), Some("Italic"));
+        let fmt_active = cell_1_2.text.char_format_of(8);
+        let active_style = fmt_active.over.font_style.as_deref().unwrap_or("");
+        assert!(active_style.contains("Italic"), "English text 'Active' must be italic, got: {active_style}");
+
+        // Check Cell with line break (0, 2): "Keterangan\u{2028}Description"
+        let cell_0_2 = table.cell(0, 2).unwrap();
+        let desc_byte = cell_0_2.text.text.find("Description").unwrap();
+        let fmt_desc = cell_0_2.text.char_format_of(desc_byte);
+        let desc_style = fmt_desc.over.font_style.as_deref().unwrap_or("");
+        assert!(desc_style.contains("Italic"), "Line 2 English text 'Description' must be italic, got: {desc_style}");
+    }
+
+    #[test]
+    fn test_execute_insert_table_with_theme_from_div_csv() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // Simulate CSV generated with theme row from DIV sheet (table_theme: #9E7EB5 - #C4A4DA)
+        let matrix = vec![
+            vec!["Kecamatan / District".into(), "Luas / Area".into()],
+            vec!["Karawang Timur".into(), "32.5".into()],
+            vec!["Jumlah / Total".into(), "32.5".into()],
+            vec!["theme".into(), "#9E7EB5 - #C4A4DA".into()],
+        ];
+
+        let st = PubgenState {
+            card2_matrix: matrix,
+            card2_first_row_header: true,
+            card2_col_numbers: true,
+            card2_table_footer: true,
+            card2_placement: 1,
+            card2_style: 3,
+            ..Default::default()
+        };
+
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "Table insertion failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.first().unwrap();
+        let table_item =
+            spread.items.iter().find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|s| !s.tables.is_empty())).unwrap();
+        let tf = table_item.text_frame().unwrap();
+        let story = active.doc.story(tf.story).unwrap();
+        let table = story.tables.values().next().unwrap();
+
+        // 4 rows in table (metadata theme row was stripped):
+        // Row 0: Header (fill = #9E7EB5)
+        // Row 1: Col numbers (fill = #C4A4DA)
+        // Row 2: Data row (fill = NONE)
+        // Row 3: Footer row (fill = #9E7EB5)
+        assert_eq!(table.rows.len(), 4);
+        assert_eq!(table.cell(0, 0).unwrap().fill, "#9E7EB5");
+        assert_eq!(table.cell(1, 0).unwrap().fill, "#C4A4DA");
+        assert_eq!(table.cell(2, 0).unwrap().fill, designcraft_color::swatch::NONE);
+        assert_eq!(table.cell(3, 0).unwrap().fill, "#9E7EB5");
+    }
+}
