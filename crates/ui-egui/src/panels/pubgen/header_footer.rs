@@ -119,7 +119,7 @@ fn card_header_footer_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState,
     card_header_footer_body_ui(app, ui, st, t);
 }
 
-fn card_header_footer_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+pub(crate) fn card_header_footer_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     // Fetch all templates (built-in + user custom) from engine
     let templates = designcraft_engine::cmd::header_footer::all_templates(&app.session);
 

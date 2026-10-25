@@ -12,6 +12,7 @@ use std::path::Path;
 use zip::ZipArchive;
 
 use super::locale;
+use super::*;
 
 /// Parsed worksheet data from an XLSX file.
 #[derive(Debug, Clone, Default)]
@@ -3164,7 +3165,7 @@ fn cover_style_index(spec: &str) -> Option<usize> {
 }
 
 /// Copy the `COVER` sheet values into the Publication Cover card.
-fn apply_excel_cover(st: &mut PubgenState, cover: &excel::ExcelCoverData, base_dir: Option<&Path>) {
+fn apply_excel_cover(st: &mut PubgenState, cover: &ExcelCoverData, base_dir: Option<&Path>) {
     if let Some(idx) = cover_style_index(&cover.style) {
         st.cover_style = idx;
     }
@@ -3241,7 +3242,7 @@ fn apply_excel_cover(st: &mut PubgenState, cover: &excel::ExcelCoverData, base_d
 }
 
 pub fn execute_excel_to_csvs(st: &mut PubgenState, path: &str) -> Result<String, String> {
-    let pkg = excel::execute_convert_excel(path)?;
+    let pkg = execute_convert_excel(path)?;
     st.excel_source_path = path.to_string();
     st.excel_had_cover = pkg.cover.is_some();
     if let Some(cover) = &pkg.cover {
@@ -3392,7 +3393,7 @@ pub fn execute_download_csv_zip(app: &mut DesignApp, st: &mut PubgenState) -> Re
             }
         } else {
             let files_ref: Vec<(&str, &str)> = files.iter().map(|(n, c)| (n.as_str(), c.as_str())).collect();
-            let bytes = excel::create_csv_zip(&files_ref)?;
+            let bytes = create_csv_zip(&files_ref)?;
             st.generated_zip_bytes = bytes;
             if st.generated_zip_name.is_empty() {
                 let stem = if !st.card1_path.is_empty() {

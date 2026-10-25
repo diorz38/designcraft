@@ -2,7 +2,7 @@
 
 use super::*;
 
-fn adjust_hex(hex: &str, factor: f32) -> String {
+pub(crate) fn adjust_hex(hex: &str, factor: f32) -> String {
     let clean = hex.trim().trim_start_matches('#');
     if clean.len() != 6 {
         return hex.to_string();
@@ -574,7 +574,7 @@ fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: 
     }
 }
 
-fn show_style_thumbnail_tooltip(ui: &mut Ui, style_idx: usize, name: &str, t: &Tokens) {
+pub(crate) fn show_style_thumbnail_tooltip(ui: &mut Ui, style_idx: usize, name: &str, t: &Tokens) {
     ui.vertical(|ui| {
         ui.label(RichText::new(name).size(12.0).strong().color(t.text_strong));
         ui.add_space(4.0);

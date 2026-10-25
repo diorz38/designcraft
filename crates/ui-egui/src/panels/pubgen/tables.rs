@@ -1082,7 +1082,7 @@ pub fn detect_condition_rows(matrix: &[Vec<String>], first_row_header: bool) -> 
 }
 
 /// Estimate raw advance width of a string in points (based on standard 12pt proportional font).
-fn estimate_text_advance(text: &str) -> f64 {
+pub(crate) fn estimate_text_advance(text: &str) -> f64 {
     let mut w: f64 = 0.0;
     for c in text.chars() {
         w += match c {
@@ -1110,7 +1110,9 @@ fn estimate_text_advance(text: &str) -> f64 {
 }
 
 /// Estimate single-line text advance width in points (based on standard 12pt proportional font).
-fn estimate_text_width(text: &str, is_uppercase_kicker: bool) -> f64 {
+pub(crate) fn estimate_text_width(text: &str, is_uppercase_kicker: bool) -> f64 {
     let w = estimate_text_advance(text);
     // Headroom buffer so Knuth-Plass / greedy line breaker never breaks single-line text
+    let buffer = if is_uppercase_kicker { 12.0 } else { 8.0 };
+    (w + buffer).max(20.0)
 }

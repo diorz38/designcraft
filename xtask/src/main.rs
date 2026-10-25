@@ -204,6 +204,14 @@ fn cmd_doctest() -> Result<(), String> {
     run(c, "cargo test --workspace --doc")
 }
 
+/// The Pubgen panel lives behind a cargo feature, so default builds never compile it: check it
+/// explicitly or a refactor of `panels/pubgen` can pass every gate and still not build.
+fn cmd_pubgen() -> Result<(), String> {
+    let mut c = cargo();
+    c.args(["check", "-q", "-p", "designcraft-ui-egui", "--features", "pubgen"]);
+    run(c, "cargo check -p designcraft-ui-egui --features pubgen")
+}
+
 fn cmd_ci() -> Result<(), String> {
     type Step = (&'static str, Box<dyn Fn() -> Result<(), String>>);
     let steps: Vec<Step> = vec![
@@ -225,6 +233,7 @@ fn cmd_ci() -> Result<(), String> {
             }),
         ),
         ("test", Box::new(cmd_test)),
+        ("pubgen", Box::new(cmd_pubgen)),
         ("i18n-report", Box::new(cmd_i18n_report)),
         ("doctest", Box::new(cmd_doctest)),
         ("assets", Box::new(|| assets::run(&root()))),

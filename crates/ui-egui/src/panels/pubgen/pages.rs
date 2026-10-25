@@ -352,7 +352,7 @@ fn row_template_slots(
     RowSlots { text, story, image, images_resolved, rtfs_resolved }
 }
 
-fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
+pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
     if st.card1_records.is_empty() {
         return Err("No records to generate".into());
     }

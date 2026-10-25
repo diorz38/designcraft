@@ -3,7 +3,7 @@
 use super::*;
 
 /// The world bounds of one item, read back through `document.inspect`.
-fn item_bounds(app: &mut DesignApp, id: u64) -> Option<[f64; 4]> {
+pub(crate) fn item_bounds(app: &mut DesignApp, id: u64) -> Option<[f64; 4]> {
     fn scan(v: &Value, id: u64) -> Option<[f64; 4]> {
         let b = v.get("bounds").and_then(Value::as_array)?;
         if v.get("id").and_then(Value::as_u64) != Some(id) || b.len() != 4 {
