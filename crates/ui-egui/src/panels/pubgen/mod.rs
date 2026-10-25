@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use egui::{Color32, RichText, Sense, Ui, pos2, vec2};
+use egui::{Color32, Rect, Response, RichText, Sense, Stroke, Ui, pos2, vec2};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -44,6 +44,9 @@ const BUSINESS_STYLE: usize = 8;
 /// Index of the "Urban Angle" cover style — the diagonal-wedge cityscape cover derived from
 /// `design-6.designcraft`, sharing the Report palette.
 const URBAN_STYLE: usize = 9;
+
+/// Index of the "Tri-Color Bands" cover style — the executive blue/green/orange template.
+const TRICOLOR_STYLE: usize = 10;
 
 /// Theme preset index and colours of the reference annual-report cover (navy + orange).
 const REPORT_THEME: usize = 6;
@@ -346,6 +349,18 @@ pub struct PubgenState {
     // Card 3: Quick Actions
     #[serde(default)]
     pub card3_status: Option<(String, bool)>,
+    /// Active/last imported master Excel source path (.xlsx)
+    #[serde(default)]
+    pub excel_source_path: String,
+    /// Status message for Master Excel actions
+    #[serde(default)]
+    pub excel_status: Option<(String, bool)>,
+    /// Status message for TOC actions
+    #[serde(default)]
+    pub toc_status: Option<(String, bool)>,
+    /// Status message for Page Utilities actions
+    #[serde(default)]
+    pub utilities_status: Option<(String, bool)>,
     /// Path to RTF file for Page from RTF in Quick Actions
     #[serde(default)]
     pub rtf_path: String,
@@ -367,6 +382,9 @@ pub struct PubgenState {
     /// Pair bilingual headings (ID / EN) of the same style on a Dual Lang page into one TOC row.
     #[serde(default)]
     pub toc_pair_bilingual: bool,
+    /// Insert generated TOC on a new blank page after the currently selected page
+    #[serde(default)]
+    pub toc_insert_after: bool,
     #[serde(default)]
     pub toc_layout_style: usize,
     /// Quick Actions "TOC style": 0 TOC Entry (every tagged paragraph, the original behaviour),
@@ -403,12 +421,15 @@ pub struct PubgenState {
     /// Target locale for single-language generation mode.
     #[serde(default)]
     pub locale: Locale,
-    /// Bilingual / Dual-language generation mode: false = Single Lang (default), true = Dual Lang.
+    /// Bilingual / Dual-language generation mode: false = Single Lang, true = Dual Lang.
     #[serde(default)]
     pub bilingual_output: bool,
     /// Document-level language setting: "" = leave run language untouched (default), else language name e.g. "Indonesian".
     #[serde(default)]
     pub doc_language: String,
+    /// Show the PubGen About modal dialog.
+    #[serde(skip)]
+    pub show_about_dialog: bool,
 
     // Card: Publication Cover (before Quick Actions)
     #[serde(default)]
@@ -564,6 +585,10 @@ impl Default for PubgenState {
             card2_status: None,
             card2_delim: None,
             card3_status: None,
+            excel_source_path: String::new(),
+            excel_status: None,
+            toc_status: None,
+            utilities_status: None,
             rtf_path: String::new(),
             image_path: String::new(),
             image_as_background: false,
@@ -571,6 +596,7 @@ impl Default for PubgenState {
             toc_title: default_toc_title(),
             toc_include_self: false,
             toc_pair_bilingual: false,
+            toc_insert_after: false,
             toc_layout_style: 0,
             toc_kind: 0,
             card3_renumber_start: 1,
@@ -602,6 +628,7 @@ impl Default for PubgenState {
             locale: Locale::Id,
             bilingual_output: false,
             doc_language: String::new(),
+            show_about_dialog: false,
             hf_style: default_hf_style(),
             hf_custom_name: String::new(),
             hf_sided: 0,
@@ -765,6 +792,156 @@ pub fn execute_set_page_margins(app: &mut DesignApp) -> Result<String, String> {
     Ok("Page margins set: Top 20.20 mm, Bottom 20 mm, Inside 19 mm, Outside 15 mm".to_string())
 }
 
+/// Toggle button for Language Mode: Dual Lang (active: blue accent fill) / Single Lang (inactive: outline).
+fn toggle_lang_button(ui: &mut Ui, t: &Tokens, bilingual: bool) -> Option<bool> {
+    let label = if bilingual { "Dual Lang" } else { "Single Lang" };
+    let tip = if bilingual {
+        "Language Mode: Dual Lang (Bilingual) active. Click to switch to Single Lang."
+    } else {
+        "Language Mode: Single Lang active. Click to switch to Dual Lang."
+    };
+    let w = 84.0;
+    let h = 24.0;
+    let (r, resp) = ui.allocate_exact_size(vec2(w, h), Sense::click());
+    let resp = resp.on_hover_text(tip);
+    let p = ui.painter();
+    if bilingual {
+        let fill = if resp.is_pointer_button_down_on() {
+            Color32::from_rgb((t.accent.r() as u16 * 4 / 5) as u8, (t.accent.g() as u16 * 4 / 5) as u8, (t.accent.b() as u16 * 4 / 5) as u8)
+        } else if resp.hovered() {
+            Color32::from_rgb(
+                (t.accent.r() as u16 + 20).min(255) as u8,
+                (t.accent.g() as u16 + 20).min(255) as u8,
+                (t.accent.b() as u16 + 20).min(255) as u8,
+            )
+        } else {
+            t.accent
+        };
+        p.rect_filled(r, 3.0, fill);
+        p.rect_stroke(r, 3.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+        crate::rtl::paint(p, r.center(), egui::Align2::CENTER_CENTER, label, crate::theme::semibold(11.0), Color32::WHITE);
+    } else {
+        if resp.is_pointer_button_down_on() {
+            p.rect_filled(r, 3.0, t.well);
+        } else if resp.hovered() {
+            p.rect_filled(r, 3.0, t.hover);
+        }
+        p.rect_stroke(r, 3.0, Stroke::new(1.0, t.field_border), egui::StrokeKind::Inside);
+        crate::rtl::paint(p, r.center(), egui::Align2::CENTER_CENTER, label, crate::theme::semibold(11.0), t.text_dim);
+    }
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+
+    if resp.clicked() { Some(!bilingual) } else { None }
+}
+
+/// Load and cache the PubGen logo from `plan/pubgen/docs_images/pubgen_logo.png`.
+fn pubgen_logo_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    let key = egui::Id::new("pubgen_logo_texture");
+    if let Some(tex) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(key)) {
+        return Some(tex);
+    }
+    let candidates = [
+        "plan/pubgen/docs_images/pubgen_logo.png",
+        "plan\\pubgen\\docs_images\\pubgen_logo.png",
+        "docs_images/pubgen_logo.png",
+        "pubgen_logo.png",
+        "plan/pubgen/docs_images/pubgen_logo.jpg",
+        "plan\\pubgen\\docs_images\\pubgen_logo.jpg",
+    ];
+    let mut bytes = None;
+    for cand in &candidates {
+        if let Ok(b) = std::fs::read(cand) {
+            bytes = Some(b);
+            break;
+        }
+    }
+    let bytes = bytes?;
+    let pm = designcraft_render::decode_pixmap_page(&bytes, 0)?;
+    let ci = egui::ColorImage::from_rgba_premultiplied([pm.width() as usize, pm.height() as usize], pm.data_as_u8_slice());
+    let fitted = crate::widgets::fit_texture(ci, 256);
+    let tex = ctx.load_texture("pubgen_logo_dialog", fitted, egui::TextureOptions::LINEAR);
+    ctx.data_mut(|d| d.insert_temp(key, tex.clone()));
+    Some(tex)
+}
+
+/// About PubGen popup dialog modal styled like About DesignCraft.
+fn about_pubgen_dialog(app: &mut DesignApp, ctx: &egui::Context, open: &mut bool, t: &Tokens) {
+    let area = egui::Id::new("about_pubgen_modal");
+    let instance = area.with("placement");
+    let resp = crate::modal_drag::modal(ctx, area, instance).show(ctx, |ui| {
+        ui.set_width(420.0);
+        let margin = egui::Frame::popup(ui.style()).inner_margin;
+        let top = ui.cursor().top();
+        let title_row = Rect::from_min_max(
+            pos2(ui.max_rect().left() - margin.leftf(), top - margin.topf()),
+            pos2(ui.max_rect().right() + margin.rightf(), top + ui.spacing().interact_size.y),
+        );
+        crate::modal_drag::title_drag(ui, instance, title_row);
+
+        ui.vertical_centered(|ui| {
+            ui.add_space(10.0);
+            if let Some(tex) = pubgen_logo_texture(ctx) {
+                let logo_size = vec2(72.0, 72.0);
+                ui.image((tex.id(), logo_size));
+            } else {
+                let (r, _) = ui.allocate_exact_size(vec2(72.0, 72.0), Sense::hover());
+                let p = ui.painter();
+                p.rect_filled(r, 6.0, t.accent);
+                crate::rtl::paint(p, r.center(), egui::Align2::CENTER_CENTER, "PubGen", crate::theme::semibold(16.0), Color32::WHITE);
+            }
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new("PubGen").font(crate::theme::semibold(22.0)).color(t.text_strong));
+            ui.label(egui::RichText::new("Publication Generator").font(crate::theme::semibold(14.0)).color(t.text));
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new("Automated multi-page statistical report & catalogue publishing generator for BPS.").size(12.0).color(t.text_dim),
+            );
+            ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(10.0);
+
+            ui.label(egui::RichText::new("Developed by IPDS BPS Karawang\nBudi Yunior (dior@bps.go.id)").size(12.5).color(t.text_strong));
+            ui.add_space(4.0);
+
+            let mail_resp = ui
+                .add(egui::Label::new(egui::RichText::new("dior@bps.go.id").size(12.0).color(t.accent).underline()).sense(Sense::click()))
+                .on_hover_text("Send email to dior@bps.go.id")
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if mail_resp.clicked() {
+                app.ui.pending_urls.push("mailto:dior@bps.go.id".to_string());
+            }
+
+            ui.add_space(16.0);
+            if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&app.ui.language, "  Close  "))).clicked() {
+                *open = false;
+            }
+            ui.add_space(6.0);
+        });
+    });
+
+    if resp.should_close() {
+        *open = false;
+    }
+}
+
+/// A prominent outline button for primary workflow actions (Master Excel ingest).
+fn primary_outline_button(ui: &mut Ui, t: &Tokens, label: &str, width: f32) -> Response {
+    let (r, resp) = ui.allocate_exact_size(vec2(width, 24.0), Sense::click());
+    let p = ui.painter();
+    if resp.is_pointer_button_down_on() {
+        p.rect_filled(r, 3.0, t.well);
+    } else if resp.hovered() {
+        p.rect_filled(r, 3.0, t.hover);
+    } else {
+        let bg = Color32::from_rgba_unmultiplied(t.accent.r(), t.accent.g(), t.accent.b(), 26);
+        p.rect_filled(r, 3.0, bg);
+    }
+    p.rect_stroke(r, 3.0, Stroke::new(1.2, t.accent), egui::StrokeKind::Inside);
+    crate::rtl::paint(p, r.center(), egui::Align2::CENTER_CENTER, label, crate::theme::semibold(11.0), t.text_strong);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    resp
+}
+
 fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     ui.horizontal(|ui| {
         ui.set_min_height(28.0);
@@ -772,28 +949,10 @@ fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
         let (r, _) = ui.allocate_exact_size(vec2(g.size().x + 6.0, 28.0), Sense::hover());
         ui.painter().galley(pos2(r.min.x, r.center().y - g.size().y / 2.0), g, t.text_strong);
 
-        // 4. "AI Translator" button (position on top Panel Pubgen right after Pubgen Panel Name)
-        let backend_ready = ai::backend_from_prefs(app).is_some();
-        let ai_setup_label = if backend_ready { "AI Translator \u{2713}" } else { "AI Translator" };
-        let ai_setup_tip = if backend_ready {
-            "AI Provider configured and ready. Click to change settings, API key, or model."
-        } else {
-            "Click to set up AI translation provider (Groq API key & model selection, or offline translator)."
-        };
-        let ai_setup_resp = outline_button(ui, ai_setup_label, 92.0).on_hover_text(ai_setup_tip);
-        if ai_setup_resp.clicked() {
-            st.ai_dialog = Some(ai::AiSetupDialog::open(app));
-        }
-
-        let mode_raw = if st.bilingual_output { "Dual Lang" } else { "Single Lang" };
-        let lang = app.ui.language.clone();
-        let mode_label = crate::i18n::tr(&lang, mode_raw);
-        let mode_tip = "Single Lang: generate the active output language only.\n\
-                        Dual Lang (Bilingual): generate both languages, per the sheet pattern rules (see docs/pubgen-guide.md).";
-        let mode_resp = outline_button(ui, mode_label, 80.0).on_hover_text(mode_tip);
-        if mode_resp.clicked() {
+        // Language Mode toggle button: Dual Lang (active blue) / Single Lang (inactive outline)
+        if let Some(new_mode) = toggle_lang_button(ui, t, st.bilingual_output) {
             let was_bilingual = st.bilingual_output;
-            st.bilingual_output = !st.bilingual_output;
+            st.bilingual_output = new_mode;
             let mode_str = if st.bilingual_output { "Dual Lang (Bilingual)" } else { "Single Lang" };
             st.header_status = Some((format!("Mode: {mode_str}"), true));
             if let Some(old_title) = toc_kind_title(st.toc_kind, was_bilingual)
@@ -803,6 +962,30 @@ fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
                 st.toc_title = new_title.to_string();
             }
         }
+
+        // AI Translator button
+        let backend_ready = ai::backend_from_prefs(app).is_some();
+        let ai_setup_label = if backend_ready { "AI Translator \u{2713}" } else { "AI Translator" };
+        let ai_setup_tip = if backend_ready {
+            "AI Provider configured and ready. Click to change settings, API key, or model."
+        } else {
+            "Click to set up AI translation provider (Groq API key & model selection, or offline translator)."
+        };
+        let ai_setup_resp = outline_button(ui, ai_setup_label, 90.0).on_hover_text(ai_setup_tip);
+        if ai_setup_resp.clicked() {
+            st.ai_dialog = Some(ai::AiSetupDialog::open(app));
+        }
+
+        // Justify-between: right-aligned About icon button
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let about_btn = ui
+                .add(egui::Button::new(RichText::new("\u{2139}").size(13.0).color(t.text_dim)).frame(false))
+                .on_hover_text("About PubGen")
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if about_btn.clicked() {
+                st.show_about_dialog = true;
+            }
+        });
     });
 
     ui.horizontal(|ui| {
@@ -810,7 +993,7 @@ fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
         let lang = app.ui.language.clone();
         let backend_ready = ai::backend_from_prefs(app).is_some();
 
-        // 5. "Translate this Page" button (enabled when Dual Lang + backend setup + RXX page selected)
+        // "Translate this Page" button (enabled when Dual Lang + backend setup + RXX page selected)
         let page_idx = app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app));
         let target = page_idx.and_then(|p| ai::detect_page_target(app, p));
         let can_page_ai = target.is_some() && backend_ready && st.bilingual_output;
@@ -845,13 +1028,17 @@ fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
         }
 
         let tip = "Set document margins:\nTop: 20.20 mm\nBottom: 20 mm\nInside: 19 mm\nOutside: 15 mm";
-        let resp = outline_button(ui, crate::i18n::tr(&lang, "Set Page Margin"), 110.0).on_hover_text(tip);
+        let resp = outline_button(ui, crate::i18n::tr(&lang, "Set Page Margin"), 105.0).on_hover_text(tip);
         if resp.clicked() {
             match execute_set_page_margins(app) {
                 Ok(msg) => st.header_status = Some((msg, true)),
                 Err(err) => st.header_status = Some((err, false)),
             }
         }
+
+        // Active mode indicator badge
+        let mode_str = if st.bilingual_output { "Dual Lang" } else { "Single Lang" };
+        badge(ui, t, "mode", mode_str);
     });
     rule(ui);
 
@@ -874,7 +1061,7 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
     ui.spacing_mut().item_spacing = vec2(6.0, 5.0);
     let state_id = egui::Id::new(PANEL_ID);
-    let mut st: PubgenState = ui.data(|d| d.get_temp(state_id)).unwrap_or_default();
+    let mut st: PubgenState = ui.data(|d| d.get_temp(state_id)).unwrap_or_else(|| PubgenState { bilingual_output: true, ..Default::default() });
 
     // AI setup modal + background job poll (progress and Done both land here).
     if let Some(mut job) = st.translate_job.take() {
@@ -917,39 +1104,41 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
 
     pubgen_header_band(app, ui, &mut st, &t);
 
-    // Card 1: Page from CSV
-    card1_ui(app, ui, &mut st, &t);
+    // 1. Data Source & Generate (Master Excel)
+    master_excel_ui(app, ui, &mut st, &t);
 
     divider(ui);
     rule(ui);
 
-    // Card 2: Table from CSV
-    card2_ui(app, ui, &mut st, &t);
+    // 2. Table of Contents (Dedicated Section)
+    card_toc_ui(app, ui, &mut st, &t);
 
     divider(ui);
     rule(ui);
 
-    // Card: Publication Cover
-    card_cover_ui(app, ui, &mut st, &t);
+    // 3. Manual Import & Fine-Tuning (Collapsible Accordion)
+    manual_import_accordion_ui(app, ui, &mut st, &t);
 
     divider(ui);
     rule(ui);
 
-    // Card: Header & Footer Template
-    card_header_footer_ui(app, ui, &mut st, &t);
+    // 4. Page Utilities
+    page_utilities_ui(app, ui, &mut st, &t);
 
-    divider(ui);
-    rule(ui);
-
-    // Card 3: Quick Actions
-    card3_quick_actions_ui(app, ui, &mut st, &t);
+    if st.show_about_dialog {
+        about_pubgen_dialog(app, ui.ctx(), &mut st.show_about_dialog, &t);
+    }
 
     ui.data_mut(|d| d.insert_temp(state_id, st));
 }
 
+#[allow(dead_code)]
 fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     section(ui, crate::i18n::tr(&app.ui.language, "Page from CSV"), true);
+    card1_body_ui(app, ui, st, t);
+}
 
+fn card1_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     // Active catalog indicator (populated from Excel conversion)
     let (file_label, color) = if st.card1_path.is_empty() {
         (crate::i18n::tr(&app.ui.language, "No file selected").to_string(), t.text_dim)
@@ -1065,9 +1254,13 @@ fn card1_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) 
     }
 }
 
+#[allow(dead_code)]
 fn card2_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     section(ui, crate::i18n::tr(&app.ui.language, "Table from CSV"), true);
+    card2_body_ui(app, ui, st, t);
+}
 
+fn card2_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     // Sheet table selector (if populated by Excel conversion)
     if !st.card2_sheet_tables.is_empty() {
         let mut new_selection = None;
@@ -1247,6 +1440,7 @@ fn style_thumbnail_texture(ctx: &egui::Context, style_idx: usize) -> Option<egui
         7 => ("modern_horizon.png", "karawang_timur_modern_horizon_cover.png"),
         8 => ("business_report.png", "karawang_timur_business_cover.png"),
         9 => ("urban_angle.png", "urban_angle.png"),
+        10 => ("tri_color_bands.png", "tri_color_bands.png"),
         _ => return None,
     };
     let candidates = [
@@ -1566,6 +1760,44 @@ fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: 
             // Rotated year in the band.
             p.rect_filled(egui::Rect::from_min_max(rect.min + vec2(w * 0.55, h * 0.10), rect.min + vec2(w * 0.78, h * 0.20)), 2.0, Color32::WHITE);
         }
+        10 => {
+            // Style 10 (Tri-Color Bands): tri-colour masthead rule, right-hand photo panel over a
+            // tri-colour bar, two-tone year on the left, blue institutional band at the foot.
+            let blue = Color32::from_rgb(0, 136, 210);
+            let green = Color32::from_rgb(116, 191, 69);
+            let orange = Color32::from_rgb(243, 139, 30);
+            let ink = Color32::from_rgb(16, 42, 60);
+            let band =
+                |x0: f32, x1: f32, y0: f32, y1: f32| egui::Rect::from_min_max(rect.min + vec2(w * x0, h * y0), rect.min + vec2(w * x1, h * y1));
+            p.rect_filled(rect, 4.0, Color32::WHITE);
+            // Masthead rule.
+            p.rect_filled(band(0.0, 0.333, 0.0, 0.013), 0.0, blue);
+            p.rect_filled(band(0.333, 0.666, 0.0, 0.013), 0.0, green);
+            p.rect_filled(band(0.666, 1.0, 0.0, 0.013), 0.0, orange);
+            // Right-hand photograph and the bar under it.
+            p.rect_filled(band(0.54, 1.0, 0.11, 0.60), 0.0, Color32::from_rgb(150, 172, 196));
+            p.rect_filled(band(0.54, 0.693, 0.60, 0.613), 0.0, blue);
+            p.rect_filled(band(0.693, 0.846, 0.60, 0.613), 0.0, green);
+            p.rect_filled(band(0.846, 1.0, 0.60, 0.613), 0.0, orange);
+            // Blue accent bar, headline and second headline line.
+            p.rect_filled(band(0.075, 0.095, 0.11, 0.20), 0.0, blue);
+            p.rect_filled(band(0.075, 0.52, 0.22, 0.265), 1.0, ink);
+            p.rect_filled(band(0.075, 0.49, 0.295, 0.34), 1.0, ink);
+            p.rect_filled(band(0.075, 0.34, 0.37, 0.405), 1.0, ink);
+            p.rect_filled(band(0.075, 0.40, 0.415, 0.432), 1.0, orange);
+            // Two-tone year, volume line and green rule.
+            p.rect_filled(band(0.075, 0.235, 0.60, 0.645), 1.0, blue);
+            p.rect_filled(band(0.235, 0.42, 0.60, 0.645), 1.0, ink);
+            p.rect_filled(band(0.075, 0.30, 0.665, 0.678), 1.0, ink);
+            p.rect_filled(band(0.075, 0.335, 0.703, 0.708), 0.0, green);
+            // Institutional band: logo plate and agency line.
+            p.rect_filled(band(0.0, 1.0, 0.823, 0.833), 0.0, green);
+            p.rect_filled(band(0.0, 1.0, 0.833, 0.843), 0.0, orange);
+            p.rect_filled(band(0.0, 1.0, 0.843, 1.0), 0.0, blue);
+            p.rect_filled(band(0.075, 0.21, 0.868, 0.95), 0.0, Color32::WHITE);
+            p.rect_filled(band(0.23, 0.55, 0.878, 0.892), 1.0, Color32::WHITE);
+            p.rect_filled(band(0.23, 0.50, 0.900, 0.914), 1.0, Color32::WHITE);
+        }
         _ => {
             // Style 8 (Business Report, traced from design-10): white base, orange top band and
             // bottom-right corner, arrow-shaped photograph with its chevron sliver across a thin
@@ -1682,6 +1914,7 @@ fn show_style_thumbnail_tooltip(ui: &mut Ui, style_idx: usize, name: &str, t: &T
             7 => "Full-bleed cityscape under a sweeping arc with an accent wedge that follows it, a dark institutional block carrying the headline, and a position-locked agency footer.",
             8 => "Arrow-shaped skyline photograph with a chevron sliver across a white gap, an orange top band and corner, a navy plane carrying the white year circle, the headline top-left and the agency block bottom-left.",
             9 => "Orange corner wedge and a navy diagonal band carrying the rotated year over a right-hand cityscape, with a white negative-space headline panel and a navy bottom wedge.",
+            10 => "Executive white grid: a tri-colour masthead rule, a right-hand cityscape panel over a blue/green/orange bar, a two-tone year and a blue institutional band.",
             _ => "",
         };
         ui.add_space(3.0);
@@ -1689,9 +1922,13 @@ fn show_style_thumbnail_tooltip(ui: &mut Ui, style_idx: usize, name: &str, t: &T
     });
 }
 
+#[allow(dead_code)]
 fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     section(ui, crate::i18n::tr(&app.ui.language, "Publication Cover"), true);
+    card_cover_body_ui(app, ui, st, t);
+}
 
+fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     // 1. Template Style with Hover Thumbnail Preview
     ui.horizontal(|ui| {
         ui.label(RichText::new("Style:").size(11.0).color(t.text));
@@ -1706,6 +1943,7 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
             "Modern Horizon",
             "Business Report",
             "Urban Angle",
+            "Tri-Color Bands",
         ];
         let cur_style = styles.get(st.cover_style).copied().unwrap_or("Wave Curves");
         // The dock can be as narrow as 220 pt: the dropdown takes what the row has left.
@@ -2019,6 +2257,7 @@ fn card_cover_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tok
                 let hover = match st.cover_style {
                     URBAN_STYLE => "Cityscape photograph filling the right-hand diagonal panels",
                     BUSINESS_STYLE => "Skyscraper photograph filling the crossed diagonal bands",
+                    TRICOLOR_STYLE => "Cityscape photograph filling the right-hand panel",
                     _ => "Hero photograph clipped by the sweeping arc across the upper page",
                 };
                 ui.add_sized(
@@ -2190,9 +2429,13 @@ fn show_hf_preview_tooltip(ui: &mut Ui, st: &PubgenState, name: &str, t: &Tokens
     });
 }
 
+#[allow(dead_code)]
 fn card_header_footer_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     section(ui, crate::i18n::tr(&app.ui.language, "Header & Footer Template"), true);
+    card_header_footer_body_ui(app, ui, st, t);
+}
 
+fn card_header_footer_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     // Fetch all templates (built-in + user custom) from engine
     let templates = designcraft_engine::cmd::header_footer::all_templates(&app.session);
 
@@ -2807,6 +3050,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         "assets/templates/covers/007_modern_horizon.designcraft",
         "assets/templates/covers/008_business_report.designcraft",
         "assets/templates/covers/009_urban_angle.designcraft",
+        "assets/templates/covers/010_tri_color_bands.designcraft",
     ];
 
     if let Some(&tpl_path) = canonical_templates.get(st.cover_style)
@@ -2866,15 +3110,11 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 let mut redundant_items = Vec::new();
                 if let Some(sp) = doc.spreads.first() {
                     for item in &sp.items {
-                        if item.label.starts_with("#slot:text:title_en")
-                            || item.name.starts_with("#slot:text:title_en")
-                        {
+                        if item.label.starts_with("#slot:text:title_en") || item.name.starts_with("#slot:text:title_en") {
                             if let designcraft_doc::Content::Text(tf) = &item.content
                                 && let Some(story) = doc.story(tf.story)
                             {
-                                if story.text.trim().is_empty()
-                                    || title2_text.eq_ignore_ascii_case(story.text.trim())
-                                {
+                                if story.text.trim().is_empty() || title2_text.eq_ignore_ascii_case(story.text.trim()) {
                                     redundant_items.push(item.id);
                                 } else {
                                     title_en_stories.push(tf.story);
@@ -2907,8 +3147,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     let mut title2_stories = Vec::new();
                     if let Some(sp) = doc.spreads.first() {
                         for item in &sp.items {
-                            if (item.label.starts_with("#slot:text:title#2")
-                                || item.name.starts_with("#slot:text:title#2"))
+                            if (item.label.starts_with("#slot:text:title#2") || item.name.starts_with("#slot:text:title#2"))
                                 && let designcraft_doc::Content::Text(tf) = &item.content
                             {
                                 title2_stories.push(tf.story);
@@ -2948,6 +3187,7 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 "Modern Horizon",
                 "Business Report",
                 "Urban Angle",
+                "Tri-Color Bands",
             ];
             let sname = style_names.get(st.cover_style).copied().unwrap_or("Template Cover");
             return Ok(format!("Cover page generated successfully ({sname})"));
@@ -3034,13 +3274,223 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
             cover_art::cover_style_9(app, art)?;
             "Urban Angle"
         }
+        10 => {
+            return Err("The Tri-Color Bands cover template could not be applied".into());
+        }
         _ => return Err(format!("Unsupported cover style: {}", st.cover_style)),
     };
 
     Ok(format!("Cover page generated before Page 1 (Style: {style_name})"))
 }
-fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
-    section(ui, crate::i18n::tr(&app.ui.language, "Quick Actions"), true);
+fn master_excel_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    section(ui, crate::i18n::tr(&app.ui.language, "1. Data Source & Generate (Master Excel)"), true);
+
+    let tip_excel = "Convert a multi-sheet Excel file (.xlsx) into 1 catalog CSV for Page from CSV + individual table CSVs (with auto-merged headers). \
+        A sheet named COVER supplies the Publication Cover values (style, title1, title2, year, volume, no_catalogue, ISSN, office_name, image_1, image_lanscape, office_logo)";
+    ui.checkbox(&mut st.excel_auto_generate, "Auto-generate pages, tables & cover from sheets")
+        .on_hover_text("When checked, picking an Excel file automatically runs 'Page from CSV', inserts each sheet's table with default options, and generates the cover page before Page 1 from the COVER sheet");
+
+    let resp_excel = primary_outline_button(ui, t, "Excel to CSV Data (.xlsx)…", full_width(ui)).on_hover_text(tip_excel);
+    if resp_excel.clicked()
+        && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
+    {
+        st.excel_source_path = path.clone();
+        let res = execute_excel_and_generate(app, st, &path);
+        let (msg, ok) = match res {
+            Ok(msg) => (msg, true),
+            Err(e) => (e, false),
+        };
+        st.excel_status = Some((msg.clone(), ok));
+        st.card3_status = Some((msg, ok));
+    }
+
+    // Active catalog / excel indicator
+    let (active_label, active_color) = if !st.excel_source_path.is_empty() {
+        let name = std::path::Path::new(&st.excel_source_path)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| st.excel_source_path.clone());
+        (format!("Active: {name} ({} records)", st.card1_records.len()), t.text)
+    } else if !st.card1_path.is_empty() {
+        let name = std::path::Path::new(&st.card1_path).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| st.card1_path.clone());
+        (format!("Active: {name} ({} records)", st.card1_records.len()), t.text)
+    } else {
+        (crate::i18n::tr(&app.ui.language, "No Excel file loaded").to_string(), t.text_dim)
+    };
+    ui.add(egui::Label::new(RichText::new(active_label).size(11.0).color(active_color)).truncate());
+
+    let tip_zip = "Download all generated catalog and table CSVs packaged in a single .zip archive";
+    let zip_label = if !st.generated_zip_name.is_empty() {
+        format!("Download {}…", st.generated_zip_name)
+    } else {
+        "Download Generated CSVs as ZIP…".to_string()
+    };
+    if outline_button(ui, &zip_label, full_width(ui)).on_hover_text(tip_zip).clicked() {
+        let res = execute_download_csv_zip(app, st);
+        let (msg, ok) = match res {
+            Ok(msg) => (msg, true),
+            Err(e) => (e, false),
+        };
+        st.excel_status = Some((msg.clone(), ok));
+        st.card3_status = Some((msg, ok));
+    }
+
+    if let Some((msg, ok)) = &st.excel_status {
+        let color = if *ok { Color32::from_rgb(80, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
+        ui.add(egui::Label::new(RichText::new(msg).size(11.0).color(color)).wrap());
+    }
+}
+
+fn card_toc_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    section(ui, crate::i18n::tr(&app.ui.language, "2. Table of Contents"), true);
+
+    let cur_page =
+        app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app)).unwrap_or_else(|| target_page_index(app));
+    let cur_label = app.session.page_label(cur_page);
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("TOC title:").size(11.0).color(t.text));
+        let w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
+        ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.toc_title));
+    });
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("TOC style:").size(11.0).color(t.text));
+        let cur = TOC_KINDS.get(st.toc_kind).copied().unwrap_or(TOC_KINDS[0]);
+        let tip = "TOC Entry: every page whose title carries the TOC tag style, plus the narrative pages\nTOC Table: only pages whose first text box starts with \"Tabel\" or \"Table\"\nTOC Chart: only pages whose first text box starts with \"Grafik\" or \"Chart\"\nTOC Paragraph: the narrative pages (the GXX and RXX sheets) with their Heading 1 and Heading 2 paragraphs nested under them";
+        let before = st.toc_kind;
+        egui::ComboBox::from_id_salt("pubgen_toc_kind")
+            .selected_text(cur)
+            .width(110.0)
+            .show_ui(ui, |ui| {
+                for (idx, k) in TOC_KINDS.iter().enumerate() {
+                    ui.selectable_value(&mut st.toc_kind, idx, *k);
+                }
+            })
+            .response
+            .on_hover_text(tip);
+        // Picking a table/chart/paragraph list fills in its title per single or dual lang mode.
+        if st.toc_kind != before
+            && let Some(title) = toc_kind_title(st.toc_kind, st.bilingual_output)
+        {
+            st.toc_title = title.to_string();
+        }
+    });
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("TOC layout:").size(11.0).color(t.text));
+        let layouts = ["Standard", "TablePage"];
+        let cur_layout = layouts.get(st.toc_layout_style).copied().unwrap_or("Standard");
+        let tip_layout = "Standard: 'Tabel 4.2.1 Title ......... 36'\nTablePage: BPS statistical catalog layout with 'Tabel / halaman' header, standalone number column, and hanging indent";
+        egui::ComboBox::from_id_salt("pubgen_toc_layout_style")
+            .selected_text(cur_layout)
+            .width(110.0)
+            .show_ui(ui, |ui| {
+                for (idx, l) in layouts.iter().enumerate() {
+                    ui.selectable_value(&mut st.toc_layout_style, idx, *l);
+                }
+            })
+            .response
+            .on_hover_text(tip_layout);
+    });
+
+    ui.checkbox(&mut st.toc_hanging_indent, "Indent wrapped TOC entries (hanging indent)");
+    ui.checkbox(&mut st.toc_include_self, "Include TOC page in TOC entries");
+    ui
+        .checkbox(&mut st.toc_pair_bilingual, "Pair bilingual headings (ID / EN)")
+        .on_hover_text("Merge the same style's left-column and right-column headings on a Dual Lang page into one row (\"Indonesian / English\"). Only active with the Dual Lang toggle on and needs the two-column Dual Lang layout; full-width headings never pair.");
+    ui.checkbox(&mut st.toc_insert_after, crate::i18n::tr(&app.ui.language, "Insert on new page after selected page"))
+        .on_hover_text(format!("Insert a new blank page after Page {cur_label} and build the TOC on it"));
+
+    let hw_toc = (ui.available_width() - 4.0) * 0.5;
+    ui.horizontal(|ui| {
+        let add_toc_text = crate::i18n::tr(&app.ui.language, "Add TOC");
+        let tip_toc = if st.toc_insert_after {
+            format!("Insert blank page after Page {cur_label} and generate a {} on it", TOC_KINDS.get(st.toc_kind).copied().unwrap_or(TOC_KINDS[0]))
+        } else {
+            format!("Insert a {} on Page {cur_label}", TOC_KINDS.get(st.toc_kind).copied().unwrap_or(TOC_KINDS[0]))
+        };
+        if outline_button(ui, add_toc_text, hw_toc).on_hover_text(tip_toc).clicked() {
+            let res = execute_add_toc(app, st);
+            let (msg, ok) = match res {
+                Ok(msg) => (msg, true),
+                Err(e) => (e, false),
+            };
+            st.toc_status = Some((msg.clone(), ok));
+            st.card3_status = Some((msg, ok));
+        }
+
+        let rebuild_toc_text = crate::i18n::tr(&app.ui.language, "Rebuild TOC");
+        let tip_rebuild = "Rebuild the table of contents on this page (its own TOC style, title and page numbers)";
+        if outline_button(ui, rebuild_toc_text, hw_toc).on_hover_text(tip_rebuild).clicked() {
+            let res = execute_rebuild_toc(app, st);
+            let (msg, ok) = match res {
+                Ok(msg) => (msg, true),
+                Err(e) => (e, false),
+            };
+            st.toc_status = Some((msg.clone(), ok));
+            st.card3_status = Some((msg, ok));
+        }
+    });
+
+    if let Some((msg, ok)) = &st.toc_status {
+        let color = if *ok { Color32::from_rgb(80, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
+        ui.add(egui::Label::new(RichText::new(msg).size(11.0).color(color)).wrap());
+    }
+}
+
+fn manual_import_accordion_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    section(ui, crate::i18n::tr(&app.ui.language, "3. Manual Import & Fine-Tuning"), true);
+
+    egui::CollapsingHeader::new(crate::rtl::widget(
+        ui,
+        egui::RichText::new(crate::i18n::tr(&app.ui.language, "Publication Cover (Style, Theme & Overrides)")).size(11.0).color(t.text_strong),
+    ))
+    .id_salt("pubgen_collapse_cover")
+    .default_open(false)
+    .show(ui, |ui| {
+        card_cover_body_ui(app, ui, st, t);
+    });
+
+    divider(ui);
+
+    egui::CollapsingHeader::new(crate::rtl::widget(
+        ui,
+        egui::RichText::new(crate::i18n::tr(&app.ui.language, "Page from CSV (Column Mappings & Ingest)")).size(11.0).color(t.text_strong),
+    ))
+    .id_salt("pubgen_collapse_card1")
+    .default_open(false)
+    .show(ui, |ui| {
+        card1_body_ui(app, ui, st, t);
+    });
+
+    divider(ui);
+
+    egui::CollapsingHeader::new(crate::rtl::widget(
+        ui,
+        egui::RichText::new(crate::i18n::tr(&app.ui.language, "Table from CSV (Theme & Options)")).size(11.0).color(t.text_strong),
+    ))
+    .id_salt("pubgen_collapse_card2")
+    .default_open(false)
+    .show(ui, |ui| {
+        card2_body_ui(app, ui, st, t);
+    });
+
+    divider(ui);
+
+    egui::CollapsingHeader::new(crate::rtl::widget(
+        ui,
+        egui::RichText::new(crate::i18n::tr(&app.ui.language, "Header & Footer Template")).size(11.0).color(t.text_strong),
+    ))
+    .id_salt("pubgen_collapse_hf")
+    .default_open(false)
+    .show(ui, |ui| {
+        card_header_footer_body_ui(app, ui, st, t);
+    });
+}
+
+fn page_utilities_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    section(ui, crate::i18n::tr(&app.ui.language, "4. Page Utilities"), true);
 
     let facing = app.session.active().map(|s| s.doc.settings.facing_pages).unwrap_or(true);
     let cur_page =
@@ -3048,8 +3498,6 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
     let cur_label = app.session.page_label(cur_page);
 
     // Button 1: switch Facing Pages
-    // When currently Facing (Double-sided), button offers switching to Single-sided.
-    // When currently Single-sided, button offers switching to Double-sided.
     let facing_text = if facing { crate::i18n::tr(&app.ui.language, "Single-sided") } else { crate::i18n::tr(&app.ui.language, "Double-sided") };
     let add_page_text = crate::i18n::tr(&app.ui.language, "Add Blank Page");
 
@@ -3068,8 +3516,9 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
         if resp_facing.clicked() {
             let next_facing = !facing;
             let _ = app.run("layout.documentSetup", json!({"facingPages": next_facing}));
-            st.card3_status =
-                Some((if next_facing { "Switched to Double-sided (Facing Pages)".into() } else { "Switched to Single-sided layout".into() }, true));
+            let msg = if next_facing { "Switched to Double-sided (Facing Pages)".to_string() } else { "Switched to Single-sided layout".to_string() };
+            st.utilities_status = Some((msg.clone(), true));
+            st.card3_status = Some((msg, true));
         }
 
         let tip_page = format!("Insert a blank page after Page {cur_label}");
@@ -3078,7 +3527,9 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
             let _ = app.run("layout.pages.insert", json!({"after": cur_page, "count": 1}));
             crate::canvas::go_to_page(app, cur_page + 1);
             let next_label = app.session.page_label(cur_page + 1);
-            st.card3_status = Some((format!("Added blank page after Page {cur_label} (new Page {next_label})"), true));
+            let msg = format!("Added blank page after Page {cur_label} (new Page {next_label})");
+            st.utilities_status = Some((msg.clone(), true));
+            st.card3_status = Some((msg, true));
         }
     });
 
@@ -3102,78 +3553,12 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
         }
     });
 
-    // TOC: build a table of contents on the selected page from the TOC paragraph style.
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("TOC title:").size(11.0).color(t.text));
-        let w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
-        ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.toc_title));
-    });
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("TOC style:").size(11.0).color(t.text));
-        let cur = TOC_KINDS.get(st.toc_kind).copied().unwrap_or(TOC_KINDS[0]);
-        let tip = "TOC Entry: every page whose title carries the TOC tag style, plus the narrative pages\nTOC Table: only pages whose first text box starts with \"Tabel\" or \"Table\"\nTOC Chart: only pages whose first text box starts with \"Grafik\" or \"Chart\"\nTOC Paragraph: the narrative pages (the GXX and RXX sheets) with their Heading 1 and Heading 2 paragraphs nested under them";
-        let before = st.toc_kind;
-        egui::ComboBox::from_id_salt("pubgen_toc_kind")
-            .selected_text(cur)
-            .width(110.0)
-            .show_ui(ui, |ui| {
-                for (idx, k) in TOC_KINDS.iter().enumerate() {
-                    ui.selectable_value(&mut st.toc_kind, idx, *k);
-                }
-            })
-            .response
-            .on_hover_text(tip);
-        // Picking a table/chart/paragraph list fills in its title per single or dual lang mode.
-        if st.toc_kind != before
-            && let Some(title) = toc_kind_title(st.toc_kind, st.bilingual_output)
-        {
-            st.toc_title = title.to_string();
-        }
-    });
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("TOC layout:").size(11.0).color(t.text));
-        let layouts = ["Standard", "TablePage"];
-        let cur_layout = layouts.get(st.toc_layout_style).copied().unwrap_or("Standard");
-        let tip_layout = "Standard: 'Tabel 4.2.1 Title ......... 36'\nTablePage: BPS statistical catalog layout with 'Tabel / halaman' header, standalone number column, and hanging indent";
-        egui::ComboBox::from_id_salt("pubgen_toc_layout_style")
-            .selected_text(cur_layout)
-            .width(110.0)
-            .show_ui(ui, |ui| {
-                for (idx, l) in layouts.iter().enumerate() {
-                    ui.selectable_value(&mut st.toc_layout_style, idx, *l);
-                }
-            })
-            .response
-            .on_hover_text(tip_layout);
-    });
-    ui.checkbox(&mut st.toc_hanging_indent, "Indent wrapped TOC entries (hanging indent)");
-    ui.checkbox(&mut st.toc_include_self, "Include TOC page in TOC entries");
-    ui
-        .checkbox(&mut st.toc_pair_bilingual, "Pair bilingual headings (ID / EN)")
-        .on_hover_text("Merge the same style's left-column and right-column headings on a Dual Lang page into one row (\"Indonesian / English\"). Only active with the Dual Lang toggle on and needs the two-column Dual Lang layout; full-width headings never pair.");
-
-    let hw_toc = (ui.available_width() - 4.0) * 0.5;
-    ui.horizontal(|ui| {
-        let add_toc_text = crate::i18n::tr(&app.ui.language, "Add TOC");
-        let tip_toc = format!("Insert a {} on Page {cur_label}", TOC_KINDS.get(st.toc_kind).copied().unwrap_or(TOC_KINDS[0]));
-        if outline_button(ui, add_toc_text, hw_toc).on_hover_text(tip_toc).clicked() {
-            let res = execute_add_toc(app, st);
-            st.card3_status = Some(match res {
-                Ok(msg) => (msg, true),
-                Err(e) => (e, false),
-            });
-        }
-
-        let rebuild_toc_text = crate::i18n::tr(&app.ui.language, "Rebuild TOC");
-        let tip_rebuild = "Rebuild the table of contents on this page (its own TOC style, title and page numbers)";
-        if outline_button(ui, rebuild_toc_text, hw_toc).on_hover_text(tip_rebuild).clicked() {
-            let res = execute_rebuild_toc(app, st);
-            st.card3_status = Some(match res {
-                Ok(msg) => (msg, true),
-                Err(e) => (e, false),
-            });
-        }
-    });
+    let sec_text = crate::i18n::tr(&app.ui.language, "Numbering & Section Options…");
+    ui.add_space(4.0);
+    let resp_sec = outline_button(ui, sec_text, fw).on_hover_text("Open Layout › Numbering & Section Options dialog for the active page");
+    if resp_sec.clicked() {
+        crate::section_options::open(app);
+    }
 
     divider(ui);
 
@@ -3194,57 +3579,37 @@ fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
         let tip_renum = format!("Restart page numbering at {} on Page {cur_label}", st.card3_renumber_start);
         if outline_button(ui, "Restart page #", hw_renum).on_hover_text(tip_renum).clicked() {
             let res = execute_renumber_page(app, st);
-            st.card3_status = Some(match res {
+            let (msg, ok) = match res {
                 Ok(msg) => (msg, true),
                 Err(e) => (e, false),
-            });
+            };
+            st.utilities_status = Some((msg.clone(), ok));
+            st.card3_status = Some((msg, ok));
         }
         let tip_cont = format!("Continue numbering on Page {cur_label} (remove section restart)");
         if outline_button(ui, "Continue #", hw_renum).on_hover_text(tip_cont).clicked() {
             let res = execute_continue_numbering(app, st);
-            st.card3_status = Some(match res {
+            let (msg, ok) = match res {
                 Ok(msg) => (msg, true),
                 Err(e) => (e, false),
-            });
+            };
+            st.utilities_status = Some((msg.clone(), ok));
+            st.card3_status = Some((msg, ok));
         }
     });
-
-    // Helper: Excel (.xlsx) to CSV Data
-    divider(ui);
-    let tip_excel = "Convert a multi-sheet Excel file (.xlsx) into 1 catalog CSV for Page from CSV + individual table CSVs (with auto-merged headers). \
-        A sheet named COVER supplies the Publication Cover values (style, title1, title2, year, volume, no_catalogue, ISSN, office_name, image_1, image_lanscape, office_logo)";
-    ui.checkbox(&mut st.excel_auto_generate, "Auto-generate pages, tables & cover from sheets")
-        .on_hover_text("When checked, picking an Excel file automatically runs 'Page from CSV', inserts each sheet's table with default options, and generates the cover page before Page 1 from the COVER sheet");
-
-    let resp_excel = outline_button(ui, "Excel to CSV Data…", full_width(ui)).on_hover_text(tip_excel);
-    if resp_excel.clicked()
-        && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
-    {
-        let res = execute_excel_and_generate(app, st, &path);
-        st.card3_status = Some(match res {
-            Ok(msg) => (msg, true),
-            Err(e) => (e, false),
-        });
-    }
-
-    let tip_zip = "Download all generated catalog and table CSVs packaged in a single .zip archive";
-    let zip_label =
-        if !st.generated_zip_name.is_empty() { format!("Download {}…", st.generated_zip_name) } else { "Download CSVs as ZIP…".to_string() };
-    if outline_button(ui, &zip_label, full_width(ui)).on_hover_text(tip_zip).clicked() {
-        let res = execute_download_csv_zip(app, st);
-        st.card3_status = Some(match res {
-            Ok(msg) => (msg, true),
-            Err(e) => (e, false),
-        });
-    }
 
     let mode_str = if facing { "Double-sided" } else { "Single-sided" };
     ui.add(egui::Label::new(RichText::new(format!("Mode: {mode_str} · Selected: Page {cur_label}")).size(10.5).color(t.text_dim)).truncate());
 
-    if let Some((msg, ok)) = &st.card3_status {
+    if let Some((msg, ok)) = &st.utilities_status {
         let color = if *ok { Color32::from_rgb(80, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
         ui.add(egui::Label::new(RichText::new(msg).size(11.0).color(color)).wrap());
     }
+}
+
+#[allow(dead_code)]
+fn card3_quick_actions_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    page_utilities_ui(app, ui, st, t);
 }
 
 fn badge(ui: &mut Ui, t: &Tokens, role: &str, col_name: &str) {
@@ -4369,11 +4734,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                     || ep_lower.contains("chapter_devider")
                     || ep_lower.contains("special_infographic_divider")
                 {
-                    if st.card1_preset == 6 {
-                        resolve_template_path_spec(&st.card1_path, "001_simple_chapter")
-                    } else {
-                        None
-                    }
+                    if st.card1_preset == 6 { resolve_template_path_spec(&st.card1_path, "001_simple_chapter") } else { None }
                 } else {
                     Some(ep.clone())
                 }
@@ -4639,11 +5000,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 };
 
                 let row_tpl_lower = row_tpl_spec.to_lowercase();
-                let style_choice = if row_tpl_lower.contains("simple") || row_tpl_lower.contains("001") {
-                    1
-                } else {
-                    2
-                };
+                let style_choice = if row_tpl_lower.contains("simple") || row_tpl_lower.contains("001") { 1 } else { 2 };
 
                 divider_art::generate_divider(app, div_vals, style_choice)?;
                 if img_str.is_some() {
@@ -7242,7 +7599,9 @@ pub fn execute_insert_table_matrix(
         }
     }
 
-    if !table_notes.is_empty() && let Some((target_spread, fn_rect)) = actual_fn_target {
+    if !table_notes.is_empty()
+        && let Some((target_spread, fn_rect)) = actual_fn_target
+    {
         let max_label_len = table_notes.iter().map(|n| n.label.chars().count()).max().unwrap_or(6);
         let colon_pos = if max_label_len > 7 { 58.0 } else { 46.0 };
         let text_pos = colon_pos + 8.0;
@@ -8877,18 +9236,37 @@ fn generate_toc(app: &mut DesignApp, st: &PubgenState, page: usize, plan: &TocPl
 }
 
 pub fn execute_add_toc(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, String> {
-    let cur_page = target_page_index(app);
-    let cur_label = app.session.page_label(cur_page);
+    if app.session.active().is_none() {
+        return Err("No active document".to_string());
+    }
+    let selected_page =
+        app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app)).unwrap_or_else(|| target_page_index(app));
+    let selected_label = app.session.page_label(selected_page);
 
+    let (target_page, replace) = if st.toc_insert_after {
+        let _ = app.run("layout.pages.insert", json!({"after": selected_page, "count": 1}))?;
+        let new_page = selected_page + 1;
+        if let Some(active) = app.session.active_mut() {
+            active.selection.page = Some(new_page);
+        }
+        crate::canvas::go_to_page(app, new_page);
+        (new_page, false)
+    } else {
+        (selected_page, toc_story_on_page(app, selected_page).is_some())
+    };
+
+    let target_label = app.session.page_label(target_page);
     let plan = TocPlan::from_state(st);
-    // A table of contents already on this page is regenerated in place, so one page holds one.
-    let replace = toc_story_on_page(app, cur_page).is_some();
-    let (count, final_pages_added) = generate_toc(app, st, cur_page, &plan, replace)?;
+    let (count, final_pages_added) = generate_toc(app, st, target_page, &plan, replace)?;
 
     let cont_msg = if final_pages_added > 0 { format!(" across {} pages", final_pages_added + 1) } else { String::new() };
 
     let kind = TOC_KINDS.get(plan.kind()).copied().unwrap_or(TOC_KINDS[0]);
-    Ok(format!("Added {kind} on Page {cur_label} ({count} entries{cont_msg})"))
+    if st.toc_insert_after {
+        Ok(format!("Inserted blank page and added {kind} on Page {target_label} after Page {selected_label} ({count} entries{cont_msg})"))
+    } else {
+        Ok(format!("Added {kind} on Page {target_label} ({count} entries{cont_msg})"))
+    }
 }
 
 /// Rebuild the table of contents on the page in view, keeping the TOC style, title and filter it
@@ -9130,7 +9508,7 @@ pub fn execute_page_from_image(app: &mut DesignApp, st: &mut PubgenState, path: 
 /// Map a `COVER` sheet style name (e.g. `CHEVRON MEDALLION`) to the Publication Cover style index.
 fn cover_style_index(spec: &str) -> Option<usize> {
     let norm = |s: &str| -> String { s.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect() };
-    const NAMES: [&str; 10] = [
+    const NAMES: [&str; 11] = [
         "Wave Curves",
         "Geometric Medallion",
         "Folded Origami",
@@ -9141,6 +9519,7 @@ fn cover_style_index(spec: &str) -> Option<usize> {
         "Modern Horizon",
         "Business Report",
         "Urban Angle",
+        "Tri Color Bands",
     ];
     let want = norm(spec);
     if want.is_empty() {
@@ -9222,6 +9601,7 @@ fn apply_excel_cover(st: &mut PubgenState, cover: &excel::ExcelCoverData, base_d
 
 pub fn execute_excel_to_csvs(st: &mut PubgenState, path: &str) -> Result<String, String> {
     let pkg = excel::execute_convert_excel(path)?;
+    st.excel_source_path = path.to_string();
     st.excel_had_cover = pkg.cover.is_some();
     if let Some(cover) = &pkg.cover {
         apply_excel_cover(st, cover, Path::new(path).parent());
@@ -13135,7 +13515,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
 
     #[test]
     fn test_execute_generate_cover_text_formatting() {
-        for style in 0..=9 {
+        for style in 0..=10 {
             let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
             app.run("file.new", json!({})).unwrap();
             let st = PubgenState { cover_style: style, ..PubgenState::default() };
@@ -13299,6 +13679,29 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
             let upper = story.text.to_uppercase();
             assert!(allowed.iter().any(|a| upper.contains(a)), "text must come from the cover options: {}", story.text);
         }
+    }
+
+    #[test]
+    fn test_cover_style_10_uses_the_tri_color_template() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let st = PubgenState {
+            cover_style: TRICOLOR_STYLE,
+            cover_title: "KECAMATAN KARAWANG TIMUR".into(),
+            cover_title2: "DALAM ANGKA".into(),
+            ..PubgenState::default()
+        };
+        let res = execute_generate_cover(&mut app, &st);
+        assert!(res.is_ok(), "Tri-Color Bands must apply its template: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // The template brings its own three-colour swatches.
+        for name in ["Cover Blue", "Cover Green", "Cover Orange"] {
+            assert!(active.doc.swatches.iter().any(|s| s.name == name), "swatch `{name}` comes with the template");
+        }
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("KARAWANG TIMUR")), "the headline is bound: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("DALAM ANGKA")), "the second headline line is bound: {texts:?}");
     }
 
     #[test]
@@ -15099,6 +15502,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     fn test_pubgen_state_bilingual_defaults_and_serde() {
         let st = PubgenState::default();
         assert!(!st.bilingual_output);
+        assert!(!st.show_about_dialog);
         assert_eq!(st.locale, Locale::Id);
         assert_eq!(st.doc_language, "");
 
@@ -15107,6 +15511,11 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert_eq!(deser.bilingual_output, st.bilingual_output);
         assert_eq!(deser.locale, st.locale);
         assert_eq!(deser.doc_language, st.doc_language);
+        assert_eq!(deser.excel_source_path, st.excel_source_path);
+        assert_eq!(deser.excel_status, st.excel_status);
+        assert_eq!(deser.toc_status, st.toc_status);
+        assert_eq!(deser.utilities_status, st.utilities_status);
+        assert_eq!(deser.toc_insert_after, st.toc_insert_after);
 
         // Deserializing older JSON lacking the bilingual fields falls back to defaults safely
         let old_json = r#"{"card1_path":"","card1_records":[],"card1_headers":[],"card1_type_col":0,"card1_num_col":1,"card1_title_col":2,"card1_preset":0,"card1_range_all":true,"card1_range_from":1,"card1_range_to":10,"card1_append":true,"card1_status":null,"card2_path":"","card2_matrix":[],"card2_first_row_header":true,"card2_col_numbers":true,"card2_table_footer":true,"card2_style":3,"card2_placement":2,"card2_status":null}"#;
@@ -15114,6 +15523,76 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(!old_deser.bilingual_output);
         assert_eq!(old_deser.locale, Locale::Id);
         assert_eq!(old_deser.doc_language, "");
+        assert_eq!(old_deser.excel_source_path, "");
+        assert_eq!(old_deser.excel_status, None);
+        assert_eq!(old_deser.toc_status, None);
+        assert_eq!(old_deser.utilities_status, None);
+        assert!(!old_deser.toc_insert_after);
+    }
+
+    #[test]
+    fn test_workflow_redesign_state_and_paths() {
+        let mut st = PubgenState::default();
+        // Master Excel auto-generate is enabled by default for seamless 1-click publishing
+        assert!(st.excel_auto_generate);
+        assert!(st.excel_source_path.is_empty());
+        assert!(st.excel_status.is_none());
+        assert!(st.toc_status.is_none());
+        assert!(st.utilities_status.is_none());
+
+        // Simulate importing an Excel file
+        st.excel_source_path = "C:/data/KBDA2026.xlsx".into();
+        assert_eq!(std::path::Path::new(&st.excel_source_path).file_name().unwrap(), "KBDA2026.xlsx");
+
+        // Status messaging is localized per section
+        st.excel_status = Some(("Converted 12 sheets successfully".into(), true));
+        st.toc_status = Some(("Table of Contents added".into(), true));
+        st.utilities_status = Some(("Switched to Single-sided layout".into(), true));
+
+        assert!(st.excel_status.as_ref().unwrap().1);
+        assert!(st.toc_status.as_ref().unwrap().1);
+        assert!(st.utilities_status.as_ref().unwrap().1);
+    }
+
+    #[test]
+    fn test_execute_add_toc_insert_after_selected_page() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        app.run("layout.pages.insert", json!({"count": 1})).unwrap();
+
+        // Place a styled title on Page 2 (0-based index 1)
+        let para = designcraft_doc::ParaFormat { style: "TOC Chapter".to_string(), ..Default::default() };
+        let _ = app.session.edit(|doc, _| {
+            doc.add_text_frame(
+                designcraft_doc::SpreadRef::Doc(1),
+                designcraft_geom::Rect::new(36.0, 36.0, 200.0, 100.0),
+                designcraft_doc::LayerId(1),
+                "Chapter 1 Overview",
+                para,
+            )?;
+            Ok(())
+        });
+
+        let mut st = PubgenState::default();
+        st.toc_style = "TOC Chapter".to_string();
+        st.toc_insert_after = true;
+
+        // Select Page 1 (0-based index 0)
+        app.session.active_mut().unwrap().selection.page = Some(0);
+
+        let res = execute_add_toc(&mut app, &mut st);
+        assert!(res.is_ok(), "execute_add_toc should succeed: {res:?}");
+
+        // The document should now have 3 pages:
+        // Page 1: original Page 1
+        // Page 2: newly inserted blank page with the TOC
+        // Page 3: the chapter page (shifted from index 1 to index 2)
+        let doc_pages = app.session.active().unwrap().doc.page_count();
+        assert_eq!(doc_pages, 3);
+
+        // Verify the TOC is on Page 2 (0-based index 1)
+        let toc_story_id = toc_story_on_page(&app, 1).unwrap();
+        assert_eq!(toc_story_page(&app, toc_story_id), Some(1));
     }
 
     #[test]
@@ -15492,8 +15971,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(texts_dual.iter().any(|t| t.contains("DALAM ANGKA")), "Should contain ID title2: {texts_dual:?}");
         assert!(texts_dual.iter().any(|t| t.contains("IN FIGURES")), "Should contain title_en in bilingual mode: {texts_dual:?}");
 
-        // 3. User scenario: title2 in template already contains the English title (test across all 10 styles)
-        for style in 0..10 {
+        // 3. User scenario: title2 in template already contains the English title (test across all 11 styles)
+        for style in 0..11 {
             let mut app_s = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
             app_s.run("file.new", json!({})).unwrap();
             let st_s = PubgenState {
@@ -15942,9 +16421,7 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         // Check Italic formatting:
         // Paras: 0=Catatan (Regular), 1=Note (Italic), 2=Sumber (Regular), 3=Source (Italic)
         let ranges = note_story.para_ranges();
-        let get_style_at = |pos: usize| {
-            note_story.format_after(pos).over.font_style.clone()
-        };
+        let get_style_at = |pos: usize| note_story.format_after(pos).over.font_style.clone();
         assert_eq!(get_style_at(ranges[0].start), Some("Regular".to_string()));
         assert_eq!(get_style_at(ranges[1].start), Some("Italic".to_string()));
         assert_eq!(get_style_at(ranges[2].start), Some("Regular".to_string()));

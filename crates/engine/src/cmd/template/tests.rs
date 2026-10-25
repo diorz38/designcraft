@@ -364,7 +364,7 @@ fn test_canonical_assets_catalog_discovery() {
     let catalog = scan_template_catalog(&path);
     assert!(!catalog.is_empty(), "Canonical templates should be discovered in {path:?}");
     let covers: Vec<_> = catalog.iter().filter(|t| t.category == "covers").collect();
-    assert_eq!(covers.len(), 10, "Should discover 10 canonical cover templates");
+    assert_eq!(covers.len(), 11, "Should discover 11 canonical cover templates");
 }
 
 #[test]
@@ -477,7 +477,7 @@ fn test_canonical_cover_templates_carry_their_slots() {
         .filter(|p| p.extension().is_some_and(|x| x == "designcraft"))
         .collect();
     files.sort();
-    assert_eq!(files.len(), 10, "ten canonical covers: {files:?}");
+    assert_eq!(files.len(), 11, "eleven canonical covers: {files:?}");
 
     for path in &files {
         let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{path:?}: {e}"));

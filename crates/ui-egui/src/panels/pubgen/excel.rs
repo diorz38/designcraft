@@ -161,7 +161,6 @@ pub fn is_table_sheet_name(sheet_name: &str) -> bool {
     }
 }
 
-
 /// Split bilingual table title and harmonize trailing year (e.g. ", 2025") across both lines:
 /// Line 1: Indonesian text, [year]
 /// Line 2: English text, [year]
@@ -517,17 +516,7 @@ pub fn extract_divider_image_from_rxx(sheet: &ExcelSheetData) -> Option<String> 
     for row in &sheet.grid {
         if let Some(img) = extract_field_for_keys(
             row,
-            &[
-                "image_div",
-                "imagediv",
-                "image_divider",
-                "imagedivider",
-                "divider_image",
-                "div_image",
-                "gambar_div",
-                "gambar_pembatas",
-                "foto_div",
-            ],
+            &["image_div", "imagediv", "image_divider", "imagedivider", "divider_image", "div_image", "gambar_div", "gambar_pembatas", "foto_div"],
         ) {
             return Some(img);
         }
@@ -586,7 +575,9 @@ pub fn matches_table_note_keyword(col1: &str) -> bool {
 }
 
 pub fn is_table_note_or_source_row(row: &[impl AsRef<str>]) -> bool {
-    let Some(col1) = row.first().map(|s| s.as_ref().trim()) else { return false; };
+    let Some(col1) = row.first().map(|s| s.as_ref().trim()) else {
+        return false;
+    };
     if col1.is_empty() || !matches_table_note_keyword(col1) {
         return false;
     }
@@ -670,23 +661,15 @@ pub fn parse_rtf_review_sheet_bilingual(
             title_en = Some(ten);
         }
         if file_val.is_empty()
-            && let Some(f) = extract_field_for_keys(
-                row,
-                &[
-                    "file_id", "fileid", "file", "rtf", "path", "dokumen", "doc", "naskah", "source", "berkas",
-                    "file_rtf",
-                ],
-            )
+            && let Some(f) =
+                extract_field_for_keys(row, &["file_id", "fileid", "file", "rtf", "path", "dokumen", "doc", "naskah", "source", "berkas", "file_rtf"])
         {
             file_val = f;
         }
         if file_en.is_none()
             && let Some(fen) = extract_field_for_keys(
                 row,
-                &[
-                    "file_en", "fileen", "rtf_en", "rtfen", "path_en", "pathen", "dokumen_en", "doc_en", "naskah_en",
-                    "source_en",
-                ],
+                &["file_en", "fileen", "rtf_en", "rtfen", "path_en", "pathen", "dokumen_en", "doc_en", "naskah_en", "source_en"],
             )
         {
             file_en = Some(fen);
@@ -749,9 +732,7 @@ pub fn parse_rtf_review_sheet_bilingual(
         if non_empty.len() == 1 {
             let val = non_empty[0];
             let lower = val.to_lowercase();
-            if !lower.ends_with(".rtf")
-                && !key_matches(val, &["file", "image", "photo", "template", "divider", "diivider", "table", "data"])
-            {
+            if !lower.ends_with(".rtf") && !key_matches(val, &["file", "image", "photo", "template", "divider", "diivider", "table", "data"]) {
                 title_en = Some(val.trim_matches('"').trim().to_string());
             }
         }
@@ -1109,11 +1090,7 @@ pub fn resolve_divider_template(tpl_spec: &str) -> String {
     {
         return "assets/templates/dividers/002_batik_infographic.designcraft".to_string();
     }
-    if raw_lower.contains("simple")
-        || raw_lower.contains("ulasan")
-        || raw_lower == "001"
-        || raw_lower == "1"
-    {
+    if raw_lower.contains("simple") || raw_lower.contains("ulasan") || raw_lower == "001" || raw_lower == "1" {
         return "assets/templates/dividers/001_simple_chapter.designcraft".to_string();
     }
 
@@ -2247,11 +2224,7 @@ mod tests {
         // Test with 3 rows without explicit "file;" key (row 1: title, row 2: title_en, row 3: raw rtf filename)
         let sheet3 = ExcelSheetData {
             name: "R_03".into(),
-            grid: vec![
-                vec!["BAB 03 Kependudukan".into()],
-                vec!["CHAPTER 03 POPULATION".into()],
-                vec!["ulasan_bab_3.rtf".into()],
-            ],
+            grid: vec![vec!["BAB 03 Kependudukan".into()], vec!["CHAPTER 03 POPULATION".into()], vec!["ulasan_bab_3.rtf".into()]],
             merges: Vec::new(),
         };
         let (t3, n3, title3, f3, _, ten3, _) = parse_rtf_review_sheet_bilingual(&sheet3).unwrap();
@@ -2966,17 +2939,17 @@ mod tests {
         let lines_no_div: Vec<&str> = res_no_div.catalog_csv_content.lines().collect();
         // Header: type,number,title,file,template,title_en,file_en
         assert_eq!(lines_no_div.len(), 4, "Must produce Divider, Ulasan, and Tabel even without DIV sheet");
-        assert!(lines_no_div[1].contains("Divider,02,Bab 02 Pemerintahan,,assets/templates/dividers/001_simple_chapter.designcraft,Chapter 02 Government,"));
+        assert!(
+            lines_no_div[1]
+                .contains("Divider,02,Bab 02 Pemerintahan,,assets/templates/dividers/001_simple_chapter.designcraft,Chapter 02 Government,")
+        );
         assert!(lines_no_div[2].contains("Ulasan,02,Bab 02 Pemerintahan,R02.rtf,001_simple_chapter,Chapter 02 Government,R02_en.rtf"));
         assert!(lines_no_div[3].contains("Tabel,02.01,Luas Wilayah,02_01,,,"));
 
         // Scenario B: Workbook with BOTH DIV and R02 (DIV present, info relinked without duplicates)
         let div_sheet = ExcelSheetData {
             name: "DIV".into(),
-            grid: vec![
-                vec!["title".into(), "BAB 02 PEMERINTAHAN".into()],
-                vec!["image".into(), "infografik_01.png".into()],
-            ],
+            grid: vec![vec!["title".into(), "BAB 02 PEMERINTAHAN".into()], vec!["image".into(), "infografik_01.png".into()]],
             merges: Vec::new(),
         };
         let r02_b = ExcelSheetData {
@@ -2993,7 +2966,9 @@ mod tests {
         let res_with_div = convert_excel_to_csv_data(&[div_sheet, r02_b], "WITH_DIV_TEST");
         let lines_with_div: Vec<&str> = res_with_div.catalog_csv_content.lines().collect();
         assert_eq!(lines_with_div.len(), 3, "Exactly 1 Divider and 1 Ulasan, no duplicate divider!");
-        assert!(lines_with_div[1].contains("Divider,02,BAB 02 PEMERINTAHAN,infografik_01.png,assets/templates/dividers/001_simple_chapter.designcraft,Chapter 02 Government,"));
+        assert!(lines_with_div[1].contains(
+            "Divider,02,BAB 02 PEMERINTAHAN,infografik_01.png,assets/templates/dividers/001_simple_chapter.designcraft,Chapter 02 Government,"
+        ));
         assert!(lines_with_div[2].contains("Ulasan,02,Bab 02 Pemerintahan,R02.rtf,001_simple_chapter,Chapter 02 Government,R02_en.rtf"));
     }
 
@@ -3036,12 +3011,12 @@ mod tests {
         let r02_sheet = ExcelSheetData {
             name: "R02".into(),
             grid: vec![
-                vec!["title".into(), "Bab 02 Pemerintahan".into()],                          // Row 1
-                vec!["title_en".into(), "Chapter 02 Government".into()],                     // Row 2
-                vec!["file".into(), "R02.rtf".into()],                                       // Row 3
-                vec!["file_en".into(), "R02_en.rtf".into()],                                 // Row 4
-                vec!["divider".into(), "002_batik_infographic".into()],                      // Row 5
-                vec!["image_div".into(), "plan/pubgen/samples/infografik_02.png".into()],     // Row 6
+                vec!["title".into(), "Bab 02 Pemerintahan".into()],                       // Row 1
+                vec!["title_en".into(), "Chapter 02 Government".into()],                  // Row 2
+                vec!["file".into(), "R02.rtf".into()],                                    // Row 3
+                vec!["file_en".into(), "R02_en.rtf".into()],                              // Row 4
+                vec!["divider".into(), "002_batik_infographic".into()],                   // Row 5
+                vec!["image_div".into(), "plan/pubgen/samples/infografik_02.png".into()], // Row 6
             ],
             merges: Vec::new(),
         };
@@ -3064,10 +3039,7 @@ mod tests {
         // 3. Relinking test: R02 row 6 col 2 image overrides/enriches DIV
         let div_sheet = ExcelSheetData {
             name: "DIV".into(),
-            grid: vec![
-                vec!["title".into(), "BAB 02 PEMERINTAHAN".into()],
-                vec!["image".into(), "old_placeholder.png".into()],
-            ],
+            grid: vec![vec!["title".into(), "BAB 02 PEMERINTAHAN".into()], vec!["image".into(), "old_placeholder.png".into()]],
             merges: Vec::new(),
         };
         let res_relink = convert_excel_to_csv_data(&[div_sheet, r02_sheet], "RELINK_IMG_TEST");
@@ -3156,5 +3128,3 @@ mod tests {
         assert_eq!(lines[5], "Source,:,Statistics Indonesia");
     }
 }
-
-

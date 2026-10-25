@@ -9,7 +9,7 @@
 2. [Finding the Pubgen Panel in DesignCraft](#2-finding-the-pubgen-panel-in-designcraft)
 3. [Card 1: Publication Cover (Cover Page Generator)](#3-card-1-publication-cover-cover-page-generator)
    - [Overview & Position](#overview--position)
-   - [The 10 Executive Cover Styles](#the-10-executive-cover-styles)
+   - [The 11 Executive Cover Styles](#the-11-executive-cover-styles)
    - [Hover Thumbnail Previews](#hover-thumbnail-previews)
    - [Theme Colors & Color Customization](#theme-colors--color-customization)
    - [Metadata & Content Fields](#metadata--content-fields)
@@ -89,7 +89,7 @@ You can click the triangle arrow `▼` next to any section header to expand or c
 At the top header band of the Pubgen panel, you can toggle between **Single Lang** (default) and **Dual Lang**:
 - **Single Lang**: Standard monolingual generation matching legacy publications.
 - **Dual Lang**: Generates bilingual Indonesian-English content adhering to BPS statistical standards:
-  - **Covers**: Binds English title into the dedicated `#slot:text:title_en` slot across all 10 cover styles.
+  - **Covers**: Binds English title into the dedicated `#slot:text:title_en` slot across all 11 cover styles.
   - **Dividers (`DIV`)**: Emits dual-language chapter headings, with English subtitles rendered in the accent swatch.
   - **Review Chapters (`RXX`) & Front Matter (`BXX`)**: Synthesizes sequential spreads (Indonesian spread followed by English spread).
   - **Statistical Tables (`XX_XX`)**: Produces 2-row header chrome (`Tabel` / italic `Table`) and 2-line titles split on `" / "` with italicized English.
@@ -143,9 +143,9 @@ The **Publication Cover** section allows you to synthesize a complete, professio
 
 ---
 
-### The 10 Executive Cover Styles
+### The 11 Executive Cover Styles
 
-Pubgen provides 10 corporate design styles:
+Pubgen provides 11 corporate design styles:
 
 #### 1. Wave Curves (`🌊 Wave`)
 - **Visual Personality**: Organic, modern, flowing.
@@ -258,6 +258,17 @@ Pubgen provides 10 corporate design styles:
   - Its own palette (deep petrol navy + marigold, `#034460` + `#fcb91e`); picking the style selects that theme automatically, and any other theme still works.
 - **Best For**: City and regional profiles, urban development reports, modern corporate covers.
 
+#### 11. Tri-Color Bands (`🎨 Tri-Color`)
+- **Visual Personality**: Executive, ordered, institutional — a flat colour system instead of artwork.
+- **Design Elements**:
+  - A **tri-colour masthead rule** across the top edge in blue (`#0088D2`), green (`#74BF45`) and orange (`#F38B1E`), echoed by the stripes above the institutional band.
+  - A **right-hand cityscape panel** bleeding off the top-right corner, underlined by a blue/green/orange bar.
+  - A blue accent bar above the headline; the headline in **Arial Black** ink, the second headline line in orange.
+  - A **two-tone year** (blue + ink) in giant **Arial Black**, with the **Volume** line beneath it and a green rule.
+  - **Position Lock**: publication metadata (Line #1: `Katalog BPS: <number>`, Line #2: `ISSN/ISBN <number>` in crisp **Arial Bold**) sits top-right on the white masthead.
+  - **Position Lock**: a solid blue institutional band at the foot, carrying the logo on a white plate and the agency line in **Arial Bold Italic** white.
+- **Best For**: Government statistical publications, annual reports, corporate profiles, and any cover that must carry a strict institutional palette.
+
 ---
 
 ### Hover Thumbnail Previews
@@ -291,7 +302,7 @@ Pubgen dynamically displays the image pickers required for the selected style:
 - **Skyline Image**: Used in *Wave Curves* and *Chevron & Medallion*. Click **Browse...** to pick any high-resolution skyline or landmark image (`.jpg`, `.png`, `.webp`).
 - **Landscape Image**: Used in *Folded Origami* and *Geometric Medallion*.
 - **Honeycomb Image**: Used in *Honeycomb Hexagon*. Automatically clips your photo into the interlocking 12-sided honeycomb frame.
-- **Photo**: Used in *Corporate Headline*, *Diagonal Arrow* and *Modern Horizon*. Vertical architectural, city skyline, or landmark photograph. In *Diagonal Arrow* it fills the full-height panel on the right, behind the diagonal banner and the arrow. In *Modern Horizon* it is clipped by the sweeping arc across the upper page, so choose a wide cityscape with interest along the horizon.
+- **Photo**: Used in *Corporate Headline*, *Diagonal Arrow*, *Modern Horizon* and *Tri-Color Bands*. Vertical architectural, city skyline, or landmark photograph. In *Diagonal Arrow* it fills the full-height panel on the right, behind the diagonal banner and the arrow. In *Modern Horizon* it is clipped by the sweeping arc across the upper page, so choose a wide cityscape with interest along the horizon.
 - **Logo**: Click **Browse...** to choose your institution's logo file (e.g., BPS emblem, city coat of arms). It automatically fits proportionally into the branding frame without distortion.
 
 ---

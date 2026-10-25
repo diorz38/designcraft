@@ -1,9 +1,9 @@
 //! Procedural divider art: command-by-command divider page generation when no
 //! `.designcraft` template is found on disk (e.g. portable app release).
 
-use serde_json::{json, Value};
-use crate::DesignApp;
 use super::add_cover_text_frame;
+use crate::DesignApp;
+use serde_json::{Value, json};
 
 /// Best-effort command for procedural divider art: a failure cannot abort the style,
 /// but in debug builds it prints, so a typo'd command id cannot stay silently broken.
@@ -43,19 +43,7 @@ pub(super) fn generate_divider(app: &mut DesignApp, v: DividerArtVals, style: us
 /// Full-bleed spread with dark header band, bookmark ribbon with large chapter number,
 /// bilingual titles, and an infographic illustration graphic frame.
 pub(super) fn divider_style_batik_infographic(app: &mut DesignApp, v: DividerArtVals) -> Result<(), String> {
-    let DividerArtVals {
-        spread_idx,
-        pw,
-        ph,
-        primary: _,
-        accent,
-        dark,
-        first_word,
-        chapter_num,
-        chapter_title,
-        title_en,
-        image_path,
-    } = v;
+    let DividerArtVals { spread_idx, pw, ph, primary: _, accent, dark, first_word, chapter_num, chapter_title, title_en, image_path } = v;
 
     let dark_color = if dark.trim().is_empty() { "#1e293b" } else { dark.trim() };
     let accent_color = if accent.trim().is_empty() { "#f59e0b" } else { accent.trim() };
@@ -132,19 +120,7 @@ pub(super) fn divider_style_batik_infographic(app: &mut DesignApp, v: DividerArt
     let fw = if first_word.is_empty() { "BAB" } else { first_word };
 
     // 5a. First word ("BAB" / "CHAPTER")
-    add_cover_text_frame(
-        app,
-        spread_idx,
-        [36.0, 16.0, text_x1, 50.0],
-        fw,
-        "#ffffff",
-        "Arial Black",
-        "Bold",
-        20.0,
-        Some(24.0),
-        None,
-        "left",
-    )?;
+    add_cover_text_frame(app, spread_idx, [36.0, 16.0, text_x1, 50.0], fw, "#ffffff", "Arial Black", "Bold", 20.0, Some(24.0), None, "left")?;
 
     // 5b. Chapter title ("Geografi")
     let title_font_size = if chapter_title.len() > 30 { 20.0 } else { 25.0 };
@@ -240,19 +216,7 @@ pub(super) fn divider_style_batik_infographic(app: &mut DesignApp, v: DividerArt
 /// Style 1: Simple Chapter Divider (`001_simple_chapter`)
 /// Clean editorial divider with colored primary header, accent badge, and narrative space.
 pub(super) fn divider_style_simple_chapter(app: &mut DesignApp, v: DividerArtVals) -> Result<(), String> {
-    let DividerArtVals {
-        spread_idx,
-        pw,
-        ph,
-        primary,
-        accent,
-        dark: _,
-        first_word,
-        chapter_num,
-        chapter_title,
-        title_en,
-        image_path,
-    } = v;
+    let DividerArtVals { spread_idx, pw, ph, primary, accent, dark: _, first_word, chapter_num, chapter_title, title_en, image_path } = v;
 
     let primary_color = if primary.trim().is_empty() { "#0284c7" } else { primary.trim() };
     let accent_color = if accent.trim().is_empty() { "#f59e0b" } else { accent.trim() };

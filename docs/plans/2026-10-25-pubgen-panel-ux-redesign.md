@@ -3,7 +3,7 @@
 - **Date:** 2026-10-25
 - **Author:** Antigravity Agent & diorz38
 - **Target Component:** `crates/ui-egui/src/panels/pubgen/mod.rs` (`pub fn show`, cards 1–3)
-- **Status:** Proposed / Future Fix
+- **Status:** Implemented
 
 ---
 
@@ -55,24 +55,19 @@ Keeps the unified single-panel scroll but re-orders the visual hierarchy to matc
 │    Active: KBDA2026.xlsx (42 records)                       │
 │    [ Download Generated CSVs as ZIP... ]                    │
 ├─────────────────────────────────────────────────────────────┤
-│ 2. PUBLICATION COVER                                        │
-│    Preset: [ Wave Curves ▼ ]                                │
-│    Title 1: [ KECAMATAN KARAWANG TIMUR                     ]│
-│    Title 2 (EN): [ EAST KARAWANG DISTRICT IN FIGURES       ]│
-│    [ Generate Cover Page ]                                  │
-├─────────────────────────────────────────────────────────────┤
-│ 3. TABLE OF CONTENTS (Dedicated Section)                    │
+│ 2. TABLE OF CONTENTS (Dedicated Section)                    │
 │    Kind: [ TOC Entry ▼ ]    Layout: [ TablePage (BPS) ▼ ]   │
 │    Title: [ DAFTAR ISI / CONTENTS                          ]│
 │    [☑ Hanging Indent]  [☑ Pair Bilingual (ID / EN)]         │
 │    [     Add TOC     ]   [   Rebuild TOC   ]                │
 ├─────────────────────────────────────────────────────────────┤
-│ 4. MANUAL IMPORT & FINE-TUNING (Collapsible Accordion)      │
-│    ▶ Page from CSV (Column Mappings & Single CSV Ingest)    │
+│ 3. MANUAL IMPORT & FINE-TUNING (Collapsible Accordion)      │
+│    ▶ Publication Cover (Style, Theme & Overrides)           │
+│    ▶ Page from CSV (Column Mappings & Ingest)               │
 │    ▶ Table from CSV (Theme & Table Options)                 │
 │    ▶ Header & Footer Templates                              │
 ├─────────────────────────────────────────────────────────────┤
-│ 5. PAGE UTILITIES                                           │
+│ 4. PAGE UTILITIES                                           │
 │    [ Double-sided ]  [ Add Blank Page ]  [ Renumber ]       │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -105,16 +100,18 @@ If the user prefers a compact, fixed-height panel without vertical scrolling:
 ## 4. Implementation Plan for Future Fix
 
 1. **Phase 1: Header Re-organization**
-   - Convert the plain outline button for `Single Lang` / `Dual Lang` into a prominent segmented control or pill toggle with an active accent color.
-   - Display the active mode badge clearly.
+   - Implemented `toggle_lang_button` with prominent active accent fill (`t.accent`, blue) and outline when inactive. Dual Lang is the default mode for newly initialized panels.
+   - Added About icon (`ℹ`) right-aligned in the header row (`[Pubgen] [toggle Lang Mode] [AI Translator] {justify-between} [about_icon]`).
+   - Added About PubGen modal dialog popup (`about_pubgen_dialog`), showcasing `pubgen_logo.png`, app name `"PubGen"` (`"Publication Generator"`), description, and author attribution text: `"Developed by IPDS BPS Karawang, Budi Yunior (dior@bps.go.id)"`.
 
 2. **Phase 2: Master Excel Elevation**
-   - Extract the Excel import block (`ui.checkbox(&mut st.excel_auto_generate, ...)` and `resp_excel = outline_button("Excel to CSV Data…")`) out of `card3_quick_actions_ui`.
-   - Place it into a dedicated top section `master_excel_ui(app, ui, st, t)` directly below the header band.
+   - Extracted the Excel import block (`ui.checkbox(&mut st.excel_auto_generate, ...)` and `resp_excel = outline_button("Excel to CSV Data…")`) out of `card3_quick_actions_ui`.
+   - Placed it into dedicated top section `master_excel_ui(app, ui, st, t)` directly below the header band.
 
 3. **Phase 3: Dedicated TOC Section**
-   - Move the TOC UI block out of `card3_quick_actions_ui` into its own top-level section `card_toc_ui(app, ui, st, t)`.
-   - Add clean visual framing and intuitive button grouping (`Add TOC` & `Rebuild TOC`).
+   - Moved the TOC UI block out of `card3_quick_actions_ui` into its own top-level section `card_toc_ui(app, ui, st, t)`.
+   - Added `toc_insert_after` checkbox ("Insert on new page after selected page") to automatically insert a new page and render the generated TOC.
+   - Added clean visual framing and intuitive button grouping (`Add TOC` & `Rebuild TOC`).
 
 4. **Phase 4: Collapsible Advanced Sections**
-   - Wrap legacy `card1_ui` (manual CSV column mapping) and `card2_ui` (manual table insertion) into collapsible headers (`ui.collapsing`), keeping the panel clean by default when the user relies on the all-in-one Excel workflow.
+   - Wrapped legacy `card1_ui` (manual CSV column mapping), `card2_ui` (manual table insertion), and Publication Cover into collapsible accordion headers (`manual_import_accordion_ui`), keeping the panel clean by default when relying on the all-in-one Excel workflow.

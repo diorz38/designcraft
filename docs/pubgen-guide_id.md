@@ -9,7 +9,7 @@
 2. [Menemukan Panel Pubgen di DesignCraft](#2-menemukan-panel-pubgen-di-designcraft)
 3. [Bagian 1: Publication Cover (Pembuat Halaman Sampul Otomatis)](#3-bagian-1-publication-cover-pembuat-halaman-sampul-otomatis)
    - [Ikhtisar & Posisi Halaman](#ikhtisar--posisi-halaman)
-   - [10 Gaya Sampul Eksekutif](#10-gaya-sampul-eksekutif)
+   - [11 Gaya Sampul Eksekutif](#11-gaya-sampul-eksekutif)
    - [Pratinjau Thumbnail Hover](#pratinjau-thumbnail-hover)
    - [Tema Warna & Kustomisasi Palet](#tema-warna--kustomisasi-palet)
    - [Metadata & Isian Informasi Publikasi](#metadata--isian-informasi-publikasi)
@@ -78,7 +78,7 @@ Anda dapat mengklik tanda panah `▼` di sebelah setiap judul kartu untuk membuk
 Di bilah tajuk atas panel Pubgen, Anda dapat beralih antara **Single Lang** (default satu bahasa) dan **Dual Lang** (dwi bahasa):
 - **Single Lang**: Pembuatan publikasi satu bahasa (monolingual) standar seperti sebelumnya.
 - **Dual Lang**: Menghasilkan publikasi dwi bahasa Indonesia-Inggris sesuai standar publikasi BPS:
-  - **Sampul Depan**: Menautkan judul bahasa Inggris ke slot `#slot:text:title_en` di seluruh 10 gaya sampul.
+  - **Sampul Depan**: Menautkan judul bahasa Inggris ke slot `#slot:text:title_en` di seluruh 11 gaya sampul.
   - **Halaman Pembatas Bab (`DIV`)**: Menampilkan judul ganda dengan subjudul bahasa Inggris menggunakan warna aksen.
   - **Bab Ulasan (`RXX`) & Bagian Depan (`BXX`)**: Membuat sebaran berurutan (halaman Indonesia diikuti halaman Inggris).
   - **Tabel Statistik (`XX_XX`)**: Menggunakan tajuk 2 baris (`Tabel` / `Table` miring) dan judul 2 baris dengan teks Inggris dicetak miring.
@@ -109,9 +109,9 @@ Menu **Publication Cover** memungkinkan Anda membuat halaman sampul depan buku/l
 
 ---
 
-### 10 Gaya Sampul Eksekutif
+### 11 Gaya Sampul Eksekutif
 
-Pubgen menyediakan 10 pilihan desain sampul siap pakai:
+Pubgen menyediakan 11 pilihan desain sampul siap pakai:
 
 #### 1. Wave Curves (`🌊 Wave`)
 - **Karakter Visual**: Mengalir dinamis, modern, dan luwes.
@@ -225,6 +225,17 @@ Pubgen menyediakan 10 pilihan desain sampul siap pakai:
   - Palet bawaannya (navy petrol + marigold, `#034460` + `#fcb91e`); memilih gaya ini otomatis memilih tema tersebut, dan tema lain tetap dapat dipakai.
 - **Paling Cocok Untuk**: Profil kota dan daerah, laporan pembangunan perkotaan, sampul korporat modern.
 
+#### 11. Tri-Color Bands (`🎨 Tri-Color`)
+- **Karakter Visual**: Eksekutif, tertata, kelembagaan — sistem warna datar alih-alih ilustrasi.
+- **Elemen Desain**:
+  - **Garis masthead tiga warna** di tepi atas: biru (`#0088D2`), hijau (`#74BF45`), dan jingga (`#F38B1E`), diulang sebagai garis di atas pita instansi.
+  - **Panel panorama kota** di sisi kanan yang melewati tepi kanan-atas, digarisbawahi batang biru/hijau/jingga.
+  - Batang aksen biru di atas judul; judul dalam **Arial Black** warna tinta, baris judul kedua berwarna jingga.
+  - **Tahun dwi-warna** (biru + tinta) dalam **Arial Black** raksasa, dengan baris **Volume** di bawahnya dan garis hijau.
+  - **Position Lock**: metadata publikasi (Baris 1: `Katalog BPS: <nomor>`, Baris 2: `ISSN/ISBN <nomor>` dengan **Arial Bold**) berada di kanan atas pada area masthead putih.
+  - **Position Lock**: pita instansi biru solid di bagian bawah, berisi logo di atas pelat putih dan teks instansi (**Arial Bold Italic**, putih).
+- **Paling Cocok Untuk**: Publikasi statistik pemerintah, laporan tahunan, profil korporat, dan sampul yang harus memakai palet kelembagaan yang ketat.
+
 ---
 
 ### Pratinjau Thumbnail Hover
@@ -258,7 +269,7 @@ Pubgen secara otomatis menampilkan kotak pemilih gambar yang relevan dengan gaya
 - **Skyline Image**: Untuk sampul bergaya *Wave Curves* dan *Chevron & Medallion*.
 - **Landscape Image**: Untuk sampul bergaya *Folded Origami* dan *Geometric Medallion*.
 - **Honeycomb Image**: Untuk sampul bergaya *Honeycomb Hexagon*. Foto Anda akan otomatis dipotong rapi mengikuti bentuk segi enam bersarang (*tri-hexagon*).
-- **Photo**: Untuk sampul bergaya *Corporate Headline*, *Diagonal Arrow*, dan *Modern Horizon*. Foto arsitektur perkotaan vertikal atau gedung landmark. Pada gaya *Diagonal Arrow* foto mengisi panel setinggi penuh di sisi kanan, di belakang pita diagonal dan panah putih. Pada gaya *Modern Horizon* foto dipotong mengikuti lengkung lebar di bagian atas halaman, jadi pilih pemandangan kota lebar dengan garis horizon yang menarik.
+- **Photo**: Untuk sampul bergaya *Corporate Headline*, *Diagonal Arrow*, *Modern Horizon*, dan *Tri-Color Bands*. Foto arsitektur perkotaan vertikal atau gedung landmark. Pada gaya *Diagonal Arrow* foto mengisi panel setinggi penuh di sisi kanan, di belakang pita diagonal dan panah putih. Pada gaya *Modern Horizon* foto dipotong mengikuti lengkung lebar di bagian atas halaman, jadi pilih pemandangan kota lebar dengan garis horizon yang menarik.
 - **Logo**: Klik tombol **Browse...** untuk memilih berkas logo instansi (format `.png`, `.jpg`, atau `.webp`). Logo akan disematkan secara proporsional tanpa gepeng/terdistorsi.
 
 ---
