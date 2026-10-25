@@ -14,13 +14,14 @@
 
 The next strategic milestone is transforming PubGen into a **unified enterprise publication operating system** tailored for statistical agencies (such as Badan Pusat Statistik / BPS) and institutional reporting.
 
-This document details the architectural specifications for the next six major pillars:
+This document details the architectural specifications for the next seven major pillars:
 1. **Native Statistical Infographics & Vector Chart Generator (`C01`, `C02`)**
 2. **Multi-Chapter Publication Binder & Project Compiler ("Book" / Batch Mode)**
 3. **Statistical Layout Preflight & Quality Assurance (QA Audit)**
 4. **BPS Statistical AI Assistant & Official Terminology Memory**
 5. **Codebase Modularization (Decomposing `mod.rs` Monolith)**
 6. **One-Click Dual Export Pipelines (Print-Ready PDF/X-4 vs. Web Distribution)**
+7. **Universal Publication Profiles & General-Purpose Extensibility (Beyond BPS)**
 
 ---
 
@@ -260,7 +261,101 @@ crates/ui-egui/src/panels/pubgen/
 
 ---
 
-## 8. Implementation Roadmap & Milestones
+## 8. Pillar 7: Universal Publication Profiles & General-Purpose Extensibility (Beyond BPS)
+
+### 8.1 Problem Statement: Overcoming Single-Agency Bias
+PubGen’s initial iterations were tailored around BPS (*Badan Pusat Statistik*) requirements:
+- Fixed sheet naming expectations (`COVER`, `DIV`, `G00`, `R01`, `01_01`, `C01`).
+- Hardcoded Indonesian keywords (`BAB`, `Tabel`, `Grafik`, `Sumber:`, `Catatan:`, `Daftar Isi`).
+- Standard BPS layout geometry (Top 20.20 mm, Bottom 20 mm, Inside 19 mm, Outside 15 mm).
+- Institutional branding assets (BPS logo, BerAKHLAK, SE2026).
+
+While highly effective for BPS teams, general-purpose enterprise users (corporations, banks, universities, research NGOs like the UN, World Bank, and municipal agencies) require different section nomenclature, table styles, and design languages.
+
+### 8.2 Architectural Solution: Decoupled Publication Profiles (`pubgen_profile.json`)
+Decouple the **core algorithmic engine** (matrix parsing, hierarchical headers, vector layout, TOC building, AI drafting) from the **domain profile configuration**:
+
+```text
+┌────────────────────────────────────────────────────────┐
+│                   PUBGEN CORE ENGINE                   │
+│ (Excel Parser, Vector Layout, Tables, TOC, AI Writer)  │
+└──────────────────────────┬─────────────────────────────┘
+                           │ Configured by
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│             PUBLICATION PROFILE SELECTOR               │
+│                                                        │
+│  [ Preset: Corporate Annual Report ▼ ]                 │
+│  ───────────────────────────────────────────────────   │
+│  • BPS Statistical Publication (Official KDA / BDA)    │
+│  • Corporate Annual Report (Financial / Enterprise)    │
+│  • Academic & Research Monograph (Universities / NGOs) │
+│  • Technical / Product Specification Catalog           │
+│  • Custom User Profile (*.json / *.toml)               │
+└────────────────────────────────────────────────────────┘
+```
+
+### 8.3 Profile Schema Specification (`PubgenProfile`)
+Each profile defines:
+
+```json
+{
+  "profile_id": "corporate_annual_report",
+  "name": "Corporate Annual Report",
+  "description": "Clean modern layout for enterprise annual & quarterly reports with executive summaries, KPI stat cards, and financial statements.",
+  "nomenclature": {
+    "chapter_prefix": "Section",
+    "table_prefix": "Table",
+    "chart_prefix": "Figure",
+    "toc_title": "Table of Contents",
+    "toc_tables_title": "List of Tables",
+    "toc_charts_title": "List of Figures",
+    "source_keywords": ["Source:", "Data:", "Reference:"],
+    "note_keywords": ["Note:", "Notes:", "Disclaimer:"],
+    "subtotal_keywords": ["Total", "Subtotal", "Consolidated", "Net"]
+  },
+  "sheet_routing": {
+    "cover_patterns": ["(?i)^cover$", "(?i)^front_cover$"],
+    "divider_patterns": ["(?i)^div.*", "(?i)^section.*"],
+    "narrative_patterns": ["(?i)^exec_summary.*", "(?i)^narrative.*", "(?i)^r\\d+.*"],
+    "table_patterns": ["(?i)^\\d+[_.]\\d+.*", "(?i)^table.*", "(?i)^fin_.*"],
+    "chart_patterns": ["(?i)^c\\d+.*", "(?i)^chart.*", "(?i)^figure.*"]
+  },
+  "geometry": {
+    "page_size": "A4",
+    "facing_pages": true,
+    "margins": {
+      "top_mm": 25.0,
+      "bottom_mm": 25.0,
+      "inside_mm": 25.0,
+      "outside_mm": 20.0
+    }
+  },
+  "styling": {
+    "table_style": "minimal_rules",
+    "default_palette": "corporate_navy",
+    "header_numbering_row": false,
+    "bilingual_mode_allowed": false
+  }
+}
+```
+
+### 8.4 Built-in Out-of-the-Box Profiles
+
+| Profile ID | Target Sector | Key Characteristics |
+| :--- | :--- | :--- |
+| **`bps_statistical`** *(Flagship Default)* | Statistical Offices (BPS) | Bilingual ID/EN, standard 20 mm margins, DIV theme palettes, column numbering row `(1) (2) (3)`, BPS branding slots. |
+| **`corporate_annual`** | Public Companies, Banks, Startups | Sleek minimalist borders, KPI stat callout boxes, executive letter spreads, quarterly breakdown tables, English/monolingual or bilingual options. |
+| **`academic_monograph`** | Universities, Research Think Tanks, NGOs (UN, World Bank) | Strict APA/Chicago manual table formatting, clean monochrome/navy rules, numbered equations, formal author/institution headers. |
+| **`technical_catalog`** | Manufacturers, Retailers, Hardware vendors | Multi-column product specification grids, alternating row zebra striping, SKU & pricing column emphasis. |
+
+### 8.5 User-Defined Profiles & Community Sharing
+- **Profile Manager in PubGen:** A dropdown at the top of the Pubgen panel to switch profiles with one click.
+- **Import / Export Custom Profile:** Users can export their custom settings to a `.pubgen-profile.json` file and share it across their organization, allowing any company or department to enforce their brand layout instantly.
+
+---
+
+## 9. Implementation Roadmap & Milestones
 
 | Milestone | Deliverables | Estimated Effort |
 | :--- | :--- | :--- |
@@ -270,9 +365,11 @@ crates/ui-egui/src/panels/pubgen/
 | **M4: Vector Chart Engine** | Implement native vector bar/line/donut chart rendering from `CXX` Excel sheets. | 5–7 days |
 | **M5: Batch Multi-Chapter Binder** | Implement project manifest and one-click compiler for entire `BAB_01`..`BAB_10` workbook directories. | 5–6 days |
 | **M6: Dual PDF Profiles** | Integrate one-click PDF/X-4 (print) and compact hyperlinked PDF (web) export presets. | 3–4 days |
+| **M7: Universal Profiles** | Decouple BPS-specific keywords into `PubgenProfile` schema; ship built-in profiles (Corporate, Academic, Catalog) + custom profile import/export. | 4–5 days |
 
 ---
 
-## 9. Conclusion
+## 10. Conclusion
 
-Implementing this architectural roadmap elevates PubGen from a specialized layout assistant to an unmatched, comprehensive desktop publishing platform for governmental, institutional, and enterprise publications.
+Implementing this architectural roadmap elevates PubGen from a specialized municipal layout assistant to a world-class, multi-domain desktop publishing platform capable of delivering publication-grade output for governmental, institutional, academic, and enterprise organizations worldwide.
+
