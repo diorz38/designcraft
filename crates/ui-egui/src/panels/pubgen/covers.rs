@@ -2,6 +2,47 @@
 
 use super::*;
 
+/// Index of the "Modern Horizon" cover style — the one traced from the reference annual-report
+/// design, whose palette is navy + orange rather than the amber of the other presets.
+pub(crate) const HORIZON_STYLE: usize = 7;
+
+/// Index of the "Business Report" cover style — the navy/orange diagonal cover derived from the
+/// business-report reference image, sharing the Horizon palette.
+pub(crate) const BUSINESS_STYLE: usize = 8;
+
+/// Index of the "Urban Angle" cover style — the diagonal-wedge cityscape cover derived from
+/// `design-6.designcraft`, sharing the Report palette.
+pub(crate) const URBAN_STYLE: usize = 9;
+
+/// Index of the "Tri-Color Bands" cover style — the executive blue/green/orange template.
+pub(crate) const TRICOLOR_STYLE: usize = 10;
+
+/// Index of the "Prism Diamonds" cover style — the jewelled diamond cascade on a midnight field.
+pub(crate) const PRISM_STYLE: usize = 11;
+
+/// Index of the "Quarter Stack" cover style — the fanned cards on a warm paper field.
+pub(crate) const QUARTER_STYLE: usize = 12;
+
+/// Theme preset index and colours of the reference annual-report cover (navy + orange).
+pub(crate) const REPORT_THEME: usize = 6;
+
+/// Select the palette the reference design uses, so a freshly picked Modern Horizon cover already
+/// looks like the reference instead of the amber default.
+pub(crate) fn apply_report_palette(st: &mut PubgenState) {
+    st.cover_theme_preset = REPORT_THEME;
+    st.cover_color_primary = "#082641".into();
+    st.cover_color_accent = "#f5871f".into();
+    st.cover_color_dark = "#082641".into();
+}
+
+/// The traced design-6 palette: deep petrol navy and warm marigold.
+pub(crate) fn apply_urban_palette(st: &mut PubgenState) {
+    st.cover_theme_preset = REPORT_THEME;
+    st.cover_color_primary = "#034460".into();
+    st.cover_color_accent = "#fcb91e".into();
+    st.cover_color_dark = "#034460".into();
+}
+
 /// The world bounds of one item, read back through `document.inspect`.
 pub(crate) fn item_bounds(app: &mut DesignApp, id: u64) -> Option<[f64; 4]> {
     fn scan(v: &Value, id: u64) -> Option<[f64; 4]> {

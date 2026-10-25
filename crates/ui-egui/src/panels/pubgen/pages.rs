@@ -2,6 +2,157 @@
 
 use super::*;
 
+// ---------------------------------------------------------------------------
+// CSV File Ingestion (RFC 4180 parsing with quotes and delimiter sniffing)
+// ---------------------------------------------------------------------------
+
+/// Supports:
+/// - Direct file path (as-is or with `.designcraft`)
+/// - Path relative to the catalog file's directory
+/// - Path relative to `assets/templates/` or any of its subfolders (`dividers/`, `covers/`, etc.)
+/// - Template ID match from scanned template catalog (e.g. `001_ulasan_chapter` or fuzzy stem)
+/// Resolve a template path or template ID from a catalog specification.
+///
+/// Supports:
+/// - Direct file path (as-is or with `.designcraft`)
+/// - Path relative to the catalog file's directory
+/// - Path relative to `assets/templates/` or any of its subfolders (`dividers/`, `covers/`, etc.)
+/// - Template ID match from scanned template catalog (e.g. `001_ulasan_chapter` or fuzzy stem)
+pub fn resolve_template_path_spec(catalog_path: &str, spec: &str) -> Option<String> {
+    let clean = spec.trim().trim_matches('"').trim();
+    if clean.is_empty() {
+        return None;
+    }
+
+    let clean_lower = clean.to_lowercase();
+    let alias_opt = match clean_lower.as_str() {
+        "dividers/special_infographic_divider"
+        | "special_infographic_divider"
+        | "dividers/002_chapter_devider"
+        | "002_chapter_devider"
+        | "chapter_devider"
+        | "dividers/002_batik_infographic"
+        | "002_batik_infographic"
+        | "batik_infographic" => Some("dividers/002_batik_infographic"),
+        "dividers/001_ulasan_chapter"
+        | "001_ulasan_chapter"
+        | "ulasan_chapter"
+        | "dividers/001_simple_chapter"
+        | "001_simple_chapter"
+        | "simple_chapter" => Some("dividers/001_simple_chapter"),
+        _ => None,
+    };
+
+    // 1. Direct path check as-is or with .designcraft
+    let direct_p = std::path::Path::new(clean);
+    if direct_p.is_file() {
+        return Some(clean.to_string());
+    }
+    let direct_ext = format!("{clean}.designcraft");
+    if std::path::Path::new(&direct_ext).is_file() {
+        return Some(direct_ext);
+    }
+    if let Some(alias) = alias_opt {
+        let alias_ext = format!("{alias}.designcraft");
+        if std::path::Path::new(alias).is_file() {
+            return Some(alias.to_string());
+        }
+        if std::path::Path::new(&alias_ext).is_file() {
+            return Some(alias_ext);
+        }
+    }
+
+    // 2. Relative to catalog file directory
+    if !catalog_path.is_empty() {
+        let cat_p = std::path::Path::new(catalog_path);
+        let base_dir = if cat_p.is_file() { cat_p.parent() } else { Some(cat_p) };
+        if let Some(dir) = base_dir {
+            let rel = dir.join(clean);
+            if rel.is_file() {
+                return Some(rel.to_string_lossy().to_string());
+            }
+            let rel_ext = dir.join(&direct_ext);
+            if rel_ext.is_file() {
+                return Some(rel_ext.to_string_lossy().to_string());
+            }
+            let rel_tpl = dir.join("templates").join(clean);
+            if rel_tpl.is_file() {
+                return Some(rel_tpl.to_string_lossy().to_string());
+            }
+            let rel_tpl_ext = dir.join("templates").join(&direct_ext);
+            if rel_tpl_ext.is_file() {
+                return Some(rel_tpl_ext.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // 3. Search in standard assets/templates root
+    let root_candidates = [
+        std::path::PathBuf::from("assets/templates"),
+        std::path::PathBuf::from("../../assets/templates"),
+        std::path::PathBuf::from("../assets/templates"),
+    ];
+    if let Some(root) = root_candidates.into_iter().find(|p| p.is_dir()) {
+        // Direct under assets/templates
+        let p1 = root.join(clean);
+        if p1.is_file() {
+            return Some(p1.to_string_lossy().to_string());
+        }
+        let p1_ext = root.join(&direct_ext);
+        if p1_ext.is_file() {
+            return Some(p1_ext.to_string_lossy().to_string());
+        }
+
+        // Try under subcategories (dividers, covers, front_matter, data_tables, infographics, articles)
+        let subcats = ["dividers", "data_tables", "front_matter", "covers", "infographics", "articles"];
+        for sub in subcats {
+            let sub_p = root.join(sub).join(clean);
+            if sub_p.is_file() {
+                return Some(sub_p.to_string_lossy().to_string());
+            }
+            let sub_p_ext = root.join(sub).join(&direct_ext);
+            if sub_p_ext.is_file() {
+                return Some(sub_p_ext.to_string_lossy().to_string());
+            }
+        }
+
+        // Match against template catalogue IDs (e.g. "001_ulasan_chapter" or fuzzy matching stem)
+        let scanned = designcraft_engine::cmd::template::scan_template_catalog(&root);
+        let clean_lower = clean.to_lowercase();
+        // Exact ID match
+        if let Some(found) = scanned.iter().find(|t| t.id.to_lowercase() == clean_lower) {
+            return Some(found.path.to_string_lossy().to_string());
+        }
+        if let Some(alias) = alias_opt {
+            let alias_stem = alias.strip_prefix("dividers/").unwrap_or(alias);
+            if let Some(found) = scanned.iter().find(|t| t.id.to_lowercase() == alias_stem) {
+                return Some(found.path.to_string_lossy().to_string());
+            }
+        }
+        // If numeric 1-3 digits (e.g. "002" or "2"), check for divider templates with matching prefix
+        if clean.len() <= 3 && clean.chars().all(|c| c.is_ascii_digit()) {
+            let padded = format!("{:03}_", clean.parse::<u32>().unwrap_or(0));
+            if let Some(found) = scanned.iter().find(|t| t.category == "dividers" && t.id.starts_with(&padded)) {
+                return Some(found.path.to_string_lossy().to_string());
+            }
+            if let Some(found) = scanned.iter().find(|t| t.id.starts_with(&padded)) {
+                return Some(found.path.to_string_lossy().to_string());
+            }
+        }
+        // Substring / suffix / prefix match on ID
+        if let Some(found) = scanned.iter().find(|t| {
+            let id_l = t.id.to_lowercase();
+            id_l.contains(&clean_lower) || clean_lower.contains(&id_l)
+        }) {
+            return Some(found.path.to_string_lossy().to_string());
+        }
+    }
+
+    None
+}
+
+/// The number of paragraphs the TOC would collect for `style` right now.
+
 fn post_process_template_applied_page(
     app: &mut DesignApp,
     st: &PubgenState,

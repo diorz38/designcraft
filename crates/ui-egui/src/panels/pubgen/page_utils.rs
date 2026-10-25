@@ -2,6 +2,135 @@
 
 use super::*;
 
+/// Returns the custom document margins:
+/// 1. From existing document pages with local or custom (non-36pt, non-0) margins
+/// 2. From parent pages with custom (non-36pt, non-0) margins
+/// 3. From any spread page with non-zero margins
+/// 4. From any parent page with non-zero margins
+/// 5. Fallback: Standard BPS custom margins (Top 20.20 mm, Bottom 20 mm, Inside 19 mm, Outside 15 mm)
+pub fn detect_document_margins(doc: &designcraft_doc::Document) -> designcraft_doc::Margins {
+    const PT_PER_MM: f64 = 72.0 / 25.4;
+    let bps_margins =
+        designcraft_doc::Margins { top: 20.20 * PT_PER_MM, bottom: 20.0 * PT_PER_MM, inside: 19.0 * PT_PER_MM, outside: 15.0 * PT_PER_MM };
+
+    // 1. Look for existing document pages with local margins or non-default margins (excluding COVER/DIV with 0 margins)
+    if let Some(m) = doc
+        .spreads
+        .iter()
+        .flat_map(|sp| &sp.pages)
+        .find(|pg| pg.margins.top > 0.0 && pg.margins.bottom > 0.0 && (pg.local_margins || pg.margins != designcraft_doc::Margins::uniform(36.0)))
+        .map(|pg| pg.margins)
+    {
+        return m;
+    }
+
+    // 2. Look for parents with non-default margins
+    if let Some(m) = doc
+        .parents
+        .iter()
+        .flat_map(|sp| &sp.pages)
+        .find(|pg| pg.margins.top > 0.0 && pg.margins.bottom > 0.0 && pg.margins != designcraft_doc::Margins::uniform(36.0))
+        .map(|pg| pg.margins)
+    {
+        return m;
+    }
+
+    // 3. Fallback: Standard BPS custom margins (Top 20.20 mm, Bottom 20 mm, Inside 19 mm, Outside 15 mm)
+    bps_margins
+}
+
+/// Sets document margins across all spreads and parents:
+/// - Top: 20.20 mm
+/// - Bottom: 20.00 mm
+/// - Inside: 19.00 mm
+/// - Outside: 15.00 mm
+pub fn execute_set_page_margins(app: &mut DesignApp) -> Result<String, String> {
+    const PT_PER_MM: f64 = 72.0 / 25.4;
+    let top_pt = 20.20 * PT_PER_MM;
+    let bottom_pt = 20.0 * PT_PER_MM;
+    let inside_pt = 19.0 * PT_PER_MM;
+    let outside_pt = 15.0 * PT_PER_MM;
+
+    // Record which pages are COVER or DIV (already 0 margins) before layout.documentSetup
+    let zero_margin_pages: Vec<usize> = app
+        .session
+        .active()
+        .map(|s| {
+            (0..s.doc.page_count())
+                .filter(|&p| {
+                    if let Some((si, pi)) = s.doc.page_loc(p)
+                        && let Some(pg) = s.doc.spreads.get(si).and_then(|sp| sp.pages.get(pi))
+                    {
+                        return pg.margins.top == 0.0 && pg.margins.bottom == 0.0;
+                    }
+                    false
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    app.run(
+        "layout.documentSetup",
+        json!({
+            "margins": {
+                "top": top_pt,
+                "bottom": bottom_pt,
+                "inside": inside_pt,
+                "outside": outside_pt
+            },
+            "adjustLayout": true
+        }),
+    )?;
+
+    // Keep COVER and DIV pages adjusted to Page Size (margins = 0)
+    let _ = app.session.edit(|doc, _| {
+        let mut abs_p = 0usize;
+        for sp in &mut doc.spreads {
+            let sp = std::sync::Arc::make_mut(sp);
+            for pg in &mut sp.pages {
+                let pb = pg.bounds();
+                let is_cover_or_div = zero_margin_pages.contains(&abs_p)
+                    || sp.items.iter().any(|it| {
+                        let ib = it.bounds();
+                        ib.x0 < pb.x1
+                            && ib.x1 > pb.x0
+                            && (it.label.contains("cover")
+                                || it.label.contains("divider")
+                                || it.label.starts_with("#slot:text:level")
+                                || it.label.starts_with("#slot:text:chapter_prefix")
+                                || it.label.starts_with("#slot:chapter_prefix")
+                                || it.label.starts_with("#slot:text:first_word"))
+                    });
+                if is_cover_or_div {
+                    pg.margins = designcraft_doc::Margins::uniform(0.0);
+                    pg.local_margins = true;
+                }
+                abs_p += 1;
+            }
+            sp.relayout();
+        }
+        Ok(serde_json::Value::Null)
+    });
+
+    // If a header/footer is already applied to the document, re-apply it so its geometry,
+    // frames, and hairline rules immediately follow the new page margins.
+    if app.session.active().and_then(|s| s.doc.header_footer.as_ref()).is_some() {
+        let _ = app.run(
+            "layout.headerFooter.apply",
+            json!({
+                "margins": {
+                    "top": top_pt,
+                    "bottom": bottom_pt,
+                    "inside": inside_pt,
+                    "outside": outside_pt
+                }
+            }),
+        );
+    }
+
+    Ok("Page margins set: Top 20.20 mm, Bottom 20 mm, Inside 19 mm, Outside 15 mm".to_string())
+}
+
 pub fn execute_renumber_page(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, String> {
     let cur_page = target_page_index(app);
     let old_label = app.session.page_label(cur_page);

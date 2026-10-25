@@ -2,6 +2,59 @@
 
 use super::*;
 
+/// The Quick Actions "TOC style" choices: what the table of contents lists.
+pub const TOC_KINDS: [&str; 4] = ["TOC Entry", "TOC Table", "TOC Chart", "TOC Paragraph"];
+
+/// The paragraph style of a narrative page's title: the pages the `GXX` and `RXX` sheets produce.
+/// The paragraph table of contents lists these pages and nothing else, so a table, chart, divider
+/// or publication-note page never shows up in it.
+pub const TOC_NARRATIVE_STYLE: &str = "TOC Chapter";
+
+/// The English twin title of a Dual Lang narrative page ("Chapter 01 Geography"): tagged with
+/// this style at generation, so the paragraph TOC pairs it with the Indonesian chapter row
+/// ("BAB 01 Geografi / Geography") instead of listing it as a page of its own. Only tagged when
+/// the pairing checkbox is on with the Dual Lang toggle.
+pub const TOC_CHAPTER_EN_STYLE: &str = "TOC Chapter EN";
+
+/// The words the first text box on a page must start with for each TOC style; none lists every
+/// paragraph of the tagged style (the original behaviour). A paragraph list takes chapter pages
+/// only: `RXX` and `BXX` pages open with their "BAB 01" line, table and chart pages don't.
+pub fn toc_kind_words(kind: usize) -> &'static [&'static str] {
+    match kind {
+        1 => &["Tabel", "Table"],
+        2 => &["Grafik", "Chart"],
+        3 => &["BAB"],
+        _ => &[],
+    }
+}
+
+/// The title a TOC style fills in when it is picked; `None` leaves the typed title alone.
+pub fn toc_kind_title(kind: usize, bilingual: bool) -> Option<&'static str> {
+    match (kind, bilingual) {
+        (1, false) => Some("Daftar Tabel"),
+        (1, true) => Some("Daftar Tabel / List of Tables"),
+        (2, false) => Some("Daftar Grafik"),
+        (2, true) => Some("Daftar Grafik / List of Charts"),
+        (3, false) => Some("Daftar Isi"),
+        (3, true) => Some("Daftar Isi / Table of Contents"),
+        _ => None,
+    }
+}
+
+/// The TOC style a stored table of contents was generated with: its entry's `pageTitle` filter.
+pub fn toc_kind_of_words(words: &[String]) -> usize {
+    let has = |w: &str| words.iter().any(|x| x.eq_ignore_ascii_case(w));
+    if has("bab") {
+        3
+    } else if has("grafik") || has("chart") {
+        2
+    } else if has("tabel") || has("table") {
+        1
+    } else {
+        0
+    }
+}
+
 /// Strip type and number prefixes from a title for TablePage layout (which puts the type in the column header
 /// and the number in column 1, leaving only the title text for column 2).
 pub(crate) fn strip_tablepage_title_prefix<'a>(title: &'a str, num: &str, typ: &str) -> &'a str {
