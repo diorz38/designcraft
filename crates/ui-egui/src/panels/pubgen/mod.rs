@@ -48,6 +48,12 @@ const URBAN_STYLE: usize = 9;
 /// Index of the "Tri-Color Bands" cover style — the executive blue/green/orange template.
 const TRICOLOR_STYLE: usize = 10;
 
+/// Index of the "Prism Diamonds" cover style — the jewelled diamond cascade on a midnight field.
+const PRISM_STYLE: usize = 11;
+
+/// Index of the "Quarter Stack" cover style — the fanned cards on a warm paper field.
+const QUARTER_STYLE: usize = 12;
+
 /// Theme preset index and colours of the reference annual-report cover (navy + orange).
 const REPORT_THEME: usize = 6;
 
@@ -468,6 +474,12 @@ pub struct PubgenState {
     pub cover_image_logo: String,
     #[serde(default = "default_cover_agency_text")]
     pub cover_agency_text: String,
+    #[serde(default = "default_true")]
+    pub cover_include_inside_back: bool,
+    #[serde(default)]
+    pub cover_image_back: String,
+    #[serde(default)]
+    pub cover_office_address: String,
     #[serde(default)]
     pub cover_status: Option<(String, bool)>,
 
@@ -621,6 +633,9 @@ impl Default for PubgenState {
             cover_image_landscape: default_cover_landscape(),
             cover_image_logo: default_cover_logo(),
             cover_agency_text: default_cover_agency_text(),
+            cover_include_inside_back: false,
+            cover_image_back: String::new(),
+            cover_office_address: String::new(),
             cover_status: None,
             excel_auto_generate: true,
             excel_had_cover: false,
@@ -1061,7 +1076,11 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
     ui.spacing_mut().item_spacing = vec2(6.0, 5.0);
     let state_id = egui::Id::new(PANEL_ID);
-    let mut st: PubgenState = ui.data(|d| d.get_temp(state_id)).unwrap_or_else(|| PubgenState { bilingual_output: true, ..Default::default() });
+    let mut st: PubgenState = ui.data(|d| d.get_temp(state_id)).unwrap_or_else(|| PubgenState {
+        bilingual_output: true,
+        cover_include_inside_back: true,
+        ..Default::default()
+    });
 
     // AI setup modal + background job poll (progress and Done both land here).
     if let Some(mut job) = st.translate_job.take() {
@@ -1441,6 +1460,8 @@ fn style_thumbnail_texture(ctx: &egui::Context, style_idx: usize) -> Option<egui
         8 => ("business_report.png", "karawang_timur_business_cover.png"),
         9 => ("urban_angle.png", "urban_angle.png"),
         10 => ("tri_color_bands.png", "tri_color_bands.png"),
+        11 => ("prism_diamonds.png", "prism_diamonds.png"),
+        12 => ("quarter_stack.png", "quarter_stack.png"),
         _ => return None,
     };
     let candidates = [
@@ -1798,6 +1819,100 @@ fn paint_fallback_cover_thumb(ui: &mut Ui, style_idx: usize, w: f32, h: f32, t: 
             p.rect_filled(band(0.23, 0.55, 0.878, 0.892), 1.0, Color32::WHITE);
             p.rect_filled(band(0.23, 0.50, 0.900, 0.914), 1.0, Color32::WHITE);
         }
+        11 => {
+            // Style 11 (Prism Diamonds): a midnight field with a cascade of jewelled diamonds around
+            // a diamond-cut photograph, an ice-white headline over a two-tone year, and the blue
+            // institutional band at the foot.
+            let night = Color32::from_rgb(10, 34, 51);
+            let blue = Color32::from_rgb(0, 136, 210);
+            let green = Color32::from_rgb(116, 191, 69);
+            let orange = Color32::from_rgb(243, 139, 30);
+            let ice = Color32::from_rgb(237, 244, 248);
+            let band =
+                |x0: f32, x1: f32, y0: f32, y1: f32| egui::Rect::from_min_max(rect.min + vec2(w * x0, h * y0), rect.min + vec2(w * x1, h * y1));
+            let diamond = |cx: f32, cy: f32, r: f32| {
+                vec![rect.min + vec2(cx, cy - r), rect.min + vec2(cx + r, cy), rect.min + vec2(cx, cy + r), rect.min + vec2(cx - r, cy)]
+            };
+            p.rect_filled(rect, 4.0, night);
+            p.add(egui::Shape::convex_polygon(diamond(w * 0.55, h * 0.36, w * 0.36), Color32::from_rgb(14, 58, 80), egui::Stroke::NONE));
+            p.add(egui::Shape::convex_polygon(diamond(w * 0.73, h * 0.24, w * 0.26), Color32::from_rgb(150, 172, 196), egui::Stroke::NONE));
+            p.add(egui::Shape::convex_polygon(diamond(w * 0.49, h * 0.15, w * 0.08), green, egui::Stroke::NONE));
+            p.add(egui::Shape::convex_polygon(diamond(w * 0.43, h * 0.25, w * 0.05), orange, egui::Stroke::NONE));
+            p.add(egui::Shape::convex_polygon(diamond(w * 0.58, h * 0.36, w * 0.09), Color32::from_rgb(127, 198, 232), egui::Stroke::NONE));
+            p.add(egui::Shape::convex_polygon(diamond(w * 0.93, h * 0.48, w * 0.11), Color32::from_rgb(191, 227, 204), egui::Stroke::NONE));
+            p.add(egui::Shape::convex_polygon(diamond(w * 0.78, h * 0.56, w * 0.07), Color32::from_rgb(253, 178, 122), egui::Stroke::NONE));
+            p.add(egui::Shape::convex_polygon(diamond(w * 0.88, h * 0.68, w * 0.05), green, egui::Stroke::NONE));
+            // Headline, second line, and the two-tone year with its volume line.
+            p.rect_filled(band(0.075, 0.64, 0.545, 0.573), 1.0, ice);
+            p.rect_filled(band(0.075, 0.42, 0.600, 0.628), 1.0, ice);
+            p.rect_filled(band(0.075, 0.33, 0.674, 0.694), 1.0, orange);
+            p.rect_filled(band(0.075, 0.21, 0.716, 0.780), 1.0, blue);
+            p.rect_filled(band(0.21, 0.37, 0.716, 0.780), 1.0, ice);
+            p.rect_filled(band(0.075, 0.30, 0.818, 0.830), 1.0, ice);
+            p.rect_filled(band(0.075, 0.32, 0.855, 0.858), 0.0, green);
+            // Green seam, blue institutional band, logo plate and band diamonds.
+            p.rect_filled(band(0.0, 1.0, 0.891, 0.896), 0.0, green);
+            p.rect_filled(band(0.0, 1.0, 0.896, 1.0), 0.0, blue);
+            p.rect_filled(band(0.075, 0.21, 0.920, 0.979), 0.0, Color32::WHITE);
+            p.add(egui::Shape::convex_polygon(diamond(w * 0.78, h * 0.949, w * 0.025), green, egui::Stroke::NONE));
+            p.add(egui::Shape::convex_polygon(diamond(w * 0.84, h * 0.957, w * 0.017), orange, egui::Stroke::NONE));
+        }
+        12 => {
+            // Style 12 (Quarter Stack): a warm paper field, a fanned stack of cards that each round
+            // a single corner, a cascading chip cluster and the ink institutional band.
+            let paper = Color32::from_rgb(246, 241, 231);
+            let ink = Color32::from_rgb(31, 42, 68);
+            let clay = Color32::from_rgb(199, 91, 57);
+            let marigold = Color32::from_rgb(232, 163, 61);
+            let sage = Color32::from_rgb(147, 169, 140);
+            let blush = Color32::from_rgb(231, 199, 179);
+            let teal = Color32::from_rgb(47, 111, 107);
+            let band =
+                |x0: f32, x1: f32, y0: f32, y1: f32| egui::Rect::from_min_max(rect.min + vec2(w * x0, h * y0), rect.min + vec2(w * x1, h * y1));
+            let one = |nw: u8, ne: u8, sw: u8, se: u8| egui::CornerRadius { nw, ne, sw, se };
+            p.rect_filled(rect, 4.0, paper);
+            // The fanned cards, each with one rounded corner, the photograph at the front.
+            p.rect_filled(band(0.39, 0.89, 0.0, 0.36), one(0, 0, 22, 0), blush);
+            p.rect_filled(band(0.44, 0.94, 0.024, 0.38), one(22, 0, 0, 0), sage);
+            p.rect_filled(band(0.49, 0.99, 0.06, 0.42), one(0, 22, 0, 0), clay);
+            p.rect_filled(band(0.55, 1.0, 0.095, 0.46), one(0, 0, 0, 26), Color32::from_rgb(150, 172, 196));
+            // Chip cluster below the stack.
+            p.rect_filled(band(0.72, 0.91, 0.50, 0.63), one(10, 0, 0, 0), teal);
+            p.rect_filled(band(0.84, 1.0, 0.59, 0.72), one(0, 0, 0, 10), marigold);
+            p.rect_filled(band(0.76, 0.84, 0.69, 0.75), one(0, 6, 0, 0), blush);
+            p.rect_filled(band(0.93, 1.0, 0.69, 0.77), one(0, 6, 0, 0), clay);
+            // Headline, second line, two-tone year and volume line.
+            p.rect_filled(band(0.075, 0.62, 0.481, 0.514), 1.0, ink);
+            p.rect_filled(band(0.075, 0.47, 0.530, 0.554), 1.0, ink);
+            p.rect_filled(band(0.075, 0.33, 0.634, 0.660), 1.0, clay);
+            p.rect_filled(band(0.075, 0.21, 0.679, 0.757), 1.0, clay);
+            p.rect_filled(band(0.21, 0.38, 0.679, 0.757), 1.0, ink);
+            p.rect_filled(band(0.075, 0.30, 0.788, 0.800), 1.0, ink);
+            p.rect_filled(band(0.075, 0.32, 0.827, 0.830), 0.0, sage);
+            // Ink band, paper logo plate and the band chips.
+            p.rect_filled(band(0.0, 1.0, 0.896, 1.0), 0.0, ink);
+            p.rect_filled(band(0.075, 0.21, 0.921, 0.981), one(0, 6, 0, 0), paper);
+            p.add(egui::Shape::convex_polygon(
+                vec![
+                    rect.min + vec2(w * 0.74, h * 0.938),
+                    rect.min + vec2(w * 0.79, h * 0.938),
+                    rect.min + vec2(w * 0.79, h * 0.974),
+                    rect.min + vec2(w * 0.74, h * 0.974),
+                ],
+                sage,
+                egui::Stroke::NONE,
+            ));
+            p.add(egui::Shape::convex_polygon(
+                vec![
+                    rect.min + vec2(w * 0.81, h * 0.947),
+                    rect.min + vec2(w * 0.86, h * 0.947),
+                    rect.min + vec2(w * 0.86, h * 0.983),
+                    rect.min + vec2(w * 0.81, h * 0.983),
+                ],
+                marigold,
+                egui::Stroke::NONE,
+            ));
+        }
         _ => {
             // Style 8 (Business Report, traced from design-10): white base, orange top band and
             // bottom-right corner, arrow-shaped photograph with its chevron sliver across a thin
@@ -1915,6 +2030,8 @@ fn show_style_thumbnail_tooltip(ui: &mut Ui, style_idx: usize, name: &str, t: &T
             8 => "Arrow-shaped skyline photograph with a chevron sliver across a white gap, an orange top band and corner, a navy plane carrying the white year circle, the headline top-left and the agency block bottom-left.",
             9 => "Orange corner wedge and a navy diagonal band carrying the rotated year over a right-hand cityscape, with a white negative-space headline panel and a navy bottom wedge.",
             10 => "Executive white grid: a tri-colour masthead rule, a right-hand cityscape panel over a blue/green/orange bar, a two-tone year and a blue institutional band.",
+            11 => "Midnight prism: a cascade of jewelled diamonds around a diamond-cut photograph, an ice-white headline over a two-tone year, and a blue institutional band.",
+            12 => "Warm paper stack: four cards fanned with one rounded corner each around a card-cut photograph, a cascading chip cluster, and an ink institutional band.",
             _ => "",
         };
         ui.add_space(3.0);
@@ -1944,6 +2061,8 @@ fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
             "Business Report",
             "Urban Angle",
             "Tri-Color Bands",
+            "Prism Diamonds",
+            "Quarter Stack",
         ];
         let cur_style = styles.get(st.cover_style).copied().unwrap_or("Wave Curves");
         // The dock can be as narrow as 220 pt: the dropdown takes what the row has left.
@@ -1984,6 +2103,10 @@ fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
             show_style_thumbnail_tooltip(ui, st.cover_style, cur_style, t);
         });
     });
+
+    ui.checkbox(&mut st.cover_include_inside_back, "Add Inside cover and Back Cover").on_hover_text(
+        "When checked, automatically generates Inside Cover (grayscale & outlines) on page 2 and Back Cover at the end of the publication",
+    );
 
     // 2. Color Theme Preset
     ui.horizontal(|ui| {
@@ -2258,6 +2381,8 @@ fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
                     URBAN_STYLE => "Cityscape photograph filling the right-hand diagonal panels",
                     BUSINESS_STYLE => "Skyscraper photograph filling the crossed diagonal bands",
                     TRICOLOR_STYLE => "Cityscape photograph filling the right-hand panel",
+                    PRISM_STYLE => "Cityscape photograph cut as the largest diamond of the cascade",
+                    QUARTER_STYLE => "Cityscape photograph set in the front card of the stack, rounded on one corner",
                     _ => "Hero photograph clipped by the sweeping arc across the upper page",
                 };
                 ui.add_sized(
@@ -2300,10 +2425,35 @@ fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t:
         .on_hover_text("Text displayed next to the logo (multi-line supported)");
     });
 
+    if st.cover_include_inside_back {
+        divider(ui);
+        ui.label(RichText::new("Back Cover:").size(11.0).strong().color(t.text_strong));
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Event Theme:").size(10.5).color(t.text));
+            let w = (ui.available_width() - 65.0).max(80.0);
+            ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_image_back).hint_text("outputs/event_theme.png"))
+                .on_hover_text("Back cover event theme image (from COVER sheet event_theme)");
+            if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
+                && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
+            {
+                st.cover_image_back = path;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Office Address:").size(10.5).color(t.text));
+            let avail = (ui.available_width() - 4.0).max(80.0);
+            ui.add_sized(
+                [avail, crate::widgets::FIELD_H * 1.8],
+                egui::TextEdit::multiline(&mut st.cover_office_address).hint_text("Jl. Cakradireja No.36 Karawang 41312..."),
+            )
+            .on_hover_text("Office address on back cover (from COVER sheet row 12 office_address)");
+        });
+    }
+
     // Action button
     let fw = full_width(ui);
-    let gen_btn =
-        outline_button(ui, "Generate Cover Page", fw).on_hover_text("Automatically inserts a new cover page before Page 1 and generates layout");
+    let btn_label = if st.cover_include_inside_back { "Generate Cover Pages (Front, Inside, Back)" } else { "Generate Cover Page" };
+    let gen_btn = outline_button(ui, btn_label, fw).on_hover_text("Automatically inserts cover pages and generates layout");
     if gen_btn.clicked() {
         let res = execute_generate_cover(app, st);
         st.cover_status = Some(match res {
@@ -2981,7 +3131,631 @@ fn resolve_template_path(path: &str) -> Option<std::path::PathBuf> {
     None
 }
 
-fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
+fn convert_asset_id_to_grayscale(doc: &mut designcraft_doc::Document, aid: designcraft_doc::AssetId) -> Option<designcraft_doc::AssetId> {
+    let asset = doc.assets.get(&aid)?.clone();
+    let raw_bytes: Option<Vec<u8>> = if !asset.data.is_empty() {
+        Some((*asset.data).clone())
+    } else if let Some(link) = &asset.link {
+        std::fs::read(link).ok()
+    } else {
+        None
+    };
+    let bytes = raw_bytes?;
+    let img = image::load_from_memory(&bytes).ok()?;
+    let gray = img.grayscale();
+    let mut out_bytes = Vec::new();
+    gray.write_to(&mut std::io::Cursor::new(&mut out_bytes), image::ImageFormat::Png).ok()?;
+    let new_aid = designcraft_doc::AssetId(doc.alloc());
+    let new_asset = designcraft_doc::Asset {
+        id: new_aid,
+        name: format!("{}_gray.png", asset.name.trim_end_matches(".png").trim_end_matches(".jpg")),
+        mime: "image/png".into(),
+        link: None,
+        data: std::sync::Arc::new(out_bytes),
+        pixels: Some((gray.width(), gray.height())),
+        page: 0,
+        pdf_crop: asset.pdf_crop,
+        pdf_box: asset.pdf_box,
+    };
+    doc.assets.insert(new_aid, std::sync::Arc::new(new_asset));
+    Some(new_aid)
+}
+
+fn transform_inside_cover_item_shapes(
+    it: &mut designcraft_doc::Item,
+    text_stories: &mut Vec<designcraft_doc::StoryId>,
+    graphics: &mut Vec<(designcraft_doc::ItemId, designcraft_doc::AssetId)>,
+) {
+    match &mut it.content {
+        designcraft_doc::Content::Text(tf) => {
+            it.fill = designcraft_doc::Fill::none();
+            text_stories.push(tf.story);
+        }
+        designcraft_doc::Content::Graphic(g) => {
+            it.fill = designcraft_doc::Fill::none();
+            graphics.push((it.id, g.asset));
+        }
+        designcraft_doc::Content::Group { items } => {
+            it.fill = designcraft_doc::Fill::none();
+            for sub in items.iter_mut() {
+                let sub_item = std::sync::Arc::make_mut(sub);
+                transform_inside_cover_item_shapes(sub_item, text_stories, graphics);
+            }
+        }
+        designcraft_doc::Content::Unassigned => {
+            it.fill = designcraft_doc::Fill::swatch("[Paper]");
+            it.stroke = designcraft_doc::Stroke {
+                swatch: designcraft_color::swatch::BLACK.to_string(),
+                weight: 1.0,
+                kind: designcraft_doc::StrokeType::Solid,
+                align: designcraft_doc::StrokeAlign::Center,
+                cap: designcraft_doc::Cap::Butt,
+                join: designcraft_doc::Join::Miter,
+                miter_limit: 4.0,
+                ..designcraft_doc::Stroke::default()
+            };
+            it.effects = designcraft_doc::Effects::default();
+            it.opacity = 1.0;
+            it.blend = designcraft_color::BlendMode::Normal;
+        }
+    }
+}
+
+pub fn execute_generate_inside_cover(app: &mut DesignApp) -> Result<(), String> {
+    let before_ids: std::collections::HashSet<designcraft_doc::ItemId> = {
+        let active = app.session.active().ok_or("No active document")?;
+        active.doc.spreads.iter().flat_map(|sp| sp.items.iter().map(|it| it.id)).collect()
+    };
+
+    app.run("layout.pages.duplicateSpread", json!({ "spread": 0 })).map_err(|e| format!("Failed to duplicate cover spread: {e}"))?;
+
+    let (inside_si, inside_pi) = {
+        let active = app.session.active().ok_or("No active document")?;
+        active.doc.page_loc(1).ok_or("Inside cover page missing")?
+    };
+
+    let _ = app.session.edit(|doc, _| {
+        let mut text_stories = Vec::new();
+        let mut graphics = Vec::new();
+
+        if let Some(sp) = doc.spreads.get_mut(inside_si) {
+            let sp = std::sync::Arc::make_mut(sp);
+            if let Some(pg) = sp.pages.get_mut(inside_pi) {
+                pg.margins = designcraft_doc::Margins::uniform(0.0);
+                pg.local_margins = true;
+            }
+
+            for it in &mut sp.items {
+                if before_ids.contains(&it.id) {
+                    continue;
+                }
+                let it_mut = std::sync::Arc::make_mut(it);
+                transform_inside_cover_item_shapes(it_mut, &mut text_stories, &mut graphics);
+            }
+            sp.relayout();
+        }
+
+        // Convert graphic assets to grayscale without borrowing spreads
+        for (item_id, old_aid) in graphics {
+            if let Some(new_aid) = convert_asset_id_to_grayscale(doc, old_aid)
+                && let Some(item) = doc.item_mut(item_id)
+                && let designcraft_doc::Content::Graphic(g) = &mut item.content
+            {
+                g.asset = new_aid;
+            }
+        }
+
+        for sid in text_stories {
+            if let Some(story) = doc.story_mut(sid) {
+                for r in &mut story.chars {
+                    r.format.over.fill = Some(designcraft_color::swatch::BLACK.to_string());
+                }
+            }
+        }
+
+        Ok(Value::Null)
+    });
+
+    Ok(())
+}
+
+pub fn find_back_cover_page(doc: &designcraft_doc::Document) -> Option<usize> {
+    fn item_is_back_cover(it: &designcraft_doc::Item, doc: &designcraft_doc::Document) -> bool {
+        if it.label.contains("back_cover") || it.name.contains("back_cover") {
+            return true;
+        }
+        if let designcraft_doc::Content::Graphic(g) = &it.content
+            && doc
+                .assets
+                .get(&g.asset)
+                .map(|a| a.name.contains("data_cerdas") || a.link.as_deref().map(|l| l.contains("data_cerdas")).unwrap_or(false))
+                .unwrap_or(false)
+        {
+            return true;
+        }
+        if let designcraft_doc::Content::Group { items } = &it.content {
+            return items.iter().any(|sub| item_is_back_cover(sub, doc));
+        }
+        false
+    }
+
+    for (si, sp) in doc.spreads.iter().enumerate() {
+        for it in &sp.items {
+            if item_is_back_cover(it, doc) {
+                let pi = sp.page_at_x(it.bounds().center().x).unwrap_or(0);
+                let first = doc.first_page_of_spread(si);
+                return Some(first + pi);
+            }
+        }
+    }
+    None
+}
+
+pub fn ensure_back_cover_at_end(app: &mut DesignApp) {
+    let (back_page, total) = {
+        let Some(active) = app.session.active() else { return };
+        let total = active.doc.page_count();
+        let back_page = find_back_cover_page(&active.doc);
+        (back_page, total)
+    };
+    if let Some(bp) = back_page
+        && total > 0
+        && bp != total - 1
+    {
+        let _ = app.run("layout.pages.move", json!({ "from": bp, "to": total - 1 }));
+    }
+}
+
+pub struct MainCoverBranding {
+    pub agency_text: String,
+    pub agency_color: String,
+    pub agency_font: String,
+    pub code_text: String,
+}
+
+pub fn extract_main_cover_branding(doc: &designcraft_doc::Document, st: &PubgenState) -> MainCoverBranding {
+    let mut agency_text = None;
+    let mut agency_color = None;
+    let mut agency_font = None;
+    let mut code_text = None;
+
+    if let Some(sp0) = doc.spreads.first() {
+        fn inspect_item(
+            it: &designcraft_doc::Item,
+            doc: &designcraft_doc::Document,
+            agency_text: &mut Option<String>,
+            agency_color: &mut Option<String>,
+            agency_font: &mut Option<String>,
+            code_text: &mut Option<String>,
+        ) {
+            let lbl = it.label.to_lowercase();
+            let nm = it.name.to_lowercase();
+            if let designcraft_doc::Content::Text(tf) = &it.content {
+                if let Some(story) = doc.story(tf.story) {
+                    let txt = story.text.trim();
+                    let is_agency =
+                        lbl.contains("agency") || nm.contains("agency") || txt.contains("BADAN PUSAT STATISTIK") || txt.contains("STATISTICS");
+                    let is_code = lbl.contains("code") || nm.contains("code") || txt.contains("ISSN") || txt.contains("ISBN");
+
+                    if is_agency {
+                        if agency_text.is_none() && !txt.is_empty() {
+                            *agency_text = Some(txt.to_string());
+                        }
+                        for r in &story.chars {
+                            if agency_color.is_none()
+                                && let Some(ref f) = r.format.over.fill
+                            {
+                                *agency_color = Some(f.clone());
+                            }
+                            if agency_font.is_none()
+                                && let Some(ref fnt) = r.format.over.font_family
+                            {
+                                *agency_font = Some(fnt.clone());
+                            }
+                        }
+                    } else if is_code && code_text.is_none() && !txt.is_empty() {
+                        *code_text = Some(txt.to_string());
+                    }
+                }
+            } else if let designcraft_doc::Content::Group { items } = &it.content {
+                for sub in items {
+                    inspect_item(sub, doc, agency_text, agency_color, agency_font, code_text);
+                }
+            }
+        }
+
+        for it in &sp0.items {
+            inspect_item(it, doc, &mut agency_text, &mut agency_color, &mut agency_font, &mut code_text);
+        }
+    }
+
+    let default_agency = if !st.cover_agency_text.trim().is_empty() {
+        st.cover_agency_text.trim().to_string()
+    } else {
+        "BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG\nBPS-STATISTICS KARAWANG REGENCY".to_string()
+    };
+
+    let default_code = {
+        let code_type = if st.cover_code_type == 0 { "ISSN" } else { "ISBN" };
+        let code_num = st.cover_code_num.trim();
+        if code_num.is_empty() { code_type.to_string() } else { format!("{code_type} {code_num}") }
+    };
+
+    MainCoverBranding {
+        agency_text: agency_text.unwrap_or(default_agency),
+        agency_color: agency_color.unwrap_or_else(|| "#00aeef".to_string()),
+        agency_font: agency_font.unwrap_or_else(|| "BIZ UDPGothic".to_string()),
+        code_text: if !st.cover_code_num.trim().is_empty() { default_code } else { code_text.unwrap_or(default_code) },
+    }
+}
+
+pub fn resolve_agency_swatch(doc: &mut designcraft_doc::Document, color_spec: &str) -> String {
+    let clean = color_spec.trim();
+    if clean.is_empty() {
+        return ensure_swatch(doc, "#00aeef");
+    }
+    if doc.swatches.iter().any(|s| s.name.eq_ignore_ascii_case(clean)) {
+        return clean.to_string();
+    }
+    ensure_swatch(doc, clean)
+}
+
+pub fn execute_generate_back_cover(app: &mut DesignApp, st: &PubgenState) -> Result<(), String> {
+    let branding = {
+        let active = app.session.active().ok_or("No active document")?;
+        extract_main_cover_branding(&active.doc, st)
+    };
+
+    // Record existing item IDs so we NEVER modify or delete items belonging to existing pages
+    // if the duplicated spread shares a spread with a previous body page (e.g. facing-pages mode).
+    let before_ids: std::collections::HashSet<designcraft_doc::ItemId> = {
+        let active = app.session.active().ok_or("No active document")?;
+        active.doc.spreads.iter().flat_map(|sp| sp.items.iter().map(|it| it.id)).collect()
+    };
+
+    // 1. Copy all shapes from main cover by duplicating spread 0 at the end of document
+    app.run("layout.pages.duplicateSpread", json!({ "spread": 0, "atEnd": true }))
+        .map_err(|e| format!("Failed to duplicate cover spread for back cover: {e}"))?;
+
+    ensure_back_cover_at_end(app);
+
+    let last_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
+    let (back_si, back_pi) = {
+        let active = app.session.active().ok_or("No active document")?;
+        active.doc.page_loc(last_page_idx).ok_or("Back cover page location missing")?
+    };
+
+    let _ = app.session.edit(|doc, _| {
+        if let Some(sp) = doc.spreads.get_mut(back_si) {
+            let sp = std::sync::Arc::make_mut(sp);
+            sp.allow_shuffle = false;
+            if let Some(pg) = sp.pages.get_mut(back_pi) {
+                pg.margins = designcraft_doc::Margins::uniform(0.0);
+                pg.local_margins = true;
+            }
+            sp.relayout();
+        }
+        Ok(Value::Null)
+    });
+
+    let (pw, ph, page_x) = {
+        let active = app.session.active().ok_or("No active document")?;
+        let pg = &active.doc.spreads[back_si].pages[back_pi];
+        (pg.width, pg.height, pg.x)
+    };
+
+    // Helper closure to create and place an image frame with locked positioning
+    let place_locked_image = |app: &mut DesignApp, rect: [f64; 4], path: &str, label: &str| -> Result<Option<u64>, String> {
+        let res = app.run(
+            "frame.create",
+            json!({
+                "spread": back_si,
+                "rect": rect,
+                "content": "graphic",
+                "caret": false,
+            }),
+        )?;
+        let Some(fid) = res.get("id").and_then(Value::as_u64) else {
+            return Ok(None);
+        };
+        let resolved = resolve_cover_image(path);
+        if std::path::Path::new(&resolved).is_file() {
+            let _ = app.run("file.place", json!({ "path": resolved, "frame": fid }));
+            let _ = app.run("object.fit", json!({ "mode": "fitProportionally", "ids": [fid] }));
+            let _ = app.run("object.fit", json!({ "mode": "centerContent", "ids": [fid] }));
+        }
+        let _ = app.session.edit(|doc, _| {
+            if let Some(it) = doc.item_mut(designcraft_doc::ItemId(fid)) {
+                it.stroke = designcraft_doc::Stroke::none();
+                it.fill = designcraft_doc::Fill::none();
+                it.locked = true;
+                it.label = label.to_string();
+            }
+            Ok(Value::Null)
+        });
+        Ok(Some(fid))
+    };
+
+    fn transform_back_cover_item(it: &mut designcraft_doc::Item, dx: f64) -> bool {
+        let lbl = it.label.to_lowercase();
+        let nm = it.name.to_lowercase();
+
+        if dx.abs() > 0.001 {
+            it.xf = designcraft_geom::Affine::translate((dx, 0.0)) * it.xf;
+        }
+
+        match &mut it.content {
+            designcraft_doc::Content::Text(_) => {
+                // Remove all copied text frames; back cover elements are placed afresh at canonical positions
+                false
+            }
+            designcraft_doc::Content::Graphic(_) => {
+                let is_logo = lbl.contains("logo") || nm.contains("logo");
+                if is_logo {
+                    // Logo will be placed afresh at bottom left
+                    false
+                } else {
+                    // "all shape that have image backgroud change to white color fill"
+                    it.content = designcraft_doc::Content::Unassigned;
+                    it.fill = designcraft_doc::Fill::swatch("[Paper]");
+                    it.stroke = designcraft_doc::Stroke::none();
+                    it.locked = true;
+                    true
+                }
+            }
+            designcraft_doc::Content::Group { items } => {
+                it.locked = true;
+                items.retain_mut(|sub| {
+                    let sub_item = std::sync::Arc::make_mut(sub);
+                    transform_back_cover_item(sub_item, dx)
+                });
+                true
+            }
+            _ => {
+                let is_logo = lbl.contains("logo") || nm.contains("logo");
+                let is_image_slot = lbl.contains("hero") || lbl.contains("photo") || lbl.contains("landscape") || (lbl.contains("image") && !is_logo);
+                if is_image_slot {
+                    it.content = designcraft_doc::Content::Unassigned;
+                    it.fill = designcraft_doc::Fill::swatch("[Paper]");
+                    it.stroke = designcraft_doc::Stroke::none();
+                }
+                it.locked = true;
+                true
+            }
+        }
+    }
+
+    // 2. Filter copied items:
+    // - Remove all text and old logo
+    // - Convert shapes with image backgrounds to white fill ([Paper])
+    // - Keep all other background decorative shapes
+    let _ = app.session.edit(|doc, _| {
+        if let Some(sp) = doc.spreads.get_mut(back_si) {
+            let sp = std::sync::Arc::make_mut(sp);
+            sp.items.retain_mut(|arc_it| {
+                if before_ids.contains(&arc_it.id) {
+                    return true;
+                }
+                let it = std::sync::Arc::make_mut(arc_it);
+                transform_back_cover_item(it, page_x)
+            });
+            sp.relayout();
+        }
+        Ok(Value::Null)
+    });
+
+    // 3. Office Logo: ALWAYS set position on bottom left of page
+    let logo_x = page_x + 36.0;
+    let logo_y = ph - 100.0;
+    let logo_w = 45.0;
+    let logo_h = 40.0;
+    let logo_path = if !st.cover_image_logo.trim().is_empty() { st.cover_image_logo.trim() } else { "plan/pubgen/samples/images/bps_logo.png" };
+    let _ = place_locked_image(app, [logo_x, logo_y, logo_x + logo_w, logo_y + logo_h], logo_path, "#slot:back_cover:logo")?;
+
+    // 4. Office Name: placed beside logo on bottom left, matching main cover color and font, bold
+    let agency_x = logo_x + logo_w + 10.0;
+    let agency_y = logo_y - 2.0;
+    let agency_w = 260.0;
+    let agency_h = logo_h + 4.0;
+    let res_agency = app.run(
+        "frame.create",
+        json!({
+            "spread": back_si,
+            "rect": [agency_x, agency_y, agency_x + agency_w, agency_y + agency_h],
+            "content": "text",
+            "text": branding.agency_text,
+            "caret": false,
+        }),
+    )?;
+    if let Some(fid) = res_agency.get("id").and_then(Value::as_u64) {
+        let _ = app.session.edit(|doc, _| {
+            let agency_swatch = resolve_agency_swatch(doc, &branding.agency_color);
+            let mut story_id = None;
+            if let Some(it) = doc.item_mut(designcraft_doc::ItemId(fid)) {
+                it.fill = designcraft_doc::Fill::none();
+                it.stroke = designcraft_doc::Stroke::none();
+                it.locked = true;
+                it.label = "#slot:back_cover:agency".to_string();
+                if let designcraft_doc::Content::Text(tf) = &it.content {
+                    story_id = Some(tf.story);
+                }
+            }
+            if let Some(sid) = story_id
+                && let Some(story) = doc.story_mut(sid)
+            {
+                for r in &mut story.chars {
+                    r.format.over.size = Some(8.5);
+                    r.format.over.font_style = Some("Bold".to_string());
+                    r.format.over.fill = Some(agency_swatch.clone());
+                    r.format.over.font_family = Some(branding.agency_font.clone());
+                }
+            }
+            Ok(Value::Null)
+        });
+    }
+
+    // 5. Office Address: placed after (below) logo and name on bottom left, matching main cover color and font, standard font size (no bold)
+    let address_text = if !st.cover_office_address.trim().is_empty() {
+        st.cover_office_address.trim().to_string()
+    } else {
+        "Jl. Cakradireja No.36 Karawang 41312\nJawa Barat Telp.: (0267) 402250; Fax.: (0267) 8452148; Email: kabkarawang@bps.go.id; pst3215@bps.go.id"
+            .to_string()
+    };
+    let addr_x = logo_x;
+    let addr_y = logo_y + logo_h + 4.0;
+    let addr_w = 340.0;
+    let addr_h = 24.0;
+    let res_addr = app.run(
+        "frame.create",
+        json!({
+            "spread": back_si,
+            "rect": [addr_x, addr_y, addr_x + addr_w, addr_y + addr_h],
+            "content": "text",
+            "text": address_text,
+            "caret": false,
+        }),
+    )?;
+    if let Some(fid) = res_addr.get("id").and_then(Value::as_u64) {
+        let _ = app.session.edit(|doc, _| {
+            let agency_swatch = resolve_agency_swatch(doc, &branding.agency_color);
+            let mut story_id = None;
+            if let Some(it) = doc.item_mut(designcraft_doc::ItemId(fid)) {
+                it.fill = designcraft_doc::Fill::none();
+                it.stroke = designcraft_doc::Stroke::none();
+                it.locked = true;
+                it.label = "#slot:back_cover:address".to_string();
+                if let designcraft_doc::Content::Text(tf) = &it.content {
+                    story_id = Some(tf.story);
+                }
+            }
+            if let Some(sid) = story_id
+                && let Some(story) = doc.story_mut(sid)
+            {
+                for r in &mut story.chars {
+                    r.format.over.size = Some(7.5);
+                    r.format.over.font_style = Some("Regular".to_string());
+                    r.format.over.fill = Some(agency_swatch.clone());
+                    r.format.over.font_family = Some(branding.agency_font.clone());
+                }
+            }
+            Ok(Value::Null)
+        });
+    }
+
+    // 6. ISSN / ISBN: position is bottom right side, font name and text color same exactly like office_name with standard font size (no bold)
+    let issn_w = 140.0;
+    let issn_x = page_x + pw - 36.0 - issn_w;
+    let issn_y = addr_y;
+    let issn_h = addr_h;
+    let res_issn = app.run(
+        "frame.create",
+        json!({
+            "spread": back_si,
+            "rect": [issn_x, issn_y, page_x + pw - 36.0, issn_y + issn_h],
+            "content": "text",
+            "text": branding.code_text,
+            "caret": false,
+        }),
+    )?;
+    if let Some(fid) = res_issn.get("id").and_then(Value::as_u64) {
+        let _ = app.session.edit(|doc, _| {
+            let agency_swatch = resolve_agency_swatch(doc, &branding.agency_color);
+            let mut story_id = None;
+            if let Some(it) = doc.item_mut(designcraft_doc::ItemId(fid)) {
+                it.fill = designcraft_doc::Fill::none();
+                it.stroke = designcraft_doc::Stroke::none();
+                it.locked = true;
+                it.label = "#slot:back_cover:code".to_string();
+                if let designcraft_doc::Content::Text(tf) = &mut it.content {
+                    story_id = Some(tf.story);
+                }
+            }
+            if let Some(sid) = story_id
+                && let Some(story) = doc.story_mut(sid)
+            {
+                for r in &mut story.chars {
+                    r.format.over.size = Some(7.5);
+                    r.format.over.font_style = Some("Regular".to_string());
+                    r.format.over.fill = Some(agency_swatch.clone());
+                    r.format.over.font_family = Some(branding.agency_font.clone());
+                }
+                for p in &mut story.paras {
+                    p.para.align = Some(designcraft_doc::Align::Right);
+                }
+            }
+            Ok(Value::Null)
+        });
+    }
+
+    // 7. Add Image specifically only for back cover:
+    // 7a. Top-right Stack: 3 images (event_theme, berakhlak, bangga_melayani_bangsa)
+    let tr_w = 85.0;
+    let tr_x = page_x + pw - 36.0 - tr_w;
+    let event_theme_path = if !st.cover_image_back.trim().is_empty() { st.cover_image_back.trim() } else { "plan/pubgen/samples/images/se2026.png" };
+    let _ = place_locked_image(app, [tr_x, 36.0, tr_x + tr_w, 72.0], event_theme_path, "#slot:back_cover:top_right")?;
+    let _ = place_locked_image(app, [tr_x, 78.0, tr_x + tr_w, 112.0], "plan/pubgen/samples/images/berakhlak.png", "#slot:back_cover:top_right")?;
+    let _ = place_locked_image(
+        app,
+        [tr_x, 118.0, tr_x + tr_w, 154.0],
+        "plan/pubgen/samples/images/bangga_melayani_bangsa.png",
+        "#slot:back_cover:top_right",
+    )?;
+
+    // 7b. Center Section: Slogan (data_cerdas.png) & Graphic Placeholder Frame
+    let center_logo_w = 300.0;
+    let center_logo_h = 110.0;
+    let center_x = page_x + (pw - center_logo_w) / 2.0;
+    let center_y = ph * 0.36;
+    let _ = place_locked_image(
+        app,
+        [center_x, center_y, center_x + center_logo_w, center_y + center_logo_h],
+        "plan/pubgen/samples/images/data_cerdas.png",
+        "#slot:back_cover:center",
+    )?;
+
+    let cam_w = 140.0;
+    let cam_h = 100.0;
+    let cam_x = page_x + (pw - cam_w) / 2.0;
+    let cam_y = ph * 0.54;
+    let res_cam = app.run(
+        "frame.create",
+        json!({
+            "spread": back_si,
+            "rect": [cam_x, cam_y, cam_x + cam_w, cam_y + cam_h],
+            "content": "graphic",
+            "caret": false,
+        }),
+    )?;
+    if let Some(fid) = res_cam.get("id").and_then(Value::as_u64) {
+        let _ = app.session.edit(|doc, _| {
+            if let Some(it) = doc.item_mut(designcraft_doc::ItemId(fid)) {
+                it.stroke = designcraft_doc::Stroke::none();
+                it.fill = designcraft_doc::Fill::none();
+                it.locked = true;
+                it.label = "#slot:back_cover:camera".to_string();
+            }
+            Ok(Value::Null)
+        });
+    }
+
+    // 8. Ensure all items on the back cover spread are locked
+    let _ = app.session.edit(|doc, _| {
+        if let Some(sp) = doc.spreads.get_mut(back_si) {
+            let sp = std::sync::Arc::make_mut(sp);
+            for it in &mut sp.items {
+                let it_mut = std::sync::Arc::make_mut(it);
+                it_mut.locked = true;
+            }
+        }
+        Ok(Value::Null)
+    });
+
+    ensure_back_cover_at_end(app);
+
+    Ok(())
+}
+
+pub fn execute_generate_front_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
     let title_text = if st.cover_title.trim().is_empty() { "KARAWANG TIMUR" } else { st.cover_title.trim() };
     // The second headline line has its own frame in the cover templates (`title#2`), styled
     // smaller and in another colour than the headline above it. An empty field leaves that
@@ -3051,6 +3825,8 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         "assets/templates/covers/008_business_report.designcraft",
         "assets/templates/covers/009_urban_angle.designcraft",
         "assets/templates/covers/010_tri_color_bands.designcraft",
+        "assets/templates/covers/011_prism_diamonds.designcraft",
+        "assets/templates/covers/012_quarter_stack.designcraft",
     ];
 
     if let Some(&tpl_path) = canonical_templates.get(st.cover_style)
@@ -3188,9 +3964,11 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
                 "Business Report",
                 "Urban Angle",
                 "Tri-Color Bands",
+                "Prism Diamonds",
+                "Quarter Stack",
             ];
             let sname = style_names.get(st.cover_style).copied().unwrap_or("Template Cover");
-            return Ok(format!("Cover page generated successfully ({sname})"));
+            return Ok(sname.to_string());
         }
     }
 
@@ -3277,10 +4055,28 @@ fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         10 => {
             return Err("The Tri-Color Bands cover template could not be applied".into());
         }
+        11 => {
+            return Err("The Prism Diamonds cover template could not be applied".into());
+        }
+        12 => {
+            return Err("The Quarter Stack cover template could not be applied".into());
+        }
         _ => return Err(format!("Unsupported cover style: {}", st.cover_style)),
     };
 
-    Ok(format!("Cover page generated before Page 1 (Style: {style_name})"))
+    Ok(style_name.to_string())
+}
+
+pub fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
+    let sname = execute_generate_front_cover(app, st)?;
+    if st.cover_include_inside_back {
+        execute_generate_inside_cover(app)?;
+        execute_generate_back_cover(app, st)?;
+        ensure_back_cover_at_end(app);
+        Ok(format!("Cover pages generated successfully: Front Cover, Inside Cover, Back Cover ({sname})"))
+    } else {
+        Ok(format!("Cover page generated successfully ({sname})"))
+    }
 }
 fn master_excel_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     section(ui, crate::i18n::tr(&app.ui.language, "1. Data Source & Generate (Master Excel)"), true);
@@ -6159,6 +6955,7 @@ fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<Strin
         details.push(format!("{inserted_tables_count} tables auto-inserted"));
     }
     let tbl_msg = if !details.is_empty() { format!(" (with {})", details.join(", ")) } else { String::new() };
+    ensure_back_cover_at_end(app);
     Ok(format!("Successfully generated {generated_count} pages{tbl_msg}!"))
 }
 
@@ -9508,7 +10305,7 @@ pub fn execute_page_from_image(app: &mut DesignApp, st: &mut PubgenState, path: 
 /// Map a `COVER` sheet style name (e.g. `CHEVRON MEDALLION`) to the Publication Cover style index.
 fn cover_style_index(spec: &str) -> Option<usize> {
     let norm = |s: &str| -> String { s.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect() };
-    const NAMES: [&str; 11] = [
+    const NAMES: [&str; 13] = [
         "Wave Curves",
         "Geometric Medallion",
         "Folded Origami",
@@ -9520,6 +10317,8 @@ fn cover_style_index(spec: &str) -> Option<usize> {
         "Business Report",
         "Urban Angle",
         "Tri Color Bands",
+        "Prism Diamonds",
+        "Quarter Stack",
     ];
     let want = norm(spec);
     if want.is_empty() {
@@ -9582,6 +10381,15 @@ fn apply_excel_cover(st: &mut PubgenState, cover: &excel::ExcelCoverData, base_d
     }
     if !cover.logo.trim().is_empty() {
         st.cover_image_logo = resolve(&cover.logo);
+    }
+    if !cover.event_theme.trim().is_empty() {
+        st.cover_image_back = resolve(&cover.event_theme);
+    }
+    if !cover.office_address.trim().is_empty() {
+        st.cover_office_address = cover.office_address.trim().to_string();
+    }
+    if !cover.office_address.trim().is_empty() || !cover.event_theme.trim().is_empty() {
+        st.cover_include_inside_back = true;
     }
     if !cover.table_theme.trim().is_empty()
         && let Some(th) = parse_table_color_theme(&cover.table_theme)
@@ -9652,11 +10460,18 @@ pub fn execute_excel_and_generate(app: &mut DesignApp, st: &mut PubgenState, pat
 
     let mut cover_res_msg = None;
     if st.excel_had_cover {
-        // The cover page goes before Page 1. Generating it before the body pages ensures
+        // The cover pages (front cover and inside cover) go before Page 1. Generating them before the body pages ensures
         // that all subsequent body pages land on their permanent spreads and page sides (Left vs Right),
         // preventing spread repagination from flipping inside and outside margins.
-        match execute_generate_cover(app, st) {
-            Ok(cover_msg) => {
+        match execute_generate_front_cover(app, st) {
+            Ok(sname) => {
+                if st.cover_include_inside_back
+                    && let Err(e) = execute_generate_inside_cover(app)
+                {
+                    return Ok(format!("{conv_msg}, but inside cover failed: {e}"));
+                }
+                let cover_msg =
+                    if st.cover_include_inside_back { format!("Front Cover & Inside Cover ({sname})") } else { format!("Cover ({sname})") };
                 st.cover_status = Some((cover_msg.clone(), true));
                 cover_res_msg = Some(cover_msg);
             }
@@ -9672,6 +10487,10 @@ pub fn execute_excel_and_generate(app: &mut DesignApp, st: &mut PubgenState, pat
     match gen_res {
         Ok(gen_msg) => {
             st.card1_status = Some((gen_msg.clone(), true));
+            if st.excel_had_cover && st.cover_include_inside_back {
+                let _ = execute_generate_back_cover(app, st);
+            }
+            ensure_back_cover_at_end(app);
             let count = st.card2_sheet_tables.len();
             if let Some(cover_msg) = cover_res_msg {
                 return Ok(format!("Converted {count} sheets & auto-generated pages + cover ({gen_msg}; {cover_msg})!"));
@@ -13705,6 +14524,71 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
     }
 
     #[test]
+    fn test_cover_style_11_uses_the_prism_diamonds_template() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let st = PubgenState {
+            cover_style: PRISM_STYLE,
+            cover_title: "KESEJAHTERAAN RAKYAT".into(),
+            cover_title2: "DALAM ANGKA".into(),
+            ..PubgenState::default()
+        };
+        let res = execute_generate_cover(&mut app, &st);
+        assert!(res.is_ok(), "Prism Diamonds must apply its template: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // The template brings its own midnight and jewel swatches.
+        for name in ["Prism Night", "Prism Deep", "Prism Blue", "Prism Green", "Prism Orange", "Prism Mint", "Prism Ice", "Prism Sky"] {
+            assert!(active.doc.swatches.iter().any(|s| s.name == name), "swatch `{name}` comes with the template");
+        }
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("KESEJAHTERAAN RAKYAT")), "the headline is bound: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("DALAM ANGKA")), "the second headline line is bound: {texts:?}");
+        // The photograph is cut as a diamond, not boxed in a rectangle.
+        let hero = active
+            .doc
+            .spreads
+            .iter()
+            .flat_map(|s| s.items.iter())
+            .find(|it| it.label == "#slot:image:hero")
+            .expect("the hero photograph frame comes with the template");
+        assert_eq!(hero.path.subpaths.first().map(|p| p.anchors.len()), Some(4), "the hero frame is a diamond");
+    }
+
+    #[test]
+    fn test_cover_style_12_uses_the_quarter_stack_template() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let st = PubgenState {
+            cover_style: QUARTER_STYLE,
+            cover_title: "KESEJAHTERAAN RAKYAT".into(),
+            cover_title2: "DALAM ANGKA".into(),
+            ..PubgenState::default()
+        };
+        let res = execute_generate_cover(&mut app, &st);
+        assert!(res.is_ok(), "Quarter Stack must apply its template: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // The template brings its own warm palette.
+        for name in ["Stack Paper", "Stack Ink", "Stack Clay", "Stack Marigold", "Stack Sage", "Stack Blush", "Stack Teal"] {
+            assert!(active.doc.swatches.iter().any(|s| s.name == name), "swatch `{name}` comes with the template");
+        }
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("KESEJAHTERAAN RAKYAT")), "the headline is bound: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("DALAM ANGKA")), "the second headline line is bound: {texts:?}");
+        // The photograph sits in a card with exactly one rounded corner.
+        let hero = active
+            .doc
+            .spreads
+            .iter()
+            .flat_map(|s| s.items.iter())
+            .find(|it| it.label == "#slot:image:hero")
+            .expect("the hero photograph frame comes with the template");
+        let rounded = hero.corners.corners.iter().filter(|c| c.shape != designcraft_geom::corners::CornerShape::None).count();
+        assert_eq!(rounded, 1, "the hero card rounds one corner only: {:?}", hero.corners.corners);
+    }
+
+    #[test]
     fn test_cover_style_6_text_is_options_only() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
@@ -15971,8 +16855,8 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert!(texts_dual.iter().any(|t| t.contains("DALAM ANGKA")), "Should contain ID title2: {texts_dual:?}");
         assert!(texts_dual.iter().any(|t| t.contains("IN FIGURES")), "Should contain title_en in bilingual mode: {texts_dual:?}");
 
-        // 3. User scenario: title2 in template already contains the English title (test across all 11 styles)
-        for style in 0..11 {
+        // 3. User scenario: title2 in template already contains the English title (test across all 13 styles)
+        for style in 0..13 {
             let mut app_s = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
             app_s.run("file.new", json!({})).unwrap();
             let st_s = PubgenState {
@@ -16432,5 +17316,217 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let table_bounds = table_item.bounds();
         assert!(note_bounds.y0 >= table_bounds.y1, "Note textbox must be placed below table");
         assert!(note_bounds.height() >= 18.0 && note_bounds.height() < 120.0, "Textbox height must be fitted to content");
+    }
+
+    #[test]
+    fn test_cover_include_inside_and_back_cover_generation() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            cover_style: 0,
+            cover_color_primary: "#1e3a8a".into(),
+            cover_color_accent: "#d97706".into(),
+            cover_image_skyline: "plan/pubgen/samples/images/bps_logo.png".into(),
+            cover_include_inside_back: true,
+            cover_image_back: "plan/pubgen/samples/images/se2026.png".into(),
+            cover_office_address: "Jl. Cakradireja No.36 Karawang 41312\nJawa Barat".into(),
+            cover_code_type: 0,
+            cover_code_num: "2807-6302".into(),
+            ..Default::default()
+        };
+
+        let res = execute_generate_cover(&mut app, &st);
+        assert!(res.is_ok(), "Cover generation with inside and back cover should succeed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        // Document should now have 4 pages: Front Cover, Inside Cover, initial page, Back Cover
+        assert_eq!(active.doc.page_count(), 4, "Expected 4 pages (Front, Inside, initial page, Back)");
+        assert_eq!(find_back_cover_page(&active.doc), Some(3), "Back cover must be the last page (page 3)");
+
+        // Spread 0: Front Cover
+        let sp0 = &active.doc.spreads[0];
+        assert_eq!(sp0.pages[0].margins, designcraft_doc::Margins::uniform(0.0));
+
+        // Spread 1: Inside Cover
+        let sp1 = &active.doc.spreads[1];
+        assert_eq!(sp1.pages[0].margins, designcraft_doc::Margins::uniform(0.0));
+        // All unassigned vector shapes on Inside Cover must have Fill [Paper] and Black stroke
+        for it in &sp1.items {
+            if matches!(it.content, designcraft_doc::Content::Unassigned) {
+                assert_eq!(it.fill.swatch, "[Paper]", "Inside cover shape must have white fill: {:?}", it.id);
+                assert_eq!(it.stroke.swatch, designcraft_color::swatch::BLACK, "Inside cover shape must have black stroke");
+                assert_eq!(it.stroke.weight, 1.0);
+            }
+        }
+
+        // Last Spread: Back Cover
+        let sp_back = active.doc.spreads.last().unwrap();
+        assert_eq!(sp_back.pages[0].margins, designcraft_doc::Margins::uniform(0.0));
+
+        // All items on Back Cover must have locked = true
+        for it in &sp_back.items {
+            assert!(it.locked, "Item {:?} on Back Cover must be locked", it.id);
+        }
+
+        fn has_white_unassigned(it: &designcraft_doc::Item) -> bool {
+            if matches!(it.content, designcraft_doc::Content::Unassigned) && it.fill.swatch == "[Paper]" {
+                return true;
+            }
+            if let designcraft_doc::Content::Group { items } = &it.content {
+                return items.iter().any(|sub| has_white_unassigned(sub));
+            }
+            false
+        }
+
+        // Shapes that had image background (hero frame) must be converted to white fill ([Paper])
+        let has_white_shape = sp_back.items.iter().any(|it| has_white_unassigned(it));
+        assert!(has_white_shape, "Back cover must have white shape converted from image background");
+
+        // Must contain graphic frames (top-right stack, center slogan, camera placeholder, office logo)
+        let graphic_frames_count = sp_back.items.iter().filter(|it| matches!(it.content, designcraft_doc::Content::Graphic(_))).count();
+        assert!(graphic_frames_count >= 4, "Back cover must have at least 4 graphic frames (got {graphic_frames_count})");
+
+        // Must contain text frames for agency name, office address, and ISSN/ISBN
+        let text_frames_count = sp_back.items.iter().filter(|it| matches!(it.content, designcraft_doc::Content::Text(_))).count();
+        assert!(text_frames_count >= 3, "Back cover must have at least 3 text frames (agency, address, ISSN)");
+
+        let ph = sp_back.pages[0].height;
+        let pw = sp_back.pages[0].width;
+
+        // Verify Office Logo position at bottom left:
+        let logo_item = sp_back.items.iter().find(|it| it.label == "#slot:back_cover:logo").expect("Logo item on back cover");
+        assert!(logo_item.bounds().y0 >= ph - 110.0, "Logo must be at bottom left (y0: {})", logo_item.bounds().y0);
+        assert!((logo_item.bounds().x0 - 36.0).abs() < 1.0, "Logo x0 must be at margin 36");
+
+        // Verify Office Name position at bottom left beside logo:
+        let agency_item = sp_back.items.iter().find(|it| it.label == "#slot:back_cover:agency").expect("Agency item on back cover");
+        assert!(agency_item.bounds().y0 >= ph - 110.0, "Agency name must be at bottom left (y0: {})", agency_item.bounds().y0);
+        assert!(agency_item.bounds().x0 >= 80.0, "Agency name x0 must be beside logo");
+
+        // Verify Office Address position below logo & name on bottom left:
+        let addr_item = sp_back.items.iter().find(|it| it.label == "#slot:back_cover:address").expect("Address item on back cover");
+        assert!(addr_item.bounds().y0 >= ph - 65.0, "Address must be below logo and name (y0: {})", addr_item.bounds().y0);
+        assert!((addr_item.bounds().x0 - 36.0).abs() < 1.0, "Address x0 must be at margin 36");
+        if let designcraft_doc::Content::Text(tf) = &addr_item.content {
+            let story = active.doc.story(tf.story).expect("Address story");
+            for r in &story.chars {
+                assert_eq!(r.format.over.font_style.as_deref(), Some("Regular"), "Address must not be bold");
+                assert!(r.format.over.size.unwrap_or(0.0) <= 8.0, "Address must use standard font size");
+            }
+        }
+
+        // Verify ISSN/ISBN position at bottom right side:
+        let code_item = sp_back.items.iter().find(|it| it.label == "#slot:back_cover:code").expect("Code item on back cover");
+        assert!(code_item.bounds().x0 >= pw - 180.0, "ISSN must be on bottom right side (x0: {})", code_item.bounds().x0);
+        assert!(code_item.bounds().y0 >= ph - 65.0, "ISSN must be on bottom right side (y0: {})", code_item.bounds().y0);
+        if let designcraft_doc::Content::Text(tf) = &code_item.content {
+            let story = active.doc.story(tf.story).expect("ISSN story");
+            for r in &story.chars {
+                assert_eq!(r.format.over.font_style.as_deref(), Some("Regular"), "ISSN must not be bold");
+                assert!(r.format.over.size.unwrap_or(0.0) <= 8.0, "ISSN must use standard font size");
+            }
+            for p in &story.paras {
+                assert_eq!(p.para.align, Some(designcraft_doc::Align::Right), "ISSN must be right-aligned");
+            }
+        }
+
+        // Test that adding body pages afterwards still keeps Back Cover at the very end
+        app.run("layout.pages.insert", json!({"count": 2})).unwrap();
+        ensure_back_cover_at_end(&mut app);
+        let active2 = app.session.active().unwrap();
+        assert_eq!(active2.doc.page_count(), 6, "Now 6 pages total");
+        assert_eq!(find_back_cover_page(&active2.doc), Some(5), "Back cover must move to the last page (page 5)");
+    }
+
+    #[test]
+    fn test_excel_with_cover_generates_table_sheet_page() {
+        let cover_sheet = excel::ExcelSheetData {
+            name: "COVER".into(),
+            grid: vec![
+                vec!["style".into(), "Wave Curves".into()],
+                vec!["title1".into(), "KECAMATAN KARAWANG".into()],
+                vec!["office_address".into(), "Jl. Cakradireja No.36".into()],
+            ],
+            merges: vec![],
+        };
+        let tbl_sheet = excel::ExcelSheetData {
+            name: "01_01".into(),
+            grid: vec![vec!["Tabel 01.01 Luas Wilayah".into()], vec!["Desa".into(), "Luas".into()], vec!["Adiarsa".into(), "10".into()]],
+            merges: vec![],
+        };
+        let res = excel::convert_excel_to_csv_data(&[cover_sheet, tbl_sheet], "TEST_CONV");
+        assert!(res.cover.is_some());
+        assert_eq!(res.table_csvs.len(), 1);
+
+        let dir = std::env::temp_dir().join(format!("dc-pubgen-cover-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let cat_path = dir.join("catalog.csv");
+        std::fs::write(&cat_path, &res.catalog_csv_content).unwrap();
+
+        let tbl_path = dir.join("01_01.csv");
+        std::fs::write(&tbl_path, &res.table_csvs[0].1).unwrap();
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut st = PubgenState::default();
+        apply_excel_cover(&mut st, res.cover.as_ref().unwrap(), None);
+        st.card1_path = cat_path.to_str().unwrap().to_string();
+        load_card1_csv(&mut st, cat_path.to_str().unwrap());
+        st.card2_sheet_tables = vec![tbl_path.to_str().unwrap().to_string()];
+        load_card2_csv(&mut st, tbl_path.to_str().unwrap());
+
+        st.excel_had_cover = true;
+        st.card1_auto_insert_tables = true;
+        st.card1_range_all = true;
+
+        if st.excel_had_cover {
+            match execute_generate_front_cover(&mut app, &st) {
+                Ok(_) => {
+                    if st.cover_include_inside_back {
+                        execute_generate_inside_cover(&mut app).unwrap();
+                    }
+                }
+                Err(e) => panic!("Cover failed: {e}"),
+            }
+        }
+
+        let gen_res = execute_generate_pages(&mut app, &st);
+        assert!(gen_res.is_ok(), "generate pages failed: {gen_res:?}");
+
+        // Verify that the table sheet (01_01) was generated before adding back cover
+        {
+            let doc = &app.session.active().unwrap().doc;
+            let has_table = doc.stories.values().any(|s| s.text.contains("01.01") || s.text.contains("Luas Wilayah"));
+            assert!(has_table, "Table sheet 01_01 should have been generated into the document");
+        }
+
+        if st.excel_had_cover && st.cover_include_inside_back {
+            execute_generate_back_cover(&mut app, &st).unwrap();
+        }
+        ensure_back_cover_at_end(&mut app);
+
+        // Verify that the table sheet (01_01) was NOT deleted or corrupted by back cover generation
+        let doc = &app.session.active().unwrap().doc;
+        let has_table_after = doc.stories.values().any(|s| s.text.contains("01.01") || s.text.contains("Luas Wilayah"));
+        assert!(has_table_after, "Table sheet 01_01 must still be present after generating back cover");
+
+        // Verify back cover page exists at the end
+        let back_page_idx = doc.page_count() - 1;
+        let (back_si, _) = doc.page_loc(back_page_idx).unwrap();
+        let back_spread = &doc.spreads[back_si];
+        let has_back_branding = back_spread.items.iter().any(|it| {
+            if let designcraft_doc::Content::Text(tf) = &it.content {
+                doc.story(tf.story).is_some_and(|s| s.text.contains("BADAN PUSAT STATISTIK"))
+            } else {
+                false
+            }
+        });
+        assert!(has_back_branding, "Back cover must contain agency text branding");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

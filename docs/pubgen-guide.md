@@ -9,7 +9,7 @@
 2. [Finding the Pubgen Panel in DesignCraft](#2-finding-the-pubgen-panel-in-designcraft)
 3. [Card 1: Publication Cover (Cover Page Generator)](#3-card-1-publication-cover-cover-page-generator)
    - [Overview & Position](#overview--position)
-   - [The 11 Executive Cover Styles](#the-11-executive-cover-styles)
+   - [The 13 Executive Cover Styles](#the-13-executive-cover-styles)
    - [Hover Thumbnail Previews](#hover-thumbnail-previews)
    - [Theme Colors & Color Customization](#theme-colors--color-customization)
    - [Metadata & Content Fields](#metadata--content-fields)
@@ -89,7 +89,7 @@ You can click the triangle arrow `▼` next to any section header to expand or c
 At the top header band of the Pubgen panel, you can toggle between **Single Lang** (default) and **Dual Lang**:
 - **Single Lang**: Standard monolingual generation matching legacy publications.
 - **Dual Lang**: Generates bilingual Indonesian-English content adhering to BPS statistical standards:
-  - **Covers**: Binds English title into the dedicated `#slot:text:title_en` slot across all 11 cover styles.
+  - **Covers**: Binds the English title into the dedicated `#slot:text:title_en` frame where a cover provides one, and otherwise into the second headline line (`title#2`).
   - **Dividers (`DIV`)**: Emits dual-language chapter headings, with English subtitles rendered in the accent swatch.
   - **Review Chapters (`RXX`) & Front Matter (`BXX`)**: Synthesizes sequential spreads (Indonesian spread followed by English spread).
   - **Statistical Tables (`XX_XX`)**: Produces 2-row header chrome (`Tabel` / italic `Table`) and 2-line titles split on `" / "` with italicized English.
@@ -143,9 +143,9 @@ The **Publication Cover** section allows you to synthesize a complete, professio
 
 ---
 
-### The 11 Executive Cover Styles
+### The 13 Executive Cover Styles
 
-Pubgen provides 11 corporate design styles:
+Pubgen provides 13 corporate design styles:
 
 #### 1. Wave Curves (`🌊 Wave`)
 - **Visual Personality**: Organic, modern, flowing.
@@ -269,10 +269,35 @@ Pubgen provides 11 corporate design styles:
   - **Position Lock**: a solid blue institutional band at the foot, carrying the logo on a white plate and the agency line in **Arial Bold Italic** white.
 - **Best For**: Government statistical publications, annual reports, corporate profiles, and any cover that must carry a strict institutional palette.
 
+#### 12. Prism Diamonds (`💎 Prism`)
+- **Visual Personality**: Jewel-like, modern, dramatic — a midnight cover built from one repeated form.
+- **Design Elements**:
+  - A **deep midnight field** (`#0A2233`) with a soft deep-teal diamond mass behind the photograph.
+  - A **cascade of diamond shapes** in eleven sizes, from a 12 pt fleck to the 300 pt photograph itself: solid blue, green and orange, pale tints, and two hairline outlines, stepping from the upper left down to the lower right and bleeding off the right edge.
+  - The **cityscape photograph cut as the largest diamond**, its lower-left corner layered over by a pale blue diamond and a white fleck.
+  - Headline in **Arial Black** ice-white, the second headline line in orange with wide tracking, and a tri-colour diamond mark in the top-left corner.
+  - A **two-tone year** (blue + white) in giant **Arial Black** with the **Volume** line beneath it and a green rule.
+  - **Position Lock**: publication metadata (Line #1: `Katalog BPS: <number>`, Line #2: `ISSN/ISBN <number>` in crisp **Arial Bold**) sits top-right on the midnight field.
+  - **Position Lock**: a green seam over a solid blue institutional band at the foot, carrying the logo on a white plate, the agency line in **Arial Bold Italic** white, and a closing trio of diamonds.
+  - The template brings its own swatches (`Prism Night`, `Prism Deep`, `Prism Blue`, `Prism Green`, `Prism Orange`, `Prism Mint`, `Prism Ice`, `Prism Sky`), so the Theme dropdown does not recolour it.
+- **Best For**: Flagship statistical yearbooks, annual reports, corporate profiles, and covers that need a striking, contemporary look.
+
+#### 13. Quarter Stack (`▢ Quarter Stack`)
+- **Visual Personality**: Warm, tactile, editorial — a deck of cards laid on a paper table.
+- **Design Elements**:
+  - A **warm paper field** (`#F6F1E7`) instead of white, with the metadata and a trio of small quarter-rounded chips in the top-left corner.
+  - A **fanned stack of four cards** offset by 30 pt, each rounding exactly **one** corner (bottom-right, top-left, top-right, then the photograph card's bottom-left with a 110 pt radius) in blush `#E7C7B3`, sage `#93A98C`, clay `#C75B39` and the photograph, bleeding off the right edge.
+  - A **cascading chip cluster** below the stack — teal `#2F6F6B`, marigold `#E8A33D`, blush and clay quarter-rounded chips of four different sizes — echoing the cards at a smaller scale.
+  - The headline in **Arial Black** ink `#1F2A44`, the second headline line in tracked clay, and a **two-tone year** (clay + ink) in giant **Arial Black** with the **Volume** line beneath and a sage rule.
+  - **Position Lock**: publication metadata (Line #1: `Katalog BPS: <number>`, Line #2: `ISSN/ISBN <number>` in crisp **Arial Bold**) sits top-left on the paper field.
+  - **Position Lock**: a solid ink institutional band at the foot, carrying the logo on a paper plate rounded on one corner, the agency line in **Arial Bold Italic** paper, and three closing chips.
+  - The template brings its own warm swatches (`Stack Paper`, `Stack Ink`, `Stack Clay`, `Stack Marigold`, `Stack Sage`, `Stack Blush`, `Stack Teal`), so the Theme dropdown does not recolour it.
+- **Best For**: Yearbooks, institutional profiles, cultural and social reports, and covers that should feel printed rather than corporate.
+
 ---
 
 ### Hover Thumbnail Previews
-- **Quick Preview Pills**: Under the style dropdown, you will see 10 quick-switch pills (`🌊 Wave`, `🔷 Geometric`, `📐 Origami`, `🔰 Chevron`, `⬡ Hexagon`, `🏢 Corporate`, `↗ Arrow`, `🌇 Horizon`, `📊 Report`, `🌆 Urban`).
+- **Quick Preview Pills**: Under the style dropdown, you will see 13 quick-switch pills (`🌊 Wave`, `🔷 Geometric`, `📐 Origami`, `🔰 Chevron`, `⬡ Hexagon`, `🏢 Corporate`, `↗ Arrow`, `🌇 Horizon`, `📊 Report`, `🌆 Urban`, `🎨 Tri-Color`, `💎 Prism`, `▢ Quarter Stack`).
 - **Hover to Preview**: Simply move your mouse over any pill (or click the small eye icon `👁` next to the dropdown). A floating tooltip instantly displays the actual rendered cover thumbnail so you can choose your favorite look before generating.
 
 ---

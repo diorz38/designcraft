@@ -9,7 +9,7 @@
 2. [Menemukan Panel Pubgen di DesignCraft](#2-menemukan-panel-pubgen-di-designcraft)
 3. [Bagian 1: Publication Cover (Pembuat Halaman Sampul Otomatis)](#3-bagian-1-publication-cover-pembuat-halaman-sampul-otomatis)
    - [Ikhtisar & Posisi Halaman](#ikhtisar--posisi-halaman)
-   - [11 Gaya Sampul Eksekutif](#11-gaya-sampul-eksekutif)
+   - [13 Gaya Sampul Eksekutif](#13-gaya-sampul-eksekutif)
    - [Pratinjau Thumbnail Hover](#pratinjau-thumbnail-hover)
    - [Tema Warna & Kustomisasi Palet](#tema-warna--kustomisasi-palet)
    - [Metadata & Isian Informasi Publikasi](#metadata--isian-informasi-publikasi)
@@ -78,7 +78,7 @@ Anda dapat mengklik tanda panah `▼` di sebelah setiap judul kartu untuk membuk
 Di bilah tajuk atas panel Pubgen, Anda dapat beralih antara **Single Lang** (default satu bahasa) dan **Dual Lang** (dwi bahasa):
 - **Single Lang**: Pembuatan publikasi satu bahasa (monolingual) standar seperti sebelumnya.
 - **Dual Lang**: Menghasilkan publikasi dwi bahasa Indonesia-Inggris sesuai standar publikasi BPS:
-  - **Sampul Depan**: Menautkan judul bahasa Inggris ke slot `#slot:text:title_en` di seluruh 11 gaya sampul.
+  - **Sampul Depan**: Menautkan judul bahasa Inggris ke bingkai `#slot:text:title_en` bila templat menyediakannya, dan bila tidak ke baris judul kedua (`title#2`).
   - **Halaman Pembatas Bab (`DIV`)**: Menampilkan judul ganda dengan subjudul bahasa Inggris menggunakan warna aksen.
   - **Bab Ulasan (`RXX`) & Bagian Depan (`BXX`)**: Membuat sebaran berurutan (halaman Indonesia diikuti halaman Inggris).
   - **Tabel Statistik (`XX_XX`)**: Menggunakan tajuk 2 baris (`Tabel` / `Table` miring) dan judul 2 baris dengan teks Inggris dicetak miring.
@@ -109,9 +109,9 @@ Menu **Publication Cover** memungkinkan Anda membuat halaman sampul depan buku/l
 
 ---
 
-### 11 Gaya Sampul Eksekutif
+### 13 Gaya Sampul Eksekutif
 
-Pubgen menyediakan 11 pilihan desain sampul siap pakai:
+Pubgen menyediakan 13 pilihan desain sampul siap pakai:
 
 #### 1. Wave Curves (`🌊 Wave`)
 - **Karakter Visual**: Mengalir dinamis, modern, dan luwes.
@@ -236,10 +236,35 @@ Pubgen menyediakan 11 pilihan desain sampul siap pakai:
   - **Position Lock**: pita instansi biru solid di bagian bawah, berisi logo di atas pelat putih dan teks instansi (**Arial Bold Italic**, putih).
 - **Paling Cocok Untuk**: Publikasi statistik pemerintah, laporan tahunan, profil korporat, dan sampul yang harus memakai palet kelembagaan yang ketat.
 
+#### 12. Prism Diamonds (`💎 Prism`)
+- **Karakter Visual**: Seperti permata, modern, dramatis — sampul malam yang dibangun dari satu bentuk berulang.
+- **Elemen Desain**:
+  - **Bidang malam pekat** (`#0A2233`) dengan massa belah ketupat teal gelap di belakang foto.
+  - **Rangkaian bentuk belah ketupat** dalam sebelas ukuran, dari serpihan 12 pt hingga foto 300 pt: biru, hijau, dan jingga solid, warna-warna pucat, serta dua garis tepi tipis, bergerak dari kiri atas ke kanan bawah dan melewati tepi kanan.
+  - **Foto panorama kota dipotong sebagai belah ketupat terbesar**, sudut kiri bawahnya ditumpuk belah ketupat biru muda dan satu serpihan putih.
+  - Judul dalam **Arial Black** putih es, baris judul kedua berwarna jingga dengan jarak huruf lebar, dan tanda tiga belah ketupat di sudut kiri atas.
+  - **Tahun dwi-warna** (biru + putih) dalam **Arial Black** raksasa dengan baris **Volume** di bawahnya dan garis hijau.
+  - **Position Lock**: metadata publikasi (Baris 1: `Katalog BPS: <nomor>`, Baris 2: `ISSN/ISBN <nomor>` dengan **Arial Bold**) berada di kanan atas di atas bidang malam.
+  - **Position Lock**: sambungan hijau di atas pita instansi biru solid di bagian bawah, berisi logo di atas pelat putih, teks instansi (**Arial Bold Italic**, putih), dan tiga belah ketupat penutup.
+  - Templat membawa swatch-nya sendiri (`Prism Night`, `Prism Deep`, `Prism Blue`, `Prism Green`, `Prism Orange`, `Prism Mint`, `Prism Ice`, `Prism Sky`), sehingga menu Theme tidak mewarnai ulang sampul ini.
+- **Paling Cocok Untuk**: Buku tahunan statistik unggulan, laporan tahunan, profil korporat, dan sampul yang membutuhkan tampilan kontemporer yang mencolok.
+
+#### 13. Quarter Stack (`▢ Quarter Stack`)
+- **Karakter Visual**: Hangat, taktil, editorial — seperti setumpuk kartu di atas meja kertas.
+- **Elemen Desain**:
+  - **Bidang kertas hangat** (`#F6F1E7`) alih-alih putih, dengan metadata dan tiga chip kecil bersudut satu di sudut kiri atas.
+  - **Tumpukan empat kartu terkembang** dengan selisih 30 pt, masing-masing membulatkan tepat **satu** sudut (kanan-bawah, kiri-atas, kanan-atas, lalu kartu foto dengan kiri-bawah beradius 110 pt) dalam warna blush `#E7C7B3`, sage `#93A98C`, clay `#C75B39` dan foto, melewati tepi kanan.
+  - **Gugusan chip bertingkat** di bawah tumpukan — chip teal `#2F6F6B`, marigold `#E8A33D`, blush dan clay dengan empat ukuran berbeda — menggemakan kartu dalam skala kecil.
+  - Judul dalam **Arial Black** warna tinta `#1F2A44`, baris judul kedua clay dengan jarak huruf lebar, dan **tahun dwi-warna** (clay + tinta) dalam **Arial Black** raksasa dengan baris **Volume** di bawahnya serta garis sage.
+  - **Position Lock**: metadata publikasi (Baris 1: `Katalog BPS: <nomor>`, Baris 2: `ISSN/ISBN <nomor>` dengan **Arial Bold**) berada di kiri atas pada bidang kertas.
+  - **Position Lock**: pita instansi tinta solid di bagian bawah, berisi logo di atas pelat kertas dengan satu sudut membulat, teks instansi (**Arial Bold Italic**, kertas), dan tiga chip penutup.
+  - Templat membawa swatch hangatnya sendiri (`Stack Paper`, `Stack Ink`, `Stack Clay`, `Stack Marigold`, `Stack Sage`, `Stack Blush`, `Stack Teal`), sehingga menu Theme tidak mewarnai ulang sampul ini.
+- **Paling Cocok Untuk**: Buku tahunan, profil kelembagaan, laporan sosial dan budaya, serta sampul yang sebaiknya terasa seperti cetakan alih-alih korporat.
+
 ---
 
 ### Pratinjau Thumbnail Hover
-- Di bawah menu pilihan gaya, terdapat tombol pil cepat: `🌊 Wave`, `🔷 Geometric`, `📐 Origami`, `🔰 Chevron`, `⬡ Hexagon`, `🏢 Corporate`, `↗ Arrow`, `🌇 Horizon`, `📊 Report`, `🌆 Urban`.
+- Di bawah menu pilihan gaya, terdapat tombol pil cepat: `🌊 Wave`, `🔷 Geometric`, `📐 Origami`, `🔰 Chevron`, `⬡ Hexagon`, `🏢 Corporate`, `↗ Arrow`, `🌇 Horizon`, `📊 Report`, `🌆 Urban`, `🎨 Tri-Color`, `💎 Prism`, `▢ Quarter Stack`.
 - Cukup **arahkan kursor tetikus (hover)** ke salah satu pil (atau klik ikon mata `👁` di samping menu). Jendela melayang (*tooltip*) akan langsung menampilkan thumbnail foto sampul yang sesungguhnya beresolusi tinggi, sehingga Anda dapat memilih desain dengan yakin sebelum membuatnya.
 
 ---

@@ -40,6 +40,8 @@ pub struct ExcelCoverData {
     pub image_landscape: String,
     pub logo: String,
     pub table_theme: String,
+    pub event_theme: String,
+    pub office_address: String,
 }
 
 /// Generated CSV data from conversion.
@@ -360,7 +362,9 @@ pub fn parse_cover_sheet(sheet: &ExcelSheetData) -> ExcelCoverData {
             "image1" | "imagehero" | "image" => &mut cover.image_hero,
             "imagelanscape" | "imagelandscape" | "landscape" => &mut cover.image_landscape,
             "officelogo" | "logo" => &mut cover.logo,
+            "officeaddress" | "office_address" | "address" | "alamatkantor" | "alamat" => &mut cover.office_address,
             "tabletheme" | "theme" | "tablecolor" | "color" | "colortheme" | "warna" => &mut cover.table_theme,
+            "eventtheme" | "themeevent" | "imageback" | "backimage" | "backcover" => &mut cover.event_theme,
             _ => {
                 // If it is row 3 (0-indexed 2) and title_en isn't set yet:
                 if row_idx == 2 && cover.title_en.is_empty() {
