@@ -75,4 +75,3 @@ pub(crate) fn ensure_swatch(doc: &mut designcraft_doc::Document, hex: &str) -> S
     }
     upper
 }
-

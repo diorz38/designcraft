@@ -510,7 +510,13 @@ pub(crate) fn split_chapter_title_locale(title: &str, num_val: &str, is_en: bool
 }
 
 /// Create a centered text frame with Arial Bold and optional paragraph style.
-pub(crate) fn frame_with_centered_bold_title(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], text: &str, style_opt: Option<&str>) -> Option<u64> {
+pub(crate) fn frame_with_centered_bold_title(
+    app: &mut DesignApp,
+    spread_idx: usize,
+    rect: [f64; 4],
+    text: &str,
+    style_opt: Option<&str>,
+) -> Option<u64> {
     let res = app.run("frame.create", json!({"spread": spread_idx, "rect": rect, "content": "text", "text": text, "caret": false})).ok()?;
     let fid = res.get("id").and_then(Value::as_u64)?;
     let story = res.get("story").and_then(Value::as_u64)?;
@@ -635,6 +641,3 @@ pub(crate) fn is_divider_type(type_val: &str) -> bool {
 pub(crate) fn is_chart_type(type_val: &str) -> bool {
     ["grafik", "graph", "chart", "bagan", "diagram"].iter().any(|k| type_val.eq_ignore_ascii_case(k))
 }
-
-/// The number of paragraphs the TOC would collect for `style` right now.
-#[cfg(test)]

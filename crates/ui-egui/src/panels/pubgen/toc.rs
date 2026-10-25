@@ -1164,7 +1164,13 @@ pub(crate) fn remove_toc_continuation_headers_of(app: &mut DesignApp, sid: desig
     });
 }
 
-pub(crate) fn sync_toc_continuation_headers(app: &mut DesignApp, st: &PubgenState, sid: designcraft_doc::StoryId, plan: &TocPlan, mut pages_added: u64) -> u64 {
+pub(crate) fn sync_toc_continuation_headers(
+    app: &mut DesignApp,
+    st: &PubgenState,
+    sid: designcraft_doc::StoryId,
+    plan: &TocPlan,
+    mut pages_added: u64,
+) -> u64 {
     remove_toc_continuation_headers_of(app, sid);
 
     let (header_text, style_name) = if plan.layout == 1 {
