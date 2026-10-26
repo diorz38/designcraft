@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use super::ai;
+use super::ai_cover;
 use super::locale::Locale;
 
 pub(super) fn default_file_col() -> usize {
@@ -380,6 +381,15 @@ pub struct PubgenState {
     pub cover_office_address: String,
     #[serde(default)]
     pub cover_status: Option<(String, bool)>,
+    /// AI Base covers (styles 100+): the palette direction fed to the generator.
+    #[serde(default)]
+    pub cover_ai_palette: usize,
+    /// Open AI Base Cloudflare setup dialog, if any.
+    #[serde(skip)]
+    pub cover_ai_dialog: Option<ai_cover::AiCoverSetupDialog>,
+    /// Last AI setup/generation error shown next to the setup button.
+    #[serde(skip)]
+    pub cover_ai_error: Option<String>,
 
     // Card: Header & Footer Template (between Cover and Quick Actions)
     #[serde(default = "default_hf_style")]
@@ -540,6 +550,9 @@ impl Default for PubgenState {
             cover_image_back: String::new(),
             cover_office_address: String::new(),
             cover_status: None,
+            cover_ai_palette: 0,
+            cover_ai_dialog: None,
+            cover_ai_error: None,
             excel_auto_generate: true,
             excel_had_cover: false,
             header_status: None,

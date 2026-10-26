@@ -3158,10 +3158,20 @@ fn cover_style_index(spec: &str) -> Option<usize> {
     if want.is_empty() {
         return None;
     }
-    NAMES.iter().position(|n| {
+    if let Some(idx) = NAMES.iter().position(|n| {
         let n = norm(n);
         n.contains(&want) || want.contains(&n)
-    })
+    }) {
+        return Some(idx);
+    }
+    // AI Base styles (100+): the sheet may say "AI Base: Retro Waves" or "AI Retro Waves".
+    super::ai_cover::AI_PRESETS
+        .iter()
+        .position(|p| {
+            let n = norm(&format!("AI {}", p.name));
+            n.contains(&want) || want.contains(&n)
+        })
+        .map(|i| super::ai_cover::AI_STYLE_BASE + i)
 }
 
 /// Copy the `COVER` sheet values into the Publication Cover card.

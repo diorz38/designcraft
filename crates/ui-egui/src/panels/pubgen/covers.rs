@@ -784,6 +784,12 @@ pub fn execute_generate_front_cover(app: &mut DesignApp, st: &PubgenState) -> Re
         resolve_cover_image(if st.cover_image_landscape.trim().is_empty() { "outputs/city_landscape.jpg" } else { st.cover_image_landscape.trim() });
     let logo = resolve_cover_image(if st.cover_image_logo.trim().is_empty() { "outputs/bps_logo.png" } else { st.cover_image_logo.trim() });
 
+    // AI Base styles (100+) generate their background online; the procedural template
+    // paths below never see them.
+    if super::ai_cover::preset_index(st.cover_style).is_some() {
+        return super::ai_cover::execute_generate_ai_cover(app, st);
+    }
+
     let agency_text = if st.cover_agency_text.trim().is_empty() { "BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG" } else { st.cover_agency_text.trim() };
 
     // The hand-designed covers in `covers/`: A4 artboards with the artwork's transforms intact
@@ -1112,6 +1118,7 @@ pub(super) fn add_cover_text_frame(
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use super::super::state::default_cover_title;
     use super::*;
 
     #[test]

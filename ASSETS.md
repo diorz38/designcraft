@@ -134,6 +134,7 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `plan/pubgen/samples/thumb/modern_horizon.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 7 (Modern Horizon) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/prism_diamonds.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 11 (Prism Diamonds) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/quarter_stack.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 12 (Quarter Stack) | CC0-1.0 | Test thumbnail |
+| `plan/pubgen/samples/thumb/ai_base.png` | DesignCraft contributor (generated) | rendered template preview used as the thumbnail for the AI Base cover styles (100+); shows the layout with its placeholder background before generation | CC0-1.0 — **confirm** (embedded sample photo/emblem) | Test thumbnail |
 | `plan/pubgen/samples/thumb/tri_color_bands.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 10 (Tri-Color Bands) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/urban_angle.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 9 (Urban Angle) | CC0-1.0 | Test thumbnail |
 | `plan/pubgen/samples/thumb/wave_curves.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 0 (Wave Curves) | CC0-1.0 | Test thumbnail |

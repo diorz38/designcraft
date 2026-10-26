@@ -36,6 +36,7 @@ fn style_thumbnail_texture(ctx: &egui::Context, style_idx: usize) -> Option<egui
         10 => ("tri_color_bands.png", "tri_color_bands.png"),
         11 => ("prism_diamonds.png", "prism_diamonds.png"),
         12 => ("quarter_stack.png", "quarter_stack.png"),
+        s if s >= super::ai_cover::AI_STYLE_BASE => ("ai_base.png", "ai_base_template.png"),
         _ => return None,
     };
     let candidates = [
@@ -606,6 +607,10 @@ pub(crate) fn show_style_thumbnail_tooltip(ui: &mut Ui, style_idx: usize, name: 
             10 => "Executive white grid: a tri-colour masthead rule, a right-hand cityscape panel over a blue/green/orange bar, a two-tone year and a blue institutional band.",
             11 => "Midnight prism: a cascade of jewelled diamonds around a diamond-cut photograph, an ice-white headline over a two-tone year, and a blue institutional band.",
             12 => "Warm paper stack: four cards fanned with one rounded corner each around a card-cut photograph, a cascading chip cluster, and an ink institutional band.",
+            s if s >= super::ai_cover::AI_STYLE_BASE => match super::ai_cover::preset(s) {
+                Some(p) => p.description,
+                None => "",
+            },
             _ => "",
         };
         ui.add_space(3.0);

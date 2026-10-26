@@ -656,15 +656,26 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
             "Prism Diamonds",
             "Quarter Stack",
         ];
-        let cur_style = styles.get(st.cover_style).copied().unwrap_or("Wave Curves");
+        let cur_style = match super::ai_cover::style_name(st.cover_style) {
+            Some(name) => name,
+            None => styles.get(st.cover_style).copied().unwrap_or("Wave Curves").to_string(),
+        };
         // The dock can be as narrow as 220 pt: the dropdown takes what the row has left.
         let combo_w = (ui.available_width() - 80.0).clamp(110.0, 200.0);
         let prev_style = st.cover_style;
-        let combo = egui::ComboBox::from_id_salt("pubgen_cover_style").selected_text(cur_style).width(combo_w).show_ui(ui, |ui| {
+        let combo = egui::ComboBox::from_id_salt("pubgen_cover_style").selected_text(cur_style.as_str()).width(combo_w).show_ui(ui, |ui| {
             for (idx, s) in styles.iter().enumerate() {
                 let resp = ui.selectable_value(&mut st.cover_style, idx, *s);
                 resp.on_hover_ui(|ui| {
                     show_style_thumbnail_tooltip(ui, idx, s, t);
+                });
+            }
+            ui.separator();
+            for (i, p) in super::ai_cover::AI_PRESETS.iter().enumerate() {
+                let sid = super::ai_cover::AI_STYLE_BASE + i;
+                let resp = ui.selectable_value(&mut st.cover_style, sid, format!("AI {} (online)", p.name));
+                resp.on_hover_ui(|ui| {
+                    show_style_thumbnail_tooltip(ui, sid, p.name, t);
                 });
             }
         });
@@ -676,7 +687,7 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
             }
         }
         combo.response.on_hover_ui(|ui| {
-            show_style_thumbnail_tooltip(ui, st.cover_style, cur_style, t);
+            show_style_thumbnail_tooltip(ui, st.cover_style, &cur_style, t);
         });
 
         // Small eye preview icon button that also triggers hover preview
@@ -692,7 +703,7 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
             if icon_hovered { Color32::WHITE } else { t.text_dim },
         );
         thumb_resp.on_hover_ui(|ui| {
-            show_style_thumbnail_tooltip(ui, st.cover_style, cur_style, t);
+            show_style_thumbnail_tooltip(ui, st.cover_style, &cur_style, t);
         });
     });
 
@@ -963,6 +974,10 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
                     st.cover_image_skyline = path;
                 }
             });
+        }
+        s if s >= super::ai_cover::AI_STYLE_BASE => {
+            // AI Base styles: palette direction + Cloudflare key setup instead of image pickers.
+            super::ai_cover::ai_cover_options_pane(app, ui, st, t);
         }
         _ => {
             // Style 7 (Modern Horizon) & Style 8 (Business Report): 1 image (Hero photograph)

@@ -21,6 +21,7 @@ pub mod locale;
 pub use locale::Locale;
 
 pub mod ai;
+pub mod ai_cover;
 
 mod cover_art;
 mod covers;
@@ -193,5 +194,43 @@ mod tests {
         harness.input_mut().max_texture_side = Some(8192);
         harness.run_steps(4);
         harness.render().unwrap().save(directory.join("pubgen-toc-table.png")).unwrap();
+    }
+
+    /// Opt-in evidence: the Publication Cover card with an AI Base style selected
+    /// (palette direction + key setup instead of the procedural image pickers).
+    #[test]
+    fn capture_pubgen_ai_cover_fixture() {
+        let Some(directory) = std::env::var_os("CRAFT_UI_VISUAL_FIXTURES").map(std::path::PathBuf::from) else { return };
+        std::fs::create_dir_all(&directory).unwrap();
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let mut ready = false;
+        let mut harness = egui_kittest::Harness::builder().with_size(vec2(520.0, 1600.0)).wgpu().build_ui_state(
+            move |ui, app: &mut DesignApp| {
+                if !ready {
+                    crate::theme::install_fonts(ui.ctx(), "en");
+                    crate::theme::apply(ui.ctx(), &Tokens::for_brightness(crate::theme::Brightness::MediumDark));
+                    let st = PubgenState {
+                        cover_style: ai_cover::AI_STYLE_BASE,
+                        cover_color_primary: "#b5543b".into(),
+                        cover_color_accent: "#e8a34d".into(),
+                        cover_color_dark: "#3e2c23".into(),
+                        ..Default::default()
+                    };
+                    ui.data_mut(|d| d.insert_temp(egui::Id::new(PANEL_ID), st));
+                    ready = true;
+                    return;
+                }
+                // The card body alone (the panel's collapsible header hides it by default).
+                let t = Tokens::for_brightness(crate::theme::Brightness::MediumDark);
+                let mut st = ui.data_mut(|d| d.get_temp::<PubgenState>(egui::Id::new(PANEL_ID)).unwrap_or_default());
+                card_cover_body_ui(app, ui, &mut st, &t);
+                ui.data_mut(|d| d.insert_temp(egui::Id::new(PANEL_ID), st));
+            },
+            app,
+        );
+        harness.input_mut().max_texture_side = Some(8192);
+        harness.run_steps(4);
+        harness.render().unwrap().save(directory.join("pubgen-ai-cover.png")).unwrap();
     }
 }
