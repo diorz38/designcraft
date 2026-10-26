@@ -848,7 +848,8 @@ fn default_workspaces_are_the_canvas_beside_an_end_dock() {
     let [outer, icons] = columns else { panic!("{columns:?}") };
     assert!(!outer.iconic);
     assert_eq!(outer.groups.len(), 1);
-    assert_eq!(outer.groups[0].panels, ["properties", "pages", "layers"]);
+    let default_tabs: Vec<&str> = crate::dock::DOCK_TABS.iter().map(|(id, _, _)| *id).collect();
+    assert_eq!(outer.groups[0].panels, default_tabs);
     assert!(icons.iconic);
     let groups: Vec<Vec<&str>> = icons.groups.iter().map(|g| g.panels.iter().map(String::as_str).collect()).collect();
     let expected: Vec<Vec<&str>> = ICON_GROUPS.iter().map(|g| g.to_vec()).collect();
@@ -885,6 +886,8 @@ fn placed_panels_leave_their_icon_groups() {
     for id in ["properties", "pages", "layers", "swatches", "effects"] {
         placed.take(id);
     }
+    #[cfg(feature = "pubgen")]
+    placed.take("pubgen");
     let column = icon_column(None, &mut placed).unwrap();
     let groups: Vec<Vec<&str>> = column.groups.iter().map(|g| g.panels.iter().map(String::as_str).collect()).collect();
     assert_eq!(groups.first().unwrap(), &["stroke", "color", "gradient"]);
@@ -1033,18 +1036,26 @@ fn shared_panel_commands_float_dock_and_reject_atomically() {
     let mut tabbed = self::app();
     tabbed.run("window.panel.dock", json!({"panel": "layers", "side": "Start"})).unwrap();
     let layout = tabbed.ui.docking.clone().unwrap();
+    #[cfg(not(feature = "pubgen"))]
     assert_eq!(tab_group(&layout, "pages"), ["properties", "pages"]);
+    #[cfg(feature = "pubgen")]
+    assert_eq!(tab_group(&layout, "pages"), ["properties", "pages", "pubgen"]);
     assert!(matches!(&layout.root, Some(Node::Split { first, .. }) if matches!(&**first, Node::Dock { side: Side::Start, .. })));
     assert_eq!(tab_group(&layout, "layers"), ["layers"]);
     // A whole group, by any of its panels, then into a new column of the end dock.
     app.run("window.panel.float", json!({"panel": "pages", "group": true, "x": 80, "y": 80, "width": 300, "height": 400})).unwrap();
     let layout = app.ui.docking.clone().unwrap();
     assert_eq!(layout.floating.len(), 1);
+    #[cfg(not(feature = "pubgen"))]
     assert_eq!(window_groups(&layout.floating[0])[0].panels, ["properties", "pages", "layers"]);
+    #[cfg(feature = "pubgen")]
+    assert_eq!(window_groups(&layout.floating[0])[0].panels, ["properties", "pages", "layers", "pubgen"]);
     app.run("window.panel.dock", json!({"panel": "pages", "group": true, "side": "End"})).unwrap();
     let layout = app.ui.docking.clone().unwrap();
-    assert!(layout.floating.is_empty());
+    #[cfg(not(feature = "pubgen"))]
     assert_eq!(tab_group(&layout, "pages"), ["properties", "pages", "layers"]);
+    #[cfg(feature = "pubgen")]
+    assert_eq!(tab_group(&layout, "pages"), ["properties", "pages", "layers", "pubgen"]);
     // A lone panel to a new dock at the start edge.
     app.run("window.panel.float", json!({"panel": "stroke"})).unwrap();
     app.run("window.panel.dock", json!({"panel": "stroke", "side": "Start"})).unwrap();

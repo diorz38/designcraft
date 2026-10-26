@@ -8,6 +8,7 @@ pub(super) const TABLE: &[(&str, &str)] = &[
     ("Angle:", "Sudut:"),
     ("Apply", "Terapkan"),
     ("Apply \"{name}\", Clear Overrides", "Terapkan \"{name}\", Hapus Penggantian"),
+    ("Arrangement", "Susunan"),
     ("Auto-insert Narrative RTF", "Sisipkan RTF Narasi otomatis"),
     ("Auto-insert tables", "Sisipkan tabel otomatis"),
     ("Back", "Kembali"),

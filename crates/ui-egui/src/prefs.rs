@@ -294,7 +294,8 @@ mod tests {
         assert!(ui.docking.is_none());
         let layout = crate::panel_docking::default_layout(&ui);
         let columns = dock(&layout);
-        assert_eq!(panels(&columns[0]), [vec!["properties", "pages", "layers"], vec!["swatches"]]);
+        let default_tabs: Vec<&str> = crate::dock::DOCK_TABS.iter().map(|(id, _, _)| *id).collect();
+        assert_eq!(panels(&columns[0]), [default_tabs.clone(), vec!["swatches"]]);
         assert_eq!(columns[0].groups[0].active, 2, "Layers stays in front");
         assert!(!columns[0].iconic && columns[1].iconic);
         assert!(columns[1].groups.iter().all(|g| !g.panels.iter().any(|p| p == "glyphs" || p == "swatches")));
@@ -315,7 +316,8 @@ mod tests {
         }));
         assert_eq!(ui.open_panel, None);
         let layout = crate::panel_docking::default_layout(&ui);
-        assert_eq!(panels(&dock(&layout)[0]), [vec!["properties", "pages", "layers"]], "Stroke stays in its icon group");
+        let default_tabs: Vec<&str> = crate::dock::DOCK_TABS.iter().map(|(id, _, _)| *id).collect();
+        assert_eq!(panels(&dock(&layout)[0]), [default_tabs], "Stroke stays in its icon group");
         assert_eq!(ui.custom_workspaces[0].open_panel, None);
         assert_eq!(ui.custom_workspaces[1].open_panel.as_deref(), Some("swatches"), "saved from Printing and Proofing");
         let ui = load(json!({"workspace": "Proof", "openPanel": "swatches", "customWorkspaces": [{"name": "Proof", "openPanel": "swatches"}]}));
