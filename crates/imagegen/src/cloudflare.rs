@@ -247,4 +247,47 @@ mod tests {
         let err = c.generate(&req(), &cancel).err().expect("cancelled errors");
         assert!(matches!(err, ImageGenError::Cancelled), "{err}");
     }
+
+    #[test]
+    #[ignore = "touches live Cloudflare network with .env credentials"]
+    fn live_cloudflare_connectivity_test() {
+        let (acct, tok) = {
+            let mut a = String::new();
+            let mut t = String::new();
+            let env_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.env");
+            if let Ok(content) = std::fs::read_to_string(env_path) {
+                for line in content.lines() {
+                    if let Some((k, v)) = line.split_once('=') {
+                        let k = k.trim();
+                        let v = v.trim().trim_matches('"').trim_matches('\'').trim();
+                        if k.eq_ignore_ascii_case("CLOUDFLARE_ACCOUNT_ID") {
+                            a = v.to_string();
+                        } else if k.eq_ignore_ascii_case("CLOUDFLARE_API_TOKEN") {
+                            t = v.to_string();
+                        }
+                    }
+                }
+            }
+            (a, t)
+        };
+        assert!(!acct.is_empty(), "CLOUDFLARE_ACCOUNT_ID not found in .env");
+        assert!(!tok.is_empty(), "CLOUDFLARE_API_TOKEN not found in .env");
+
+        let client = CloudflareClient::new(&acct, &tok);
+        let cancel = AtomicBool::new(false);
+        let mut r = req();
+        r.width = 256;
+        r.height = 256;
+        r.num_steps = 1;
+        let res = client.generate(&r, &cancel);
+        match res {
+            Ok(bytes) => {
+                println!("SUCCESS: Received {} image bytes from Cloudflare Workers AI!", bytes.len());
+                assert!(!bytes.is_empty());
+            }
+            Err(e) => {
+                panic!("Cloudflare reachability check failed: {e}");
+            }
+        }
+    }
 }
