@@ -115,7 +115,9 @@ impl GenRequest {
     pub fn clean_cover_negative_prompt() -> String {
         "text, typography, letters, words, numbers, fonts, lorem ipsum, dummy copy, watermarks, logo, icons, symbols, \
          realistic photo, photograph, 3d render, perspective view, angled mockup, dropshadow, realistic book mockup, \
-         textured paper, checkerboard, transparent grid, clipping artifacts, busy details, framing, borders, author name, signature"
+         brochure mockup, folded paper, standing card, desk, table, presentation board, collage, multi-panel, split-screen, \
+         seam, divider line, gutter, picture frame, framing, borders, margins, textured paper, checkerboard, transparent grid, \
+         clipping artifacts, busy details, author name, signature"
             .to_string()
     }
 }

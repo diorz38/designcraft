@@ -70,31 +70,31 @@ pub const AI_PALETTES: &[AiPalette] = &[
 pub const AI_PRESETS: &[AiPreset] = &[
     AiPreset {
         name: "Retro Waves",
-        style_words: "minimalist mid-century modern abstract background, flowing organic waves and curving colour blocks, 1970s retro aesthetic, smooth flat vector shapes",
+        style_words: "minimalist mid-century modern abstract wallpaper, flowing organic waves and curving colour blocks, 1970s retro aesthetic, smooth flat vector shapes, continuous panoramic art",
         description: "AI-generated mid-century waves and colour blocks under the house typography; the accent band follows the chosen palette.",
         palettes: AI_PALETTES,
     },
     AiPreset {
         name: "Dark Fantasy",
-        style_words: "dark fantasy atmosphere, misty mountain silhouettes and ancient towers, dramatic moody clouds, painterly matte texture",
+        style_words: "dark fantasy atmosphere, panoramic misty mountain silhouettes and ancient towers, dramatic moody clouds, painterly matte texture, continuous epic landscape",
         description: "AI-generated misty fantasy landscape under the house typography; the accent band follows the chosen palette.",
         palettes: AI_PALETTES,
     },
     AiPreset {
         name: "Minimal Sci-Fi",
-        style_words: "minimal retro sci-fi background, geometric horizon lines, large sun disc and faint starfield, clean flat vector shapes",
+        style_words: "minimal retro sci-fi background, geometric horizon lines, massive glowing sun disc in sky, faint starfield, clean flat vector shapes, wide panorama",
         description: "AI-generated retro-futurist geometry under the house typography; the accent band follows the chosen palette.",
         palettes: AI_PALETTES,
     },
     AiPreset {
         name: "Dynamic Waves Spread",
-        style_words: "corporate bifold booklet cover template, double A4 spread layout, visible central vertical spine divider strip, symmetrical book cover template, abstract flowing dynamic wave ribbons, smooth curved gradient shapes, clean solid white background, flat 2D graphic design, minimalist corporate aesthetic, blank negative copy space on left and right panels, high resolution vector illustration, professional print layout",
+        style_words: "abstract flowing dynamic wave ribbons, smooth curved gradient shapes, clean solid background, flat 2D graphic design, minimalist corporate aesthetic, high resolution vector illustration, continuous flowing curves",
         description: "AI-generated double A4 spread of corporate waves with central spine; front cover on right, back cover on left.",
         palettes: AI_PALETTES,
     },
     AiPreset {
         name: "Vibrant S-Curve Spread",
-        style_words: "flat vector graphic of a double A4 landscape-oriented bifold corporate booklet cover template, with a front cover on the right and a back cover on the left, separated by a narrow vertical spine divider strip in the center, absolutely no text, blank copy space. back cover (left side): gradient royal blue background, sweeping diagonal curved band of deep navy and rich blue, orange-to-yellow gradient ribbon sweep, soft light-blue-to-white gradient at the bottom. spine divider: narrow vertical royal blue strip in the center. front cover (right side): gradient royal blue top, deep blue curve descending from top right edge, vibrant wavy orange-to-yellow gradient ribbon swooping across the middle in an S-curve, curving lime-green field on bottom-right with diagonal textured pattern, soft light-blue-to-white gradient curve on bottom-left. 2D graphic design, smooth gradients, sharp clean edges, empty print-ready cover spread template",
+        style_words: "flat vector graphic, sweeping curved bands, vibrant wavy gradient ribbon swooping across the composition in an elegant S-curve, geometric accent fields with fine diagonal texture, 2D graphic design, smooth gradients, sharp clean edges, continuous panoramic flow",
         description: "AI-generated double A4 spread featuring vibrant S-curve ribbons and geometric accent fields across front and back covers.",
         palettes: AI_PALETTES,
     },
@@ -114,20 +114,14 @@ pub fn style_name(cover_style: usize) -> Option<String> {
     preset(cover_style).map(|p| format!("AI {}", p.name))
 }
 
-/// The full prompt sent for a preset + palette: style words, palette words and the
-/// double A4 bifold layout constraints (negative prompt lives in `imagegen::GenRequest`).
+/// The full prompt sent for a preset + palette: pure style words, palette words,
+/// native SDXL 3:2 landscape dimensions (1216x832), and full-bleed panoramic layout.
+/// Avoids mockup triggers (booklet, cover, template, bifold, front/back cover).
 pub fn build_prompt(preset: &AiPreset, palette: &AiPalette) -> String {
-    if preset.style_words.contains("double A4") {
-        format!(
-            "{}, {}, 2D graphic design, blank negative copy space on left and right panels, high resolution, professional print layout",
-            preset.style_words, palette.words
-        )
-    } else {
-        format!(
-            "{}, {}, double A4 landscape bifold booklet cover spread layout, front cover on the right and back cover on the left with narrow central vertical spine divider strip, blank negative copy space on left and right panels for typography, flat 2D graphic design, clean edges, professional print layout",
-            preset.style_words, palette.words
-        )
-    }
+    format!(
+        "{}, {}, width 1216 height 832, aspect ratio 3:2 landscape, wide panoramic wallpaper, full bleed edge to edge, flat 2D vector graphic, continuous seamless artwork, generous blank copy space for typography, high resolution",
+        preset.style_words, palette.words
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -373,8 +367,12 @@ mod tests {
         let prompt = build_prompt(&AI_PRESETS[0], &AI_PALETTES[0]);
         assert!(prompt.contains("mid-century modern"), "{prompt}");
         assert!(prompt.contains("terracotta red"), "{prompt}");
-        assert!(prompt.contains("negative copy space") || prompt.contains("negative space"), "{prompt}");
-        assert!(prompt.contains("double A4"), "{prompt}");
-        assert!(!prompt.contains("text, "), "{prompt}");
+        assert!(prompt.contains("copy space"), "{prompt}");
+        assert!(prompt.contains("1216") && prompt.contains("832"), "{prompt}");
+        assert!(prompt.contains("3:2"), "{prompt}");
+        assert!(!prompt.contains("booklet"), "{prompt}");
+        assert!(!prompt.contains("template"), "{prompt}");
+        assert!(!prompt.contains("front cover"), "{prompt}");
+        assert!(!prompt.contains("back cover"), "{prompt}");
     }
 }
