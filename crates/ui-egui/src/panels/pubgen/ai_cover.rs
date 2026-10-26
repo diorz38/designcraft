@@ -120,22 +120,57 @@ pub struct AiCoverSetupDialog {
     pub close_requested: bool,
 }
 
+/// Helper to read Cloudflare credentials from engine Prefs, falling back to process env
+/// or a local `.env` file.
+pub fn get_credentials(prefs: &designcraft_engine::Prefs) -> (String, String) {
+    let mut acct = prefs.cover_ai_cloudflare_account_id.trim().to_string();
+    let mut tok = prefs.cover_ai_cloudflare_api_token.trim().to_string();
+
+    if acct.is_empty()
+        && let Ok(v) = std::env::var("CLOUDFLARE_ACCOUNT_ID")
+    {
+        acct = v.trim().to_string();
+    }
+    if tok.is_empty()
+        && let Ok(v) = std::env::var("CLOUDFLARE_API_TOKEN")
+    {
+        tok = v.trim().to_string();
+    }
+
+    if (acct.is_empty() || tok.is_empty())
+        && let Ok(content) = std::fs::read_to_string(".env")
+    {
+        for line in content.lines() {
+            let line = line.trim();
+            if line.starts_with('#') || line.is_empty() {
+                continue;
+            }
+            if let Some((k, v)) = line.split_once('=') {
+                let k = k.trim();
+                let v = v.trim().trim_matches('"').trim_matches('\'').trim();
+                if acct.is_empty() && (k.eq_ignore_ascii_case("CLOUDFLARE_ACCOUNT_ID") || k.eq_ignore_ascii_case("CLAUFFLARE_ACCOUNT_ID")) {
+                    acct = v.to_string();
+                } else if tok.is_empty() && (k.eq_ignore_ascii_case("CLOUDFLARE_API_TOKEN") || k.eq_ignore_ascii_case("CLAUFFLARE_API_TOKEN")) {
+                    tok = v.to_string();
+                }
+            }
+        }
+    }
+
+    (acct, tok)
+}
+
 impl AiCoverSetupDialog {
     pub fn open(app: &DesignApp) -> Self {
-        let prefs = &app.session.prefs;
-        Self {
-            account_id: prefs.cover_ai_cloudflare_account_id.clone(),
-            token: prefs.cover_ai_cloudflare_api_token.clone(),
-            error: None,
-            close_requested: false,
-        }
+        let (account_id, token) = get_credentials(&app.session.prefs);
+        Self { account_id, token, error: None, close_requested: false }
     }
 
     /// Is a usable-looking key configured? (Checked without the network; the real
     /// proof is the Verify call.)
     pub fn key_configured(app: &DesignApp) -> bool {
-        let prefs = &app.session.prefs;
-        !prefs.cover_ai_cloudflare_account_id.trim().is_empty() && !prefs.cover_ai_cloudflare_api_token.trim().is_empty()
+        let (acct, tok) = get_credentials(&app.session.prefs);
+        !acct.is_empty() && !tok.is_empty()
     }
 
     /// Prove the credentials with one tiny real generation (256 px, one step: a few
