@@ -52,7 +52,8 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 fmv-macos-events = "=0.1.0"
 
 [features]
-pubgen = ["designcraft-ui-egui/pubgen", "ai-translate-online"]
+pubgen = ["designcraft-ui-egui/pubgen", "ai-translate-online", "ai-cover-online"]
 ai-translate = ["designcraft-ui-egui/ai-translate"]
 ai-translate-online = ["designcraft-ui-egui/ai-translate-online"]
+ai-cover-online = ["designcraft-ui-egui/ai-cover-online"]
 
