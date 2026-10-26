@@ -117,6 +117,7 @@ impl GenRequest {
          realistic photo, photograph, 3d render, perspective view, angled mockup, dropshadow, realistic book mockup, \
          brochure mockup, folded paper, standing card, desk, table, presentation board, collage, multi-panel, split-screen, \
          seam, divider line, gutter, picture frame, framing, borders, margins, textured paper, checkerboard, transparent grid, \
+         grey and white grid, photo placeholder, template, booklet, brochure layout, document template, \
          clipping artifacts, busy details, author name, signature"
             .to_string()
     }

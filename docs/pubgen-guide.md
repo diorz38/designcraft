@@ -320,21 +320,23 @@ Pubgen introduces **AI Base Covers**, blending generative text-to-image AI backg
    - **Visual Personality**: Flowing, organic, 1970s risograph and modern editorial curves.
    - **Composition**: Sweeping retro curved ribbons with generous negative space crafted specifically to keep typography clear and high-contrast.
    - **Best For**: General statistical overviews, cultural publications, environmental and regional digests.
-2. **Dark Fantasy (`AI Dark Fantasy`, Style 101)**:
-   - **Visual Personality**: Dramatic, deep, ambient cinematic lighting with rich contrast.
-   - **Composition**: Deep shadowed backgrounds with luminous atmospheric focal points, framing white titles cleanly.
-   - **Best For**: Commemorative editions, flagship annual reviews, high-impact keynote reports.
+2. **Geometric Business (`AI Geometric Business`, Style 101)**:
+   - **Visual Personality**: Clean, authoritative, flat 2D modern business geometry.
+   - **Composition**: Large angled diagonal thick rounded stripes across, floating rounded hexagons, geometric accent frames, and generous negative space for vector titles.
+   - **Best For**: Governmental yearbooks, regional statistical monographs (KCDA), official departmental summaries.
 3. **Minimal Sci-Fi (`AI Minimal Sci-Fi`, Style 102)**:
    - **Visual Personality**: High-tech, blueprint aesthetics, crisp structural gradients.
    - **Composition**: Clean technological lines, subtle isometric grid accents, and open architectural space.
    - **Best For**: Industrial statistics, digital economy, census data, scientific directories.
 
-#### The 4 Cohesive Color Palettes
-Each AI preset can be combined with one of four tailored palettes:
+#### The 6 Cohesive Color Palettes
+Each AI preset can be combined with one of six tailored palettes:
 - **Warm Terracotta**: Rich terracotta (`#d96b43`), warm ochre (`#e8a838`), and charcoal slate (`#2c3539`).
 - **Pastel Dream**: Soft lavender (`#a29bfe`), gentle coral (`#fab1a0`), and deep midnight violet (`#2d3436`).
 - **Mono Slate**: Steel blue (`#4b6584`), refined light gray (`#a5b1c2`), and deep graphite (`#1e272e`).
 - **Forest Gold**: Emerald green (`#20bf6b`), rich gold (`#f7b731`), and deep pine forest (`#0b3b24`).
+- **Corporate Blue**: Dark navy blue (`#0a1931`), deep royal blue (`#003399`), and electric cyan (`#00a8ff`).
+- **Teal Lime**: Deep teal green (`#006d6f`), dark pine green (`#0a2e28`), and chartreuse lime green (`#84cc16`).
 
 #### Cloudflare Workers AI Setup & Credentials
 AI Base covers are powered by **Cloudflare Workers AI** running the Stable Diffusion XL (SDXL) model:
@@ -354,8 +356,8 @@ AI Base covers are powered by **Cloudflare Workers AI** running the Stable Diffu
 
 #### Excel Integration (`COVER` / `COVERS` Sheet)
 You can specify AI Base styles directly in your Excel workbook:
-- **Style Column**: `AI Retro Waves`, `AI Dark Fantasy`, or `AI Minimal Sci-Fi` (or without the `AI` prefix: `Retro Waves`, `Dark Fantasy`, `Minimal Sci-Fi`).
-- **Palette Column**: `Warm Terracotta`, `Pastel Dream`, `Mono Slate`, or `Forest Gold` (optional; defaults to Warm Terracotta).
+- **Style Column**: `AI Retro Waves`, `AI Geometric Business`, `AI Minimal Sci-Fi`, `AI Dynamic Waves Spread`, or `AI Vibrant S-Curve Spread` (legacy alias `Dark Fantasy` is also supported).
+- **Palette Column**: `Teal Lime`, `Corporate Blue`, `Forest Gold`, `Mono Slate`, `Pastel Dream`, or `Warm Terracotta`.
 
 ---
 

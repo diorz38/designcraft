@@ -287,21 +287,23 @@ Pubgen menghadirkan **Sampul AI Base**, yang memadukan latar belakang seni gener
    - **Karakter Visual**: Mengalir, organik, bernuansa risograf 1970-an dan lengkungan editorial modern.
    - **Komposisi**: Pita melengkung retro dengan ruang negatif (*negative space*) lapang yang dirancang khusus menjaga kontras teks tetap tajam dan mudah dibaca.
    - **Paling Cocok Untuk**: Publikasi statistik umum, laporan sosial-budaya, ulasan lingkungan dan ringkasan daerah.
-2. **Dark Fantasy (`AI Dark Fantasy`, Gaya 101)**:
-   - **Karakter Visual**: Dramatis, megah, pencahayaan sinematik ambien dengan kontras gelap yang pekat.
-   - **Komposisi**: Latar belakang bernuansa bayangan mendalam dengan titik cahaya atmosferik, membingkai judul putih secara kontras dan elegan.
-   - **Paling Cocok Untuk**: Edisi khusus peringatan, laporan tahunan unggulan (*flagship*), publikasi bertema penting.
+2. **Geometric Business (`AI Geometric Business`, Gaya 101)**:
+   - **Karakter Visual**: Bersih, berwibawa, geometri bisnis modern vektor 2D datar.
+   - **Komposisi**: Garis tebal melengkung diagonal melintasi bentangan sampul, heksagon mengambang bersudut membulat, bingkai aksen geometris, serta ruang kosong yang lega untuk judul teks resmi.
+   - **Paling Cocok Untuk**: Buku statistik daerah (KCDA), laporan dinas/kementerian pemerintah, publikasi tahunan resmi.
 3. **Minimal Sci-Fi (`AI Minimal Sci-Fi`, Gaya 102)**:
    - **Karakter Visual**: Futuristik berteknologi tinggi, estetika cetak biru (*blueprint*), gradien arsitektural terstruktur.
    - **Komposisi**: Garis struktural rapi, aksen grid isometrik halus, dan ruang bidang terbuka yang luas.
    - **Paling Cocok Untuk**: Statistik industri, ekonomi digital, sensus, direktori ilmiah dan inovasi.
 
-#### 4 Palet Warna Serasi
-Setiap gaya AI dapat dipadukan dengan 4 palet pilihan:
+#### 6 Palet Warna Serasi
+Setiap gaya AI dapat dipadukan dengan 6 palet pilihan:
 - **Warm Terracotta**: Terakota kaya (`#d96b43`), oker hangat (`#e8a838`), dan abu-abu arang (`#2c3539`).
 - **Pastel Dream**: Lavender lembut (`#a29bfe`), koral cerah (`#fab1a0`), dan ungu malam (`#2d3436`).
 - **Mono Slate**: Biru baja (`#4b6584`), abu-abu terang halus (`#a5b1c2`), dan grafit gelap (`#1e272e`).
 - **Forest Gold**: Hijau zamrud (`#20bf6b`), emas anggun (`#f7b731`), dan hijau hutan pinus (`#0b3b24`).
+- **Corporate Blue**: Biru dongker gelap (`#0a1931`), biru royal (`#003399`), dan biru sian elektrik (`#00a8ff`).
+- **Teal Lime**: Hijau teal gelap (`#006d6f`), hijau pinus (`#0a2e28`), dan hijau limau cerah (*chartreuse*) (`#84cc16`).
 
 #### Konfigurasi Cloudflare Workers AI & Kredensial
 Sampul AI Base ditenagai oleh **Cloudflare Workers AI** menggunakan model Stable Diffusion XL (SDXL):
@@ -321,8 +323,8 @@ Sampul AI Base ditenagai oleh **Cloudflare Workers AI** menggunakan model Stable
 
 #### Integrasi Excel (Lembar `COVER` / `COVERS`)
 Anda dapat menentukan gaya dan palet AI langsung pada lembar Excel:
-- **Kolom Style**: `AI Retro Waves`, `AI Dark Fantasy`, atau `AI Minimal Sci-Fi` (atau tanpa awalan: `Retro Waves`, `Dark Fantasy`, `Minimal Sci-Fi`).
-- **Kolom Palette**: `Warm Terracotta`, `Pastel Dream`, `Mono Slate`, atau `Forest Gold` (opsional; bawaan: Warm Terracotta).
+- **Kolom Style**: `AI Retro Waves`, `AI Geometric Business`, `AI Minimal Sci-Fi`, `AI Dynamic Waves Spread`, atau `AI Vibrant S-Curve Spread` (alias lama `Dark Fantasy` tetap didukung untuk kompatibilitas ke belakang).
+- **Kolom Palette**: `Teal Lime`, `Corporate Blue`, `Forest Gold`, `Mono Slate`, `Pastel Dream`, atau `Warm Terracotta`.
 
 ---
 

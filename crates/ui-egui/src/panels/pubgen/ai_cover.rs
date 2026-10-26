@@ -65,6 +65,13 @@ pub const AI_PALETTES: &[AiPalette] = &[
         accent: "#00a8ff",
         dark: "#0a1931",
     },
+    AiPalette {
+        name: "Teal Lime",
+        words: "deep teal green, dark pine green, chartreuse lime green gradient, mint turquoise, crisp white",
+        primary: "#006d6f",
+        accent: "#84cc16",
+        dark: "#0a2e28",
+    },
 ];
 
 pub const AI_PRESETS: &[AiPreset] = &[
@@ -75,9 +82,9 @@ pub const AI_PRESETS: &[AiPreset] = &[
         palettes: AI_PALETTES,
     },
     AiPreset {
-        name: "Dark Fantasy",
-        style_words: "dark fantasy atmosphere, panoramic misty mountain silhouettes and ancient towers, dramatic moody clouds, painterly matte texture, continuous epic landscape",
-        description: "AI-generated misty fantasy landscape under the house typography; the accent band follows the chosen palette.",
+        name: "Geometric Business",
+        style_words: "flat vector 2D modern geometric business wallpaper, large angled diagonal thick rounded stripes across, floating rounded hexagons, geometric hexagon accent frames, smooth gradient color overlays, clean blank copy space, sharp crisp vector edges, flat graphic design, continuous panoramic flow",
+        description: "AI-generated modern geometric hexagons and diagonal stripes under the house typography; the accent band follows the chosen palette.",
         palettes: AI_PALETTES,
     },
     AiPreset {
@@ -349,7 +356,7 @@ mod tests {
         for (i, p) in AI_PRESETS.iter().enumerate() {
             assert!(!p.name.is_empty());
             assert_eq!(AI_PRESETS.iter().position(|q| q.name == p.name), Some(i), "duplicate preset name {}", p.name);
-            assert_eq!(p.palettes.len(), 5, "{} needs the shared palettes", p.name);
+            assert_eq!(p.palettes.len(), 6, "{} needs the shared palettes", p.name);
             for pal in p.palettes {
                 for hex in [pal.primary, pal.accent, pal.dark] {
                     assert!(designcraft_color::Color::from_hex(hex).is_some(), "{}: bad hex {hex}", pal.name);
@@ -374,5 +381,29 @@ mod tests {
         assert!(!prompt.contains("template"), "{prompt}");
         assert!(!prompt.contains("front cover"), "{prompt}");
         assert!(!prompt.contains("back cover"), "{prompt}");
+    }
+
+    #[test]
+    fn geometric_business_prompt_adapts_to_palette_without_mockup_or_checkerboard() {
+        let p_geo = &AI_PRESETS[1];
+        assert_eq!(p_geo.name, "Geometric Business");
+        let pal_teal = &AI_PALETTES[5];
+        assert_eq!(pal_teal.name, "Teal Lime");
+        let prompt = build_prompt(p_geo, pal_teal);
+        assert!(prompt.contains("geometric business"), "{prompt}");
+        assert!(prompt.contains("floating rounded hexagons"), "{prompt}");
+        assert!(prompt.contains("deep teal green"), "{prompt}");
+        assert!(prompt.contains("chartreuse lime green"), "{prompt}");
+        assert!(!prompt.contains("checkerboard"), "{prompt}");
+        assert!(!prompt.contains("placeholder"), "{prompt}");
+        assert!(!prompt.contains("template"), "{prompt}");
+        assert!(!prompt.contains("mockup"), "{prompt}");
+
+        // Verifies color adaptability: with Corporate Blue it has blue words, no teal
+        let pal_corp = &AI_PALETTES[4];
+        let prompt_corp = build_prompt(p_geo, pal_corp);
+        assert!(prompt_corp.contains("geometric business"), "{prompt_corp}");
+        assert!(prompt_corp.contains("navy blue"), "{prompt_corp}");
+        assert!(!prompt_corp.contains("deep teal green"), "{prompt_corp}");
     }
 }

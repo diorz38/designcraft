@@ -46,3 +46,5 @@ flat vector graphic, sweeping curved bands, vibrant wavy orange-to-yellow gradie
 | **Dimensions** | **1216 × 832** (3:2) |
 | **Steps** | 18 – 30 |
 | **CFG Scale** | 7.0 – 8.0 |
+
+flat vector 2D with modern geometric business layout. Color palette of deep teal green, dark pine green, chartreuse lime green gradient, mint turquoise, and crisp white. Geometric shapes featuring large angled diagonal thick rounded stripes across, floating rounded hexagons, thick teal hexagon border frames containing a transparent photo placeholder with a grey and white checkerboard pattern grid, gradient color overlays, clean blank negative copy space, sharp crisp vector edges, flat graphic design, print-ready document template, no realistic photo elements

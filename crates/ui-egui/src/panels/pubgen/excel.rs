@@ -3238,14 +3238,18 @@ pub fn cover_style_index(spec: &str) -> Option<usize> {
         return Some(idx);
     }
     // AI Base styles (100+): the sheet may say "AI Base: Retro Waves", "AI Retro Waves", or "Retro Waves".
-    super::ai_cover::AI_PRESETS
-        .iter()
-        .position(|p| {
-            let n1 = norm(&format!("AI {}", p.name));
-            let n2 = norm(p.name);
-            n1.contains(&want) || want.contains(&n1) || n2.contains(&want) || want.contains(&n2)
-        })
-        .map(|i| super::ai_cover::AI_STYLE_BASE + i)
+    if let Some(i) = super::ai_cover::AI_PRESETS.iter().position(|p| {
+        let n1 = norm(&format!("AI {}", p.name));
+        let n2 = norm(p.name);
+        n1.contains(&want) || want.contains(&n1) || n2.contains(&want) || want.contains(&n2)
+    }) {
+        return Some(super::ai_cover::AI_STYLE_BASE + i);
+    }
+    // Backward compatibility for legacy "Dark Fantasy" / "AI Dark Fantasy" mapping to index 1 (Geometric Business)
+    if want == "darkfantasy" || want == "aidarkfantasy" {
+        return Some(super::ai_cover::AI_STYLE_BASE + 1);
+    }
+    None
 }
 
 /// Copy the `COVER` sheet values into the Publication Cover card.
@@ -3620,8 +3624,10 @@ pub(crate) mod flow_tests {
         assert_eq!(cover_style_index("AI Retro Waves"), Some(100));
         assert_eq!(cover_style_index("Retro Waves"), Some(100));
         assert_eq!(cover_style_index("ai base: retro waves"), Some(100));
-        assert_eq!(cover_style_index("Dark Fantasy"), Some(101));
-        assert_eq!(cover_style_index("AI Dark Fantasy"), Some(101));
+        assert_eq!(cover_style_index("Geometric Business"), Some(101));
+        assert_eq!(cover_style_index("AI Geometric Business"), Some(101));
+        assert_eq!(cover_style_index("Dark Fantasy"), Some(101)); // legacy alias
+        assert_eq!(cover_style_index("AI Dark Fantasy"), Some(101)); // legacy alias
         assert_eq!(cover_style_index("Minimal Sci-Fi"), Some(102));
         assert_eq!(cover_style_index("Dynamic Waves Spread"), Some(103));
         assert_eq!(cover_style_index("AI Dynamic Waves Spread"), Some(103));
@@ -3631,15 +3637,25 @@ pub(crate) mod flow_tests {
 
         let mut st = PubgenState::default();
         let cover = excel::ExcelCoverData {
-            style: "AI Dark Fantasy".to_string(),
-            palette: "Pastel Dream".to_string(),
+            style: "AI Geometric Business".to_string(),
+            palette: "Teal Lime".to_string(),
             title1: "STATISTIK DAERAH".to_string(),
             ..Default::default()
         };
         apply_excel_cover(&mut st, &cover, None);
         assert_eq!(st.cover_style, 101);
-        assert_eq!(st.cover_ai_palette, 1); // Pastel Dream is palette index 1
+        assert_eq!(st.cover_ai_palette, 5); // Teal Lime is palette index 5
         assert_eq!(st.cover_title, "STATISTIK DAERAH");
+
+        let cover_legacy = excel::ExcelCoverData {
+            style: "AI Dark Fantasy".to_string(),
+            palette: "Pastel Dream".to_string(),
+            title1: "STATISTIK DAERAH".to_string(),
+            ..Default::default()
+        };
+        apply_excel_cover(&mut st, &cover_legacy, None);
+        assert_eq!(st.cover_style, 101);
+        assert_eq!(st.cover_ai_palette, 1); // Pastel Dream is palette index 1
 
         let cover_corp = excel::ExcelCoverData {
             style: "Dynamic Waves Spread".to_string(),
