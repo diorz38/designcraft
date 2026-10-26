@@ -3623,6 +3623,10 @@ pub(crate) mod flow_tests {
         assert_eq!(cover_style_index("Dark Fantasy"), Some(101));
         assert_eq!(cover_style_index("AI Dark Fantasy"), Some(101));
         assert_eq!(cover_style_index("Minimal Sci-Fi"), Some(102));
+        assert_eq!(cover_style_index("Dynamic Waves Spread"), Some(103));
+        assert_eq!(cover_style_index("AI Dynamic Waves Spread"), Some(103));
+        assert_eq!(cover_style_index("Vibrant S-Curve Spread"), Some(104));
+        assert_eq!(cover_style_index("AI Vibrant S-Curve Spread"), Some(104));
         assert_eq!(cover_style_index("Geometric Medallion"), Some(1)); // Procedural style 1
 
         let mut st = PubgenState::default();
@@ -3636,6 +3640,17 @@ pub(crate) mod flow_tests {
         assert_eq!(st.cover_style, 101);
         assert_eq!(st.cover_ai_palette, 1); // Pastel Dream is palette index 1
         assert_eq!(st.cover_title, "STATISTIK DAERAH");
+
+        let cover_corp = excel::ExcelCoverData {
+            style: "Dynamic Waves Spread".to_string(),
+            palette: "Corporate Blue".to_string(),
+            title1: "BIFOLD SPREAD".to_string(),
+            ..Default::default()
+        };
+        apply_excel_cover(&mut st, &cover_corp, None);
+        assert_eq!(st.cover_style, 103);
+        assert_eq!(st.cover_ai_palette, 4); // Corporate Blue is palette index 4
+        assert_eq!(st.cover_title, "BIFOLD SPREAD");
     }
 
     #[test]

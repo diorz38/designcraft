@@ -113,8 +113,9 @@ impl GenRequest {
     /// The module-default negative prompt: every spelling of "text" the model
     /// reacts to, so covers stay free of garbled AI typography and borders.
     pub fn clean_cover_negative_prompt() -> String {
-        "text, letters, words, typography, title, author name, signature, watermark, logo, \
-         frame, borders, lorem ipsum, blurry, cut-and-paste seams, low quality"
+        "text, typography, letters, words, numbers, fonts, lorem ipsum, dummy copy, watermarks, logo, icons, symbols, \
+         realistic photo, photograph, 3d render, perspective view, angled mockup, dropshadow, realistic book mockup, \
+         textured paper, checkerboard, transparent grid, clipping artifacts, busy details, framing, borders, author name, signature"
             .to_string()
     }
 }

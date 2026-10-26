@@ -106,7 +106,11 @@ fn resolve_template_path(path: &str) -> Option<std::path::PathBuf> {
     None
 }
 
-fn convert_asset_id_to_grayscale(doc: &mut designcraft_doc::Document, aid: designcraft_doc::AssetId) -> Option<designcraft_doc::AssetId> {
+fn convert_asset_id_to_grayscale_mode(
+    doc: &mut designcraft_doc::Document,
+    aid: designcraft_doc::AssetId,
+    is_light: bool,
+) -> Option<designcraft_doc::AssetId> {
     let asset = doc.assets.get(&aid)?.clone();
     let raw_bytes: Option<Vec<u8>> = if !asset.data.is_empty() {
         Some((*asset.data).clone())
@@ -117,17 +121,37 @@ fn convert_asset_id_to_grayscale(doc: &mut designcraft_doc::Document, aid: desig
     };
     let bytes = raw_bytes?;
     let img = image::load_from_memory(&bytes).ok()?;
-    let gray = img.grayscale();
+    let rgba = img.to_rgba8();
+    let (w, h) = (rgba.width(), rgba.height());
+    let mut out_img = image::RgbaImage::new(w, h);
+    for (x, y, pixel) in rgba.enumerate_pixels() {
+        let [r, g, b, a] = pixel.0;
+        if a == 0 {
+            out_img.put_pixel(x, y, image::Rgba([255, 255, 255, 0]));
+            continue;
+        }
+        let luma = 0.299 * (r as f32) + 0.587 * (g as f32) + 0.114 * (b as f32);
+        let val = if is_light {
+            // Map [0.0, 1.0] to light grayscale range [215, 250] (high-key watermark)
+            // ensuring all black text on top is 100% readable while preserving artwork details.
+            let norm = luma / 255.0;
+            (215.0 + norm * 35.0).round().clamp(0.0, 255.0) as u8
+        } else {
+            luma.round().clamp(0.0, 255.0) as u8
+        };
+        out_img.put_pixel(x, y, image::Rgba([val, val, val, a]));
+    }
     let mut out_bytes = Vec::new();
-    gray.write_to(&mut std::io::Cursor::new(&mut out_bytes), image::ImageFormat::Png).ok()?;
+    out_img.write_to(&mut std::io::Cursor::new(&mut out_bytes), image::ImageFormat::Png).ok()?;
     let new_aid = designcraft_doc::AssetId(doc.alloc());
+    let prefix = if is_light { "light_gray" } else { "gray" };
     let new_asset = designcraft_doc::Asset {
         id: new_aid,
-        name: format!("{}_gray.png", asset.name.trim_end_matches(".png").trim_end_matches(".jpg")),
+        name: format!("{}_{}.png", asset.name.trim_end_matches(".png").trim_end_matches(".jpg"), prefix),
         mime: "image/png".into(),
         link: None,
         data: std::sync::Arc::new(out_bytes),
-        pixels: Some((gray.width(), gray.height())),
+        pixels: Some((w, h)),
         page: 0,
         pdf_crop: asset.pdf_crop,
         pdf_box: asset.pdf_box,
@@ -139,8 +163,10 @@ fn convert_asset_id_to_grayscale(doc: &mut designcraft_doc::Document, aid: desig
 fn transform_inside_cover_item_shapes(
     it: &mut designcraft_doc::Item,
     text_stories: &mut Vec<designcraft_doc::StoryId>,
-    graphics: &mut Vec<(designcraft_doc::ItemId, designcraft_doc::AssetId)>,
+    graphics: &mut Vec<(designcraft_doc::ItemId, designcraft_doc::AssetId, bool)>,
 ) {
+    let lbl = it.label.to_lowercase();
+    let nm = it.name.to_lowercase();
     match &mut it.content {
         designcraft_doc::Content::Text(tf) => {
             it.fill = designcraft_doc::Fill::none();
@@ -148,7 +174,8 @@ fn transform_inside_cover_item_shapes(
         }
         designcraft_doc::Content::Graphic(g) => {
             it.fill = designcraft_doc::Fill::none();
-            graphics.push((it.id, g.asset));
+            let is_ai_bg = lbl.contains("background") || lbl.contains("ai_preset") || nm.contains("background");
+            graphics.push((it.id, g.asset, is_ai_bg));
         }
         designcraft_doc::Content::Group { items } => {
             it.fill = designcraft_doc::Fill::none();
@@ -158,17 +185,23 @@ fn transform_inside_cover_item_shapes(
             }
         }
         designcraft_doc::Content::Unassigned => {
-            it.fill = designcraft_doc::Fill::swatch("[Paper]");
-            it.stroke = designcraft_doc::Stroke {
-                swatch: designcraft_color::swatch::BLACK.to_string(),
-                weight: 1.0,
-                kind: designcraft_doc::StrokeType::Solid,
-                align: designcraft_doc::StrokeAlign::Center,
-                cap: designcraft_doc::Cap::Butt,
-                join: designcraft_doc::Join::Miter,
-                miter_limit: 4.0,
-                ..designcraft_doc::Stroke::default()
-            };
+            let is_band = lbl.contains("accent") || lbl.contains("band") || nm.contains("band");
+            if is_band {
+                it.fill = designcraft_doc::Fill::none();
+                it.stroke = designcraft_doc::Stroke::none();
+            } else {
+                it.fill = designcraft_doc::Fill::swatch("[Paper]");
+                it.stroke = designcraft_doc::Stroke {
+                    swatch: designcraft_color::swatch::BLACK.to_string(),
+                    weight: 1.0,
+                    kind: designcraft_doc::StrokeType::Solid,
+                    align: designcraft_doc::StrokeAlign::Center,
+                    cap: designcraft_doc::Cap::Butt,
+                    join: designcraft_doc::Join::Miter,
+                    miter_limit: 4.0,
+                    ..designcraft_doc::Stroke::default()
+                };
+            }
             it.effects = designcraft_doc::Effects::default();
             it.opacity = 1.0;
             it.blend = designcraft_color::BlendMode::Normal;
@@ -211,8 +244,8 @@ pub fn execute_generate_inside_cover(app: &mut DesignApp) -> Result<(), String> 
         }
 
         // Convert graphic assets to grayscale without borrowing spreads
-        for (item_id, old_aid) in graphics {
-            if let Some(new_aid) = convert_asset_id_to_grayscale(doc, old_aid)
+        for (item_id, old_aid, is_ai_bg) in graphics {
+            if let Some(new_aid) = convert_asset_id_to_grayscale_mode(doc, old_aid, is_ai_bg)
                 && let Some(item) = doc.item_mut(item_id)
                 && let designcraft_doc::Content::Graphic(g) = &mut item.content
             {
@@ -459,23 +492,34 @@ pub fn execute_generate_back_cover(app: &mut DesignApp, st: &PubgenState) -> Res
             it.xf = designcraft_geom::Affine::translate((dx, 0.0)) * it.xf;
         }
 
+        let bounds = it.inner_bounds();
         match &mut it.content {
             designcraft_doc::Content::Text(_) => {
                 // Remove all copied text frames; back cover elements are placed afresh at canonical positions
                 false
             }
-            designcraft_doc::Content::Graphic(_) => {
+            designcraft_doc::Content::Graphic(g) => {
                 let is_logo = lbl.contains("logo") || nm.contains("logo");
                 if is_logo {
                     // Logo will be placed afresh at bottom left
                     false
                 } else {
-                    // "all shape that have image backgroud change to white color fill"
-                    it.content = designcraft_doc::Content::Unassigned;
-                    it.fill = designcraft_doc::Fill::swatch("[Paper]");
-                    it.stroke = designcraft_doc::Stroke::none();
-                    it.locked = true;
-                    true
+                    let is_ai_bg = lbl.contains("background") || lbl.contains("ai_preset") || nm.contains("background");
+                    if is_ai_bg {
+                        g.fit_align = 3; // Center-Left: crop left half of Double A4 spread for Back Cover
+                        if let Some(xf) = g.fitted(bounds, designcraft_doc::Fitting::FillProportionally) {
+                            g.xf = xf;
+                        }
+                        it.locked = true;
+                        true
+                    } else {
+                        // "all shape that have image backgroud change to white color fill"
+                        it.content = designcraft_doc::Content::Unassigned;
+                        it.fill = designcraft_doc::Fill::swatch("[Paper]");
+                        it.stroke = designcraft_doc::Stroke::none();
+                        it.locked = true;
+                        true
+                    }
                 }
             }
             designcraft_doc::Content::Group { items } => {
@@ -1068,6 +1112,7 @@ pub fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<S
 }
 
 /// Dimensions of the first page (or standard A4 default if no document is open).
+#[allow(dead_code)]
 pub(crate) fn get_cover_page_dimensions(app: &DesignApp) -> (f64, f64) {
     let Some(s) = app.session.active() else { return (595.2755905511812, 841.8897637795277) };
     let Some(sp) = s.doc.spreads.first() else { return (595.2755905511812, 841.8897637795277) };
@@ -1171,6 +1216,13 @@ pub fn apply_ai_cover_result(app: &mut DesignApp, st: &PubgenState, bg_path: &st
                 if item.label.starts_with("#slot:image:background") || item.name.starts_with("#slot:image:background") {
                     let it = std::sync::Arc::make_mut(item);
                     it.label = format!("#slot:image:background #ai_preset:{}", preset.name);
+                    let bounds = it.inner_bounds();
+                    if let designcraft_doc::Content::Graphic(g) = &mut it.content {
+                        g.fit_align = 5; // Center-Right: crop right half for Front Cover
+                        if let Some(xf) = g.fitted(bounds, designcraft_doc::Fitting::FillProportionally) {
+                            g.xf = xf;
+                        }
+                    }
                 }
             }
             if !redundant_items.is_empty() {
@@ -1216,8 +1268,7 @@ pub fn trigger_generate_cover(app: &mut DesignApp, st: &mut PubgenState, ctx: eg
     };
 
     if !st.excel_batch_covers.is_empty() && st.excel_batch_covers.len() > 1 {
-        let (pw, ph) = get_cover_page_dimensions(app);
-        let aspect = super::ai_cover_job::aspect_for_dimensions(pw, ph);
+        let aspect = imagegen::Aspect::Wrap; // Double A4 spread layout (1216 x 832)
         let items: Vec<super::ai_cover_job::CoverBatchItem> = st
             .excel_batch_covers
             .iter()
@@ -1272,8 +1323,7 @@ pub fn trigger_generate_cover(app: &mut DesignApp, st: &mut PubgenState, ctx: eg
     let palette = preset.palettes.get(st.cover_ai_palette).unwrap_or(&preset.palettes[0]);
     let prompt = super::ai_cover::build_prompt(preset, palette);
     let neg_prompt = imagegen::GenRequest::clean_cover_negative_prompt();
-    let (pw, ph) = get_cover_page_dimensions(app);
-    let aspect = super::ai_cover_job::aspect_for_dimensions(pw, ph);
+    let aspect = imagegen::Aspect::Wrap; // Double A4 spread layout (1216 x 832)
     let (title_text, _, _, _, _, _) = get_cover_text_vals(st);
     let seed = super::ai_cover_job::seed_from_title(title_text);
     let req = imagegen::GenRequest::new(prompt, neg_prompt, aspect, 18).with_seed(seed);
@@ -1344,6 +1394,13 @@ pub fn apply_ai_cover_batch_item(app: &mut DesignApp, st: &PubgenState, title: &
                 if item.label.starts_with("#slot:image:background") || item.name.starts_with("#slot:image:background") {
                     let it = std::sync::Arc::make_mut(item);
                     it.label = format!("#slot:image:background #ai_preset:{}", preset.name);
+                    let bounds = it.inner_bounds();
+                    if let designcraft_doc::Content::Graphic(g) = &mut it.content {
+                        g.fit_align = 5; // Center-Right: crop right half for Front Cover
+                        if let Some(xf) = g.fitted(bounds, designcraft_doc::Fitting::FillProportionally) {
+                            g.xf = xf;
+                        }
+                    }
                 }
             }
             sp.relayout();
@@ -2128,5 +2185,76 @@ pub(crate) mod tests {
         // Background graphic frame exists on spread 0
         let has_bg_slot = sp0.items.iter().any(|it| it.label.contains("background") || it.name.contains("background"));
         assert!(has_bg_slot, "Background frame must be present on front cover spread");
+    }
+
+    #[test]
+    fn test_ai_cover_bifold_double_a4_and_inside_cover() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let tmp = tempfile::tempdir().unwrap();
+        let png_path = tmp.path().join("test_bg.png");
+        let dark_img = image::RgbaImage::from_pixel(10, 10, image::Rgba([10, 25, 49, 255]));
+        dark_img.save(&png_path).unwrap();
+
+        let st = PubgenState {
+            cover_style: super::ai_cover::AI_STYLE_BASE, // AI Retro Waves
+            cover_ai_palette: 0,                         // Corporate Blue
+            cover_title: "BIFOLD SPREAD TEST".into(),
+            cover_title2: "SUBTITLE".into(),
+            cover_year: "2027".into(),
+            cover_include_inside_back: true,
+            ..Default::default()
+        };
+
+        let res = apply_ai_cover_result(&mut app, &st, &png_path.to_string_lossy());
+        assert!(res.is_ok(), "{res:?}");
+
+        let active = app.session.active().unwrap();
+        // 1. Front Cover (Spread 0): fit_align must be 5 (Center-Right)
+        let sp0 = &active.doc.spreads[0];
+        let front_bg = sp0.items.iter().find(|it| it.label.contains("background")).expect("front bg");
+        if let designcraft_doc::Content::Graphic(g) = &front_bg.content {
+            assert_eq!(g.fit_align, 5, "Front Cover background must align to right edge (fit_align = 5)");
+        } else {
+            panic!("Front bg is not a graphic");
+        }
+
+        // 2. Inside Cover (Page 1):
+        // All text stories must be black, and AI image must be light gray-scale (all pixels >= 210)
+        let (inside_si, _inside_pi) = active.doc.page_loc(1).expect("inside page loc");
+        let inside_sp = &active.doc.spreads[inside_si];
+        let inside_bg = inside_sp.items.iter().find(|it| it.label.contains("background")).expect("inside bg");
+        if let designcraft_doc::Content::Graphic(g) = &inside_bg.content {
+            let asset = active.doc.assets.get(&g.asset).expect("inside bg asset");
+            assert!(asset.name.contains("light_gray"), "Inside cover asset name: {}", asset.name);
+            let img = image::load_from_memory(&asset.data).expect("load inside asset");
+            for p in img.to_rgba8().pixels() {
+                if p[3] > 0 {
+                    assert!(p[0] >= 210, "Light gray-scale pixel value {} must be >= 210 for readability", p[0]);
+                }
+            }
+        }
+        for it in &inside_sp.items {
+            if let designcraft_doc::Content::Text(tf) = &it.content
+                && let Some(story) = active.doc.story(tf.story)
+            {
+                for c in &story.chars {
+                    assert_eq!(c.format.over.fill.as_deref(), Some(designcraft_color::swatch::BLACK), "Inside text must be Black");
+                }
+            }
+        }
+
+        // 3. Back Cover (last page):
+        // Must contain the background graphic with fit_align = 3 (Center-Left)
+        let last_page = active.doc.page_count() - 1;
+        let (back_si, _) = active.doc.page_loc(last_page).expect("back page loc");
+        let back_sp = &active.doc.spreads[back_si];
+        let back_bg = back_sp.items.iter().find(|it| it.label.contains("background")).expect("back bg");
+        if let designcraft_doc::Content::Graphic(g) = &back_bg.content {
+            assert_eq!(g.fit_align, 3, "Back Cover background must align to left edge (fit_align = 3)");
+        } else {
+            panic!("Back bg is not a graphic");
+        }
     }
 }
