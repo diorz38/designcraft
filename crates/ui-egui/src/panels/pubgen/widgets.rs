@@ -1082,6 +1082,33 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
         covers::trigger_generate_cover(app, st, ui.ctx().clone());
     }
 
+    if let Some(pending) = &st.cover_batch_pending {
+        let count = pending.len();
+        ui.group(|ui| {
+            ui.label(
+                RichText::new(format!(
+                    "{} of {} fit today's free quota; the rest will fail after ~{} — continue?",
+                    designcraft_imagegen::MAX_SAFE_FREE_BATCH,
+                    count,
+                    designcraft_imagegen::MAX_SAFE_FREE_BATCH
+                ))
+                .size(11.0)
+                .color(Color32::from_rgb(220, 160, 40)),
+            );
+            ui.horizontal(|ui| {
+                if ui.button("Continue Anyway").clicked()
+                    && let Some(items) = st.cover_batch_pending.take()
+                {
+                    covers::trigger_generate_cover_batch_confirmed(app, st, items, ui.ctx().clone());
+                }
+                if ui.button("Cancel").clicked() {
+                    st.cover_batch_pending = None;
+                    st.cover_status = Some(("Batch cover generation cancelled".into(), false));
+                }
+            });
+        });
+    }
+
     if let Some(job) = &st.cover_job
         && !job.finished
     {

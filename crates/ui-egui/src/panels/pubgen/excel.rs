@@ -43,6 +43,7 @@ pub struct ExcelCoverData {
     pub table_theme: String,
     pub event_theme: String,
     pub office_address: String,
+    pub palette: String,
 }
 
 /// Generated CSV data from conversion.
@@ -54,6 +55,7 @@ pub struct ExcelConversionResult {
     pub table_csvs: Vec<(String, String)>,
     /// Values for the Publication Cover card, taken from the `COVER` sheet if present.
     pub cover: Option<ExcelCoverData>,
+    pub batch_covers: Vec<ExcelCoverData>,
 }
 
 /// Parse Excel cell coordinate (e.g. "A1" -> (0, 0), "B2" -> (1, 1), "AA1" -> (26, 0)).
@@ -322,6 +324,73 @@ pub fn is_ignored_sheet(sheet_name: &str) -> bool {
     sheet_name.trim().eq_ignore_ascii_case("note")
 }
 
+/// Parse a sheet containing either a table of covers (rows with Title, Style, Palette headers)
+/// or fall back to the single key-value `COVER` sheet format.
+pub fn parse_batch_cover_sheet(sheet: &ExcelSheetData) -> Vec<ExcelCoverData> {
+    if sheet.grid.is_empty() {
+        return Vec::new();
+    }
+    let header = &sheet.grid[0];
+    let norm = |s: &str| -> String {
+        s.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect()
+    };
+    let title_col = header.iter().position(|h| {
+        let n = norm(h);
+        n == "title" || n == "title1" || n == "judul" || n == "publication" || n == "publikasi"
+    });
+    let style_col = header.iter().position(|h| {
+        let n = norm(h);
+        n == "style" || n == "coverstyle" || n == "template" || n == "desain"
+    });
+
+    if let (Some(t_col), Some(s_col)) = (title_col, style_col) {
+        let palette_col = header.iter().position(|h| {
+            let n = norm(h);
+            n == "palette" || n == "aipalette" || n == "colorpalette" || n == "palet"
+        });
+        let title2_col = header.iter().position(|h| {
+            let n = norm(h);
+            n == "title2" || n == "subtitle"
+        });
+        let year_col = header.iter().position(|h| {
+            let n = norm(h);
+            n == "year" || n == "tahun"
+        });
+        let vol_col = header.iter().position(|h| {
+            let n = norm(h);
+            n == "volume" || n == "vol"
+        });
+
+        let mut items = Vec::new();
+        for row in sheet.grid.iter().skip(1) {
+            let title = row.get(t_col).map(|s| s.trim()).unwrap_or("");
+            let style = row.get(s_col).map(|s| s.trim()).unwrap_or("");
+            if title.is_empty() && style.is_empty() {
+                continue;
+            }
+            let palette = palette_col.and_then(|c| row.get(c)).map(|s| s.trim()).unwrap_or("").to_string();
+            let title2 = title2_col.and_then(|c| row.get(c)).map(|s| s.trim()).unwrap_or("").to_string();
+            let year = year_col.and_then(|c| row.get(c)).map(|s| s.trim()).unwrap_or("").to_string();
+            let volume = vol_col.and_then(|c| row.get(c)).map(|s| s.trim()).unwrap_or("").to_string();
+
+            items.push(ExcelCoverData {
+                title1: title.to_string(),
+                style: style.to_string(),
+                palette,
+                title2,
+                year,
+                volume,
+                ..Default::default()
+            });
+        }
+        if !items.is_empty() {
+            return items;
+        }
+    }
+
+    vec![parse_cover_sheet(sheet)]
+}
+
 /// Parse the `COVER` sheet: one `key | value` row per field (see `ExcelCoverData`).
 pub fn parse_cover_sheet(sheet: &ExcelSheetData) -> ExcelCoverData {
     let mut cover = ExcelCoverData::default();
@@ -366,6 +435,7 @@ pub fn parse_cover_sheet(sheet: &ExcelSheetData) -> ExcelCoverData {
             "officeaddress" | "office_address" | "address" | "alamatkantor" | "alamat" => &mut cover.office_address,
             "tabletheme" | "theme" | "tablecolor" | "color" | "colortheme" | "warna" => &mut cover.table_theme,
             "eventtheme" | "themeevent" | "imageback" | "backimage" | "backcover" => &mut cover.event_theme,
+            "palette" | "aipalette" | "colorpalette" | "palet" => &mut cover.palette,
             _ => {
                 // If it is row 3 (0-indexed 2) and title_en isn't set yet:
                 if row_idx == 2 && cover.title_en.is_empty() {
@@ -1421,6 +1491,7 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
     let mut entries: Vec<CatalogEntryItem> = Vec::new();
     let mut table_csvs = Vec::new();
     let mut cover = None;
+    let mut batch_covers = Vec::new();
     let mut current_table_theme: Option<String> = None;
 
     for sheet in sheets {
@@ -1429,15 +1500,19 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
 
         // The COVER sheet supplies Publication Cover values, not a catalog page or table.
         if is_cover_sheet(sheet_name) {
-            let mut parsed_cover = parse_cover_sheet(sheet);
-            if parsed_cover.table_theme.trim().is_empty() {
-                if let Some(th) = &current_table_theme {
-                    parsed_cover.table_theme = th.clone();
+            let parsed_items = parse_batch_cover_sheet(sheet);
+            if let Some(first) = parsed_items.first() {
+                let mut parsed_cover = first.clone();
+                if parsed_cover.table_theme.trim().is_empty() {
+                    if let Some(th) = &current_table_theme {
+                        parsed_cover.table_theme = th.clone();
+                    }
+                } else {
+                    current_table_theme = Some(parsed_cover.table_theme.trim().to_string());
                 }
-            } else {
-                current_table_theme = Some(parsed_cover.table_theme.trim().to_string());
+                cover = Some(parsed_cover);
             }
-            cover = Some(parsed_cover);
+            batch_covers = parsed_items;
             continue;
         }
         if is_ignored_sheet(sheet_name) {
@@ -1666,7 +1741,13 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
         catalog_rows.push(row_cols.join(","));
     }
 
-    ExcelConversionResult { catalog_csv_name: format!("{base_stem}_catalog.csv"), catalog_csv_content: catalog_rows.join("\n"), table_csvs, cover }
+    ExcelConversionResult {
+        catalog_csv_name: format!("{base_stem}_catalog.csv"),
+        catalog_csv_content: catalog_rows.join("\n"),
+        table_csvs,
+        cover,
+        batch_covers,
+    }
 }
 
 /// Read `xl/_rels/workbook.xml.rels`: relationship id → zip path (normalized to `xl/…`).
@@ -1964,6 +2045,7 @@ pub struct ConvertedExcelPackage {
     pub zip_bytes: Vec<u8>,
     pub csv_files: Vec<(String, String)>,
     pub cover: Option<ExcelCoverData>,
+    pub batch_covers: Vec<ExcelCoverData>,
 }
 
 /// Create a ZIP archive from a slice of (filename, file_content) entries.
@@ -2039,6 +2121,7 @@ pub fn execute_convert_excel(path: &str) -> Result<ConvertedExcelPackage, String
         zip_bytes,
         csv_files,
         cover: converted.cover,
+        batch_covers: converted.batch_covers,
     })
 }
 
@@ -3137,7 +3220,7 @@ mod tests {
 // The Card 1 glue: map COVER sheet style names, apply cover values and drive the CSV
 // conversion / generation / download flows from the panel.
 
-fn cover_style_index(spec: &str) -> Option<usize> {
+pub fn cover_style_index(spec: &str) -> Option<usize> {
     let norm = |s: &str| -> String { s.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect() };
     const NAMES: [&str; 13] = [
         "Wave Curves",
@@ -3164,20 +3247,32 @@ fn cover_style_index(spec: &str) -> Option<usize> {
     }) {
         return Some(idx);
     }
-    // AI Base styles (100+): the sheet may say "AI Base: Retro Waves" or "AI Retro Waves".
+    // AI Base styles (100+): the sheet may say "AI Base: Retro Waves", "AI Retro Waves", or "Retro Waves".
     super::ai_cover::AI_PRESETS
         .iter()
         .position(|p| {
-            let n = norm(&format!("AI {}", p.name));
-            n.contains(&want) || want.contains(&n)
+            let n1 = norm(&format!("AI {}", p.name));
+            let n2 = norm(p.name);
+            n1.contains(&want) || want.contains(&n1) || n2.contains(&want) || want.contains(&n2)
         })
         .map(|i| super::ai_cover::AI_STYLE_BASE + i)
 }
 
 /// Copy the `COVER` sheet values into the Publication Cover card.
 pub(crate) fn apply_excel_cover(st: &mut PubgenState, cover: &ExcelCoverData, base_dir: Option<&Path>) {
+    let norm = |s: &str| -> String { s.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect() };
     if let Some(idx) = cover_style_index(&cover.style) {
         st.cover_style = idx;
+    }
+
+    if !cover.palette.trim().is_empty() {
+        let p_norm = norm(&cover.palette);
+        if let Some(pos) = super::ai_cover::AI_PALETTES.iter().position(|p| {
+            let n = norm(p.name);
+            n.contains(&p_norm) || p_norm.contains(&n)
+        }) {
+            st.cover_ai_palette = pos;
+        }
     }
 
     // The sheet's `title1` is the card's "Title" (the headline) and `title2` its "Title 2" (the
@@ -3255,6 +3350,7 @@ pub fn execute_excel_to_csvs(st: &mut PubgenState, path: &str) -> Result<String,
     let pkg = execute_convert_excel(path)?;
     st.excel_source_path = path.to_string();
     st.excel_had_cover = pkg.cover.is_some();
+    st.excel_batch_covers = pkg.batch_covers.clone();
     if let Some(cover) = &pkg.cover {
         apply_excel_cover(st, cover, Path::new(path).parent());
     }
@@ -3527,6 +3623,29 @@ pub(crate) mod flow_tests {
         apply_excel_cover(&mut st, &cover, None);
         assert_eq!(st.cover_title, "PRODUK DOMESTIK REGIONAL BRUTO");
         assert_eq!(st.cover_title2, "KABUPATEN KARAWANG");
+    }
+
+    #[test]
+    fn test_excel_cover_ai_preset_and_palette_matching() {
+        assert_eq!(cover_style_index("AI Retro Waves"), Some(100));
+        assert_eq!(cover_style_index("Retro Waves"), Some(100));
+        assert_eq!(cover_style_index("ai base: retro waves"), Some(100));
+        assert_eq!(cover_style_index("Dark Fantasy"), Some(101));
+        assert_eq!(cover_style_index("AI Dark Fantasy"), Some(101));
+        assert_eq!(cover_style_index("Minimal Sci-Fi"), Some(102));
+        assert_eq!(cover_style_index("Geometric Medallion"), Some(1)); // Procedural style 1
+
+        let mut st = PubgenState::default();
+        let cover = excel::ExcelCoverData {
+            style: "AI Dark Fantasy".to_string(),
+            palette: "Pastel Dream".to_string(),
+            title1: "STATISTIK DAERAH".to_string(),
+            ..Default::default()
+        };
+        apply_excel_cover(&mut st, &cover, None);
+        assert_eq!(st.cover_style, 101);
+        assert_eq!(st.cover_ai_palette, 1); // Pastel Dream is palette index 1
+        assert_eq!(st.cover_title, "STATISTIK DAERAH");
     }
 
     #[test]

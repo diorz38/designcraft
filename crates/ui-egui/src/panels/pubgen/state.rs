@@ -394,6 +394,12 @@ pub struct PubgenState {
     /// Running AI Base cover generation job.
     #[serde(skip)]
     pub cover_job: Option<ai_cover_job::CoverJob>,
+    /// Pending batch cover items awaiting quota confirmation.
+    #[serde(skip)]
+    pub cover_batch_pending: Option<Vec<ai_cover_job::CoverBatchItem>>,
+    /// Batch of covers parsed from Excel COVER sheet (when multiple publications/covers exist)
+    #[serde(skip)]
+    pub excel_batch_covers: Vec<super::excel::ExcelCoverData>,
 
     // Card: Header & Footer Template (between Cover and Quick Actions)
     #[serde(default = "default_hf_style")]
@@ -558,6 +564,8 @@ impl Default for PubgenState {
             cover_ai_dialog: None,
             cover_ai_error: None,
             cover_job: None,
+            cover_batch_pending: None,
+            excel_batch_covers: Vec::new(),
             excel_auto_generate: true,
             excel_had_cover: false,
             header_status: None,

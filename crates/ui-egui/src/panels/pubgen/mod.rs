@@ -137,6 +137,10 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
     // AI cover generation job poll
     if let Some(mut job) = st.cover_job.take() {
         let ok = job.poll(&mut st);
+        while let Some((title, path)) = job.unapplied.pop() {
+            let path_str = path.to_string_lossy().to_string();
+            let _ = covers::apply_ai_cover_batch_item(app, &st, &title, &path_str);
+        }
         if job.finished {
             st.cover_job = None;
             if ok && let Some(bg_path) = job.completed_path.take() {

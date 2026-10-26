@@ -16,6 +16,15 @@
 
 pub mod cloudflare;
 
+/// Estimated Cloudflare Workers AI Neurons cost per SDXL 18-step image.
+pub const ESTIMATED_NEURONS_PER_IMAGE: u64 = 220;
+
+/// Cloudflare free daily neuron limit (resets 00:00 UTC).
+pub const DAILY_FREE_NEURONS: u64 = 10_000;
+
+/// Maximum safe batch size on free tier before daily quota exhaustion (~10,000 / 220).
+pub const MAX_SAFE_FREE_BATCH: usize = 45;
+
 /// Cover aspect buckets matched to the SDXL ~1-megapixel training buckets
 /// (dimensions are multiples of 8; forcing print-resolution sizes causes
 /// repetition artifacts, so the caller upscales afterwards if ever needed).
@@ -84,6 +93,21 @@ impl GenRequest {
     pub fn new(prompt: impl Into<String>, negative_prompt: impl Into<String>, aspect: Aspect, num_steps: u32) -> Self {
         let (width, height) = aspect.dimensions();
         Self { prompt: prompt.into(), negative_prompt: negative_prompt.into(), width, height, num_steps: num_steps.clamp(1, 25), seed: None }
+    }
+
+    /// Estimated Cloudflare Workers AI Neurons cost per SDXL 18-step image.
+    pub const ESTIMATED_NEURONS_PER_IMAGE: u64 = 220;
+
+    /// Cloudflare free daily neuron limit (resets 00:00 UTC).
+    pub const DAILY_FREE_NEURONS: u64 = 10_000;
+
+    /// Maximum safe batch size on free tier before daily quota exhaustion (~10,000 / 220).
+    pub const MAX_SAFE_FREE_BATCH: usize = 45;
+
+    /// Attach a deterministic random seed to this generation request.
+    pub fn with_seed(mut self, seed: u32) -> Self {
+        self.seed = Some(seed);
+        self
     }
 
     /// The module-default negative prompt: every spelling of "text" the model

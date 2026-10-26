@@ -956,6 +956,10 @@ pub fn execute_generate_front_cover(app: &mut DesignApp, st: &PubgenState) -> Re
         }
     }
 
+    if st.cover_style >= 100 {
+        return apply_ai_cover_result(app, st, "");
+    }
+
     // 1. Automatically insert a new page before the first page (Page 1)
     app.run("layout.pages.insert", json!({"before": 0, "count": 1})).map_err(|e| format!("Failed to insert cover page: {e}"))?;
     crate::canvas::go_to_page(app, 0);
@@ -1163,6 +1167,12 @@ pub fn apply_ai_cover_result(app: &mut DesignApp, st: &PubgenState, bg_path: &st
                 pg.margins = designcraft_doc::Margins::uniform(0.0);
                 pg.local_margins = true;
             }
+            for item in &mut sp.items {
+                if item.label.starts_with("#slot:image:background") || item.name.starts_with("#slot:image:background") {
+                    let it = std::sync::Arc::make_mut(item);
+                    it.label = format!("#slot:image:background #ai_preset:{}", preset.name);
+                }
+            }
             if !redundant_items.is_empty() {
                 sp.items.retain(|it| !redundant_items.contains(&it.id));
             }
@@ -1205,6 +1215,50 @@ pub fn trigger_generate_cover(app: &mut DesignApp, st: &mut PubgenState, ctx: eg
         return;
     };
 
+    if !st.excel_batch_covers.is_empty() && st.excel_batch_covers.len() > 1 {
+        let (pw, ph) = get_cover_page_dimensions(app);
+        let aspect = super::ai_cover_job::aspect_for_dimensions(pw, ph);
+        let items: Vec<super::ai_cover_job::CoverBatchItem> = st
+            .excel_batch_covers
+            .iter()
+            .map(|c| {
+                let style = super::excel::cover_style_index(&c.style).unwrap_or(st.cover_style);
+                let palette = super::ai_cover::preset(style)
+                    .and_then(|p| p.palettes.iter().position(|pal| pal.name.eq_ignore_ascii_case(&c.palette)))
+                    .unwrap_or(st.cover_ai_palette);
+                let title = c.title1.clone();
+                let seed = super::ai_cover_job::seed_from_title(&title);
+                let prompt = if let Some(p) = super::ai_cover::preset(style) {
+                    let pal = p.palettes.get(palette).unwrap_or(&p.palettes[0]);
+                    super::ai_cover::build_prompt(p, pal)
+                } else {
+                    String::new()
+                };
+                let neg_prompt = imagegen::GenRequest::clean_cover_negative_prompt();
+                let req = imagegen::GenRequest::new(prompt, neg_prompt, aspect, 18).with_seed(seed);
+                let filename = format!("ai_cover_batch_{}_{}.png", style, seed);
+                let output_path = std::path::PathBuf::from("outputs").join("ai_covers").join(filename);
+                super::ai_cover_job::CoverBatchItem {
+                    title,
+                    title2: c.title2.clone(),
+                    title_en: c.title_en.clone(),
+                    year: c.year.clone(),
+                    volume: c.volume.clone(),
+                    catalogue: c.catalogue.clone(),
+                    code: c.code.clone(),
+                    agency: c.agency.clone(),
+                    logo: c.logo.clone(),
+                    cover_style: style,
+                    palette_index: palette,
+                    req,
+                    output_path,
+                }
+            })
+            .collect();
+        trigger_generate_cover_batch(app, st, items, ctx);
+        return;
+    }
+
     if !imagegen::compiled_in() {
         st.cover_status = Some(("AI Base covers need a build with --features ai-cover-online.".into(), false));
         return;
@@ -1220,7 +1274,9 @@ pub fn trigger_generate_cover(app: &mut DesignApp, st: &mut PubgenState, ctx: eg
     let neg_prompt = imagegen::GenRequest::clean_cover_negative_prompt();
     let (pw, ph) = get_cover_page_dimensions(app);
     let aspect = super::ai_cover_job::aspect_for_dimensions(pw, ph);
-    let req = imagegen::GenRequest::new(prompt, neg_prompt, aspect, 18);
+    let (title_text, _, _, _, _, _) = get_cover_text_vals(st);
+    let seed = super::ai_cover_job::seed_from_title(title_text);
+    let req = imagegen::GenRequest::new(prompt, neg_prompt, aspect, 18).with_seed(seed);
 
     let account_id = app.session.prefs.cover_ai_cloudflare_account_id.clone();
     let token = app.session.prefs.cover_ai_cloudflare_api_token.clone();
@@ -1232,6 +1288,142 @@ pub fn trigger_generate_cover(app: &mut DesignApp, st: &mut PubgenState, ctx: eg
     let job = super::ai_cover_job::CoverJob::spawn(&account_id, &token, req, output_path, ctx);
     st.cover_job = Some(job);
     st.cover_status = Some(("Generating AI cover\u{2026}".into(), true));
+}
+
+/// Apply one completed cover background to a spread in the document.
+pub fn apply_ai_cover_batch_item(
+    app: &mut DesignApp,
+    st: &PubgenState,
+    title: &str,
+    bg_path: &str,
+) -> Result<String, String> {
+    let preset = super::ai_cover::preset(st.cover_style).unwrap_or(&super::ai_cover::AI_PRESETS[0]);
+    let palette = preset.palettes.get(st.cover_ai_palette).unwrap_or(&preset.palettes[0]);
+    let tpl_path = "assets/templates/covers/100_ai_base.designcraft";
+    let tpl_file = resolve_template_path(tpl_path).ok_or_else(|| format!("AI cover template not found: {tpl_path}"))?;
+    let tpl_path_str = tpl_file.to_string_lossy().to_string();
+
+    let logo = resolve_cover_image(if st.cover_image_logo.trim().is_empty() { "outputs/bps_logo.png" } else { st.cover_image_logo.trim() });
+    let agency_text = if st.cover_agency_text.trim().is_empty() { "BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG" } else { st.cover_agency_text.trim() };
+    let primary = if st.cover_color_primary.trim().is_empty() { palette.primary } else { st.cover_color_primary.trim() };
+    let accent = if st.cover_color_accent.trim().is_empty() { palette.accent } else { st.cover_color_accent.trim() };
+    let dark = if st.cover_color_dark.trim().is_empty() { palette.dark } else { st.cover_color_dark.trim() };
+
+    let mut text_slots = serde_json::Map::new();
+    text_slots.insert("title".into(), json!(title));
+    text_slots.insert("title#2".into(), json!(st.cover_title2));
+    text_slots.insert("year".into(), json!(st.cover_year));
+    text_slots.insert("volume".into(), json!(st.cover_volume));
+    text_slots.insert("catalogue".into(), json!(st.cover_catalogue));
+    text_slots.insert("code".into(), json!(st.cover_code_num));
+    text_slots.insert("agency".into(), json!(agency_text));
+
+    let mut apply_params = json!({
+        "path": tpl_path_str,
+        "slots": {
+            "text": text_slots,
+            "image": {
+                "background": bg_path,
+                "logo": logo,
+            }
+        },
+        "palette": {
+            "Primary": primary,
+            "Accent": accent,
+            "Dark": dark,
+        }
+    });
+    if !st.doc_language.trim().is_empty() {
+        apply_params["lang"] = json!(st.doc_language.trim());
+    }
+
+    app.run("template.page.apply", apply_params).map_err(|e| format!("Failed to apply AI cover template: {e}"))?;
+
+    let _ = app.session.edit(|doc, _| {
+        if let Some(sp) = doc.spreads.last_mut() {
+            let sp = std::sync::Arc::make_mut(sp);
+            if let Some(pg) = sp.pages.first_mut() {
+                pg.margins = designcraft_doc::Margins::uniform(0.0);
+                pg.local_margins = true;
+            }
+            for item in &mut sp.items {
+                if item.label.starts_with("#slot:image:background") || item.name.starts_with("#slot:image:background") {
+                    let it = std::sync::Arc::make_mut(item);
+                    it.label = format!("#slot:image:background #ai_preset:{}", preset.name);
+                }
+            }
+            sp.relayout();
+        }
+        Ok(())
+    });
+
+    Ok(format!("Cover applied for {title}"))
+}
+
+/// Trigger a batch of publication covers: checks re-run skip, pre-flight quota, and spawns worker.
+pub fn trigger_generate_cover_batch(
+    app: &mut DesignApp,
+    st: &mut PubgenState,
+    items: Vec<super::ai_cover_job::CoverBatchItem>,
+    ctx: egui::Context,
+) {
+    if !imagegen::compiled_in() {
+        st.cover_status = Some(("AI Base covers need a build with --features ai-cover-online.".into(), false));
+        return;
+    }
+    if !super::ai_cover::AiCoverSetupDialog::key_configured(app) {
+        st.cover_status = Some(("AI Base needs a Cloudflare account: click AI Setup\u{2026} above to set up.".into(), false));
+        return;
+    }
+
+    // Filter out already generated covers
+    let active_doc = app.session.active().map(|a| a.doc.clone());
+    let mut pending_items = Vec::new();
+    let mut already_generated = 0usize;
+
+    for item in items {
+        let preset_name = super::ai_cover::preset(item.cover_style).map(|p| p.name).unwrap_or("");
+        if let Some(doc) = &active_doc
+            && super::ai_cover_job::cover_page_exists(doc, &item.title, preset_name)
+        {
+            already_generated += 1;
+            continue;
+        }
+        pending_items.push(item);
+    }
+
+    if pending_items.is_empty() {
+        let msg = format!("All {already_generated} publication cover(s) already exist in document.");
+        st.cover_status = Some((msg.clone(), true));
+        st.card1_status = Some((msg.clone(), true));
+        st.card3_status = Some((msg, true));
+        return;
+    }
+
+    // Pre-flight quota estimate: if N > MAX_SAFE_FREE_BATCH, ask confirmation
+    if let Some(warning) = super::ai_cover_job::preflight_quota_warning(pending_items.len()) {
+        st.cover_batch_pending = Some(pending_items);
+        st.cover_status = Some((warning.clone(), false));
+        st.card1_status = Some((warning.clone(), false));
+        st.card3_status = Some((warning, false));
+        return;
+    }
+
+    trigger_generate_cover_batch_confirmed(app, st, pending_items, ctx);
+}
+
+/// Execute batch cover job after quota confirmation or when batch fits within safe limits.
+pub fn trigger_generate_cover_batch_confirmed(
+    app: &mut DesignApp,
+    st: &mut PubgenState,
+    items: Vec<super::ai_cover_job::CoverBatchItem>,
+    ctx: egui::Context,
+) {
+    let account_id = app.session.prefs.cover_ai_cloudflare_account_id.clone();
+    let token = app.session.prefs.cover_ai_cloudflare_api_token.clone();
+    let job = super::ai_cover_job::CoverJob::spawn_batch(&account_id, &token, items, ctx);
+    st.cover_job = Some(job);
+    st.cover_status = Some(("Generating AI covers\u{2026}".into(), true));
 }
 pub(super) fn add_cover_text_frame(
     app: &mut DesignApp,
