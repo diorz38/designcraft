@@ -56,6 +56,9 @@ Data merge runs through `engine.execute` like any command: `data.source.select`,
 `.remove`, `data.options`, `data.preview` / `data.preview.stop`, `data.merge`. `data.merge` creates and activates a new
 merged document; the template stays as it was ([agents.md](agents.md#data-merge)).
 
+Publication covers (procedural styles and AI Base covers via `100_ai_base.designcraft`) apply through the standard
+`template.page.apply` command with slot bindings (`{"path": "assets/templates/covers/100_ai_base.designcraft", "slots": {"image": {"background": "path/to/bg.png"}, "text": {"title": "..."}}}`).
+
 Headless window screenshots (locked screen, hidden window): `cargo run -p designcraft-ui-egui --example ui_shot -- script.jsonl`, where each line is one of the requests above, `{"shot": "/abs/out.png"}` or `{"steps": n}` (renders the whole UI offscreen with wgpu).
 
 The MCP server (`designcraft-cli mcp`) wraps the same methods for Claude and other agents.

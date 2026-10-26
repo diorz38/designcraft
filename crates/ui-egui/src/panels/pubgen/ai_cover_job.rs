@@ -16,17 +16,9 @@ use super::PubgenState;
 #[derive(Debug)]
 pub enum CoverJobMsg {
     Progress(usize, usize),
-    ItemDone {
-        index: usize,
-        title: String,
-        path: PathBuf,
-    },
+    ItemDone { index: usize, title: String, path: PathBuf },
     Done(PathBuf),
-    BatchDone {
-        completed: Vec<(String, PathBuf)>,
-        missing: Vec<String>,
-        error: Option<String>,
-    },
+    BatchDone { completed: Vec<(String, PathBuf)>, missing: Vec<String>, error: Option<String> },
     Failed(String),
 }
 
@@ -72,9 +64,7 @@ pub fn preflight_quota_warning(count: usize) -> Option<String> {
 
 /// Check if a publication's cover page already exists in the document with the matching AI preset tag.
 pub fn cover_page_exists(doc: &designcraft_doc::Document, title: &str, preset_name: &str) -> bool {
-    let norm = |s: &str| -> String {
-        s.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect()
-    };
+    let norm = |s: &str| -> String { s.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect() };
     let want_title = norm(title);
     if want_title.is_empty() {
         return false;
@@ -85,8 +75,7 @@ pub fn cover_page_exists(doc: &designcraft_doc::Document, title: &str, preset_na
         let has_preset_tag = sp.items.iter().any(|it| {
             let l = norm(&it.label);
             let n = norm(&it.name);
-            (l.contains(&want_preset) || n.contains(&want_preset))
-                || (l.contains("slotimagebackground") || l.contains("aipreset"))
+            (l.contains(&want_preset) || n.contains(&want_preset)) || (l.contains("slotimagebackground") || l.contains("aipreset"))
         });
         if !has_preset_tag {
             continue;
@@ -275,80 +264,35 @@ impl CoverJob {
 
     /// Spawn a batch job with custom provider (for testing).
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn spawn_batch_with_provider(
-        provider: Box<dyn ImageGenProvider>,
-        items: Vec<CoverBatchItem>,
-        ctx: egui::Context,
-    ) -> Self {
+    pub fn spawn_batch_with_provider(provider: Box<dyn ImageGenProvider>, items: Vec<CoverBatchItem>, ctx: egui::Context) -> Self {
         let total = items.len();
         let (tx, rx) = std::sync::mpsc::channel::<CoverJobMsg>();
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_thread = cancel.clone();
         let tx_thread = tx.clone();
 
-        let spawned = std::thread::Builder::new()
-            .name("designcraft-ai-cover-batch".into())
-            .spawn(move || {
-                let mut completed: Vec<(String, PathBuf)> = Vec::new();
-                let mut missing: Vec<String> = Vec::new();
-                let mut err_msg: Option<String> = None;
-                let mut done = 0usize;
+        let spawned = std::thread::Builder::new().name("designcraft-ai-cover-batch".into()).spawn(move || {
+            let mut completed: Vec<(String, PathBuf)> = Vec::new();
+            let mut missing: Vec<String> = Vec::new();
+            let mut err_msg: Option<String> = None;
+            let mut done = 0usize;
 
-                let mut iter = items.into_iter().enumerate();
-                while let Some((idx, item)) = iter.next() {
-                    if cancel_thread.load(Ordering::Relaxed) {
-                        missing.push(item.title);
-                        for (_, rest) in iter {
-                            missing.push(rest.title);
-                        }
-                        err_msg = Some("AI cover generation cancelled".to_string());
-                        break;
+            let mut iter = items.into_iter().enumerate();
+            while let Some((idx, item)) = iter.next() {
+                if cancel_thread.load(Ordering::Relaxed) {
+                    missing.push(item.title);
+                    for (_, rest) in iter {
+                        missing.push(rest.title);
                     }
+                    err_msg = Some("AI cover generation cancelled".to_string());
+                    break;
+                }
 
-                    let _ = tx_thread.send(CoverJobMsg::Progress(done, total));
+                let _ = tx_thread.send(CoverJobMsg::Progress(done, total));
 
-                    match provider.generate(&item.req, &cancel_thread) {
-                        Ok(bytes) => {
-                            if cancel_thread.load(Ordering::Relaxed) {
-                                missing.push(item.title);
-                                for (_, rest) in iter {
-                                    missing.push(rest.title);
-                                }
-                                err_msg = Some("AI cover generation cancelled".to_string());
-                                break;
-                            }
-
-                            if let Some(parent) = item.output_path.parent() {
-                                let _ = std::fs::create_dir_all(parent);
-                            }
-                            if let Err(e) = std::fs::write(&item.output_path, &bytes) {
-                                missing.push(item.title);
-                                for (_, rest) in iter {
-                                    missing.push(rest.title);
-                                }
-                                err_msg = Some(format!("Failed to save cover image: {e}"));
-                                break;
-                            }
-
-                            completed.push((item.title.clone(), item.output_path.clone()));
-                            let _ = tx_thread.send(CoverJobMsg::ItemDone {
-                                index: idx,
-                                title: item.title,
-                                path: item.output_path,
-                            });
-                            done = done.saturating_add(1);
-                            let _ = tx_thread.send(CoverJobMsg::Progress(done, total));
-                        }
-                        Err(imagegen::ImageGenError::Quota(_)) => {
-                            // Stop-on-429: skip remaining items, record missing, report
-                            missing.push(item.title);
-                            for (_, rest) in iter {
-                                missing.push(rest.title);
-                            }
-                            err_msg = Some("Daily Cloudflare free quota reached; resets 00:00 UTC".to_string());
-                            break;
-                        }
-                        Err(imagegen::ImageGenError::Cancelled) => {
+                match provider.generate(&item.req, &cancel_thread) {
+                    Ok(bytes) => {
+                        if cancel_thread.load(Ordering::Relaxed) {
                             missing.push(item.title);
                             for (_, rest) in iter {
                                 missing.push(rest.title);
@@ -356,24 +300,55 @@ impl CoverJob {
                             err_msg = Some("AI cover generation cancelled".to_string());
                             break;
                         }
-                        Err(e) => {
+
+                        if let Some(parent) = item.output_path.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        if let Err(e) = std::fs::write(&item.output_path, &bytes) {
                             missing.push(item.title);
                             for (_, rest) in iter {
                                 missing.push(rest.title);
                             }
-                            err_msg = Some(format!("AI cover generation stopped: {e}"));
+                            err_msg = Some(format!("Failed to save cover image: {e}"));
                             break;
                         }
+
+                        completed.push((item.title.clone(), item.output_path.clone()));
+                        let _ = tx_thread.send(CoverJobMsg::ItemDone { index: idx, title: item.title, path: item.output_path });
+                        done = done.saturating_add(1);
+                        let _ = tx_thread.send(CoverJobMsg::Progress(done, total));
+                    }
+                    Err(imagegen::ImageGenError::Quota(_)) => {
+                        // Stop-on-429: skip remaining items, record missing, report
+                        missing.push(item.title);
+                        for (_, rest) in iter {
+                            missing.push(rest.title);
+                        }
+                        err_msg = Some("Daily Cloudflare free quota reached; resets 00:00 UTC".to_string());
+                        break;
+                    }
+                    Err(imagegen::ImageGenError::Cancelled) => {
+                        missing.push(item.title);
+                        for (_, rest) in iter {
+                            missing.push(rest.title);
+                        }
+                        err_msg = Some("AI cover generation cancelled".to_string());
+                        break;
+                    }
+                    Err(e) => {
+                        missing.push(item.title);
+                        for (_, rest) in iter {
+                            missing.push(rest.title);
+                        }
+                        err_msg = Some(format!("AI cover generation stopped: {e}"));
+                        break;
                     }
                 }
+            }
 
-                let _ = tx_thread.send(CoverJobMsg::BatchDone {
-                    completed,
-                    missing,
-                    error: err_msg,
-                });
-                ctx.request_repaint();
-            });
+            let _ = tx_thread.send(CoverJobMsg::BatchDone { completed, missing, error: err_msg });
+            ctx.request_repaint();
+        });
 
         if spawned.is_err() {
             let _ = tx.send(CoverJobMsg::Failed("could not start the cover generation batch thread".into()));
@@ -442,12 +417,7 @@ impl CoverJob {
                         } else {
                             self.cancel.store(true, Ordering::Relaxed);
                             let msg = if !missing.is_empty() {
-                                format!(
-                                    "{} covers generated; {} missing: {}",
-                                    self.batch_completed.len(),
-                                    missing.len(),
-                                    missing.join(", ")
-                                )
+                                format!("{} covers generated; {} missing: {}", self.batch_completed.len(), missing.len(), missing.join(", "))
                             } else {
                                 error.unwrap_or_else(|| "Batch cover generation stopped".to_string())
                             };
@@ -603,10 +573,7 @@ mod tests {
         assert_eq!(preflight_quota_warning(45), None);
         let warning = preflight_quota_warning(50);
         assert!(warning.is_some());
-        assert_eq!(
-            warning.unwrap(),
-            "45 of 50 fit today's free quota; the rest will fail after ~45 — continue?"
-        );
+        assert_eq!(warning.unwrap(), "45 of 50 fit today's free quota; the rest will fail after ~45 — continue?");
     }
 
     #[test]
@@ -621,11 +588,7 @@ mod tests {
 
         let fake_provider = Box::new(FakeImageGenProvider(move |_req, _cancel| {
             let n = count_thread.fetch_add(1, Ordering::SeqCst);
-            if n == 0 {
-                Ok(b"\x89PNG\r\n\x1a\nitem0".to_vec())
-            } else {
-                Err(imagegen::ImageGenError::Quota(Some(3600)))
-            }
+            if n == 0 { Ok(b"\x89PNG\r\n\x1a\nitem0".to_vec()) } else { Err(imagegen::ImageGenError::Quota(Some(3600))) }
         }));
 
         let req = imagegen::GenRequest::new("prompt", "", imagegen::Aspect::Iso, 18);
@@ -696,7 +659,10 @@ mod tests {
 
         let (status_msg, ok) = st.cover_status.as_ref().unwrap();
         assert!(!ok);
-        assert!(status_msg.contains("1 covers generated; 2 missing: Publication 2, Publication 3"), "Report should format missing list: {status_msg}");
+        assert!(
+            status_msg.contains("1 covers generated; 2 missing: Publication 2, Publication 3"),
+            "Report should format missing list: {status_msg}"
+        );
     }
 
     #[test]

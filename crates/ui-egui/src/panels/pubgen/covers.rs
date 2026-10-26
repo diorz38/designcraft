@@ -1291,12 +1291,7 @@ pub fn trigger_generate_cover(app: &mut DesignApp, st: &mut PubgenState, ctx: eg
 }
 
 /// Apply one completed cover background to a spread in the document.
-pub fn apply_ai_cover_batch_item(
-    app: &mut DesignApp,
-    st: &PubgenState,
-    title: &str,
-    bg_path: &str,
-) -> Result<String, String> {
+pub fn apply_ai_cover_batch_item(app: &mut DesignApp, st: &PubgenState, title: &str, bg_path: &str) -> Result<String, String> {
     let preset = super::ai_cover::preset(st.cover_style).unwrap_or(&super::ai_cover::AI_PRESETS[0]);
     let palette = preset.palettes.get(st.cover_ai_palette).unwrap_or(&preset.palettes[0]);
     let tpl_path = "assets/templates/covers/100_ai_base.designcraft";
@@ -1361,12 +1356,7 @@ pub fn apply_ai_cover_batch_item(
 }
 
 /// Trigger a batch of publication covers: checks re-run skip, pre-flight quota, and spawns worker.
-pub fn trigger_generate_cover_batch(
-    app: &mut DesignApp,
-    st: &mut PubgenState,
-    items: Vec<super::ai_cover_job::CoverBatchItem>,
-    ctx: egui::Context,
-) {
+pub fn trigger_generate_cover_batch(app: &mut DesignApp, st: &mut PubgenState, items: Vec<super::ai_cover_job::CoverBatchItem>, ctx: egui::Context) {
     if !imagegen::compiled_in() {
         st.cover_status = Some(("AI Base covers need a build with --features ai-cover-online.".into(), false));
         return;

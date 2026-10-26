@@ -52,7 +52,7 @@ sane; partial batch results appear live.
 
 ---
 
-## Phase 1 — `crates/imagegen` provider crate
+## Phase 1 — `crates/imagegen` provider crate *(done)*
 
 **Scope.** Standalone crate, no egui, no engine deps. `#![deny(clippy::unwrap_used, …)]` from
 day one (never-crash standard).
@@ -99,7 +99,7 @@ control channel for free; `pubgen.coverApply` from the original sketch is droppe
 + background/logo images + palette) binds 10 slots and renders the composed cover
 (`outputs/ai_cover_applied.png`). Engine template tests green; assets/fmt/clippy clean.
 
-## Phase 3 — Presets, state, UI selection
+## Phase 3 — Presets, state, UI selection *(done)*
 
 **Scope.**
 
@@ -149,7 +149,7 @@ document unchanged.
 pick Retro Waves + Warm Terracotta → Generate → cover on page 1, native text crisp, undo
 clean, cancel works.
 
-## Phase 5 — Excel batch flow
+## Phase 5 — Excel batch flow *(done)*
 
 **Scope.**
 
@@ -172,7 +172,7 @@ mid-batch → document consistent; Excel name matching for AI styles.
 **Acceptance:** `plan/pubgen/samples` workbook with AI style column generates N covers;
 cancel and 429 paths leave a valid, undoable document.
 
-## Phase 6 — Docs, guides, release wiring
+## Phase 6 — Docs, guides, release wiring *(done)*
 
 **Scope.**
 

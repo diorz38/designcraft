@@ -263,8 +263,71 @@ Pubgen menyediakan 13 pilihan desain sampul siap pakai:
 
 ---
 
+### Pembuatan Sampul AI Base (Online / Gaya ≥ 100)
+
+Pubgen menghadirkan **Sampul AI Base**, yang memadukan latar belakang seni generatif kecerdasan buatan (*text-to-image AI*) dengan tipografi vektor tajam, pelat identitas instansi, dan tata letak geometris presisi milik DesignCraft.
+
+```
++-------------------------------------------------------------------+
+| Publication Cover                                                 |
+| Style: [ ── AI Base (online) ──                                 ] |
+|        [ Retro Waves           ▼ ]                                |
+| Palette:[ Warm Terracotta ] [ Pastel Dream ] [ Mono Slate ] [ Forest Gold ]|
+|                                                                   |
+| Title:  [ STATISTIK DAERAH                                  ]      |
+| Title 2:[ KABUPATEN KARAWANG                                ]      |
+| Year:   [ 2026        ]  Volume: [ Volume 23 2026          ]      |
+|                                                                   |
+| [  Generate Cover Page  ]                                         |
++-------------------------------------------------------------------+
+```
+
+#### 3 Gaya Kurasi AI
+1. **Retro Waves (`AI Retro Waves`, Gaya 100)**:
+   - **Karakter Visual**: Mengalir, organik, bernuansa risograf 1970-an dan lengkungan editorial modern.
+   - **Komposisi**: Pita melengkung retro dengan ruang negatif (*negative space*) lapang yang dirancang khusus menjaga kontras teks tetap tajam dan mudah dibaca.
+   - **Paling Cocok Untuk**: Publikasi statistik umum, laporan sosial-budaya, ulasan lingkungan dan ringkasan daerah.
+2. **Dark Fantasy (`AI Dark Fantasy`, Gaya 101)**:
+   - **Karakter Visual**: Dramatis, megah, pencahayaan sinematik ambien dengan kontras gelap yang pekat.
+   - **Komposisi**: Latar belakang bernuansa bayangan mendalam dengan titik cahaya atmosferik, membingkai judul putih secara kontras dan elegan.
+   - **Paling Cocok Untuk**: Edisi khusus peringatan, laporan tahunan unggulan (*flagship*), publikasi bertema penting.
+3. **Minimal Sci-Fi (`AI Minimal Sci-Fi`, Gaya 102)**:
+   - **Karakter Visual**: Futuristik berteknologi tinggi, estetika cetak biru (*blueprint*), gradien arsitektural terstruktur.
+   - **Komposisi**: Garis struktural rapi, aksen grid isometrik halus, dan ruang bidang terbuka yang luas.
+   - **Paling Cocok Untuk**: Statistik industri, ekonomi digital, sensus, direktori ilmiah dan inovasi.
+
+#### 4 Palet Warna Serasi
+Setiap gaya AI dapat dipadukan dengan 4 palet pilihan:
+- **Warm Terracotta**: Terakota kaya (`#d96b43`), oker hangat (`#e8a838`), dan abu-abu arang (`#2c3539`).
+- **Pastel Dream**: Lavender lembut (`#a29bfe`), koral cerah (`#fab1a0`), dan ungu malam (`#2d3436`).
+- **Mono Slate**: Biru baja (`#4b6584`), abu-abu terang halus (`#a5b1c2`), dan grafit gelap (`#1e272e`).
+- **Forest Gold**: Hijau zamrud (`#20bf6b`), emas anggun (`#f7b731`), dan hijau hutan pinus (`#0b3b24`).
+
+#### Konfigurasi Cloudflare Workers AI & Kredensial
+Sampul AI Base ditenagai oleh **Cloudflare Workers AI** menggunakan model Stable Diffusion XL (SDXL):
+1. Klik tombol **AI Setup…** di atas kartu Cover (atau di samping tombol Translate).
+2. Masukkan **Cloudflare Account ID** dan **Cloudflare API Token** Anda.
+3. **Cakupan Token (Scope)**: Buat token di dasbor Cloudflare dengan hak akses khusus `Workers AI: Edit` saja. Jangan gunakan hak akses administrator menyeluruh.
+4. Klik **Verify**: Pubgen melakukan uji coba kecil (1 langkah) untuk memverifikasi kredensial tanpa memboroskan kuota. Token disimpan secara lokal di preferensi pengguna Anda, tidak pernah disisipkan ke dalam dokumen, dan tidak pernah diunggah ke repositori.
+5. **Catatan Privasi**: Hanya templat deskripsi gaya seni abstrak yang dikirim ke Cloudflare. Judul publikasi, nama instansi, dan data rahasia daerah tetap berada 100% di komputer lokal Anda dan ditata sebagai bingkai teks vektor asli.
+
+#### Ekonomi Kuota & Pengecekan Awal (*Pre-Flight*)
+- **Konsumsi Neuron**: Setiap sampul SDXL 18 langkah mengonsumsi sekitar **~220 Neuron**. Cloudflare memberikan alokasi gratis sebesar **10.000 Neuron per hari** (diperbarui setiap pukul 00:00 UTC).
+- **Kapasitas Batch Aman**: Kuota harian gratis ini mencukupi pembuatan hingga sekitar **~45 sampul publikasi per hari**.
+- **Peringatan Pre-Flight**: Ketika Anda memulai pembuatan batch lebih dari 45 sampul dari buku kerja Excel, Pubgen akan menampilkan konfirmasi: *"45 of N fit today's free quota; the rest will fail after ~45 — continue?"*.
+- **Seed Judul Deterministik**: Pubgen menghasilkan *seed* acak 32-bit yang stabil dari *hash* judul publikasi (`hash(title)`). Publikasi dalam seri yang sama menghasilkan latar belakang seni yang konsisten dan serasi saat dibuat ulang.
+- **Stop-on-429 & Pelaporan**: Jika kuota harian habis di tengah jalan (HTTP 429), Pubgen berhenti secara rapi tanpa *crash*, mempertahankan semua sampul yang telah selesai dibuat, dan melaporkan daftar publikasi yang belum memiliki sampul.
+- **Otomatisasi Lanjutan (Skip Existing)**: Menjalankan ulang proses batch akan secara otomatis mengenali halaman sampul yang telah ada (melalui label `#ai_preset:` pada bingkai latar belakang) dan hanya memproses publikasi yang belum selesai.
+
+#### Integrasi Excel (Lembar `COVER` / `COVERS`)
+Anda dapat menentukan gaya dan palet AI langsung pada lembar Excel:
+- **Kolom Style**: `AI Retro Waves`, `AI Dark Fantasy`, atau `AI Minimal Sci-Fi` (atau tanpa awalan: `Retro Waves`, `Dark Fantasy`, `Minimal Sci-Fi`).
+- **Kolom Palette**: `Warm Terracotta`, `Pastel Dream`, `Mono Slate`, atau `Forest Gold` (opsional; bawaan: Warm Terracotta).
+
+---
+
 ### Pratinjau Thumbnail Hover
-- Di bawah menu pilihan gaya, terdapat tombol pil cepat: `🌊 Wave`, `🔷 Geometric`, `📐 Origami`, `🔰 Chevron`, `⬡ Hexagon`, `🏢 Corporate`, `↗ Arrow`, `🌇 Horizon`, `📊 Report`, `🌆 Urban`, `🎨 Tri-Color`, `💎 Prism`, `▢ Quarter Stack`.
+- Di bawah menu pilihan gaya, terdapat tombol pil cepat untuk seluruh 13 gaya vektor korporat ditambah 3 gaya AI Base.
 - Cukup **arahkan kursor tetikus (hover)** ke salah satu pil (atau klik ikon mata `👁` di samping menu). Jendela melayang (*tooltip*) akan langsung menampilkan thumbnail foto sampul yang sesungguhnya beresolusi tinggi, sehingga Anda dapat memilih desain dengan yakin sebelum membuatnya.
 
 ---

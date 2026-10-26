@@ -331,9 +331,7 @@ pub fn parse_batch_cover_sheet(sheet: &ExcelSheetData) -> Vec<ExcelCoverData> {
         return Vec::new();
     }
     let header = &sheet.grid[0];
-    let norm = |s: &str| -> String {
-        s.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect()
-    };
+    let norm = |s: &str| -> String { s.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect() };
     let title_col = header.iter().position(|h| {
         let n = norm(h);
         n == "title" || n == "title1" || n == "judul" || n == "publication" || n == "publikasi"
@@ -373,15 +371,7 @@ pub fn parse_batch_cover_sheet(sheet: &ExcelSheetData) -> Vec<ExcelCoverData> {
             let year = year_col.and_then(|c| row.get(c)).map(|s| s.trim()).unwrap_or("").to_string();
             let volume = vol_col.and_then(|c| row.get(c)).map(|s| s.trim()).unwrap_or("").to_string();
 
-            items.push(ExcelCoverData {
-                title1: title.to_string(),
-                style: style.to_string(),
-                palette,
-                title2,
-                year,
-                volume,
-                ..Default::default()
-            });
+            items.push(ExcelCoverData { title1: title.to_string(), style: style.to_string(), palette, title2, year, volume, ..Default::default() });
         }
         if !items.is_empty() {
             return items;

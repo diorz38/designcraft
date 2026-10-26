@@ -296,8 +296,71 @@ Pubgen provides 13 corporate design styles:
 
 ---
 
+### AI Base Cover Generation (Online / Styles ≥ 100)
+
+Pubgen introduces **AI Base Covers**, blending generative text-to-image AI backgrounds with DesignCraft's crisp vector typography, institutional branding plates, and strict layout geometry.
+
+```
++-------------------------------------------------------------------+
+| Publication Cover                                                 |
+| Style: [ ── AI Base (online) ──                                 ] |
+|        [ Retro Waves           ▼ ]                                |
+| Palette:[ Warm Terracotta ] [ Pastel Dream ] [ Mono Slate ] [ Forest Gold ]|
+|                                                                   |
+| Title:  [ STATISTIK DAERAH                                  ]      |
+| Title 2:[ KABUPATEN KARAWANG                                ]      |
+| Year:   [ 2026        ]  Volume: [ Volume 23 2026          ]      |
+|                                                                   |
+| [  Generate Cover Page  ]                                         |
++-------------------------------------------------------------------+
+```
+
+#### The 3 Curated AI Styles
+1. **Retro Waves (`AI Retro Waves`, Style 100)**:
+   - **Visual Personality**: Flowing, organic, 1970s risograph and modern editorial curves.
+   - **Composition**: Sweeping retro curved ribbons with generous negative space crafted specifically to keep typography clear and high-contrast.
+   - **Best For**: General statistical overviews, cultural publications, environmental and regional digests.
+2. **Dark Fantasy (`AI Dark Fantasy`, Style 101)**:
+   - **Visual Personality**: Dramatic, deep, ambient cinematic lighting with rich contrast.
+   - **Composition**: Deep shadowed backgrounds with luminous atmospheric focal points, framing white titles cleanly.
+   - **Best For**: Commemorative editions, flagship annual reviews, high-impact keynote reports.
+3. **Minimal Sci-Fi (`AI Minimal Sci-Fi`, Style 102)**:
+   - **Visual Personality**: High-tech, blueprint aesthetics, crisp structural gradients.
+   - **Composition**: Clean technological lines, subtle isometric grid accents, and open architectural space.
+   - **Best For**: Industrial statistics, digital economy, census data, scientific directories.
+
+#### The 4 Cohesive Color Palettes
+Each AI preset can be combined with one of four tailored palettes:
+- **Warm Terracotta**: Rich terracotta (`#d96b43`), warm ochre (`#e8a838`), and charcoal slate (`#2c3539`).
+- **Pastel Dream**: Soft lavender (`#a29bfe`), gentle coral (`#fab1a0`), and deep midnight violet (`#2d3436`).
+- **Mono Slate**: Steel blue (`#4b6584`), refined light gray (`#a5b1c2`), and deep graphite (`#1e272e`).
+- **Forest Gold**: Emerald green (`#20bf6b`), rich gold (`#f7b731`), and deep pine forest (`#0b3b24`).
+
+#### Cloudflare Workers AI Setup & Credentials
+AI Base covers are powered by **Cloudflare Workers AI** running the Stable Diffusion XL (SDXL) model:
+1. Click **AI Setup…** above the Cover card (or next to the Translate button).
+2. Enter your **Cloudflare Account ID** and **Cloudflare API Token**.
+3. **Token Scoping**: Create the token in your Cloudflare dashboard with the `Workers AI: Edit` permission only. Never grant account-wide administrator privileges.
+4. Click **Verify**: Pubgen performs a tiny 1-step test generation to confirm your credentials without wasting quota. The token is stored locally in your private user preferences and is never embedded into documents or committed to Git.
+5. **Privacy Note**: Only abstract artistic prompt templates leave your machine. Publication titles, author names, and confidential regional data stay strictly local and are composed onto the cover as native vector text.
+
+#### Batch Generation Economics & Quota Pre-Flight
+- **Neuron Economics**: Each 18-step SDXL cover consumes approximately **~220 Neurons**. Cloudflare provides a free tier of **10,000 Neurons per day** (resetting daily at 00:00 UTC).
+- **Safe Batch Size**: The free daily quota comfortably covers up to **~45 publication covers per day**.
+- **Pre-Flight Warning**: When you launch a batch larger than 45 covers from an Excel workbook, Pubgen displays a safety prompt: *"45 of N fit today's free quota; the rest will fail after ~45 — continue?"*.
+- **Deterministic Series Seeds**: Pubgen hashes each publication title (`hash(title)`) into a stable 32-bit random seed. Publications in the same series get visually cohesive art that remains consistent across regenerations.
+- **Stop-on-429 & Resume**: If your Cloudflare quota is exhausted mid-batch (HTTP 429), Pubgen stops generation cleanly without crashing, saves all completed covers, and reports the exact titles that were skipped.
+- **Re-run Skipping**: Re-running a batch automatically checks for existing covers (tagged with `#ai_preset:` in the background frame) and only generates the missing ones, making "generate the rest tomorrow" a single click.
+
+#### Excel Integration (`COVER` / `COVERS` Sheet)
+You can specify AI Base styles directly in your Excel workbook:
+- **Style Column**: `AI Retro Waves`, `AI Dark Fantasy`, or `AI Minimal Sci-Fi` (or without the `AI` prefix: `Retro Waves`, `Dark Fantasy`, `Minimal Sci-Fi`).
+- **Palette Column**: `Warm Terracotta`, `Pastel Dream`, `Mono Slate`, or `Forest Gold` (optional; defaults to Warm Terracotta).
+
+---
+
 ### Hover Thumbnail Previews
-- **Quick Preview Pills**: Under the style dropdown, you will see 13 quick-switch pills (`🌊 Wave`, `🔷 Geometric`, `📐 Origami`, `🔰 Chevron`, `⬡ Hexagon`, `🏢 Corporate`, `↗ Arrow`, `🌇 Horizon`, `📊 Report`, `🌆 Urban`, `🎨 Tri-Color`, `💎 Prism`, `▢ Quarter Stack`).
+- **Quick Preview Pills**: Under the style dropdown, you will see quick-switch pills for all 13 vector corporate styles plus the 3 AI Base styles.
 - **Hover to Preview**: Simply move your mouse over any pill (or click the small eye icon `👁` next to the dropdown). A floating tooltip instantly displays the actual rendered cover thumbnail so you can choose your favorite look before generating.
 
 ---
