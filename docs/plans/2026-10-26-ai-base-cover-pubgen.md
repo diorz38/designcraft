@@ -39,15 +39,16 @@ Workers AI (SDXL), then overlays the existing native text/logo frames on top.
 ```
 crates/imagegen              NEW provider crate (mirrors crates/translate)
   └─ CloudflareClient::generate(req) -> Vec<u8> PNG     [feature "cloudflare", ureq, sync]
-crates/engine                prefs fields + command
-  └─ pubgen.coverApply       builds cover from PNG bytes + preset (sync, undoable)
+assets/templates/covers/100_ai_base.designcraft     cover template: #slot:image:background
+  └─ template.page.apply     binds PNG path + 7 text slots + logo + palette (existing command)
 crates/ui-egui/panels/pubgen UI: presets, style section, setup dialog, job
-  └─ CoverJob                worker thread: HTTP only; UI thread applies via command per item
+  └─ CoverJob                worker thread: HTTP only; UI thread applies via template.page.apply
 ```
 
-Key split: the worker thread does **HTTP only** and ships PNG bytes over a channel; the UI
-thread mutates the document through `app.run("pubgen.coverApply", …)` as results arrive. The
-engine stays synchronous; undo history stays sane; partial batch results appear live.
+Key split: the worker thread does **HTTP only** and ships the PNG path over a channel; the UI
+thread mutates the document through `app.run("template.page.apply", …)` (the same call the
+procedural covers make) as results arrive. The engine stays synchronous; undo history stays
+sane; partial batch results appear live.
 
 ---
 
@@ -74,30 +75,29 @@ No network in tests.
 **Acceptance:** `cargo test -p designcraft-imagegen` green with and without `cloudflare`;
 `cargo xtask layers` clean; wasm target untouched (feature never enabled there).
 
-## Phase 2 — Engine prefs + `pubgen.coverApply` command
+## Phase 2 — Cover template + engine prefs  *(done; scope evolved — better path)*
 
-**Scope.**
+**Deviation note.** The procedural styles are `.designcraft` template files applied with
+`template.page.apply` (`assets/templates/covers/*.designcraft`, `#slot:`-tagged frames). That
+existing command already inserts the page, binds arbitrary text/image slots by label, places
+pictures and applies palette swatches — so **no new engine command is needed**: applying an AI
+cover is the same `template.page.apply` call the procedural path makes, with
+`slots.image.background` pointing at the generated PNG. Stays reachable from CLI / MCP /
+control channel for free; `pubgen.coverApply` from the original sketch is dropped.
 
-- Prefs (engine `Session.prefs`, mirror `translation_groq_api_key` lib.rs:257):
-  `coverAiCloudflareAccountId: String`, `coverAiCloudflareApiToken: String`.
-  Document both in the `prefs.get`/`prefs.set` schema line (`cmd/prefs.rs:53`).
-- New command `pubgen.coverApply` (crates/engine/src/cmd/, behind `pubgen`):
-  params `{png: base64, preset: string, palette: string, seed: Option<u32>}`.
-  Behavior = the existing `execute_generate_cover` skeleton (covers.rs:951–989):
-  insert page before page 1, zero margins, read page w/h, then:
-  1. decode + validate PNG (dimensions sanity-cap),
-  2. full-bleed background image frame on the new page,
-  3. text/logo overlay identical to procedural covers (shared `CoverArtVals` slots —
-     factor the text-overlay tail of `cover_art::cover_style_*` into one helper if the
-     per-style fns don't already share it).
-- Output identical in kind to a procedural cover: frames + one image, fully undoable.
+**What landed.**
 
-**Tests** (mirror `test_cover_style_*_text_is_options_only`, covers.rs:1172+): AI cover has
-exactly the option-derived text frames, no extras; background frame fills the page; undo
-removes everything; invalid PNG → error, document unchanged (never-crash).
+- `assets/templates/covers/100_ai_base.designcraft`: A4, full-bleed
+  `#slot:image:background`, an accent band bound to the palette's Accent swatch, house
+  typography slots (title block lifted; over-art text near-white; agency dark on the band).
+  Regenerable via `plan/pubgen/build_ai_base_template.ps1` (local; derives from 012).
+- Engine template tests: 13 → 14 covers; the photo-slot assertion accepts `background`.
+- Prefs: `coverAiCloudflareAccountId`, `coverAiCloudflareApiToken` (engine `Prefs`,
+  documented in the `prefs.set` schema line; accepted keys derive from the struct).
 
-**Acceptance:** `cargo test -p designcraft-ui-egui --features pubgen` green; command reachable
-via control channel (`AGENT_MCP_GUIDE.md` pattern).
+**Proof.** CLI script (`prefs.set` + `file.new` + `template.page.apply` with all 7 text slots
++ background/logo images + palette) binds 10 slots and renders the composed cover
+(`outputs/ai_cover_applied.png`). Engine template tests green; assets/fmt/clippy clean.
 
 ## Phase 3 — Presets, state, UI selection
 
@@ -136,7 +136,7 @@ via dialog, palette pills switch.
   `ctx.request_repaint()`, `poll()` drains into `PubgenState` statuses. Native-only;
   wasm stub returns finished-empty (ai.rs:345 pattern).
 - Generate Cover Page branch (covers.rs:990): style < 100 → today's path; style ≥ 100 →
-  spawn `CoverJob` with 1 item; on result, `app.run("pubgen.coverApply", …)` on the UI
+  spawn `CoverJob` with 1 item; on result, `app.run("template.page.apply", …)` on the UI
   thread; status line "Generating AI cover…", then done/failed.
 - Error surfacing: `Quota` → "Daily Cloudflare free quota reached; resets 00:00 UTC";
   `Auth`/`Network` → setup dialog offer. Cancel button while running.
@@ -179,7 +179,8 @@ cancel and 429 paths leave a valid, undoable document.
 - `docs/pubgen-guide.md` + `docs/pubgen-guide_id.md`: Card 1 "AI Base" section — presets,
   palettes, Cloudflare setup (account id + token, token scope Workers AI Edit only),
   quota expectations, batch behavior, privacy note (cover prompts leave the machine).
-- `ROADMAP.md` progress log; `docs/control-protocol.md` entry for `pubgen.coverApply`;
+- `ROADMAP.md` progress log; `docs/control-protocol.md` note that AI covers apply through the
+  existing `template.page.apply`;
   `AGENT_MCP_GUIDE.md` example.
 - Build wiring: nothing new required (feature flag composes:
   `--features pubgen,ai-cover-online`); confirm portable-release script still builds without

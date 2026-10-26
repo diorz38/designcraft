@@ -257,6 +257,12 @@ pub struct Prefs {
     pub translation_groq_api_key: String,
     /// Groq model id (resolved via GET /openai/v1/models on first use).
     pub translation_groq_model: String,
+    /// Pubgen AI Base cover (docs/plans/2026-10-26-ai-base-cover-pubgen.md):
+    /// Cloudflare account id for Workers AI image generation.
+    pub cover_ai_cloudflare_account_id: String,
+    /// Cloudflare Workers AI API token (scope: Workers AI Edit). Same plaintext-prefs
+    /// ponytail as the Groq key above.
+    pub cover_ai_cloudflare_api_token: String,
 }
 
 /// The most recent files Preferences lets File › Open Recent keep.
@@ -337,6 +343,8 @@ impl Default for Prefs {
             translation_provider: String::from("offline"),
             translation_groq_api_key: String::new(),
             translation_groq_model: String::new(),
+            cover_ai_cloudflare_account_id: String::new(),
+            cover_ai_cloudflare_api_token: String::new(),
         }
     }
 }

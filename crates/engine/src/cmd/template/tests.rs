@@ -364,7 +364,7 @@ fn test_canonical_assets_catalog_discovery() {
     let catalog = scan_template_catalog(&path);
     assert!(!catalog.is_empty(), "Canonical templates should be discovered in {path:?}");
     let covers: Vec<_> = catalog.iter().filter(|t| t.category == "covers").collect();
-    assert_eq!(covers.len(), 13, "Should discover 13 canonical cover templates");
+    assert_eq!(covers.len(), 14, "Should discover 14 canonical cover templates");
 }
 
 #[test]
@@ -477,7 +477,7 @@ fn test_canonical_cover_templates_carry_their_slots() {
         .filter(|p| p.extension().is_some_and(|x| x == "designcraft"))
         .collect();
     files.sort();
-    assert_eq!(files.len(), 13, "thirteen canonical covers: {files:?}");
+    assert_eq!(files.len(), 14, "fourteen canonical covers: {files:?}");
 
     for path in &files {
         let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
@@ -517,8 +517,8 @@ fn test_canonical_cover_templates_carry_their_slots() {
             "{path:?}: no `#slot:text:title#2` frame (tags: {labels:?})"
         );
         assert!(
-            keys.iter().any(|(k, s)| *k == SlotType::Image && (s == "hero" || s == "landscape")),
-            "{path:?}: no `#slot:image:hero` (or landscape) frame (tags: {labels:?})"
+            keys.iter().any(|(k, s)| *k == SlotType::Image && (s == "hero" || s == "landscape" || s == "background")),
+            "{path:?}: no `#slot:image:hero` (or landscape/background) frame (tags: {labels:?})"
         );
         assert!(keys.iter().any(|(k, s)| *k == SlotType::Image && s == "logo"), "{path:?}: no `#slot:image:logo` frame (tags: {labels:?})");
     }
