@@ -1,6 +1,5 @@
-//! The cover engines: front cover, inside cover and back cover from the cover state.
-
 use super::*;
+use designcraft_imagegen as imagegen;
 
 /// Index of the "Modern Horizon" cover style — the one traced from the reference annual-report
 /// design, whose palette is navy + orange rather than the amber of the other presets.
@@ -731,11 +730,8 @@ pub fn execute_generate_back_cover(app: &mut DesignApp, st: &PubgenState) -> Res
     Ok(())
 }
 
-pub fn execute_generate_front_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
+pub(crate) fn get_cover_text_vals(st: &PubgenState) -> (&str, String, &str, &str, String, String) {
     let title_text = if st.cover_title.trim().is_empty() { "KARAWANG TIMUR" } else { st.cover_title.trim() };
-    // The second headline line has its own frame in the cover templates (`title#2`), styled
-    // smaller and in another colour than the headline above it. An empty field leaves that
-    // frame blank.
     let title2_text = if st.bilingual_output {
         let t2 = st.cover_title2.trim();
         let ten = if !st.cover_title_en.trim().is_empty() {
@@ -773,6 +769,12 @@ pub fn execute_generate_front_cover(app: &mut DesignApp, st: &PubgenState) -> Re
     let code_type = if st.cover_code_type == 0 { "ISSN" } else { "ISBN" };
     let code_num = if st.cover_code_num.trim().is_empty() { "2828-7436" } else { st.cover_code_num.trim() };
     let code_text = format!("{code_type} {code_num}");
+
+    (title_text, title2_text, year_text, volume_text, cat_text, code_text)
+}
+
+pub fn execute_generate_front_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
+    let (title_text, title2_text, year_text, volume_text, cat_text, code_text) = get_cover_text_vals(st);
 
     let primary = if st.cover_color_primary.trim().is_empty() { "#0072bc" } else { st.cover_color_primary.trim() };
     let accent = if st.cover_color_accent.trim().is_empty() { "#f5ab19" } else { st.cover_color_accent.trim() };
@@ -1059,6 +1061,177 @@ pub fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<S
     } else {
         Ok(format!("Cover page generated successfully ({sname})"))
     }
+}
+
+/// Dimensions of the first page (or standard A4 default if no document is open).
+pub(crate) fn get_cover_page_dimensions(app: &DesignApp) -> (f64, f64) {
+    let Some(s) = app.session.active() else { return (595.2755905511812, 841.8897637795277) };
+    let Some(sp) = s.doc.spreads.first() else { return (595.2755905511812, 841.8897637795277) };
+    let Some(p) = sp.pages.first() else { return (595.2755905511812, 841.8897637795277) };
+    (p.width, p.height)
+}
+
+/// Apply the AI Base cover template (`100_ai_base.designcraft`) with the generated background image.
+pub fn apply_ai_cover_result(app: &mut DesignApp, st: &PubgenState, bg_path: &str) -> Result<String, String> {
+    let preset = super::ai_cover::preset(st.cover_style).ok_or_else(|| format!("Unsupported AI cover style: {}", st.cover_style))?;
+    let palette = preset.palettes.get(st.cover_ai_palette).unwrap_or(&preset.palettes[0]);
+
+    let tpl_path = "assets/templates/covers/100_ai_base.designcraft";
+    let tpl_file = resolve_template_path(tpl_path).ok_or_else(|| format!("AI cover template not found: {tpl_path}"))?;
+    let tpl_path_str = tpl_file.to_string_lossy().to_string();
+
+    let (title_text, title2_text, year_text, volume_text, cat_text, code_text) = get_cover_text_vals(st);
+    let agency_text = if st.cover_agency_text.trim().is_empty() { "BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG" } else { st.cover_agency_text.trim() };
+    let logo = resolve_cover_image(if st.cover_image_logo.trim().is_empty() { "outputs/bps_logo.png" } else { st.cover_image_logo.trim() });
+
+    let primary = if st.cover_color_primary.trim().is_empty() { palette.primary } else { st.cover_color_primary.trim() };
+    let accent = if st.cover_color_accent.trim().is_empty() { palette.accent } else { st.cover_color_accent.trim() };
+    let dark = if st.cover_color_dark.trim().is_empty() { palette.dark } else { st.cover_color_dark.trim() };
+
+    let mut text_slots = serde_json::Map::new();
+    text_slots.insert("title".into(), json!(title_text));
+    text_slots.insert("title#2".into(), json!(title2_text));
+
+    let title_en_candidate = if !st.cover_title_en.trim().is_empty() {
+        st.cover_title_en.trim()
+    } else if st.translate_with_ai {
+        st.translations.get(title_text.trim()).map(String::as_str).unwrap_or("")
+    } else {
+        ""
+    };
+    if st.bilingual_output
+        && !title_en_candidate.is_empty()
+        && !title2_text.eq_ignore_ascii_case(title_en_candidate)
+        && !title2_text.to_lowercase().contains(&title_en_candidate.to_lowercase())
+    {
+        text_slots.insert("title_en".into(), json!(title_en_candidate));
+    }
+    text_slots.insert("year".into(), json!(year_text));
+    text_slots.insert("volume".into(), json!(volume_text));
+    text_slots.insert("catalogue".into(), json!(cat_text));
+    text_slots.insert("code".into(), json!(code_text));
+    text_slots.insert("agency".into(), json!(agency_text));
+
+    let mut apply_params = json!({
+        "path": tpl_path_str,
+        "before": 0,
+        "slots": {
+            "text": text_slots,
+            "image": {
+                "background": bg_path,
+                "logo": logo,
+            }
+        },
+        "palette": {
+            "Primary": primary,
+            "Accent": accent,
+            "Dark": dark,
+        }
+    });
+    if !st.doc_language.trim().is_empty() {
+        apply_params["lang"] = json!(st.doc_language.trim());
+    }
+
+    app.run("template.page.apply", apply_params).map_err(|e| format!("Failed to apply AI cover template: {e}"))?;
+
+    crate::canvas::go_to_page(app, 0);
+
+    // Clean up redundant title_en if empty or duplicate
+    let _ = app.session.edit(|doc, _| {
+        let mut title_en_stories = Vec::new();
+        let mut redundant_items = Vec::new();
+        if let Some(sp) = doc.spreads.first() {
+            for item in &sp.items {
+                if item.label.starts_with("#slot:text:title_en") || item.name.starts_with("#slot:text:title_en") {
+                    if let designcraft_doc::Content::Text(tf) = &item.content
+                        && let Some(story) = doc.story(tf.story)
+                    {
+                        if story.text.trim().is_empty() || title2_text.eq_ignore_ascii_case(story.text.trim()) {
+                            redundant_items.push(item.id);
+                        } else {
+                            title_en_stories.push(tf.story);
+                        }
+                    } else {
+                        redundant_items.push(item.id);
+                    }
+                }
+            }
+        }
+        if let Some(sp) = doc.spreads.first_mut() {
+            let sp = std::sync::Arc::make_mut(sp);
+            if let Some(pg) = sp.pages.first_mut() {
+                pg.margins = designcraft_doc::Margins::uniform(0.0);
+                pg.local_margins = true;
+            }
+            if !redundant_items.is_empty() {
+                sp.items.retain(|it| !redundant_items.contains(&it.id));
+            }
+            sp.relayout();
+        }
+        for sid in title_en_stories {
+            if let Some(story) = doc.story_mut(sid) {
+                for c in &mut story.chars {
+                    c.format.over.font_style = Some("Italic".to_string());
+                }
+            }
+        }
+        Ok(())
+    });
+
+    let sname = format!("AI {}", preset.name);
+    if st.cover_include_inside_back {
+        execute_generate_inside_cover(app)?;
+        execute_generate_back_cover(app, st)?;
+        ensure_back_cover_at_end(app);
+        Ok(format!("Cover pages generated successfully: Front Cover, Inside Cover, Back Cover ({sname})"))
+    } else {
+        Ok(format!("Cover page generated successfully ({sname})"))
+    }
+}
+
+/// Trigger cover generation from the UI: style < 100 runs synchronously; style >= 100 spawns CoverJob.
+pub fn trigger_generate_cover(app: &mut DesignApp, st: &mut PubgenState, ctx: egui::Context) {
+    if super::ai_cover::preset_index(st.cover_style).is_none() {
+        let res = execute_generate_cover(app, st);
+        st.cover_status = Some(match res {
+            Ok(msg) => (msg, true),
+            Err(err) => (err, false),
+        });
+        return;
+    }
+
+    let Some(preset) = super::ai_cover::preset(st.cover_style) else {
+        st.cover_status = Some((format!("Unsupported cover style: {}", st.cover_style), false));
+        return;
+    };
+
+    if !imagegen::compiled_in() {
+        st.cover_status = Some(("AI Base covers need a build with --features ai-cover-online.".into(), false));
+        return;
+    }
+
+    if !super::ai_cover::AiCoverSetupDialog::key_configured(app) {
+        st.cover_status = Some(("AI Base needs a Cloudflare account: click AI Setup\u{2026} above to set up.".into(), false));
+        return;
+    }
+
+    let palette = preset.palettes.get(st.cover_ai_palette).unwrap_or(&preset.palettes[0]);
+    let prompt = super::ai_cover::build_prompt(preset, palette);
+    let neg_prompt = imagegen::GenRequest::clean_cover_negative_prompt();
+    let (pw, ph) = get_cover_page_dimensions(app);
+    let aspect = super::ai_cover_job::aspect_for_dimensions(pw, ph);
+    let req = imagegen::GenRequest::new(prompt, neg_prompt, aspect, 18);
+
+    let account_id = app.session.prefs.cover_ai_cloudflare_account_id.clone();
+    let token = app.session.prefs.cover_ai_cloudflare_api_token.clone();
+
+    let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let filename = format!("ai_cover_{}_{}_{}.png", st.cover_style, st.cover_ai_palette, timestamp);
+    let output_path = std::path::PathBuf::from("outputs").join("ai_covers").join(filename);
+
+    let job = super::ai_cover_job::CoverJob::spawn(&account_id, &token, req, output_path, ctx);
+    st.cover_job = Some(job);
+    st.cover_status = Some(("Generating AI cover\u{2026}".into(), true));
 }
 pub(super) fn add_cover_text_frame(
     app: &mut DesignApp,
@@ -1659,5 +1832,121 @@ pub(crate) mod tests {
         let active2 = app.session.active().unwrap();
         assert_eq!(active2.doc.page_count(), 6, "Now 6 pages total");
         assert_eq!(find_back_cover_page(&active2.doc), Some(5), "Back cover must move to the last page (page 5)");
+    }
+
+    #[test]
+    fn test_ai_cover_branch_dispatch() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // 1. Procedural style (< 100) generates synchronously
+        let mut st_proc = PubgenState { cover_style: 0, ..Default::default() };
+        let ctx = egui::Context::default();
+        trigger_generate_cover(&mut app, &mut st_proc, ctx.clone());
+        assert!(st_proc.cover_job.is_none(), "Procedural cover should not spawn CoverJob");
+        let (msg, ok) = st_proc.cover_status.as_ref().unwrap();
+        assert!(*ok, "Procedural generation should succeed: {msg}");
+
+        // 2. AI style without credentials (or without feature) reports actionable error
+        let mut st_ai = PubgenState { cover_style: super::ai_cover::AI_STYLE_BASE, ..Default::default() };
+        app.session.prefs.cover_ai_cloudflare_account_id.clear();
+        app.session.prefs.cover_ai_cloudflare_api_token.clear();
+        trigger_generate_cover(&mut app, &mut st_ai, ctx.clone());
+        assert!(st_ai.cover_job.is_none());
+        let (err_msg, ok) = st_ai.cover_status.as_ref().unwrap();
+        assert!(!*ok);
+        if !imagegen::compiled_in() {
+            assert!(err_msg.contains("ai-cover-online"), "Should report missing feature: {err_msg}");
+        } else {
+            assert!(err_msg.contains("AI Setup"), "Should guide user to AI Setup: {err_msg}");
+
+            // 3. AI style with credentials configured spawns CoverJob
+            app.session.prefs.cover_ai_cloudflare_account_id = "test_acct".into();
+            app.session.prefs.cover_ai_cloudflare_api_token = "test_tok".into();
+            trigger_generate_cover(&mut app, &mut st_ai, ctx);
+            assert!(st_ai.cover_job.is_some(), "Configured AI cover must spawn CoverJob");
+            let (status_msg, ok) = st_ai.cover_status.as_ref().unwrap();
+            assert!(*ok);
+            assert!(status_msg.contains("Generating AI cover"));
+        }
+    }
+
+    #[test]
+    fn test_ai_cover_cancel_keeps_document_unchanged() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let initial_pages = app.session.active().unwrap().doc.page_count();
+        let initial_items = app.session.active().unwrap().doc.spreads[0].items.len();
+
+        let tmp = tempfile::tempdir().unwrap();
+        let out_file = tmp.path().join("cover.png");
+        let fake_provider = Box::new(super::ai_cover_job::FakeImageGenProvider(|_req, _cancel| Ok(vec![1, 2, 3])));
+        let req = imagegen::GenRequest::new("prompt", "", imagegen::Aspect::Iso, 18);
+        let ctx = egui::Context::default();
+
+        let job = super::ai_cover_job::CoverJob::spawn_with_provider(fake_provider, req, out_file.clone(), ctx);
+        job.cancel();
+
+        let mut st = PubgenState { cover_style: super::ai_cover::AI_STYLE_BASE, cover_job: Some(job), ..Default::default() };
+
+        // Poll job until worker finishes processing cancel
+        if let Some(mut j) = st.cover_job.take() {
+            let start = std::time::Instant::now();
+            while !j.finished && start.elapsed().as_secs() < 3 {
+                let _ = j.poll(&mut st);
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            assert!(j.finished);
+            assert!(j.completed_path.is_none());
+            st.cover_job = None;
+        }
+
+        // Verify document structure remains entirely untouched
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), initial_pages, "Page count must stay unchanged after cancel");
+        assert_eq!(active.doc.spreads[0].items.len(), initial_items, "Items count must stay unchanged after cancel");
+        assert!(!out_file.exists(), "Cancelled job must not leave output image");
+    }
+
+    #[test]
+    fn test_ai_cover_apply_result_success() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        // Write a tiny 1x1 valid PNG for placement
+        let tmp = tempfile::tempdir().unwrap();
+        let png_path = tmp.path().join("test_bg.png");
+        // Minimal 1x1 PNG bytes
+        let png_bytes = [
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+            0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01,
+            0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        ];
+        std::fs::write(&png_path, &png_bytes).unwrap();
+
+        let st = PubgenState {
+            cover_style: super::ai_cover::AI_STYLE_BASE, // Retro Waves
+            cover_ai_palette: 0,                         // Warm Terracotta
+            cover_title: "AI KABUPATEN TEST".into(),
+            cover_title2: "SUBTITLE LINE 2".into(),
+            cover_year: "2027".into(),
+            ..Default::default()
+        };
+
+        let res = apply_ai_cover_result(&mut app, &st, &png_path.to_string_lossy());
+        assert!(res.is_ok(), "Applying AI cover template should succeed: {res:?}");
+        assert!(res.as_ref().unwrap().contains("AI Retro Waves"));
+
+        let active = app.session.active().unwrap();
+        // Page 0 should be the front cover
+        let sp0 = &active.doc.spreads[0];
+        let texts: Vec<String> = active.doc.stories.values().map(|s| s.text.clone()).collect();
+        assert!(texts.iter().any(|t| t.contains("AI KABUPATEN TEST")), "Should contain title: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("SUBTITLE LINE 2")), "Should contain title2: {texts:?}");
+        assert!(texts.iter().any(|t| t.contains("20") || t.contains("27") || t.contains("2027")), "Should contain year: {texts:?}");
+
+        // Background graphic frame exists on spread 0
+        let has_bg_slot = sp0.items.iter().any(|it| it.label.contains("background") || it.name.contains("background"));
+        assert!(has_bg_slot, "Background frame must be present on front cover spread");
     }
 }

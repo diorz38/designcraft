@@ -485,7 +485,6 @@ pub(crate) fn card1_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenSta
 }
 
 #[allow(dead_code)]
-
 pub(crate) fn card2_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     // Sheet table selector (if populated by Excel conversion)
     if !st.card2_sheet_tables.is_empty() {
@@ -636,7 +635,6 @@ pub(crate) fn card2_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenSta
 }
 
 #[allow(dead_code)]
-
 pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     // 1. Template Style with Hover Thumbnail Preview
     ui.horizontal(|ui| {
@@ -1060,12 +1058,40 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
     // Action button
     let fw = full_width(ui);
     let btn_label = if st.cover_include_inside_back { "Generate Cover Pages (Front, Inside, Back)" } else { "Generate Cover Page" };
-    let gen_btn = outline_button(ui, btn_label, fw).on_hover_text("Automatically inserts cover pages and generates layout");
+    let is_ai = super::ai_cover::preset_index(st.cover_style).is_some();
+    let job_running = st.cover_job.as_ref().is_some_and(|j| !j.finished);
+
+    let (btn_enabled, disabled_hint) = if job_running {
+        (false, "Generating AI cover in background\u{2026}")
+    } else if is_ai && !designcraft_imagegen::compiled_in() {
+        (false, "This build has no online image generation (compile with --features ai-cover-online)")
+    } else if is_ai && !super::ai_cover::AiCoverSetupDialog::key_configured(app) {
+        (false, "AI Base needs a Cloudflare account: click AI Setup\u{2026} above to set up.")
+    } else {
+        (true, "")
+    };
+
+    let gen_btn = ui
+        .add_enabled_ui(btn_enabled, |ui| outline_button(ui, btn_label, fw))
+        .inner
+        .on_hover_text("Automatically inserts cover pages and generates layout");
+
+    let gen_btn = if !btn_enabled && !disabled_hint.is_empty() { gen_btn.on_disabled_hover_text(disabled_hint) } else { gen_btn };
+
     if gen_btn.clicked() {
-        let res = execute_generate_cover(app, st);
-        st.cover_status = Some(match res {
-            Ok(msg) => (msg, true),
-            Err(err) => (err, false),
+        covers::trigger_generate_cover(app, st, ui.ctx().clone());
+    }
+
+    if let Some(job) = &st.cover_job
+        && !job.finished
+    {
+        ui.horizontal(|ui| {
+            ui.add(egui::Spinner::new().size(12.0));
+            ui.label(RichText::new("Generating AI cover\u{2026}").size(10.5).color(t.text));
+            if ui.button("Cancel").on_hover_text("Cancel AI cover generation").clicked() {
+                job.cancel();
+                st.cover_status = Some(("AI cover generation cancelled".into(), false));
+            }
         });
     }
 

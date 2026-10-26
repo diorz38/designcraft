@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::ai;
 use super::ai_cover;
+use super::ai_cover_job;
 use super::locale::Locale;
 
 pub(super) fn default_file_col() -> usize {
@@ -390,6 +391,9 @@ pub struct PubgenState {
     /// Last AI setup/generation error shown next to the setup button.
     #[serde(skip)]
     pub cover_ai_error: Option<String>,
+    /// Running AI Base cover generation job.
+    #[serde(skip)]
+    pub cover_job: Option<ai_cover_job::CoverJob>,
 
     // Card: Header & Footer Template (between Cover and Quick Actions)
     #[serde(default = "default_hf_style")]
@@ -553,6 +557,7 @@ impl Default for PubgenState {
             cover_ai_palette: 0,
             cover_ai_dialog: None,
             cover_ai_error: None,
+            cover_job: None,
             excel_auto_generate: true,
             excel_had_cover: false,
             header_status: None,

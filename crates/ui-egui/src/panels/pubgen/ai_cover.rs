@@ -265,16 +265,22 @@ fn palettes_of(cover_style: usize, palette_idx: usize) -> Option<&'static AiPale
     preset(cover_style).and_then(|p| p.palettes.get(palette_idx))
 }
 
-/// The Generate Cover Page entry for AI styles. Phase 4 replaces this with the
-/// background job; until then it fails with a clear, actionable message instead of
-/// the procedural paths' "Unsupported cover style".
+/// The Generate Cover Page entry for AI styles.
 pub(crate) fn execute_generate_ai_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
     match preset(st.cover_style) {
-        Some(_) if !imagegen::compiled_in() => Err("AI Base covers need a build with --features ai-cover-online.".into()),
-        Some(_) if !AiCoverSetupDialog::key_configured(app) => {
-            Err("AI Base needs a Cloudflare account: pick AI Setup\u{2026} under Cover Images and verify your key.".into())
+        Some(p) => {
+            if !imagegen::compiled_in() {
+                return Err("AI Base covers need a build with --features ai-cover-online.".into());
+            }
+            if !AiCoverSetupDialog::key_configured(app) {
+                return Err("AI Base needs a Cloudflare account: pick AI Setup\u{2026} under Cover Images and verify your key.".into());
+            }
+            let candidate = format!("outputs/ai_covers/ai_cover_{}_{}.png", st.cover_style, st.cover_ai_palette);
+            if std::path::Path::new(&candidate).is_file() {
+                return super::covers::apply_ai_cover_result(app, st, &candidate);
+            }
+            Err(format!("AI Base style 'AI {}' generates in background via CoverJob.", p.name))
         }
-        Some(_) => Err("AI Base generation is not wired in this build yet \u{2014} the online background job lands next.".into()),
         None => Err(format!("Unsupported cover style: {}", st.cover_style)),
     }
 }

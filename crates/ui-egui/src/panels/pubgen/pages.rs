@@ -6,11 +6,6 @@ use super::*;
 // CSV File Ingestion (RFC 4180 parsing with quotes and delimiter sniffing)
 // ---------------------------------------------------------------------------
 
-/// Supports:
-/// - Direct file path (as-is or with `.designcraft`)
-/// - Path relative to the catalog file's directory
-/// - Path relative to `assets/templates/` or any of its subfolders (`dividers/`, `covers/`, etc.)
-/// - Template ID match from scanned template catalog (e.g. `001_ulasan_chapter` or fuzzy stem)
 /// Resolve a template path or template ID from a catalog specification.
 ///
 /// Supports:
@@ -151,8 +146,7 @@ pub fn resolve_template_path_spec(catalog_path: &str, spec: &str) -> Option<Stri
     None
 }
 
-/// The number of paragraphs the TOC would collect for `style` right now.
-
+/// Post-process an applied template page: margins, text styles, and narrative styling.
 fn post_process_template_applied_page(
     app: &mut DesignApp,
     st: &PubgenState,

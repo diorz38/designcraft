@@ -22,6 +22,7 @@ pub use locale::Locale;
 
 pub mod ai;
 pub mod ai_cover;
+pub mod ai_cover_job;
 
 mod cover_art;
 mod covers;
@@ -130,6 +131,26 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
             st.ai_table_targets_batch.clear();
         } else {
             st.translate_job = Some(job);
+        }
+    }
+
+    // AI cover generation job poll
+    if let Some(mut job) = st.cover_job.take() {
+        let ok = job.poll(&mut st);
+        if job.finished {
+            st.cover_job = None;
+            if ok && let Some(bg_path) = job.completed_path.take() {
+                let path_str = bg_path.to_string_lossy().to_string();
+                let res = covers::apply_ai_cover_result(app, &st, &path_str);
+                st.cover_status = Some(match res {
+                    Ok(msg) => (msg, true),
+                    Err(err) => (err, false),
+                });
+                ui.data_mut(|d| d.insert_temp(state_id, st));
+                return;
+            }
+        } else {
+            st.cover_job = Some(job);
         }
     }
     ai::dialog_ui(app, &mut st, ui);

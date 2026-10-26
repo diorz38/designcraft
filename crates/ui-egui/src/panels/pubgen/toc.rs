@@ -10,10 +10,10 @@ pub const TOC_KINDS: [&str; 4] = ["TOC Entry", "TOC Table", "TOC Chart", "TOC Pa
 /// or publication-note page never shows up in it.
 pub const TOC_NARRATIVE_STYLE: &str = "TOC Chapter";
 
-/// The English twin title of a Dual Lang narrative page ("Chapter 01 Geography"): tagged with
-/// this style at generation, so the paragraph TOC pairs it with the Indonesian chapter row
-/// ("BAB 01 Geografi / Geography") instead of listing it as a page of its own. Only tagged when
-/// the pairing checkbox is on with the Dual Lang toggle.
+// The English twin title of a Dual Lang narrative page ("Chapter 01 Geography"): tagged with
+// this style at generation, so the paragraph TOC pairs it with the Indonesian chapter row
+// ("BAB 01 Geografi / Geography") instead of listing it as a page of its own. Only tagged when
+// the pairing checkbox is on with the Dual Lang toggle.
 
 /// The words the first text box on a page must start with for each TOC style; none lists every
 /// paragraph of the tagged style (the original behaviour). A paragraph list takes chapter pages
@@ -1170,6 +1170,7 @@ pub(crate) const TOC_CONT_HEADER_H: f64 = 18.0;
 pub(crate) const TOC_CONT_HEADER_GAP: f64 = 6.0;
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn remove_toc_continuation_headers(app: &mut DesignApp) {
     let _ = app.session.edit(|doc, _| {
         let mut to_remove = Vec::new();

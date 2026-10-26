@@ -127,7 +127,7 @@ section renders (kittest snapshot if panel tests exist).
 **Acceptance:** user can select AI style without key (button disabled with hint), set up key
 via dialog, palette pills switch.
 
-## Phase 4 — Single-cover generation flow
+## Phase 4 — Single-cover generation flow *(done)*
 
 **Scope.**
 
