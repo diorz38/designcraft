@@ -1,0 +1,18 @@
+[package]
+name = "designcraft-imagegen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+serde_json = { workspace = true, optional = true }
+# Cloudflare Workers AI REST shares one TLS stack with the translate online client.
+ureq = { version = "2", optional = true, default-features = false, features = ["tls"] }
+
+[features]
+default = []
+# Cloudflare Workers AI image models (SDXL). Stub without it; never enabled on wasm.
+cloudflare = ["dep:ureq", "dep:serde_json"]

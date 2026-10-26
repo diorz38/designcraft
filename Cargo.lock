@@ -1266,6 +1266,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "designcraft-imagegen"
+version = "0.12.0-pubgen.0.7.5"
+dependencies = [
+ "serde_json",
+ "thiserror 2.0.21",
+ "ureq 2.12.1",
+]
+
+[[package]]
 name = "designcraft-images"
 version = "0.12.0-pubgen.0.7.5"
 dependencies = [
