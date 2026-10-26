@@ -83,7 +83,7 @@ pub const AI_PRESETS: &[AiPreset] = &[
     },
     AiPreset {
         name: "Geometric Business",
-        style_words: "flat vector 2D modern geometric business wallpaper, large angled diagonal thick rounded stripes across, floating rounded hexagons, geometric hexagon accent frames, smooth gradient color overlays, clean blank copy space, sharp crisp vector edges, flat graphic design, continuous panoramic flow",
+        style_words: "flat vector 2D modern geometric business wallpaper, dramatic scale contrast with radical hexagon size differences, one massive prominent hero hexagon frame, floating medium hexagons, and tiny delicate micro-hexagon accents, large angled diagonal thick rounded stripes across, smooth gradient color overlays, clean blank copy space, sharp crisp vector edges, flat graphic design, continuous panoramic flow",
         description: "AI-generated modern geometric hexagons and diagonal stripes under the house typography; the accent band follows the chosen palette.",
         palettes: AI_PALETTES,
     },
@@ -95,13 +95,13 @@ pub const AI_PRESETS: &[AiPreset] = &[
     },
     AiPreset {
         name: "Dynamic Waves Spread",
-        style_words: "abstract flowing dynamic wave ribbons, smooth curved gradient shapes, clean solid background, flat 2D graphic design, minimalist corporate aesthetic, high resolution vector illustration, continuous flowing curves",
+        style_words: "flat vector 2D graphic design, dramatic scale contrast with radical size differences between shapes, one massive broad sweeping corporate curved color panel dominating the spread, paired with slim secondary accent ribbons and small delicate floating geometric accent marks, sharp crisp vector edges, expansive clean blank copy space, continuous panoramic flow",
         description: "AI-generated double A4 spread of corporate waves with central spine; front cover on right, back cover on left.",
         palettes: AI_PALETTES,
     },
     AiPreset {
         name: "Vibrant S-Curve Spread",
-        style_words: "flat vector graphic, sweeping curved bands, vibrant wavy gradient ribbon swooping across the composition in an elegant S-curve, geometric accent fields with fine diagonal texture, 2D graphic design, smooth gradients, sharp clean edges, continuous panoramic flow",
+        style_words: "flat vector 2D graphic design, extreme scale contrast and radical shape size hierarchy, one gigantic broad sweeping S-curve ribbon band flowing across the spread, contrasted with narrow sharp accent ribbons and small minimalist geometric accents, smooth gradient overlays, sharp clean vector contour edges, generous blank negative copy space, continuous panoramic flow",
         description: "AI-generated double A4 spread featuring vibrant S-curve ribbons and geometric accent fields across front and back covers.",
         palettes: AI_PALETTES,
     },
@@ -390,8 +390,8 @@ mod tests {
         let pal_teal = &AI_PALETTES[5];
         assert_eq!(pal_teal.name, "Teal Lime");
         let prompt = build_prompt(p_geo, pal_teal);
-        assert!(prompt.contains("geometric business"), "{prompt}");
-        assert!(prompt.contains("floating rounded hexagons"), "{prompt}");
+        assert!(prompt.contains("hero hexagon frame"), "{prompt}");
+        assert!(prompt.contains("floating medium hexagons"), "{prompt}");
         assert!(prompt.contains("deep teal green"), "{prompt}");
         assert!(prompt.contains("chartreuse lime green"), "{prompt}");
         assert!(!prompt.contains("checkerboard"), "{prompt}");

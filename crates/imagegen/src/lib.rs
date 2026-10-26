@@ -118,6 +118,8 @@ impl GenRequest {
          brochure mockup, folded paper, standing card, desk, table, presentation board, collage, multi-panel, split-screen, \
          seam, divider line, gutter, picture frame, framing, borders, margins, textured paper, checkerboard, transparent grid, \
          grey and white grid, photo placeholder, template, booklet, brochure layout, document template, \
+         uniform shape size, equal sized shapes, repetitive tiling, monotonous pattern, wallpaper texture, \
+         liquid marble, fluid acrylic, paint swirls, dense ripples, messy zebra stripes, \
          clipping artifacts, busy details, author name, signature"
             .to_string()
     }
