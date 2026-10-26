@@ -183,8 +183,7 @@ pub fn current() -> Option<Arc<AutomationRoots>> {
 }
 
 /// `path` without Windows' `\\?\` prefix (which `canonicalize` adds), for people to read.
-/// The path without Windows' `\\?\` (and `\\?\UNC\`) prefix: what people read. No-op elsewhere.
-pub fn plain(path: PathBuf) -> PathBuf {
+fn plain(path: PathBuf) -> PathBuf {
     if !cfg!(windows) {
         return path;
     }
@@ -301,7 +300,19 @@ mod tests {
     }
 
     fn s(p: PathBuf) -> String {
-        p.to_string_lossy().into_owned()
+        let text = p.to_string_lossy();
+        if !cfg!(windows) {
+            return text.into_owned();
+        }
+        // A canonical path on Windows has a `\\?\` prefix, under which `..` is not a name:
+        // send ordinary paths, as the roots show them.
+        if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{rest}");
+        }
+        match text.strip_prefix(r"\\?\") {
+            Some(rest) => rest.to_owned(),
+            None => text.into_owned(),
+        }
     }
 
     #[test]
@@ -413,10 +424,10 @@ mod tests {
     /// siblings `in2` and `scratch2` whose names start like a root's, and a file in their parent.
     /// The folder is returned resolved (`/var` is `/private/var` on macOS), as the roots show it, so
     /// a path that passes only because it was resolved is the case being tested and nothing else.
+    /// It has no `\\?\` prefix on Windows, where the roots are shown without it and `..` is not
+    /// resolved in a path that has it.
     fn several(name: &str) -> (PathBuf, Arc<AutomationRoots>) {
         let (base, _) = folders(name);
-        // Resolved, as the roots show themselves (`/var` is `/private/var` on macOS, and Windows'
-        // `\\?\` prefix is stripped, so the expectations read like `describe`'s output).
         let base = plain(std::fs::canonicalize(base).unwrap());
         for d in ["shared", "scratch", "scratch2"] {
             std::fs::create_dir_all(base.join(d)).unwrap();

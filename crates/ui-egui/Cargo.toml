@@ -10,7 +10,9 @@ description = "DesignCraft egui frontend (InDesign-style UI); swappable — noth
 workspace = true
 
 [dependencies]
-craft-ui = { workspace = true }
+craft-ui = { workspace = true, features = ["native-windows"] }
+craft-window = { workspace = true }
+craft-keymap = { workspace = true }
 designcraft-geom = { workspace = true }
 designcraft-color = { workspace = true }
 designcraft-doc = { workspace = true }
@@ -22,10 +24,13 @@ designcraft-textimport = { workspace = true }
 designcraft-engine = { workspace = true }
 designcraft-imagegen = { workspace = true }
 designcraft-translate = { workspace = true }
+craft-prepress = { workspace = true }
+# The UI draws monochrome icon glyphs from egui's bundled emoji faces (☰, ⚠, 📋); 0.37 moved
+# them behind this feature. They stay bundled copies of OSI/CC0 faces from `epaint_default_fonts`.
+egui = { workspace = true, features = ["monochrome_emoji_fonts"] }
+web-time = { workspace = true }
+# Unicode bidi classes are used only to bypass the label cache for ordinary LTR text.
 unicode-bidi = { workspace = true }
-unicode-bidi-mirroring = { workspace = true }
-unicode-segmentation = { workspace = true }
-egui = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
@@ -34,6 +39,9 @@ quick-xml = { workspace = true }
 image = { workspace = true }
 
 [dev-dependencies]
+# egui 0.37 no longer enables `default_fonts` for library consumers; egui_kittest disables
+# egui's defaults, and package-scoped UI tests do not build the app binary.
+egui = { workspace = true, features = ["default_fonts", "monochrome_emoji_fonts"] }
 tempfile = { workspace = true }
 designcraft-idml = { workspace = true }
 zip = { workspace = true }
@@ -52,3 +60,7 @@ ai-translate = ["designcraft-translate/nllb"]
 ai-translate-online = ["designcraft-translate/groq"]
 # AI Base cover generation for the Pubgen panel (docs/plans/2026-10-26-ai-base-cover-pubgen.md).
 ai-cover-online = ["designcraft-imagegen/cloudflare"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+craft-update = { workspace = true }
+

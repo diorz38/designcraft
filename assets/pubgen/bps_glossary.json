@@ -1,0 +1,19 @@
+{
+  "exact_mappings": {
+    "Kecamatan": "Subdistrict",
+    "Kabupaten": "Regency",
+    "Desa": "Village",
+    "Kelurahan": "Urban Village",
+    "Luas Wilayah": "Total Area",
+    "Kepadatan Penduduk": "Population Density",
+    "Jenis Kelamin": "Sex",
+    "Laki-laki": "Male",
+    "Perempuan": "Female",
+    "PDRB": "GRDP",
+    "Laju Pertumbuhan": "Growth Rate",
+    "Tahun": "Year",
+    "Sumber": "Source",
+    "Catatan": "Note",
+    "Keterangan": "Note"
+  }
+}
