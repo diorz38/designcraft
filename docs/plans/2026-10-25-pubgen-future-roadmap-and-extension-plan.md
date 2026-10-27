@@ -3,7 +3,7 @@
 - **Document:** `docs/plans/2026-10-25-pubgen-future-roadmap-and-extension-plan.md`
 - **Date:** 2026-10-25
 - **Authors:** diorz38 & Antigravity Agent
-- **Status:** Strategic Roadmap & Engineering Specification
+- **Status:** Strategic Roadmap & Engineering Specification — **implementation status verified 2026-10-27** (each pillar carries a status line; summary in §1.1 and §9)
 - **Target Subsystem:** `crates/ui-egui/src/panels/pubgen/`, `crates/engine/`, `crates/render/`
 
 ---
@@ -23,9 +23,25 @@ This document details the architectural specifications for the next seven major 
 6. **One-Click Dual Export Pipelines (Print-Ready PDF/X-4 vs. Web Distribution)**
 7. **Universal Publication Profiles & General-Purpose Extensibility (Beyond BPS)**
 
+### 1.1 Implementation Status Summary (verified 2026-10-27)
+
+| # | Pillar | Status | Where |
+| :--- | :--- | :--- | :--- |
+| 1 | Native Statistical Infographics & Vector Chart Engine | **Partial** — `CXX` sheets and bilingual chart titles work; charts are placed as raster images, not vectors | §2 |
+| 2 | Multi-Chapter Binder & Project Compiler | **Planned, not implemented** — mini-plan committed on `feature/pillar2-pubgen-binder` | §3 |
+| 3 | Statistical Layout Preflight / QA Audit | **Partial** — generic `preflight.run` covers overset, low DPI and links; no `PRF-*` rules or Pubgen audit UI | §4 |
+| 4 | BPS Statistical AI Assistant & Terminology Memory | **Implemented** 2026-10-27 | §5 |
+| 5 | Codebase Modularization | **Implemented (executed)** 2026-10-25 — flat modules | §6 |
+| 6 | One-Click Dual Export Pipelines | **Partial** — the PDF engine has PDF/X-4, CMYK, bleed/marks, bookmarks and hyperlinks; Pubgen print/web presets do not exist | §7 |
+| 7 | Universal Publication Profiles | **Not implemented** — no `PubgenProfile` or profile selector | §8 |
+
+Legend: **Implemented** = usable end to end with tests; **Partial** = the underlying capability exists but the pillar's Pubgen-facing workflow is missing; **Planned** = design only; **Not implemented** = no code.
+
 ---
 
 ## 2. Pillar 1: Native Statistical Infographics & Vector Chart Engine
+
+> **Status (2026-10-27): partially implemented — image placement only, no vector engine.** `CXX_XX` sheets are recognized (`is_chart_sheet` / `parse_chart_sheet_with_template` in `crates/ui-egui/src/panels/pubgen/excel.rs`) and become a chart page with a bilingual, partly italicised title; the graphic itself is a **raster image** resolved from the sheet's `file;…` row and placed in an image frame (`pages.rs`, chart branch; the generation summary reports `N chart image(s) placed`). What does **not** exist: the chart-type/data-range sheet schema (`bar_clustered`, `stacked`, `line`, `donut`), category/series parsing, vector emission as `Content::Shape` items, axis/grid/legend construction, and DIV-palette binding. Editors still draw charts externally and export PNG/JPG.
 
 ### 2.1 Problem Statement
 In official publications (*Kecamatan Dalam Angka*, *Provinsi Dalam Angka*), visual data summaries appear between the narrative reviews (`RXX`) and data tables (`XX_XX`). Currently, workbooks carry chart data in sheets named `C01`, `C02`, etc. Editors must generate charts externally in Microsoft Excel or Python, export them as static images, and manually place them into the publication.
@@ -75,6 +91,8 @@ PubGen will introduce a native vector charting engine that compiles Excel chart 
 ---
 
 ## 3. Pillar 2: Multi-Chapter Binder & Project Compiler ("Book" / Batch Mode)
+
+> **Status (2026-10-27): planned — not implemented.** The full design is committed on `feature/pillar2-pubgen-binder` as [`2026-10-27-pubgen-pillar2-binder-mini-plan.md`](2026-10-27-pubgen-pillar2-binder-mini-plan.md). No `pubgen_project.json` is read anywhere; Pubgen still converts and generates one workbook at a time. The engine does ship generic book support — `book.new/open/add/remove/styleSource/list/paginate/syncStyles/exportPdf` over `.dcbook` in `crates/engine/src/cmd/book.rs` — which gives continuous page numbers and style synchronisation across separate files, but it merges per-document PDFs rather than compiling one publication. The mini-plan deliberately compiles a **single `.designcraft`** (roman front matter, continuous Arabic body, grow-only two-pass TOC) instead of chaining `.dcbook`.
 
 ### 3.1 Problem Statement
 A complete municipal publication comprises 8 to 12 distinct chapters (`BAB_01_2025.xlsx` through `BAB_10_2025.xlsx`), plus overarching preliminary front matter (Cover, Halaman Judul, Kata Pengantar, Daftar Isi, Daftar Tabel, Daftar Grafik, Penjelasan Teknis). Currently, editors must open and generate each chapter workbook sequentially, then manually merge or balance page counts.
@@ -132,6 +150,8 @@ Introduce a publication project descriptor that groups chapter workbooks:
 ---
 
 ## 4. Pillar 3: Statistical Layout Preflight & Quality Assurance (QA Audit)
+
+> **Status (2026-10-27): partially covered by the generic preflight — the statistical rules and the Pubgen entry point are not implemented.** `preflight.run` (`crates/engine/src/cmd/preflight.rs`, Window › Output › Preflight) already reports overset and unplaced stories (`PRF-02`, and `PRF-01` for tables laid out as text stories), missing or low-resolution graphics (`PRF-06`, with a `minPpi` parameter), missing fonts/glyphs/links, empty text frames, and RGB content in print documents; the Preflight panel selects the offending item and jumps to its page. **Missing:** `PRF-03` missing `Sumber:`/`Catatan:`, `PRF-04` table-number sequence, `PRF-05` dual-language parity, `PRF-07` spine/bleed guard with the 5 mm spine exclusion, and the Pubgen **"Audit Publication"** button. No `PRF-` identifier exists in the codebase.
 
 ### 4.1 Purpose
 Before distributing or sending publications to offset printing, editorial teams perform tedious visual checks. The **PubGen Preflight Audit** automates statistical formatting compliance.
@@ -213,7 +233,7 @@ PubGen bundles an authoritative, editable terminology dictionary injected into t
 ### 6.1 Motivation & Technical Debt
 Currently, [`crates/ui-egui/src/panels/pubgen/mod.rs`](file:///f:/GitHub/designcraft/crates/ui-egui/src/panels/pubgen/mod.rs) exceeds 17,500 lines of Rust code. It houses UI rendering, state management, Excel conversions, table rendering, 13 cover styles, TOC parsing, and header/footer engines in a single file.
 
-> **Status (2026-10-25): executed.** `mod.rs` is a 198-line panel entrypoint (`show()` + wiring); the domain modules are `state`, `helpers`, `csv`, `themes`, `tables`, `pages`, `page_utils`, `toc`, `covers`, `header_footer`, `excel`, `widgets`, `ai`, `locale`, `cover_art`, `divider_art`, plus `testutil` for shared test helpers. The 154-test suite is distributed across the domain files. Executed as flat single files; the proposed `covers/`, `toc/`, `header_footer/` trees and `charts/`, `audit/` were not created. The compile-time A/B re-measurement was skipped — incremental-build benefit is implied by the split, not measured.
+> **Status (2026-10-25): executed; refreshed 2026-10-27.** `mod.rs` became a small panel entrypoint (`show()` + wiring); the domain modules are `state`, `helpers`, `csv`, `themes`, `tables`, `pages`, `page_utils`, `toc`, `covers`, `header_footer`, `excel`, `widgets`, `ai`, `locale`, `cover_art`, `divider_art`, plus `testutil` for shared test helpers. Since then the split grew with the AI-cover and Pillar 4 work: `ai_cover`, `ai_cover_job`, `summarize`, `thumbnails`. As of 2026-10-27 `mod.rs` is **345 lines** (it grew past the original 198 with glossary loading, job polling and the narrative-preview wiring) across **28,759 lines / 22 files**, with **234 `#[test]` functions**. Executed as flat single files; the proposed `covers/`, `toc/`, `header_footer/` trees and `charts/`, `audit/` were not created. The compile-time A/B re-measurement was skipped — incremental-build benefit is implied by the split, not measured.
 
 ### 6.2 Proposed Submodule Architecture
 Decompose `crates/ui-egui/src/panels/pubgen/` into decoupled domain modules:
@@ -262,6 +282,8 @@ crates/ui-egui/src/panels/pubgen/
 
 ## 7. Pillar 6: Dual Export & Distribution Pipelines
 
+> **Status (2026-10-27): engine capability implemented, Pubgen one-click workflow not implemented.** `file.exportPdf` already supports PDF/X-4 (`standard: "x4"`, CMYK output intent, conformance checks reported as warnings), PDF/X-1a:2003, PDF/A-2b, DeviceCMYK and spot inks, bleed boxes with crop/bleed marks (`PdfOptions { bleed, marks }`), image compression, tagged output, and — via `crates/pdf/src/links.rs` — hyperlink annotations plus a bookmark outline (`doc.hyperlinks`, `doc.bookmarks`). File › Export PDF… exposes those as presets (`crates/ui-egui/src/dialogs.rs`). **Missing for this pillar:** Pubgen-level **Print** and **Web** one-click presets (automatic 3 mm bleed extension, 300 DPI floor/downsampling), and a Pubgen builder that turns the generated TOC / list-of-tables / list-of-charts into PDF bookmarks and internal hyperlinks for the compiled publication.
+
 ### 7.1 One-Click "Print-Ready" PDF Profile (Offset Printing)
 - Conformance to **PDF/X-4 (ISO 15930-7)**.
 - RGB to **CMYK color profile conversion** for commercial printing presses.
@@ -279,6 +301,8 @@ crates/ui-egui/src/panels/pubgen/
 ---
 
 ## 8. Pillar 7: Universal Publication Profiles & General-Purpose Extensibility (Beyond BPS)
+
+> **Status (2026-10-27): not implemented.** There is no `PubgenProfile` type, no `pubgen_profile.json`, no profile selector, and no profile import/export anywhere under `crates/`, `assets/` or `docs/` — the only occurrence of these names is this document. Sheet routing (`is_chart_sheet` and `is_divider_sheet` in `excel.rs`, `is_ulasan_type` in `helpers.rs`), nomenclature (`locale.rs`) and BPS geometry remain hardcoded, so the core engine can only produce BPS-style publications today.
 
 ### 8.1 Problem Statement: Overcoming Single-Agency Bias
 PubGen’s initial iterations were tailored around BPS (*Badan Pusat Statistik*) requirements:
@@ -374,19 +398,21 @@ Each profile defines:
 
 ## 9. Implementation Roadmap & Milestones
 
-| Milestone | Deliverables | Estimated Effort |
-| :--- | :--- | :--- |
-| **M1: Modularization** | Split `mod.rs` into submodules (`covers/`, `tables/`, `toc/`, `header_footer/`). Zero functional regressions. | 2–3 days |
-| **M2: Preflight QA Audit** | Build `audit/` engine checking cell overset, missing sources, and image DPI. Add Audit button to UI. | 3–4 days |
-| **M3: Glossary Memory** | Implement `bps_glossary.json` injection into AI translation system prompt with user UI override editor. | 2 days — **✅ implemented 2026-10-27 (see §5)** |
-| **M4: Vector Chart Engine** | Implement native vector bar/line/donut chart rendering from `CXX` Excel sheets. | 5–7 days |
-| **M5: Batch Multi-Chapter Binder** | Implement project manifest and one-click compiler for entire `BAB_01`..`BAB_10` workbook directories. | 5–6 days |
-| **M6: Dual PDF Profiles** | Integrate one-click PDF/X-4 (print) and compact hyperlinked PDF (web) export presets. | 3–4 days |
-| **M7: Universal Profiles** | Decouple BPS-specific keywords into `PubgenProfile` schema; ship built-in profiles (Corporate, Academic, Catalog) + custom profile import/export. | 4–5 days |
+| Milestone | Deliverables | Estimated Effort | Status (2026-10-27) |
+| :--- | :--- | :--- | :--- |
+| **M1: Modularization** | Split `mod.rs` into submodules (`covers/`, `tables/`, `toc/`, `header_footer/`). Zero functional regressions. | 2–3 days | **✅ implemented 2026-10-25** — flat modules, not directories; `charts/` and `audit/` not created (see §6) |
+| **M2: Preflight QA Audit** | Build `audit/` engine checking cell overset, missing sources, and image DPI. Add Audit button to UI. | 3–4 days | **⏳ partial** — generic `preflight.run` covers overset and DPI; statistical rules and the Pubgen button are missing (see §4) |
+| **M3: Glossary Memory** | Implement `bps_glossary.json` injection into AI translation system prompt with user UI override editor. | 2 days | **✅ implemented 2026-10-27** (see §5) |
+| **M4: Vector Chart Engine** | Implement native vector bar/line/donut chart rendering from `CXX` Excel sheets. | 5–7 days | **⏳ partial** — `CXX` sheets become raster-image chart pages; no vector generation (see §2) |
+| **M5: Batch Multi-Chapter Binder** | Implement project manifest and one-click compiler for entire `BAB_01`..`BAB_10` workbook directories. | 5–6 days | **📝 planned** — mini-plan committed on `feature/pillar2-pubgen-binder`; no code yet (see §3) |
+| **M6: Dual PDF Profiles** | Integrate one-click PDF/X-4 (print) and compact hyperlinked PDF (web) export presets. | 3–4 days | **⏳ partial** — engine supports PDF/X-4, CMYK, marks, bookmarks, hyperlinks; Pubgen presets missing (see §7) |
+| **M7: Universal Profiles** | Decouple BPS-specific keywords into `PubgenProfile` schema; ship built-in profiles (Corporate, Academic, Catalog) + custom profile import/export. | 4–5 days | **❌ not implemented** (see §8) |
 
 ---
 
 ## 10. Conclusion
 
 Implementing this architectural roadmap elevates PubGen from a specialized municipal layout assistant to a world-class, multi-domain desktop publishing platform capable of delivering publication-grade output for governmental, institutional, academic, and enterprise organizations worldwide.
+
+As of 2026-10-27, two of the seven pillars are complete (AI terminology/summarizer and modularization), three are partially in place on top of general engine features (chart image placement, generic preflight, PDF engine export), one is fully designed and queued for implementation (Multi-Chapter Binder), and one is untouched (Universal Profiles). The remaining work is therefore incremental on existing foundations rather than greenfield.
 

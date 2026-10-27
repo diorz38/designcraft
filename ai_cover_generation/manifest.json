@@ -1,0 +1,73 @@
+{
+  "combos": 6,
+  "endpoint": "POST /client/v4/accounts/{account_id}/ai/run/@cf/black-forest-labs/flux-1-schnell",
+  "generated_unix": 1793082406,
+  "model": "@cf/black-forest-labs/flux-1-schnell",
+  "request_contract": {
+    "prompt": "<style words>, <palette words>, minimalist 2d vector cover design, sleek layout, flat vector art, no text",
+    "steps": 8
+  },
+  "results": [
+    {
+      "ok": true,
+      "palette": "Corporate Blue",
+      "png": "s100_p4__retro_waves__corporate_blue.png",
+      "preset": "Retro Waves",
+      "prompt": "minimalist mid-century modern abstract wallpaper, flowing organic waves and curving colour blocks, 1970s retro aesthetic, smooth flat vector shapes, continuous panoramic art, dark navy blue #0A1931, deep royal blue #003399, vibrant electric cyan blue #00A8FF, soft silver-gray #E0E6ED, clean solid white background, minimalist 2d vector cover design, sleek layout, flat vector art, no text",
+      "raw": "s100_p4__retro_waves__corporate_blue_raw.jpg",
+      "steps_sent": 8,
+      "style_id": 100
+    },
+    {
+      "ok": true,
+      "palette": "Forest Gold",
+      "png": "s100_p3__retro_waves__forest_gold.png",
+      "preset": "Retro Waves",
+      "prompt": "minimalist mid-century modern abstract wallpaper, flowing organic waves and curving colour blocks, 1970s retro aesthetic, smooth flat vector shapes, continuous panoramic art, deep forest green, moss, gold, cream, minimalist 2d vector cover design, sleek layout, flat vector art, no text",
+      "raw": "s100_p3__retro_waves__forest_gold_raw.jpg",
+      "steps_sent": 8,
+      "style_id": 100
+    },
+    {
+      "ok": true,
+      "palette": "Mono Slate",
+      "png": "s100_p2__retro_waves__mono_slate.png",
+      "preset": "Retro Waves",
+      "prompt": "minimalist mid-century modern abstract wallpaper, flowing organic waves and curving colour blocks, 1970s retro aesthetic, smooth flat vector shapes, continuous panoramic art, monochrome dark slate, charcoal, silver grey, near-black, minimalist 2d vector cover design, sleek layout, flat vector art, no text",
+      "raw": "s100_p2__retro_waves__mono_slate_raw.jpg",
+      "steps_sent": 8,
+      "style_id": 100
+    },
+    {
+      "ok": true,
+      "palette": "Pastel Dream",
+      "png": "s100_p1__retro_waves__pastel_dream.png",
+      "preset": "Retro Waves",
+      "prompt": "minimalist mid-century modern abstract wallpaper, flowing organic waves and curving colour blocks, 1970s retro aesthetic, smooth flat vector shapes, continuous panoramic art, soft pastel pink, lilac, baby blue, off-white, minimalist 2d vector cover design, sleek layout, flat vector art, no text",
+      "raw": "s100_p1__retro_waves__pastel_dream_raw.jpg",
+      "steps_sent": 8,
+      "style_id": 100
+    },
+    {
+      "ok": true,
+      "palette": "Warm Terracotta",
+      "png": "s100_p0__retro_waves__warm_terracotta.png",
+      "preset": "Retro Waves",
+      "prompt": "minimalist mid-century modern abstract wallpaper, flowing organic waves and curving colour blocks, 1970s retro aesthetic, smooth flat vector shapes, continuous panoramic art, terracotta red, mustard yellow, sage green, warm cream, minimalist 2d vector cover design, sleek layout, flat vector art, no text",
+      "raw": "s100_p0__retro_waves__warm_terracotta_raw.jpg",
+      "steps_sent": 8,
+      "style_id": 100
+    },
+    {
+      "ok": true,
+      "palette": "Forest Gold",
+      "png": "s101_p3__geometric_business__forest_gold.png",
+      "preset": "Geometric Business",
+      "prompt": "flat vector 2D modern geometric business wallpaper, dramatic scale contrast with radical hexagon size differences, one massive prominent hero hexagon frame, floating medium hexagons, and tiny delicate micro-hexagon accents, large angled diagonal thick rounded stripes across, smooth gradient color overlays, clean blank copy space, sharp crisp vector edges, flat graphic design, continuous panoramic flow, deep forest green, moss, gold, cream, minimalist 2d vector cover design, sleek layout, flat vector art, no text",
+      "raw": "s101_p3__geometric_business__forest_gold_raw.jpg",
+      "steps_sent": 8,
+      "style_id": 101
+    }
+  ],
+  "succeeded": 6
+}

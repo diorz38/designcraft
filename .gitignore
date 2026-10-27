@@ -18,7 +18,8 @@
 /.kilo/
 .env
 /ai_image_cover/
-/ai_cover_generation/
+/ai_cover_generation/old/
+/ai_cover_generation/test01/
 *.zip
 *.csv
 # The Terminology pane's starter sheet is documentation, not generated output.

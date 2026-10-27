@@ -1,0 +1,31 @@
+{
+  "body": {
+    "prompt": "minimalist mid-century modern abstract wallpaper, flowing organic waves and curving colour blocks, 1970s retro aesthetic, smooth flat vector shapes, continuous panoramic art, monochrome dark slate, charcoal, silver grey, near-black, minimalist 2d vector cover design, sleek layout, flat vector art, no text",
+    "steps": 8
+  },
+  "headers": {
+    "Authorization": "Bearer <redacted>",
+    "Content-Type": "application/json"
+  },
+  "local_only_never_sent": {
+    "negative_prompt": "text, typography, letters, words, numbers, fonts, lorem ipsum, dummy copy, watermarks, logo, icons, symbols, realistic photo, photograph, 3d render, perspective view, angled mockup, dropshadow, realistic book mockup, brochure mockup, folded paper, standing card, desk, table, presentation board, collage, multi-panel, split-screen, seam, divider line, gutter, picture frame, framing, borders, margins, textured paper, checkerboard, transparent grid, grey and white grid, photo placeholder, template, booklet, brochure layout, document template, uniform shape size, equal sized shapes, repetitive tiling, monotonous pattern, wallpaper texture, liquid marble, fluid acrylic, paint swirls, dense ripples, messy zebra stripes, clipping artifacts, busy details, author name, signature",
+    "note": "flux-1-schnell rejects width/height/seed/negative_prompt (error 5006); it always returns a 1024x1024 JPEG which the client center-crops to the target bucket",
+    "seed_from_title": 2948046907,
+    "seed_title": "Analisis Ketenagakerjaan Kabupaten Karawang 2026",
+    "steps_requested": 18,
+    "target_bucket": [
+      1216,
+      832
+    ]
+  },
+  "method": "POST",
+  "palette": "Mono Slate",
+  "palette_colors": {
+    "accent": "#9fb1bc",
+    "dark": "#1c252c",
+    "primary": "#53616c"
+  },
+  "preset": "Retro Waves",
+  "style_id": 100,
+  "url": "https://api.cloudflare.com/client/v4/accounts/<account_id>/ai/run/@cf/black-forest-labs/flux-1-schnell"
+}
