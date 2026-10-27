@@ -1,0 +1,63 @@
+﻿{
+    "model":  "@cf/black-forest-labs/flux-1-schnell",
+    "endpoint":  "POST /client/v4/accounts/{account_id}/ai/run/@cf/black-forest-labs/flux-1-schnell",
+    "generated_unix":  1793088420,
+    "combos":  5,
+    "succeeded":  5,
+    "request_contract":  {
+                             "prompt":  "\u003cstyle words\u003e, \u003cpalette words\u003e, minimalist 2d vector cover design, sleek layout, flat vector art, no text",
+                             "steps":  8
+                         },
+    "results":  [
+                    {
+                        "style_id":  100,
+                        "preset":  "Retro Waves",
+                        "palette":  "Pastel Dream",
+                        "ok":  true,
+                        "prompt":  "minimalist mid-century modern abstract wallpaper, flowing organic waves and curving colour blocks, 1970s retro aesthetic, smooth flat vector shapes, continuous panoramic art, soft pastel pink, lilac, baby blue, off-white, minimalist 2d vector cover design, sleek layout, flat vector art, no text",
+                        "steps_sent":  8,
+                        "raw":  "s100_p1__retro_waves__pastel_dream_raw.jpg",
+                        "png":  "s100_p1__retro_waves__pastel_dream.png"
+                    },
+                    {
+                        "style_id":  101,
+                        "preset":  "Geometric Business",
+                        "palette":  "Corporate Blue",
+                        "ok":  true,
+                        "prompt":  "flat vector 2D modern geometric business wallpaper, dramatic scale contrast with radical hexagon size differences, one massive prominent hero hexagon frame, floating medium hexagons, and tiny delicate micro-hexagon accents, large angled diagonal thick rounded stripes across, smooth gradient color overlays, clean blank copy space, sharp crisp vector edges, flat graphic design, continuous panoramic flow, dark navy blue #0A1931, deep royal blue #003399, vibrant electric cyan blue #00A8FF, soft silver-gray #E0E6ED, clean solid white background, minimalist 2d vector cover design, sleek layout, flat vector art, no text",
+                        "steps_sent":  8,
+                        "raw":  "s101_p4__geometric_business__corporate_blue_raw.jpg",
+                        "png":  "s101_p4__geometric_business__corporate_blue.png"
+                    },
+                    {
+                        "style_id":  102,
+                        "preset":  "Minimal Sci-Fi",
+                        "palette":  "Warm Terracotta",
+                        "ok":  true,
+                        "prompt":  "minimal retro sci-fi background, geometric horizon lines, massive glowing sun disc in sky, faint starfield, clean flat vector shapes, wide panorama, terracotta red, mustard yellow, sage green, warm cream, minimalist 2d vector cover design, sleek layout, flat vector art, no text",
+                        "steps_sent":  8,
+                        "raw":  "s102_p0__minimal_sci_fi__warm_terracotta_raw.jpg",
+                        "png":  "s102_p0__minimal_sci_fi__warm_terracotta.png"
+                    },
+                    {
+                        "style_id":  103,
+                        "preset":  "Dynamic Waves Spread",
+                        "palette":  "Teal Lime",
+                        "ok":  true,
+                        "prompt":  "flat vector 2D graphic design, dramatic scale contrast with radical size differences between shapes, one massive broad sweeping corporate curved color panel dominating the spread, paired with slim secondary accent ribbons and small delicate floating geometric accent marks, sharp crisp vector edges, expansive clean blank copy space, continuous panoramic flow, deep teal green, dark pine green, chartreuse lime green gradient, mint turquoise, crisp white, minimalist 2d vector cover design, sleek layout, flat vector art, no text",
+                        "steps_sent":  8,
+                        "raw":  "s103_p5__dynamic_waves_spread__teal_lime_raw.jpg",
+                        "png":  "s103_p5__dynamic_waves_spread__teal_lime.png"
+                    },
+                    {
+                        "style_id":  104,
+                        "preset":  "Vibrant S-Curve Spread",
+                        "palette":  "Forest Gold",
+                        "ok":  true,
+                        "prompt":  "flat vector 2D graphic design, extreme scale contrast and radical shape size hierarchy, one gigantic broad sweeping S-curve ribbon band flowing across the spread, contrasted with narrow sharp accent ribbons and small minimalist geometric accents, smooth gradient overlays, sharp clean vector contour edges, generous blank negative copy space, continuous panoramic flow, deep forest green, moss, gold, cream, minimalist 2d vector cover design, sleek layout, flat vector art, no text",
+                        "steps_sent":  8,
+                        "raw":  "s104_p3__vibrant_s_curve_spread__forest_gold_raw.jpg",
+                        "png":  "s104_p3__vibrant_s_curve_spread__forest_gold.png"
+                    }
+                ]
+}

@@ -1,0 +1,30 @@
+﻿{
+    "style_id":  102,
+    "preset":  "Minimal Sci-Fi",
+    "palette":  "Warm Terracotta",
+    "palette_colors":  {
+                           "primary":  "#b5543b",
+                           "accent":  "#e8a34d",
+                           "dark":  "#3e2c23"
+                       },
+    "method":  "POST",
+    "url":  "https://api.cloudflare.com/client/v4/accounts/\u003caccount_id\u003e/ai/run/@cf/black-forest-labs/flux-1-schnell",
+    "headers":  {
+                    "Content-Type":  "application/json",
+                    "Authorization":  "Bearer \u003credacted\u003e"
+                },
+    "body":  {
+                 "prompt":  "minimal retro sci-fi background, geometric horizon lines, massive glowing sun disc in sky, faint starfield, clean flat vector shapes, wide panorama, terracotta red, mustard yellow, sage green, warm cream, minimalist 2d vector cover design, sleek layout, flat vector art, no text",
+                 "steps":  8
+             },
+    "local_only_never_sent":  {
+                                  "negative_prompt":  "text, typography, letters, words, numbers, fonts, lorem ipsum, dummy copy, watermarks, logo, icons, symbols, realistic photo, photograph, 3d render, perspective view, angled mockup, dropshadow, realistic book mockup, brochure mockup, folded paper, standing card, desk, table, presentation board, collage, multi-panel, split-screen, seam, divider line, gutter, picture frame, framing, borders, margins, textured paper, checkerboard, transparent grid, grey and white grid, photo placeholder, template, booklet, brochure layout, document template, uniform shape size, equal sized shapes, repetitive tiling, monotonous pattern, wallpaper texture, liquid marble, fluid acrylic, paint swirls, dense ripples, messy zebra stripes, clipping artifacts, busy details, author name, signature",
+                                  "seed_title":  "KARAWANG TIMUR",
+                                  "steps_requested":  18,
+                                  "target_bucket":  [
+                                                        1216,
+                                                        832
+                                                    ],
+                                  "note":  "flux-1-schnell rejects width/height/seed/negative_prompt (error 5006); it always returns a 1024x1024 JPEG which the client center-crops to 1216x832 PNG"
+                              }
+}
