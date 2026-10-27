@@ -163,7 +163,7 @@ Generic AI models often produce literal translations that contradict standard BP
 - *Luas Wilayah* translated as "Region Width" instead of **"Total Area"**.
 
 ### 5.2 Official Statistical Glossary Engine (`bps_glossary.json`)
-PubGen will bundle an authoritative, editable terminology dictionary injected into the system prompt:
+PubGen bundles an authoritative, editable terminology dictionary injected into the system prompt and applied deterministically to whole cells:
 
 ```json
 {
@@ -182,14 +182,29 @@ PubGen will bundle an authoritative, editable terminology dictionary injected in
     "Tahun": "Year",
     "Sumber": "Source",
     "Catatan": "Note",
-    "Keterangan": "Description"
+    "Keterangan": "Note",
+    "jumlah": "Total",
+    "total": "Total",
+    "provinsi": "Province",
+    "propinsi": "Province",
+    "ket.": "Note",
+    "ket": "Note",
+    "kec": "Subdistrict",
+    "no": "No"
   }
 }
 ```
 
+> **Status (2026-10-27): implemented** on `feature/pillar4-bps-glossary` (mini-plan `2026-10-25-pubgen-pillar4-bps-ai-assistant-mini-plan.md`). Keys are lowercased at load for case-insensitive whole-cell matching; the file's original casing survives in a sorted `terms` list for the editor and the prompt. Resolution order: `Prefs.pubgenGlossaryPath` → `assets/pubgen/bps_glossary.json` under the working directory → `CARGO_MANIFEST_DIR/../..` (a missing or malformed file degrades to an empty map, never an error). `alias_en()`, `translatable_cell()` and `pair_cells()` take the loaded `BpsGlossary`; the Groq prompt appends `Official terminology you MUST use: id = en; …` capped at 200 terms, and `None`/empty keeps the previous prompt byte-identical. The AI setup dialog gained a **Terminology** tab: search, edit/add/remove, **Import CSV…** (a two-column `Indonesian,English` sheet — comma, semicolon, tab or pipe, header row optional — merged into the list case-insensitively: matching terms take the sheet's English, new ones are appended), **Reset to bundled**, and **Save…** to `bps_glossary.json`, which persists the chosen path through `prefs.set` (`pubgenGlossaryPath`) and reloads the in-session glossary. `docs/pubgen-glossary.example.csv` is the sheet to start from; the import only edits the dialog's rows until **Save…** writes them.
+
 ### 5.3 Automated Executive Narrative Summarizer (Drafting `ulasan_bab`)
 - **Capability:** When generating a chapter from raw data tables without pre-authored RTF narrative files, the AI Assistant analyzes the table figures (e.g., highest population subdistrict, largest agricultural yield) and drafts the introductory chapter review following official BPS analytical phrasing.
 - **Strict Formatting Output:** Emits pre-styled paragraphs conforming to `Heading 1`, `Heading 2`, `Lead Paragraph`, and indented body text.
+
+> **Status (2026-10-27): implemented**, split into a deterministic core and the model call:
+> - **Deterministic (`pubgen/summarize.rs`):** resolves each catalog row's table CSV, dedupes by path, parses Indonesian and English number formats (`1.234,56`, `1,234.56`, `(1.234)`, `45%`, `Rp…`), skips total rows, and derives per-column sums/max/min plus the top and bottom rows. It builds the prompt and turns the model's blocks into RTF whose `\stylesheet` carries `Heading 1` / `Heading 2` / `Lead Paragraph` / `Normal`.
+> - **Model (`designcraft-translate`):** `OnlineTranslator::complete(system, user)` runs one `temperature: 0` Groq chat completion (shared auth, status mapping and `Retry-After` handling with translation; non-Groq builds return `Unavailable`). The model returns `{"blocks":[{"role":"heading1"|"heading2"|"lead"|"body","text":"…"}]}` and never writes RTF. Strict parsing; one parse failure retries with a terser prompt, then the error surfaces in the status row — no prose salvage.
+> - **UI:** **Draft Review** sits beside "Translate this Page" in the Pubgen header, enabled when Groq is configured, an RXX review page is selected, and the catalog has table CSV rows. The preview modal lists the blocks; **Apply** writes a temp RTF and places it through `file.place` into the page's English body frame (imported styles, one undo step). Discard/Cancel never touch the document. The job mirrors `TranslateJob` (background thread, channel, per-frame `poll`, cancel flag, wasm stub), so the web build stays on its stub.
 
 ---
 
@@ -363,7 +378,7 @@ Each profile defines:
 | :--- | :--- | :--- |
 | **M1: Modularization** | Split `mod.rs` into submodules (`covers/`, `tables/`, `toc/`, `header_footer/`). Zero functional regressions. | 2–3 days |
 | **M2: Preflight QA Audit** | Build `audit/` engine checking cell overset, missing sources, and image DPI. Add Audit button to UI. | 3–4 days |
-| **M3: Glossary Memory** | Implement `bps_glossary.json` injection into AI translation system prompt with user UI override editor. | 2 days |
+| **M3: Glossary Memory** | Implement `bps_glossary.json` injection into AI translation system prompt with user UI override editor. | 2 days — **✅ implemented 2026-10-27 (see §5)** |
 | **M4: Vector Chart Engine** | Implement native vector bar/line/donut chart rendering from `CXX` Excel sheets. | 5–7 days |
 | **M5: Batch Multi-Chapter Binder** | Implement project manifest and one-click compiler for entire `BAB_01`..`BAB_10` workbook directories. | 5–6 days |
 | **M6: Dual PDF Profiles** | Integrate one-click PDF/X-4 (print) and compact hyperlinked PDF (web) export presets. | 3–4 days |

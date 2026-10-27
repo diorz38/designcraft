@@ -26,6 +26,14 @@ const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 /// A ~1MP image never reaches this; a prose error page does. Input-derived cap.
 #[cfg(feature = "cloudflare")]
 const MAX_IMAGE_BYTES: usize = 32 * 1024 * 1024;
+/// Cloudflare's flux prompt classifier is stochastic: the same innocuous prompt
+/// is rejected with error 8007 on one request and accepted on the next (verified
+/// live against every Retro Waves palette). A rejected request is not billed,
+/// so retry it before surfacing an error.
+#[cfg(feature = "cloudflare")]
+const CONTENT_FILTER_RETRIES: usize = 2;
+#[cfg(feature = "cloudflare")]
+const CONTENT_FILTER_BACKOFF: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// Cloudflare Workers AI client (user's own account + scoped API token).
 #[cfg_attr(not(feature = "cloudflare"), allow(dead_code))]
@@ -37,6 +45,15 @@ pub struct CloudflareClient {
     /// Overridable for tests (a canned local listener stands in for api.cloudflare.com).
     #[cfg(feature = "cloudflare")]
     base_url: String,
+}
+
+/// One generated cover from a single API call: the provider's untouched image
+/// bytes (flux: a fixed 1024×1024 JPEG) and the center-cropped bucket PNG the
+/// cover pipeline applies.
+#[cfg(feature = "cloudflare")]
+pub struct GeneratedImage {
+    pub raw: Vec<u8>,
+    pub png: Vec<u8>,
 }
 
 impl CloudflareClient {
@@ -62,22 +79,47 @@ impl CloudflareClient {
     pub fn generate(&self, req: &GenRequest, cancel: &AtomicBool) -> Result<Vec<u8>, ImageGenError> {
         #[cfg(feature = "cloudflare")]
         {
+            self.generate_with_raw(req, cancel).map(|out| out.png)
+        }
+        #[cfg(not(feature = "cloudflare"))]
+        {
+            let _ = (req, cancel);
+            Err(ImageGenError::Unavailable)
+        }
+    }
+
+    /// Generate one image and return both the provider's raw reply and the
+    /// cover-bucket PNG, from a single API call. The AI-cover validation runs
+    /// (`ai_cover_generation/`) use this to capture exactly what Cloudflare sent back.
+    #[cfg(feature = "cloudflare")]
+    pub fn generate_with_raw(&self, req: &GenRequest, cancel: &AtomicBool) -> Result<GeneratedImage, ImageGenError> {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(ImageGenError::Cancelled);
+        }
+        let url = format!("{}/accounts/{}/ai/run/@cf/black-forest-labs/flux-1-schnell", self.base_url, self.account_id);
+        let body = request_body(req);
+        let mut attempts = 0usize;
+        let (status, mut reader) = loop {
+            attempts += 1;
             if cancel.load(Ordering::Relaxed) {
                 return Err(ImageGenError::Cancelled);
             }
-            let url = format!("{}/accounts/{}/ai/run/@cf/black-forest-labs/flux-1-schnell", self.base_url, self.account_id);
             let res = self
                 .agent
                 .post(&url)
                 .set("Authorization", &format!("Bearer {}", self.token))
                 .set("Content-Type", "application/json")
-                .send_string(&request_body(req));
-            let (status, mut reader) = match res {
-                Ok(r) => (r.status(), r.into_reader()),
+                .send_string(&body);
+            match res {
+                Ok(r) => break (r.status(), r.into_reader()),
                 Err(ureq::Error::Status(code, r)) => {
                     let retry = r.header("Retry-After").and_then(|v| v.trim().parse::<u64>().ok());
                     // Never echo the token: error bodies are truncated for context only.
                     let raw = r.into_string().unwrap_or_default();
+                    if code == 400 && is_content_filter_response(&raw) && attempts <= CONTENT_FILTER_RETRIES {
+                        std::thread::sleep(CONTENT_FILTER_BACKOFF);
+                        continue;
+                    }
                     match code {
                         429 => return Err(ImageGenError::Quota(retry.map(|s| s.clamp(1, 3600)))),
                         401 | 403 => return Err(ImageGenError::Auth),
@@ -85,28 +127,24 @@ impl CloudflareClient {
                     }
                 }
                 Err(e) => return Err(ImageGenError::Network(format!("request failed: {e}"))),
-            };
-            if !(200..300).contains(&status) {
-                return Err(ImageGenError::BadResponse(format!("HTTP {status}")));
             }
-            let mut raw = Vec::new();
-            // `into_reader()` hands back a trait object; `by_ref()` makes it `Sized`
-            // so `take` applies and the cap actually bounds the read.
-            reader.by_ref().take((MAX_IMAGE_BYTES + 1) as u64).read_to_end(&mut raw)?;
-            if raw.len() > MAX_IMAGE_BYTES {
-                return Err(ImageGenError::BadResponse(format!("response exceeds the {MAX_IMAGE_BYTES}-byte cap")));
-            }
-            if raw.is_empty() {
-                return Err(ImageGenError::BadResponse("provider returned an empty response".into()));
-            }
-            let jpeg = decode_flux_image(&raw)?;
-            to_cover_png(&jpeg, req)
+        };
+        if !(200..300).contains(&status) {
+            return Err(ImageGenError::BadResponse(format!("HTTP {status}")));
         }
-        #[cfg(not(feature = "cloudflare"))]
-        {
-            let _ = (req, cancel);
-            Err(ImageGenError::Unavailable)
+        let mut raw = Vec::new();
+        // `into_reader()` hands back a trait object; `by_ref()` makes it `Sized`
+        // so `take` applies and the cap actually bounds the read.
+        reader.by_ref().take((MAX_IMAGE_BYTES + 1) as u64).read_to_end(&mut raw)?;
+        if raw.len() > MAX_IMAGE_BYTES {
+            return Err(ImageGenError::BadResponse(format!("response exceeds the {MAX_IMAGE_BYTES}-byte cap")));
         }
+        if raw.is_empty() {
+            return Err(ImageGenError::BadResponse("provider returned an empty response".into()));
+        }
+        let jpeg = decode_flux_image(&raw)?;
+        let png = to_cover_png(&jpeg, req)?;
+        Ok(GeneratedImage { raw: jpeg, png })
     }
 }
 
@@ -122,6 +160,14 @@ fn request_body(req: &GenRequest) -> String {
         "steps": flux_steps(req.num_steps),
     })
     .to_string()
+}
+
+/// The exact JSON string a [`CloudflareClient::generate`] call puts on the wire
+/// for `req` — the strict flux schema (`prompt`, `steps` only), so validation
+/// runs can capture the request byte-for-byte without a network call.
+#[cfg(feature = "cloudflare")]
+pub fn request_body_for(req: &GenRequest) -> String {
+    request_body(req)
 }
 
 /// flux-1-schnell is a distilled 4-step model; the endpoint accepts 1–8 steps.
@@ -184,6 +230,18 @@ fn truncate(s: &str, n: usize) -> &str {
     }
 }
 
+/// Does a 400 reply carry Cloudflare's flux prompt-filter rejection (error 8007,
+/// "Input prompt contains NSFW content")? Only that transient rejection is retried.
+#[cfg(feature = "cloudflare")]
+fn is_content_filter_response(body: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else {
+        return body.contains("NSFW content");
+    };
+    let code = v.pointer("/errors/0/code").and_then(|c| c.as_u64());
+    let message = v.pointer("/errors/0/message").and_then(|m| m.as_str()).unwrap_or("");
+    code == Some(8007) || message.contains("NSFW content")
+}
+
 pub fn compiled_in() -> bool {
     cfg!(feature = "cloudflare")
 }
@@ -192,42 +250,53 @@ pub fn compiled_in() -> bool {
 mod tests {
     use super::*;
 
-    /// A canned TCP listener stands in for api.cloudflare.com: one POST, one reply.
-    fn canned_server(status_line: &'static str, extra_headers: &'static str, body: Vec<u8>) -> String {
+    /// A canned TCP listener stands in for api.cloudflare.com: one POST per reply, in
+    /// order. Returns the base URL and a counter of the requests actually received.
+    fn canned_sequence(replies: Vec<(&'static str, &'static str, Vec<u8>)>) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
         let addr = listener.local_addr().expect("addr");
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = hits.clone();
         std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("accept");
-            use std::io::{Read, Write};
-            // Read the whole request (headers + Content-Length body) before replying.
-            let mut req: Vec<u8> = Vec::new();
-            let mut buf = [0u8; 8192];
-            loop {
-                let n = match stream.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => n,
-                };
-                req.extend_from_slice(&buf[..n]);
-                let header_end = req.windows(4).position(|w| w == b"\r\n\r\n").map(|p| p + 4);
-                if let Some(body_start) = header_end {
-                    let cl: usize = String::from_utf8_lossy(&req)
-                        .split("\r\n")
-                        .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").and_then(|v| v.trim().parse::<usize>().ok()))
-                        .unwrap_or(0);
-                    if req.len() >= body_start + cl {
-                        break;
+            for (status_line, extra_headers, body) in replies {
+                let Ok((mut stream, _)) = listener.accept() else { return };
+                counter.fetch_add(1, Ordering::SeqCst);
+                use std::io::{Read, Write};
+                // Read the whole request (headers + Content-Length body) before replying.
+                let mut req: Vec<u8> = Vec::new();
+                let mut buf = [0u8; 8192];
+                loop {
+                    let n = match stream.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => n,
+                    };
+                    req.extend_from_slice(&buf[..n]);
+                    let header_end = req.windows(4).position(|w| w == b"\r\n\r\n").map(|p| p + 4);
+                    if let Some(body_start) = header_end {
+                        let cl: usize = String::from_utf8_lossy(&req)
+                            .split("\r\n")
+                            .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").and_then(|v| v.trim().parse::<usize>().ok()))
+                            .unwrap_or(0);
+                        if req.len() >= body_start + cl {
+                            break;
+                        }
                     }
                 }
+                let reply = format!(
+                    "{status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{extra_headers}Connection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(reply.as_bytes());
+                let _ = stream.write_all(&body);
+                let _ = stream.flush();
             }
-            let reply = format!(
-                "{status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{extra_headers}Connection: close\r\n\r\n",
-                body.len()
-            );
-            let _ = stream.write_all(reply.as_bytes());
-            let _ = stream.write_all(&body);
-            let _ = stream.flush();
         });
-        format!("http://{addr}/client/v4")
+        (format!("http://{addr}/client/v4"), hits)
+    }
+
+    /// One request, one reply (the common case).
+    fn canned_server(status_line: &'static str, extra_headers: &'static str, body: Vec<u8>) -> String {
+        canned_sequence(vec![(status_line, extra_headers, body)]).0
     }
 
     fn req() -> GenRequest {
@@ -291,19 +360,19 @@ mod tests {
         let cancel = AtomicBool::new(false);
         // 200 with a non-JSON body is not a flux reply.
         let base = canned_server("HTTP/1.1 200 OK", "", b"not json".to_vec());
-        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).err().expect("non-JSON errors");
+        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).expect_err("non-JSON errors");
         assert!(matches!(err, ImageGenError::BadResponse(_)), "{err}");
         // 200 with JSON but no result.image.
         let base = canned_server("HTTP/1.1 200 OK", "", br#"{"result":{}}"#.to_vec());
-        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).err().expect("missing field errors");
+        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).expect_err("missing field errors");
         assert!(matches!(err, ImageGenError::BadResponse(_)), "{err}");
         // 200 with JSON but invalid base64.
         let base = canned_server("HTTP/1.1 200 OK", "", br#"{"result":{"image":"!!not-base64!!"}}"#.to_vec());
-        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).err().expect("bad base64 errors");
+        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).expect_err("bad base64 errors");
         assert!(matches!(err, ImageGenError::BadResponse(_)), "{err}");
         // 200 with base64 that is not a decodable image.
         let base = canned_server("HTTP/1.1 200 OK", "", br#"{"result":{"image":"AAAA"}}"#.to_vec());
-        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).err().expect("bad image errors");
+        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).expect_err("bad image errors");
         assert!(matches!(err, ImageGenError::BadResponse(_)), "{err}");
     }
 
@@ -316,19 +385,19 @@ mod tests {
             "Retry-After: 120\r\n",
             br#"{"errors":[{"code":4006,"message":"Daily free limit reached"}]}"#.to_vec(),
         );
-        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).err().expect("429 errors");
+        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).expect_err("429 errors");
         assert!(matches!(err, ImageGenError::Quota(Some(120))), "{err}");
         // 401: credentials rejected, never leaking the token.
         let base = canned_server("HTTP/1.1 403 Forbidden", "", br#"{"errors":[{"code":10000}]}"#.to_vec());
-        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).err().expect("403 errors");
+        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).expect_err("403 errors");
         assert!(matches!(err, ImageGenError::Auth), "{err}");
         // 5xx: provider answered, image unusable.
         let base = canned_server("HTTP/1.1 500 Internal Server Error", "", b"boom".to_vec());
-        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).err().expect("500 errors");
+        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).expect_err("500 errors");
         assert!(matches!(err, ImageGenError::BadResponse(_)), "{err}");
         // 200 with an empty body is not a flux reply.
         let base = canned_server("HTTP/1.1 200 OK", "", Vec::new());
-        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).err().expect("empty errors");
+        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).expect_err("empty errors");
         assert!(matches!(err, ImageGenError::BadResponse(_)), "{err}");
     }
 
@@ -337,8 +406,67 @@ mod tests {
         let base = canned_server("HTTP/1.1 200 OK", "", flux_reply_jpeg(4, 4));
         let c = CloudflareClient::with_base("a", "t", base);
         let cancel = AtomicBool::new(true);
-        let err = c.generate(&req(), &cancel).err().expect("cancelled errors");
+        let err = c.generate(&req(), &cancel).expect_err("cancelled errors");
         assert!(matches!(err, ImageGenError::Cancelled), "{err}");
+    }
+
+    fn nsfw_rejection() -> Vec<u8> {
+        br#"{"errors":[{"message":"AiError: AiError: Input prompt contains NSFW content. (99e54737-10ed-4315-bb6f-017fe81c216c)","code":8007}],"success":false,"result":{},"messages":[]}"#.to_vec()
+    }
+
+    #[test]
+    fn content_filter_rejections_are_recognised_by_code_even_when_spaced() {
+        assert!(is_content_filter_response(&String::from_utf8_lossy(&nsfw_rejection())));
+        assert!(is_content_filter_response(r#"{"errors":[{"code": 8007, "message": "Input prompt contains NSFW content."}]}"#));
+        assert!(!is_content_filter_response(r#"{"errors":[{"code":5006,"message":"prompt too long"}]}"#));
+        assert!(!is_content_filter_response("boom"));
+    }
+
+    #[test]
+    fn a_filter_rejection_is_retried_and_the_generation_still_succeeds() {
+        let (base, hits) =
+            canned_sequence(vec![("HTTP/1.1 400 Bad Request", "", nsfw_rejection()), ("HTTP/1.1 200 OK", "", flux_reply_jpeg(1024, 1024))]);
+        let c = CloudflareClient::with_base("a", "t", base);
+        let cancel = AtomicBool::new(false);
+        let out = c.generate(&req(), &cancel).expect("the retry returns an image");
+        assert_eq!(&out[..4], b"\x89PNG");
+        assert_eq!(hits.load(Ordering::SeqCst), 2, "rejected once, accepted on the retry");
+    }
+
+    #[test]
+    fn filter_rejections_surface_after_the_retry_budget() {
+        let (base, hits) = canned_sequence(vec![("HTTP/1.1 400 Bad Request", "", nsfw_rejection()); CONTENT_FILTER_RETRIES + 2]);
+        let c = CloudflareClient::with_base("a", "t", base);
+        let cancel = AtomicBool::new(false);
+        let err = c.generate(&req(), &cancel).expect_err("all attempts rejected");
+        assert!(err.to_string().contains("8007"), "{err}");
+        assert_eq!(hits.load(Ordering::SeqCst), CONTENT_FILTER_RETRIES + 1, "one attempt plus the retry budget");
+    }
+
+    #[test]
+    fn other_bad_requests_are_not_retried() {
+        let (base, hits) = canned_sequence(vec![
+            ("HTTP/1.1 400 Bad Request", "", br#"{"errors":[{"code":5006,"message":"unexpected property"}]}"#.to_vec()),
+            ("HTTP/1.1 200 OK", "", flux_reply_jpeg(1024, 1024)),
+        ]);
+        let c = CloudflareClient::with_base("a", "t", base);
+        let cancel = AtomicBool::new(false);
+        let err = c.generate(&req(), &cancel).expect_err("a schema rejection is final");
+        assert!(matches!(err, ImageGenError::BadResponse(_)), "{err}");
+        assert_eq!(hits.load(Ordering::SeqCst), 1, "only the prompt filter is retried");
+    }
+
+    #[test]
+    fn generate_with_raw_returns_provider_jpeg_and_bucket_png() {
+        let base = canned_server("HTTP/1.1 200 OK", "", flux_reply_jpeg(1024, 1024));
+        let c = CloudflareClient::with_base("a", "t", base);
+        let cancel = AtomicBool::new(false);
+        let out = c.generate_with_raw(&req(), &cancel).expect("round trip");
+        assert_eq!(&out.raw[..3], &[0xFF, 0xD8, 0xFF], "raw is the provider's untouched JPEG");
+        assert_eq!(&out.png[..4], b"\x89PNG", "png is the pipeline output");
+        let img = image::load_from_memory(&out.png).expect("decodable PNG");
+        assert_eq!((img.width(), img.height()), (832, 1176), "cropped to the Iso bucket");
+        assert_eq!(request_body_for(&req()), request_body(&req()), "preview matches the wire body");
     }
 
     #[test]

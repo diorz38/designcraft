@@ -666,8 +666,11 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                         if !tbl_matrix.is_empty() {
                             // Dual Lang + AI: one table, two lines per cell (id\u{2028}en);
                             // skipped cells (numbers, aliases) stay single-line (plan §4.1).
-                            let display_matrix =
-                                if st.bilingual_output && st.translate_with_ai { ai::pair_cells(&tbl_matrix, &st.translations) } else { tbl_matrix };
+                            let display_matrix = if st.bilingual_output && st.translate_with_ai {
+                                ai::pair_cells(&tbl_matrix, &st.translations, &st.glossary)
+                            } else {
+                                tbl_matrix
+                            };
                             let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
                             let mut table_st = st.clone();
                             if !theme_val.is_empty() {
@@ -1981,8 +1984,11 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                     let delim = detect_delimiter(&content);
                     let tbl_matrix = parse_csv_content_with_delim(&content, delim);
                     if !tbl_matrix.is_empty() {
-                        let display_matrix =
-                            if st.bilingual_output && st.translate_with_ai { ai::pair_cells(&tbl_matrix, &st.translations) } else { tbl_matrix };
+                        let display_matrix = if st.bilingual_output && st.translate_with_ai {
+                            ai::pair_cells(&tbl_matrix, &st.translations, &st.glossary)
+                        } else {
+                            tbl_matrix
+                        };
                         let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
                         let mut table_st = st.clone();
                         if !theme_val.is_empty() {

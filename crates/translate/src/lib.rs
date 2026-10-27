@@ -76,12 +76,13 @@ impl Backend {
         texts: &[String],
         src: Lang,
         tgt: Lang,
+        glossary: Option<&[(String, String)]>,
         cancel: &AtomicBool,
         progress: &mut dyn FnMut(usize, usize),
     ) -> Result<Vec<String>, TranslateError> {
         match self {
-            Self::Offline(t) => t.translate(texts, src, tgt, cancel, progress),
-            Self::Online(t) => t.translate(texts, src, tgt, cancel, progress),
+            Self::Offline(t) => t.translate(texts, src, tgt, glossary, cancel, progress),
+            Self::Online(t) => t.translate(texts, src, tgt, glossary, cancel, progress),
         }
     }
 
@@ -108,10 +109,11 @@ impl Translator {
         texts: &[String],
         src: Lang,
         tgt: Lang,
+        glossary: Option<&[(String, String)]>,
         cancel: &AtomicBool,
         progress: &mut dyn FnMut(usize, usize),
     ) -> Result<Vec<String>, TranslateError> {
-        nllb::translate(texts, src, tgt, cancel, progress)
+        nllb::translate(texts, src, tgt, glossary, cancel, progress)
     }
 }
 
@@ -135,10 +137,16 @@ impl OnlineTranslator {
         texts: &[String],
         src: Lang,
         tgt: Lang,
+        glossary: Option<&[(String, String)]>,
         cancel: &AtomicBool,
         progress: &mut dyn FnMut(usize, usize),
     ) -> Result<Vec<String>, TranslateError> {
-        self.inner.translate(texts, src, tgt, cancel, progress)
+        self.inner.translate(texts, src, tgt, glossary, cancel, progress)
+    }
+
+    /// One chat completion with a caller-supplied prompt (the narrative drafter).
+    pub fn complete(&self, system: &str, user: &str) -> Result<String, TranslateError> {
+        self.inner.complete(system, user)
     }
 }
 

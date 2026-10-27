@@ -16,6 +16,9 @@ use super::{Lang, TranslateError};
 const BATCH: usize = 16;
 #[cfg(feature = "groq")]
 const MAX_429_RETRIES: usize = 3;
+/// Terminology pairs appended to the system prompt (bounded, sorted upstream).
+#[cfg(feature = "groq")]
+const TERMS_IN_PROMPT: usize = 200;
 
 /// Online translator (Groq free tier; OpenAI-compatible chat completions).
 #[cfg_attr(not(feature = "groq"), allow(dead_code))]
@@ -72,6 +75,7 @@ impl OnlineTranslator {
         texts: &[String],
         src: Lang,
         tgt: Lang,
+        glossary: Option<&[(String, String)]>,
         cancel: &AtomicBool,
         progress: &mut dyn FnMut(usize, usize),
     ) -> Result<Vec<String>, TranslateError> {
@@ -82,20 +86,27 @@ impl OnlineTranslator {
                 if cancel.load(Ordering::Relaxed) {
                     return Err(TranslateError::Cancelled);
                 }
-                out.extend(self.translate_batch(batch, src, tgt, cancel)?);
+                out.extend(self.translate_batch(batch, src, tgt, glossary, cancel)?);
                 progress(out.len(), texts.len());
             }
             Ok(out)
         }
         #[cfg(not(feature = "groq"))]
         {
-            let _ = (texts, src, tgt, cancel, progress);
+            let _ = (texts, src, tgt, glossary, cancel, progress);
             Err(TranslateError::Unavailable)
         }
     }
 
     #[cfg(feature = "groq")]
-    fn translate_batch(&self, batch: &[String], src: Lang, tgt: Lang, cancel: &AtomicBool) -> Result<Vec<String>, TranslateError> {
+    fn translate_batch(
+        &self,
+        batch: &[String],
+        src: Lang,
+        tgt: Lang,
+        glossary: Option<&[(String, String)]>,
+        cancel: &AtomicBool,
+    ) -> Result<Vec<String>, TranslateError> {
         let mut attempt = 0usize;
         // Plan salvage path: when the batch output is unusable (non-JSON, wrong count —
         // some reasoning models prose-ify their answer), retry the batch item-by-item.
@@ -107,11 +118,11 @@ impl OnlineTranslator {
             let res = if item_fallback {
                 let mut out = Vec::with_capacity(batch.len());
                 for item in batch {
-                    out.extend(self.request_once(std::slice::from_ref(item), src, tgt)?);
+                    out.extend(self.request_once(std::slice::from_ref(item), src, tgt, glossary)?);
                 }
                 Ok(out)
             } else {
-                self.request_once(batch, src, tgt)
+                self.request_once(batch, src, tgt, glossary)
             };
             match res {
                 Ok(out) => return Ok(out),
@@ -135,30 +146,9 @@ impl OnlineTranslator {
     }
 
     #[cfg(feature = "groq")]
-    fn request_once(&self, batch: &[String], src: Lang, tgt: Lang) -> Result<Vec<String>, TranslateError> {
-        let body = request_body(&self.model, batch, src, tgt);
-        let res = self
-            .agent
-            .post(&format!("{}/chat/completions", self.base_url))
-            .set("Authorization", &format!("Bearer {}", self.key))
-            .set("Content-Type", "application/json")
-            .send_string(&body);
-        let (status, raw) = match res {
-            Ok(r) => (r.status(), r.into_string().map_err(|e| TranslateError::Provider(e.to_string()))?),
-            Err(ureq::Error::Status(code, r)) => {
-                let retry = r.header("Retry-After").and_then(|v| v.trim().parse::<u64>().ok()).map(|s| s.clamp(1, 30));
-                let raw = r.into_string().map_err(|e| TranslateError::Provider(e.to_string()))?;
-                if code == 429 {
-                    return Err(TranslateError::RateLimited(retry.unwrap_or(2)));
-                }
-                // Never echo the key: the body names the endpoint problem only.
-                (code, raw)
-            }
-            Err(e) => return Err(TranslateError::Provider(format!("request failed: {e}"))),
-        };
-        if status != 200 {
-            return Err(TranslateError::Provider(format!("HTTP {status}: {}", truncate(&raw, 300))));
-        }
+    fn request_once(&self, batch: &[String], src: Lang, tgt: Lang, glossary: Option<&[(String, String)]>) -> Result<Vec<String>, TranslateError> {
+        let body = request_body(&self.model, batch, src, tgt, glossary);
+        let raw = self.post_chat(&body)?;
         let v: serde_json::Value = serde_json::from_str(&raw).map_err(|e| TranslateError::Provider(format!("bad JSON: {e}")))?;
         let content = v
             .pointer("/choices/0/message/content")
@@ -176,19 +166,102 @@ impl OnlineTranslator {
         }
         Ok(parsed)
     }
+
+    /// One chat completion with a caller-supplied prompt (the narrative drafter). Same auth,
+    /// status and `Retry-After` handling as the translation call; `temperature: 0`.
+    pub fn complete(&self, system: &str, user: &str) -> Result<String, TranslateError> {
+        #[cfg(feature = "groq")]
+        {
+            let body = chat_body(&self.model, system, user);
+            let mut attempt = 0usize;
+            let raw = loop {
+                match self.post_chat(&body) {
+                    Err(TranslateError::RateLimited(retry_after)) if attempt < MAX_429_RETRIES => {
+                        attempt += 1;
+                        std::thread::sleep(std::time::Duration::from_secs(retry_after));
+                    }
+                    other => break other?,
+                }
+            };
+            let v: serde_json::Value = serde_json::from_str(&raw).map_err(|e| TranslateError::Provider(format!("bad JSON: {e}")))?;
+            v.pointer("/choices/0/message/content")
+                .and_then(|c| c.as_str())
+                .map(str::to_string)
+                .ok_or_else(|| TranslateError::Provider("response has no choices[0].message.content".into()))
+        }
+        #[cfg(not(feature = "groq"))]
+        {
+            let _ = (system, user);
+            Err(TranslateError::Unavailable)
+        }
+    }
+
+    /// POST one chat-completions body; the model's raw JSON reply on 200.
+    #[cfg(feature = "groq")]
+    fn post_chat(&self, body: &str) -> Result<String, TranslateError> {
+        let res = self
+            .agent
+            .post(&format!("{}/chat/completions", self.base_url))
+            .set("Authorization", &format!("Bearer {}", self.key))
+            .set("Content-Type", "application/json")
+            .send_string(body);
+        let (status, raw) = match res {
+            Ok(r) => (r.status(), r.into_string().map_err(|e| TranslateError::Provider(e.to_string()))?),
+            Err(ureq::Error::Status(code, r)) => {
+                let retry = r.header("Retry-After").and_then(|v| v.trim().parse::<u64>().ok()).map(|s| s.clamp(1, 30));
+                let raw = r.into_string().map_err(|e| TranslateError::Provider(e.to_string()))?;
+                if code == 429 {
+                    return Err(TranslateError::RateLimited(retry.unwrap_or(2)));
+                }
+                // Never echo the key: the body names the endpoint problem only.
+                (code, raw)
+            }
+            Err(e) => return Err(TranslateError::Provider(format!("request failed: {e}"))),
+        };
+        if status != 200 {
+            return Err(TranslateError::Provider(format!("HTTP {status}: {}", truncate(&raw, 300))));
+        }
+        Ok(raw)
+    }
+}
+
+/// One `temperature: 0` chat completion with a caller-supplied system/user prompt.
+#[cfg(feature = "groq")]
+fn chat_body(model: &str, system: &str, user: &str) -> String {
+    let mut body = serde_json::json!({
+        "model": model,
+        "temperature": 0,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    });
+    if model.contains("gpt-oss")
+        && let Some(obj) = body.as_object_mut()
+    {
+        obj.insert("reasoning_effort".into(), serde_json::json!("low"));
+    }
+    body.to_string()
 }
 
 /// Units per request kept at module scope for the tests that build batches.
 #[cfg(feature = "groq")]
-fn request_body(model: &str, batch: &[String], src: Lang, tgt: Lang) -> String {
+fn request_body(model: &str, batch: &[String], src: Lang, tgt: Lang, glossary: Option<&[(String, String)]>) -> String {
     let items = serde_json::to_string(batch).unwrap_or_default();
-    let system = format!(
+    let mut system = format!(
         "You are a translation engine. Translate each array item from {} to {}. Return a JSON \
          array of the same length and order. Keep numbers, proper nouns and formatting unchanged. \
          Output only the JSON array.",
         src.label(),
         tgt.label()
     );
+    // Secondary net behind the deterministic whole-cell aliases: the terms shape the
+    // model's word choice inside sentences. Sorted and capped so the prompt is stable
+    // and bounded; `None` and an empty list keep today's prompt byte for byte.
+    if let Some(terms) = glossary.filter(|t| !t.is_empty()) {
+        let pairs: Vec<String> = terms.iter().take(TERMS_IN_PROMPT).map(|(id, en)| format!("{id} = {en}")).collect();
+        system.push_str(&format!("\n\nOfficial terminology you MUST use: {}.", pairs.join("; ")));
+    }
     // Reasoning models burn hidden reasoning tokens that count against the provider's
     // TPM and add nothing to a translation. Pin the effort to low when supported.
     let mut body = serde_json::json!({
@@ -275,7 +348,7 @@ mod tests {
 
     #[test]
     fn request_body_pins_the_contract() {
-        let body = request_body("llama-3.3-70b", &["Kabupaten Karawang".into()], Lang::Indonesian, Lang::English);
+        let body = request_body("llama-3.3-70b", &["Kabupaten Karawang".into()], Lang::Indonesian, Lang::English, None);
         let v: serde_json::Value = serde_json::from_str(&body).expect("request body is valid JSON");
         assert_eq!(v.pointer("/model"), Some(&serde_json::json!("llama-3.3-70b")));
         assert_eq!(v.pointer("/temperature"), Some(&serde_json::json!(0)));
@@ -285,6 +358,60 @@ mod tests {
         // The user message is a JSON-encoded array (escaped inside the outer JSON).
         let user = v.pointer("/messages/1/content").and_then(|c| c.as_str()).expect("user message");
         assert_eq!(user, "[\"Kabupaten Karawang\"]");
+    }
+
+    #[test]
+    fn empty_glossary_keeps_the_prompt_byte_identical() {
+        let plain = request_body("m", &["Jumlah".into()], Lang::Indonesian, Lang::English, None);
+        let empty = request_body("m", &["Jumlah".into()], Lang::Indonesian, Lang::English, Some(&[]));
+        assert_eq!(plain, empty);
+        assert!(!plain.contains("Official terminology"), "{plain}");
+    }
+
+    #[test]
+    fn glossary_terms_join_the_system_prompt() {
+        let terms = vec![("Kabupaten".to_string(), "Regency".to_string()), ("Kecamatan".to_string(), "Subdistrict".to_string())];
+        let body = request_body("m", &["Kecamatan Karawang".into()], Lang::Indonesian, Lang::English, Some(&terms));
+        let v: serde_json::Value = serde_json::from_str(&body).expect("request body is valid JSON");
+        let system = v.pointer("/messages/0/content").and_then(|c| c.as_str()).expect("system message");
+        assert!(system.contains("Official terminology"), "{system}");
+        assert!(system.contains("Kecamatan = Subdistrict"), "{system}");
+        assert!(system.contains("Kabupaten = Regency"), "{system}");
+        let user = v.pointer("/messages/1/content").and_then(|c| c.as_str()).expect("user message");
+        assert_eq!(user, "[\"Kecamatan Karawang\"]", "the glossary must not leak into the payload");
+    }
+
+    #[test]
+    fn glossary_terms_are_capped_at_the_prompt_budget() {
+        let terms: Vec<(String, String)> = (0..TERMS_IN_PROMPT + 1).map(|i| (format!("istilah{i:03}"), format!("term{i:03}"))).collect();
+        let body = request_body("m", &["x".into()], Lang::Indonesian, Lang::English, Some(&terms));
+        let v: serde_json::Value = serde_json::from_str(&body).expect("request body is valid JSON");
+        let system = v.pointer("/messages/0/content").and_then(|c| c.as_str()).expect("system message");
+        assert!(system.contains("istilah199 = term199"), "{system}");
+        assert!(!system.contains("istilah200 = term200"), "the 201st term must be dropped");
+    }
+
+    #[test]
+    fn chat_body_pins_zero_temperature_and_both_prompts() {
+        let body = chat_body("llama-3.3-70b", "system prompt", "user payload");
+        let v: serde_json::Value = serde_json::from_str(&body).expect("chat body is valid JSON");
+        assert_eq!(v.pointer("/temperature"), Some(&serde_json::json!(0)));
+        assert_eq!(v.pointer("/messages/0/role"), Some(&serde_json::json!("system")));
+        assert_eq!(v.pointer("/messages/0/content"), Some(&serde_json::json!("system prompt")));
+        assert_eq!(v.pointer("/messages/1/role"), Some(&serde_json::json!("user")));
+        assert_eq!(v.pointer("/messages/1/content"), Some(&serde_json::json!("user payload")));
+        assert!(v.get("reasoning_effort").is_none(), "only gpt-oss gets the effort hint");
+        let oss: serde_json::Value = serde_json::from_str(&chat_body("openai/gpt-oss-20b", "s", "u")).expect("valid JSON");
+        assert_eq!(oss.get("reasoning_effort"), Some(&serde_json::json!("low")));
+    }
+
+    #[test]
+    fn complete_round_trips_against_a_local_listener() {
+        let content = "{\"blocks\":[{\"role\":\"lead\",\"text\":\"Hello\"}]}";
+        let reply = serde_json::json!({"choices": [{"message": {"content": content}}]}).to_string();
+        let base = canned_server(reply);
+        let t = OnlineTranslator::with_base("test-key", "llama-3.3-70b", base);
+        assert_eq!(t.complete("system", "user").expect("completion"), content);
     }
 
     /// A canned TCP listener stands in for api.groq.com: one POST, one JSON reply.
@@ -336,7 +463,8 @@ mod tests {
         let base = canned_server(format!("{{\"choices\":[{{\"message\":{{\"content\":\"{}\"}}}}]}}", content_array(&["Karawang Timur Subdistrict"])));
         let mut t = OnlineTranslator::with_base("test-key", "llama-3.3-70b", base);
         let cancel = AtomicBool::new(false);
-        let out = t.translate(&["Kecamatan Karawang Timur".into()], Lang::Indonesian, Lang::English, &cancel, &mut |_, _| {}).expect("round trip");
+        let out =
+            t.translate(&["Kecamatan Karawang Timur".into()], Lang::Indonesian, Lang::English, None, &cancel, &mut |_, _| {}).expect("round trip");
         assert_eq!(out, vec!["Karawang Timur Subdistrict"]);
     }
 
@@ -346,7 +474,7 @@ mod tests {
         let mut t = OnlineTranslator::with_base("test-key", "m", base);
         let cancel = AtomicBool::new(false);
         let err = t
-            .translate(&["satu".into(), "dua".into()], Lang::Indonesian, Lang::English, &cancel, &mut |_, _| {})
+            .translate(&["satu".into(), "dua".into()], Lang::Indonesian, Lang::English, None, &cancel, &mut |_, _| {})
             .err()
             .expect("mismatch is an error");
         assert!(matches!(err, TranslateError::Provider(_)), "{err}");

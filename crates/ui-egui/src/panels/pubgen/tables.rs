@@ -814,7 +814,8 @@ pub(crate) fn execute_insert_table_matrix(
             note_lines.push((id_text, item.is_italic));
 
             if st.bilingual_output {
-                let (label_en, colon_en, content_en) = ai::translate_note_item(&item.label, &item.colon, &item.content, &st.translations);
+                let (label_en, colon_en, content_en) =
+                    ai::translate_note_item(&item.label, &item.colon, &item.content, &st.translations, &st.glossary);
                 let en_text =
                     if content_en.is_empty() { format!("{}\t{}", label_en, colon_en) } else { format!("{}\t{}\t{}", label_en, colon_en, content_en) };
                 note_lines.push((en_text, true));

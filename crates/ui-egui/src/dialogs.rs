@@ -7014,7 +7014,7 @@ fn toc_dialog(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
             // The Pages filter ("" lists every paragraph of the style) and the nesting level.
             crate::rtl::label(ui, tr("Page Title:"));
             let mut listed = r.page_title.join(", ");
-            let resp = ui.add(egui::TextEdit::singleline(&mut listed).desired_width(140.0).horizontal_align(egui::Align::Min));
+            let resp = ui.add(egui::TextEdit::singleline(&mut listed).desired_width(140.0).align(egui::Align2::LEFT_TOP));
             resp.clone().on_hover_text(tr("List a page only when the first text box on it starts with one of these words: \"Tabel, Table\" lists the tables, \"Grafik, Chart\" the charts"));
             if resp.changed() {
                 r.page_title = listed.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect();

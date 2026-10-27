@@ -236,6 +236,7 @@ fn open_filters(purpose: &str) -> &'static [OpenFilter] {
             extensions: &["png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "psd", "svg", "pdf", "ai", "eps"],
         }],
         "dataMerge" => &[OpenFilter { name: "Data source (CSV, TSV, text, Excel)", extensions: &["csv", "tsv", "tab", "txt", "xlsx"] }],
+        "glossary" => &[OpenFilter { name: "Glossary sheet (Indonesian, English)", extensions: &["csv", "tsv", "tab", "txt"] }],
         "place" => &[
             OpenFilter {
                 name: "Graphics and text",

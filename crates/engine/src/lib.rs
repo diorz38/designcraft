@@ -264,6 +264,9 @@ pub struct Prefs {
     pub translation_groq_api_key: String,
     /// Groq model id (resolved via GET /openai/v1/models on first use).
     pub translation_groq_model: String,
+    /// Pubgen BPS terminology: path to a user-edited glossary JSON. Empty = the bundled
+    /// `assets/pubgen/bps_glossary.json`.
+    pub pubgen_glossary_path: String,
     /// Pubgen AI Base cover (docs/plans/2026-10-26-ai-base-cover-pubgen.md):
     /// Cloudflare account id for Workers AI image generation.
     pub cover_ai_cloudflare_account_id: String,
@@ -350,6 +353,7 @@ impl Default for Prefs {
             translation_provider: String::from("offline"),
             translation_groq_api_key: String::new(),
             translation_groq_model: String::new(),
+            pubgen_glossary_path: String::new(),
             cover_ai_cloudflare_account_id: String::new(),
             cover_ai_cloudflare_api_token: String::new(),
         }

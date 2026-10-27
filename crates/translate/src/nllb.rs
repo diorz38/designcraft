@@ -21,6 +21,7 @@ pub fn translate(
     _texts: &[String],
     _src: Lang,
     _tgt: Lang,
+    _glossary: Option<&[(String, String)]>,
     _cancel: &AtomicBool,
     _progress: &mut dyn FnMut(usize, usize),
 ) -> Result<Vec<String>, TranslateError> {

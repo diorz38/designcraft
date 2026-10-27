@@ -18,6 +18,9 @@ use designcraft_translate as translate;
 pub const PROVIDER_OFFLINE: usize = 0;
 pub const PROVIDER_GROQ: usize = 1;
 
+pub(crate) const DIALOG_TAB_SETUP: usize = 0;
+pub(crate) const DIALOG_TAB_TERMINOLOGY: usize = 1;
+
 // ---------------------------------------------------------------------------
 // Setup dialog
 // ---------------------------------------------------------------------------
@@ -36,6 +39,11 @@ pub struct AiSetupDialog {
     pub error: Option<String>,
     /// Set by a successful Use AI: the dialog closes and stays closed.
     pub close_requested: bool,
+    pub tab: usize,
+    /// Editable terminology rows (Indonesian, English), seeded from the resolved glossary.
+    pub terms: Vec<(String, String)>,
+    pub terms_filter: String,
+    pub terms_status: Option<(String, bool)>,
 }
 
 impl AiSetupDialog {
@@ -56,6 +64,10 @@ impl AiSetupDialog {
             cores: translate::system::cpu_cores(),
             error: None,
             close_requested: false,
+            tab: DIALOG_TAB_SETUP,
+            terms: BpsGlossary::load(&prefs.pubgen_glossary_path).prompt_pairs(),
+            terms_filter: String::new(),
+            terms_status: None,
         }
     }
 
@@ -88,7 +100,7 @@ impl AiSetupDialog {
         self.error = None;
         let mut t = translate::OnlineTranslator::new(self.groq_key.trim(), self.groq_model.trim());
         let cancel = AtomicBool::new(false);
-        match t.translate(&["tes".into()], translate::Lang::Indonesian, translate::Lang::English, &cancel, &mut |_, _tot| {}) {
+        match t.translate(&["tes".into()], translate::Lang::Indonesian, translate::Lang::English, None, &cancel, &mut |_, _tot| {}) {
             Ok(_) => {
                 let _ = app.run(
                     "prefs.set",
@@ -221,6 +233,110 @@ fn offline_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSetupD
     }
 }
 
+/// BPS terminology editor: search, edit, add/remove, reset to the bundled asset and save
+/// the result as the user's glossary (`prefs.pubgen_glossary_path`).
+fn terminology_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSetupDialog, ui: &mut egui::Ui) {
+    ui.label(
+        RichText::new(
+            "Official BPS terminology. Matching is case-insensitive and whole-cell only: \
+             \"Luas Wilayah\" is replaced, \"Luas Wilayah (km²)\" still goes to the model. \
+             Import a two-column sheet (Indonesian, English) or edit the rows below.",
+        )
+        .size(10.0),
+    );
+    ui.horizontal(|ui| {
+        ui.label("Search:");
+        ui.add(egui::TextEdit::singleline(&mut dialog.terms_filter).hint_text("Indonesian or English").desired_width(180.0))
+            .accessible_name("Search terminology");
+        if ui.button("Add term").clicked() {
+            dialog.terms.push((String::new(), String::new()));
+            dialog.terms_status = None;
+        }
+    });
+    let needle = dialog.terms_filter.trim().to_lowercase();
+    let mut remove: Option<usize> = None;
+    egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+        egui::Grid::new("pubgen_terminology_grid").num_columns(3).striped(true).show(ui, |ui| {
+            ui.label(RichText::new("Indonesian").size(10.0).strong());
+            ui.label(RichText::new("English").size(10.0).strong());
+            ui.label("");
+            ui.end_row();
+            for (idx, (id, en)) in dialog.terms.iter_mut().enumerate() {
+                if !needle.is_empty() && !id.to_lowercase().contains(&needle) && !en.to_lowercase().contains(&needle) {
+                    continue;
+                }
+                ui.add_sized([160.0, 22.0], egui::TextEdit::singleline(id)).accessible_name(format!("Term {} Indonesian", idx + 1));
+                ui.add_sized([160.0, 22.0], egui::TextEdit::singleline(en)).accessible_name(format!("Term {} English", idx + 1));
+                if ui.small_button("Remove").clicked() {
+                    remove = Some(idx);
+                }
+                ui.end_row();
+            }
+        });
+    });
+    if let Some(idx) = remove {
+        if idx < dialog.terms.len() {
+            dialog.terms.remove(idx);
+        }
+        dialog.terms_status = None;
+    }
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        #[cfg(not(target_arch = "wasm32"))]
+        if ui
+            .button("Import CSV…")
+            .on_hover_text("Load a two-column glossary sheet (Indonesian, English); the terms join the grid and Save writes them to the JSON.")
+            .clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("glossary"))
+        {
+            match std::fs::read_to_string(&path) {
+                Ok(content) => {
+                    let imported = terms_from_csv(&content);
+                    if imported.is_empty() {
+                        dialog.terms_status = Some((format!("No terms found in {path} — expected two columns: Indonesian, English."), false));
+                    } else {
+                        let count = imported.len();
+                        let (added, updated) = merge_terms(&mut dialog.terms, imported);
+                        let msg = if added + updated == 0 {
+                            format!("The sheet's {count} term(s) already match the list.")
+                        } else {
+                            format!("Imported {added} new term(s) and updated {updated} of {count} — Save to keep them.")
+                        };
+                        dialog.terms_status = Some((msg, true));
+                    }
+                }
+                Err(err) => dialog.terms_status = Some((format!("Could not read {path}: {err}"), false)),
+            }
+        }
+        if ui.button("Reset to bundled").clicked() {
+            dialog.terms = BpsGlossary::load("").prompt_pairs();
+            dialog.terms_status = Some(("Bundled terms restored — Save to keep a copy.".into(), true));
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if ui.button("Save…").clicked() {
+            let glossary = BpsGlossary::from_terms(&dialog.terms);
+            if let Some(path) = app.pick_save("bps_glossary.json") {
+                match glossary.save(std::path::Path::new(&path)) {
+                    Ok(()) => {
+                        let _ = app.run("prefs.set", json!({"pubgenGlossaryPath": path}));
+                        st.glossary = BpsGlossary::load(&path);
+                        st.glossary_loaded = true;
+                        dialog.terms = st.glossary.prompt_pairs();
+                        dialog.terms_status = Some((format!("Saved {} term(s) to {path}.", st.glossary.exact_mappings.len()), true));
+                    }
+                    Err(err) => dialog.terms_status = Some((format!("Could not save: {err}"), false)),
+                }
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        ui.label(RichText::new("Importing and saving terminology need the desktop app.").size(10.0));
+    });
+    if let Some((msg, ok)) = &dialog.terms_status {
+        let color = if *ok { Color32::from_rgb(120, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
+        ui.label(RichText::new(msg).size(10.0).color(color));
+    }
+}
+
 /// Render the modal, when open. Called from the panel's `show`.
 pub fn dialog_ui(app: &mut DesignApp, st: &mut PubgenState, ui: &mut egui::Ui) {
     let Some(mut dialog) = st.ai_dialog.take() else { return };
@@ -232,6 +348,23 @@ pub fn dialog_ui(app: &mut DesignApp, st: &mut PubgenState, ui: &mut egui::Ui) {
         .resizable(false)
         .default_width(460.0)
         .show(ui.ctx(), |ui| {
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut dialog.tab, DIALOG_TAB_SETUP, "Setup");
+                ui.selectable_value(&mut dialog.tab, DIALOG_TAB_TERMINOLOGY, "Terminology");
+            });
+            ui.separator();
+
+            if dialog.tab == DIALOG_TAB_TERMINOLOGY {
+                terminology_pane(app, st, &mut dialog, ui);
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui.button("Close").clicked() {
+                        closed_by_x = true;
+                    }
+                });
+                return;
+            }
+
             ui.horizontal(|ui| {
                 ui.radio_value(&mut dialog.provider, PROVIDER_GROQ, "Online — Groq (free account)");
                 ui.radio_value(&mut dialog.provider, PROVIDER_OFFLINE, "Offline on this computer");
@@ -292,7 +425,7 @@ impl TranslateJob {
     /// Spawn the worker for \`units\` (key = Indonesian source text). Native only: on wasm
     /// the AI features are off and the header button stays disabled.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn spawn(provider: &str, key: &str, model: &str, units: Vec<(String, String)>, ctx: egui::Context) -> Self {
+    pub fn spawn(provider: &str, key: &str, model: &str, units: Vec<(String, String)>, glossary: Vec<(String, String)>, ctx: egui::Context) -> Self {
         let (tx, rx) = std::sync::mpsc::channel::<JobMsg>();
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_thread = cancel.clone();
@@ -314,7 +447,14 @@ impl TranslateJob {
                         break;
                     }
                     let sources: Vec<String> = chunk.iter().map(|(_, s)| s.clone()).collect();
-                    match t.translate(&sources, translate::Lang::Indonesian, translate::Lang::English, &cancel_thread, &mut |_, _| {}) {
+                    match t.translate(
+                        &sources,
+                        translate::Lang::Indonesian,
+                        translate::Lang::English,
+                        Some(glossary.as_slice()),
+                        &cancel_thread,
+                        &mut |_, _| {},
+                    ) {
                         Ok(out) => {
                             done_pairs.extend(chunk.iter().map(|(k, _)| k.clone()).zip(out));
                             let _ = tx_thread.send(JobMsg::Progress(done_pairs.len(), units.len()));
@@ -343,7 +483,14 @@ impl TranslateJob {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn spawn(_provider: &str, _key: &str, _model: &str, _units: Vec<(String, String)>, _ctx: egui::Context) -> Self {
+    pub fn spawn(
+        _provider: &str,
+        _key: &str,
+        _model: &str,
+        _units: Vec<(String, String)>,
+        _glossary: Vec<(String, String)>,
+        _ctx: egui::Context,
+    ) -> Self {
         Self { done: 0, total: 0, finished: true }
     }
 
@@ -432,7 +579,7 @@ pub fn collect_translation_units(st: &PubgenState) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
     let push = |out: &mut Vec<(String, String)>, seen: &mut HashMap<String, ()>, text: &str| {
         let t = text.trim();
-        if t.is_empty() || !translatable_cell(t) || seen.contains_key(t) {
+        if t.is_empty() || !translatable_cell(t, &st.glossary) || seen.contains_key(t) {
             return;
         }
         seen.insert(t.to_string(), ());
@@ -489,7 +636,104 @@ fn table_cells(st: &PubgenState, file_val: &str) -> Vec<String> {
     };
     let delim = detect_delimiter(&content);
     let matrix = parse_csv_content_with_delim(&content, delim);
-    matrix.iter().flat_map(|row| row.iter()).filter(|c| translatable_cell(c)).cloned().collect()
+    matrix.iter().flat_map(|row| row.iter()).filter(|c| translatable_cell(c, &st.glossary)).cloned().collect()
+}
+
+// ---------------------------------------------------------------------------
+// BPS terminology glossary
+// ---------------------------------------------------------------------------
+
+/// Official BPS terminology: the bundled `assets/pubgen/bps_glossary.json` or the user's
+/// override (`Prefs.pubgen_glossary_path`). Keys are lowercased at load so the whole-cell
+/// lookup stays case-insensitive, as the hardcoded map it replaces was.
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+pub struct BpsGlossary {
+    #[serde(default)]
+    pub exact_mappings: HashMap<String, String>,
+    /// The terms as written in the file, sorted: the editor and the system prompt show the
+    /// official capitalization that `exact_mappings` (lowercased for lookup) loses.
+    #[serde(skip)]
+    pub terms: Vec<(String, String)>,
+}
+
+const BPS_GLOSSARY_FILE: &str = "bps_glossary.json";
+
+impl BpsGlossary {
+    /// The configured glossary: the user's file when it loads, else the bundled asset,
+    /// else an empty map (translation still runs; only the deterministic aliases go away).
+    pub fn load(user_path: &str) -> Self {
+        let user_path = user_path.trim();
+        if !user_path.is_empty() {
+            if let Some(g) = Self::from_file(std::path::Path::new(user_path)) {
+                return g;
+            }
+            eprintln!("pubgen ai: glossary {user_path} cannot be read — falling back to the bundled terms");
+        }
+        for path in Self::bundled_candidates() {
+            if let Some(g) = Self::from_file(&path) {
+                return g;
+            }
+        }
+        eprintln!("pubgen ai: bundled {BPS_GLOSSARY_FILE} not found — deterministic terminology is off");
+        Self::default()
+    }
+
+    /// `<cwd>/assets/pubgen` then `<repo>/assets/pubgen`: tests run with the crate dir as
+    /// the working directory, the app from the repo root.
+    fn bundled_candidates() -> Vec<PathBuf> {
+        let rel = std::path::Path::new("assets").join("pubgen").join(BPS_GLOSSARY_FILE);
+        let from_manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join(&rel);
+        vec![rel, from_manifest]
+    }
+
+    fn from_file(path: &std::path::Path) -> Option<Self> {
+        let text = std::fs::read_to_string(path).ok()?;
+        let raw: Self = serde_json::from_str(&text).ok()?;
+        Some(raw.lowercased())
+    }
+
+    fn lowercased(self) -> Self {
+        let mut terms: Vec<(String, String)> = self.exact_mappings.iter().map(|(k, v)| (k.trim().to_string(), v.clone())).collect();
+        terms.sort();
+        Self { exact_mappings: self.exact_mappings.into_iter().map(|(k, v)| (k.trim().to_lowercase(), v)).collect(), terms }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.exact_mappings.is_empty()
+    }
+
+    /// The English term for a whole cell, case-insensitively.
+    pub fn lookup(&self, cell: &str) -> Option<&str> {
+        self.exact_mappings.get(&cell.trim().to_lowercase()).map(String::as_str)
+    }
+
+    /// Sorted `(term, english)` pairs: a stable system-prompt addition and the editor rows.
+    pub fn prompt_pairs(&self) -> Vec<(String, String)> {
+        if !self.terms.is_empty() {
+            return self.terms.clone();
+        }
+        let mut pairs: Vec<(String, String)> = self.exact_mappings.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        pairs.sort();
+        pairs
+    }
+
+    /// Build from editor rows (trimmed, case kept, empty rows dropped).
+    pub fn from_terms(terms: &[(String, String)]) -> Self {
+        let exact_mappings = terms
+            .iter()
+            .filter_map(|(id, en)| {
+                let (id, en) = (id.trim(), en.trim());
+                (!id.is_empty() && !en.is_empty()).then(|| (id.to_string(), en.to_string()))
+            })
+            .collect();
+        Self { exact_mappings, terms: Vec::new() }
+    }
+
+    /// Write the glossary JSON the loader reads back (`prefs.pubgen_glossary_path`).
+    pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
+        let json = serde_json::to_string_pretty(self).map_err(|e| format!("glossary JSON: {e}"))?;
+        std::fs::write(path, json).map_err(|e| format!("{}: {e}", path.display()))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -499,7 +743,7 @@ fn table_cells(st: &PubgenState, file_val: &str) -> Vec<String> {
 /// Cells never sent to the model (a guard, not a prompt instruction — MT invents digits):
 /// numeric/decimal/thousands, currency and %, dates and bare years, one short token,
 /// the summary-word aliases (mapped deterministically instead), and empty cells.
-pub fn translatable_cell(cell: &str) -> bool {
+pub fn translatable_cell(cell: &str, glossary: &BpsGlossary) -> bool {
     let t = cell.trim();
     if t.is_empty() {
         return false;
@@ -507,7 +751,7 @@ pub fn translatable_cell(cell: &str) -> bool {
     if t.chars().count() <= 2 && !t.contains(' ') {
         return false;
     }
-    if alias_en(t).is_some() {
+    if alias_en(t, glossary).is_some() {
         return false;
     }
     let Some(first) = t.chars().next() else { return false };
@@ -520,26 +764,70 @@ pub fn translatable_cell(cell: &str) -> bool {
     true
 }
 
-/// Deterministic summary-word aliases (\`total_words\` and friends): English directly, no
-/// MT. ponytail: extend the list from real catalogs when a run misses one.
-pub fn alias_en(cell: &str) -> Option<&'static str> {
-    match cell.trim().to_ascii_lowercase().as_str() {
-        "jumlah" | "total" => Some("Total"),
-        "tahun" => Some("Year"),
-        "kabupaten" => Some("Regency"),
-        "kecamatan" | "kec" => Some("Subdistrict"),
-        "provinsi" | "propinsi" => Some("Province"),
-        "keterangan" | "ket." | "ket" => Some("Note"),
-        "catatan" => Some("Note"),
-        "sumber" => Some("Source"),
-        "no" => Some("No"),
-        _ => None,
+/// Deterministic summary-word aliases: English directly, no MT. Backed by the BPS
+/// glossary; extend the list by adding entries to the JSON.
+pub fn alias_en<'a>(cell: &str, glossary: &'a BpsGlossary) -> Option<&'a str> {
+    glossary.lookup(cell)
+}
+
+/// Terms from a two-column glossary sheet (`Indonesian,English`, or tab-separated — the
+/// delimiter is detected). A first row naming the columns is skipped, as are rows missing
+/// either half. The sheet's casing is kept: the editor shows terms as written.
+pub fn terms_from_csv(content: &str) -> Vec<(String, String)> {
+    let matrix = parse_csv_content_with_delim(content, detect_delimiter(content));
+    let mut out: Vec<(String, String)> = Vec::new();
+    for (i, row) in matrix.iter().enumerate() {
+        let id = row.first().map(|c| c.trim()).unwrap_or("");
+        let en = row.get(1).map(|c| c.trim()).unwrap_or("");
+        if id.is_empty() || en.is_empty() {
+            continue;
+        }
+        if i == 0 && looks_like_glossary_header(id, en) {
+            continue;
+        }
+        out.push((id.to_string(), en.to_string()));
     }
+    out
+}
+
+/// A first row like `Indonesian,English` (or `Istilah,Terjemahan`), not a term.
+fn looks_like_glossary_header(id: &str, en: &str) -> bool {
+    let label = |s: &str| {
+        matches!(
+            s.trim().to_lowercase().as_str(),
+            "indonesian" | "indonesia" | "id" | "istilah" | "kata" | "english" | "inggris" | "en" | "terjemahan" | "translation"
+        )
+    };
+    label(id) && label(en)
+}
+
+/// Merge imported sheet rows into the editor's list: the same Indonesian term (ignoring case
+/// and surrounding spaces) takes the imported English, new terms are appended. Returns
+/// `(added, updated)`.
+pub fn merge_terms(target: &mut Vec<(String, String)>, imported: Vec<(String, String)>) -> (usize, usize) {
+    let mut added = 0;
+    let mut updated = 0;
+    for (id, en) in imported {
+        let key = id.trim().to_lowercase();
+        match target.iter_mut().find(|(k, _)| k.trim().to_lowercase() == key) {
+            Some(slot) => {
+                if slot.1 != en {
+                    updated += 1;
+                }
+                slot.1 = en;
+            }
+            None => {
+                target.push((id, en));
+                added += 1;
+            }
+        }
+    }
+    (added, updated)
 }
 
 /// One table, two lines per cell: \`id\u{2028}en\` for translatable cells with a
 /// translation; every skipped cell stays single-line. Same rows × cols by construction.
-pub fn pair_cells(matrix: &[Vec<String>], translations: &HashMap<String, String>) -> Vec<Vec<String>> {
+pub fn pair_cells(matrix: &[Vec<String>], translations: &HashMap<String, String>, glossary: &BpsGlossary) -> Vec<Vec<String>> {
     matrix
         .iter()
         .map(|row| {
@@ -552,13 +840,13 @@ pub fn pair_cells(matrix: &[Vec<String>], translations: &HashMap<String, String>
                     if t.is_empty() || t.contains('\u{2028}') || t.contains('\n') || t.contains(" / ") {
                         return cell.clone();
                     }
-                    if let Some(en) = alias_en(t) {
+                    if let Some(en) = alias_en(t, glossary) {
                         if t.eq_ignore_ascii_case(en) {
                             return cell.clone();
                         }
                         return format!("{t}\u{2028}{en}");
                     }
-                    if !translatable_cell(t) {
+                    if !translatable_cell(t, glossary) {
                         return cell.clone();
                     }
                     match translations.get(t).map(String::as_str).filter(|s| !s.is_empty()) {
@@ -604,13 +892,13 @@ pub fn translated_body_rtf(st: &PubgenState, source_rtf: &str) -> Option<PathBuf
     Some(path)
 }
 
-fn temp_dir() -> PathBuf {
+pub(crate) fn temp_dir() -> PathBuf {
     std::env::temp_dir().join(format!("designcraft-pubgen-{}", std::process::id()))
 }
 
-/// Minimal RTF writer: escape backslash, braces; non-ASCII to \`u<dd>?\`; newlines
+/// Escape one run of text for RTF: backslash, braces; non-ASCII to \`u<dd>?\`; newlines
 /// become \`par\`.
-pub fn write_plain_rtf(text: &str, path: &std::path::Path) -> Result<(), String> {
+pub(crate) fn escape_rtf_text(text: &str) -> String {
     let mut body = String::with_capacity(text.len() + 64);
     for c in text.chars() {
         match c {
@@ -622,6 +910,12 @@ pub fn write_plain_rtf(text: &str, path: &std::path::Path) -> Result<(), String>
             c => body.push(c),
         }
     }
+    body
+}
+
+/// Minimal RTF writer around [`escape_rtf_text`].
+pub fn write_plain_rtf(text: &str, path: &std::path::Path) -> Result<(), String> {
+    let body = escape_rtf_text(text);
     let rtf = format!("{{\\rtf1\\ansi\\deff0{{\\fonttbl{{\\f0 Arial;}}}}\\f0\\fs22 {body}}}");
     std::fs::write(path, rtf).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
@@ -1049,9 +1343,17 @@ pub fn parse_note_line(line: &str) -> (String, String, String) {
 }
 
 /// Helper to get translated note elements for a given (label, colon, content).
-pub fn translate_note_item(label: &str, colon: &str, content: &str, map: &HashMap<String, String>) -> (String, String, String) {
+pub fn translate_note_item(
+    label: &str,
+    colon: &str,
+    content: &str,
+    map: &HashMap<String, String>,
+    glossary: &BpsGlossary,
+) -> (String, String, String) {
     let lower = label.to_lowercase();
-    let label_en = if lower.starts_with("keterangan")
+    let label_en = if let Some(en) = glossary.lookup(label) {
+        en.to_string()
+    } else if lower.starts_with("keterangan")
         || lower.starts_with("ket.")
         || lower.starts_with("ket ")
         || lower.starts_with("ket:")
@@ -1078,7 +1380,7 @@ pub fn translate_note_item(label: &str, colon: &str, content: &str, map: &HashMa
 }
 
 /// Collect translatable units from a table page.
-pub fn collect_table_page_units(app: &DesignApp, target: &TablePageTarget) -> Vec<(String, String)> {
+pub fn collect_table_page_units(app: &DesignApp, target: &TablePageTarget, glossary: &BpsGlossary) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut seen: HashMap<String, ()> = HashMap::new();
     let push = |out: &mut Vec<(String, String)>, seen: &mut HashMap<String, ()>, t: &str| {
@@ -1097,10 +1399,10 @@ pub fn collect_table_page_units(app: &DesignApp, target: &TablePageTarget) -> Ve
         let lines: Vec<&str> = text.split(['\n', '\u{2028}']).map(str::trim).filter(|s| !s.is_empty()).collect();
         if let Some(first) = lines.first() {
             let (clean_title, _) = extract_table_title_parts(first);
-            if translatable_cell(&clean_title) {
+            if translatable_cell(&clean_title, glossary) {
                 push(&mut out, &mut seen, &clean_title);
             }
-            if clean_title != *first && translatable_cell(first) {
+            if clean_title != *first && translatable_cell(first, glossary) {
                 push(&mut out, &mut seen, first);
             }
         }
@@ -1119,7 +1421,7 @@ pub fn collect_table_page_units(app: &DesignApp, target: &TablePageTarget) -> Ve
                     if text.is_empty() || text.contains('\n') || text.contains('\u{2028}') || text.contains(" / ") {
                         continue;
                     }
-                    if translatable_cell(text) {
+                    if translatable_cell(text, glossary) {
                         push(&mut out, &mut seen, text);
                     }
                 }
@@ -1142,7 +1444,7 @@ pub fn collect_table_page_units(app: &DesignApp, target: &TablePageTarget) -> Ve
                 continue;
             }
             let c_trimmed = content.trim();
-            if !c_trimmed.is_empty() && c_trimmed != "-" && translatable_cell(c_trimmed) {
+            if !c_trimmed.is_empty() && c_trimmed != "-" && translatable_cell(c_trimmed, glossary) {
                 push(&mut out, &mut seen, c_trimmed);
             }
         }
@@ -1247,7 +1549,7 @@ pub fn apply_table_page_result(app: &mut DesignApp, st: &PubgenState, target: &T
                 if cur.is_empty() || cur.contains('\n') || cur.contains('\u{2028}') || cur.contains(" / ") {
                     continue;
                 }
-                let en_opt = alias_en(&cur).map(|s| s.to_string()).or_else(|| map.get(&cur).cloned());
+                let en_opt = alias_en(&cur, &st.glossary).map(|s| s.to_string()).or_else(|| map.get(&cur).cloned());
                 if let Some(en) = en_opt
                     && !en.is_empty()
                     && !cur.eq_ignore_ascii_case(&en)
@@ -1328,7 +1630,7 @@ pub fn apply_table_page_result(app: &mut DesignApp, st: &PubgenState, target: &T
             if lower_lbl.starts_with("source") || lower_lbl.starts_with("note") {
                 continue;
             }
-            let (label_en, colon_en, content_en) = translate_note_item(&label, &colon, &content, map);
+            let (label_en, colon_en, content_en) = translate_note_item(&label, &colon, &content, map, &st.glossary);
             let has_tab = line.contains('\t');
             let id_line = if has_tab {
                 if content.is_empty() { format!("{label}\t{colon}") } else { format!("{label}\t{colon}\t{content}") }
@@ -1430,36 +1732,150 @@ pub fn apply_table_page_result(app: &mut DesignApp, st: &PubgenState, target: &T
 mod tests {
     use super::*;
 
+    fn glossary() -> BpsGlossary {
+        BpsGlossary::load("")
+    }
+
     #[test]
     fn numeric_and_short_cells_are_never_sent_to_the_model() {
-        assert!(!translatable_cell(""));
-        assert!(!translatable_cell("  "));
-        assert!(!translatable_cell("50000"));
-        assert!(!translatable_cell("3.14"));
-        assert!(!translatable_cell("1,234.56"));
-        assert!(!translatable_cell("-12"));
-        assert!(!translatable_cell("45%"));
-        assert!(!translatable_cell("Rp1.234"));
-        assert!(!translatable_cell("2024"));
-        assert!(!translatable_cell("No"));
-        assert!(!translatable_cell("AB"));
-        assert!(translatable_cell("Kecamatan Karawang Timur"));
-        assert!(translatable_cell("Luas Wilayah"));
+        let g = glossary();
+        assert!(!translatable_cell("", &g));
+        assert!(!translatable_cell("  ", &g));
+        assert!(!translatable_cell("50000", &g));
+        assert!(!translatable_cell("3.14", &g));
+        assert!(!translatable_cell("1,234.56", &g));
+        assert!(!translatable_cell("-12", &g));
+        assert!(!translatable_cell("45%", &g));
+        assert!(!translatable_cell("Rp1.234", &g));
+        assert!(!translatable_cell("2024", &g));
+        assert!(!translatable_cell("No", &g));
+        assert!(!translatable_cell("AB", &g));
+        assert!(translatable_cell("Kecamatan Karawang Timur", &g));
+        assert!(translatable_cell("Luas Sawah Irigasi", &g));
+        assert!(!translatable_cell("Luas Wilayah", &g), "a whole-cell glossary term is aliased, not machine-translated");
     }
 
     #[test]
     fn summary_aliases_map_to_english_deterministically() {
-        assert_eq!(alias_en("Jumlah"), Some("Total"));
-        assert_eq!(alias_en("tahun"), Some("Year"));
-        assert_eq!(alias_en("Kecamatan"), Some("Subdistrict"));
-        assert_eq!(alias_en("Kabupaten Karawang"), None);
+        let g = glossary();
+        assert_eq!(alias_en("Jumlah", &g), Some("Total"));
+        assert_eq!(alias_en("tahun", &g), Some("Year"));
+        assert_eq!(alias_en("Kecamatan", &g), Some("Subdistrict"));
+        assert_eq!(alias_en("Kabupaten Karawang", &g), None);
+    }
+
+    #[test]
+    fn bundled_glossary_covers_every_roadmap_term() {
+        let g = glossary();
+        let expected = [
+            ("Kecamatan", "Subdistrict"),
+            ("Kabupaten", "Regency"),
+            ("Desa", "Village"),
+            ("Kelurahan", "Urban Village"),
+            ("Luas Wilayah", "Total Area"),
+            ("Kepadatan Penduduk", "Population Density"),
+            ("Jenis Kelamin", "Sex"),
+            ("Laki-laki", "Male"),
+            ("Perempuan", "Female"),
+            ("PDRB", "GRDP"),
+            ("Laju Pertumbuhan", "Growth Rate"),
+            ("Tahun", "Year"),
+            ("Sumber", "Source"),
+            ("Catatan", "Note"),
+            ("Keterangan", "Note"),
+        ];
+        for (id, en) in expected {
+            assert_eq!(alias_en(id, &g), Some(en), "{id}");
+        }
+    }
+
+    #[test]
+    fn bundled_glossary_keeps_legacy_spellings_and_abbreviations() {
+        let g = glossary();
+        for id in [
+            "jumlah",
+            "total",
+            "tahun",
+            "kabupaten",
+            "kecamatan",
+            "kec",
+            "provinsi",
+            "propinsi",
+            "keterangan",
+            "ket.",
+            "ket",
+            "catatan",
+            "sumber",
+            "no",
+        ] {
+            assert!(alias_en(id, &g).is_some(), "legacy spelling {id} must stay mapped");
+        }
+    }
+
+    #[test]
+    fn lookup_is_case_insensitive_on_the_whole_cell() {
+        let g = glossary();
+        assert_eq!(alias_en("KECAMATAN", &g), Some("Subdistrict"));
+        assert_eq!(alias_en("  Jumlah \t", &g), Some("Total"));
+        assert_eq!(alias_en("kEcAmAtAn", &g), Some("Subdistrict"));
+        assert_eq!(alias_en("Kecamatan Karawang", &g), None);
+        assert_eq!(alias_en("Jumlah Penduduk", &g), None);
+        assert_eq!(alias_en("Total Luas", &g), None);
+        assert_eq!(alias_en("Luas Wilayah", &g), Some("Total Area"));
+        assert_eq!(alias_en("Luas Wilayah (km²)", &g), None, "multi-word entries match the whole cell only");
+    }
+
+    #[test]
+    fn user_glossary_overrides_the_bundled_terms() {
+        let path = std::env::temp_dir().join(format!("dc-glossary-{}.json", std::process::id()));
+        std::fs::write(&path, r#"{"exact_mappings":{"Wilayah":"Territory","Jumlah":"Sum"}}"#).expect("write");
+        let g = BpsGlossary::load(&path.to_string_lossy());
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(alias_en("Wilayah", &g), Some("Territory"));
+        assert_eq!(alias_en("Jumlah", &g), Some("Sum"), "user override wins");
+        assert_eq!(alias_en("Sumber", &g), None, "bundled terms are replaced, not merged");
+    }
+
+    #[test]
+    fn malformed_or_missing_user_glossary_falls_back_to_the_bundled_terms() {
+        let path = std::env::temp_dir().join(format!("dc-glossary-bad-{}.json", std::process::id()));
+        std::fs::write(&path, "{ not json").expect("write");
+        let g = BpsGlossary::load(&path.to_string_lossy());
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(alias_en("Jumlah", &g), Some("Total"), "malformed user file falls back to the bundled asset");
+
+        let missing = std::env::temp_dir().join(format!("dc-glossary-missing-{}.json", std::process::id()));
+        let g = BpsGlossary::load(&missing.to_string_lossy());
+        assert_eq!(alias_en("Jumlah", &g), Some("Total"), "missing user file falls back to the bundled asset");
+    }
+
+    #[test]
+    fn saved_glossary_round_trips_through_the_loader() {
+        let path = std::env::temp_dir().join(format!("dc-glossary-saved-{}.json", std::process::id()));
+        let glossary = BpsGlossary::from_terms(&[("Kustom".to_string(), "Custom".to_string())]);
+        glossary.save(&path).expect("save");
+        let loaded = BpsGlossary::load(&path.to_string_lossy());
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(alias_en("KUSTOM", &loaded), Some("Custom"));
+        assert_eq!(loaded.exact_mappings.len(), 1);
+    }
+
+    #[test]
+    fn prompt_pairs_are_sorted_for_a_stable_system_prompt() {
+        let g = BpsGlossary::load("");
+        let pairs = g.prompt_pairs();
+        assert!(!pairs.is_empty());
+        let mut sorted = pairs.clone();
+        sorted.sort();
+        assert_eq!(pairs, sorted);
     }
 
     #[test]
     fn pair_cells_keeps_the_shape_and_pairs_translatable_cells() {
-        let translations = HashMap::from([("Luas Wilayah".to_string(), "Area".to_string())]);
-        let matrix = vec![vec!["No".into(), "Luas Wilayah".into(), "50000".into()], vec!["Jumlah".into(), "".into(), "2024".into()]];
-        let paired = pair_cells(&matrix, &translations);
+        let g = glossary();
+        let translations = HashMap::from([("Luas Sawah Irigasi".to_string(), "Irrigated Rice Field Area".to_string())]);
+        let matrix = vec![vec!["No".into(), "Luas Sawah Irigasi".into(), "50000".into()], vec!["Jumlah".into(), "".into(), "2024".into()]];
+        let paired = pair_cells(&matrix, &translations, &g);
         assert_eq!(paired.len(), matrix.len());
         assert_eq!(paired[0].len(), matrix[0].len());
         assert_eq!(paired[0][0], "No");
@@ -1469,7 +1885,7 @@ mod tests {
         assert_eq!(paired[1][2], "2024");
         let cell = &paired[0][1];
         assert_eq!(cell.matches('\u{2028}').count(), 1, "{cell}");
-        assert_eq!(cell.replace('\u{2028}', " "), "Luas Wilayah Area");
+        assert_eq!(cell.replace('\u{2028}', " "), "Luas Sawah Irigasi Irrigated Rice Field Area");
     }
 
     #[test]
@@ -1508,12 +1924,13 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("BPS Kabupaten Karawang/Dinas terkait".into(), "Statistics of Karawang Regency Office/Relevant Agency".into());
 
-        let (en_l1, en_c1, en_cnt1) = translate_note_item(&l1, &c1, &cnt1, &map);
+        let g = glossary();
+        let (en_l1, en_c1, en_cnt1) = translate_note_item(&l1, &c1, &cnt1, &map, &g);
         assert_eq!(en_l1, "Note");
         assert_eq!(en_c1, ":");
         assert_eq!(en_cnt1, "-");
 
-        let (en_l2, en_c2, en_cnt2) = translate_note_item(&l2, &c2, &cnt2, &map);
+        let (en_l2, en_c2, en_cnt2) = translate_note_item(&l2, &c2, &cnt2, &map, &g);
         assert_eq!(en_l2, "Source");
         assert_eq!(en_c2, ":");
         assert_eq!(en_cnt2, "Statistics of Karawang Regency Office/Relevant Agency");
@@ -1522,7 +1939,7 @@ mod tests {
     #[test]
     fn pair_cells_leaves_untranslated_cells_untouched() {
         let matrix = vec![vec!["Kecamatan Karawang Timur".into()]];
-        let paired = pair_cells(&matrix, &HashMap::new());
+        let paired = pair_cells(&matrix, &HashMap::new(), &glossary());
         assert_eq!(paired[0][0], "Kecamatan Karawang Timur");
     }
 
@@ -1541,8 +1958,8 @@ mod tests {
     fn collect_translation_units_dedupes_and_skips_numbers() {
         let st = PubgenState {
             card1_records: vec![
-                vec!["Tabel".into(), "01.01".into(), "Luas Wilayah".into(), "".into()],
-                vec!["Tabel".into(), "01.02".into(), "Luas Wilayah".into(), "".into()],
+                vec!["Tabel".into(), "01.01".into(), "Produksi Padi".into(), "".into()],
+                vec!["Tabel".into(), "01.02".into(), "Produksi Padi".into(), "".into()],
             ],
             card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
             card1_range_all: true,
@@ -1553,9 +1970,65 @@ mod tests {
         let units = collect_translation_units(&st);
         let texts: Vec<&str> = units.iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(texts.len(), texts.iter().collect::<std::collections::HashSet<_>>().len(), "deduped: {texts:?}");
-        assert!(texts.contains(&"Luas Wilayah"), "{texts:?}");
+        assert!(texts.contains(&"Produksi Padi"), "{texts:?}");
         assert!(texts.contains(&"KECAMATAN KARAWANG TIMUR"), "{texts:?}");
         assert!(!texts.iter().any(|t| t.chars().next().is_some_and(|c| c.is_ascii_digit())), "{texts:?}");
+    }
+
+    #[test]
+    fn glossary_sheet_rows_skip_the_header_and_incomplete_rows() {
+        let csv = "Indonesian,English\nKecamatan,Subdistrict\n\nDesa,\nJumlah,Total\n";
+        let terms = terms_from_csv(csv);
+        assert_eq!(terms, vec![("Kecamatan".to_string(), "Subdistrict".to_string()), ("Jumlah".to_string(), "Total".to_string())]);
+    }
+
+    #[test]
+    fn glossary_sheet_accepts_tabs_and_only_drops_a_real_header() {
+        let tsv = "Istilah\tTerjemahan\nKecamatan\tSubdistrict\nEnglish, Notes\tKeterangan\n";
+        let terms = terms_from_csv(tsv);
+        assert_eq!(terms, vec![("Kecamatan".to_string(), "Subdistrict".to_string()), ("English, Notes".to_string(), "Keterangan".to_string())]);
+        let no_header = terms_from_csv("Kabupaten,Regency\nDesa,Village\n");
+        assert_eq!(no_header.len(), 2);
+    }
+
+    #[test]
+    fn merge_terms_overrides_by_case_insensitive_key_and_appends_the_rest() {
+        let mut target = vec![("Jumlah".to_string(), "Total".to_string()), ("Desa".to_string(), "Village".to_string())];
+        let imported = vec![
+            ("jumlah".to_string(), "Sum".to_string()),
+            ("desa".to_string(), "Village".to_string()),
+            ("Wilayah".to_string(), "Territory".to_string()),
+        ];
+        let (added, updated) = merge_terms(&mut target, imported);
+        assert_eq!((added, updated), (1, 1));
+        assert_eq!(target.len(), 3);
+        assert_eq!(target[0].1, "Sum", "the imported English wins on the existing term");
+        assert_eq!(target[2], ("Wilayah".to_string(), "Territory".to_string()));
+    }
+
+    #[test]
+    fn merge_terms_counts_nothing_when_the_sheet_matches() {
+        let mut target = vec![("Kecamatan".to_string(), "Subdistrict".to_string())];
+        let (added, updated) = merge_terms(&mut target, vec![("Kecamatan".to_string(), "Subdistrict".to_string())]);
+        assert_eq!((added, updated), (0, 0));
+        assert_eq!(target.len(), 1);
+    }
+
+    #[test]
+    fn example_glossary_sheet_imports_into_the_editor() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/pubgen-glossary.example.csv");
+        let content = std::fs::read_to_string(path).expect("the example sheet ships with the docs");
+        let imported = terms_from_csv(&content);
+        assert_eq!(imported.len(), 23, "{imported:?}");
+        let mut target = vec![];
+        let (added, updated) = merge_terms(&mut target, imported);
+        assert_eq!((added, updated), (23, 0));
+        let path = std::env::temp_dir().join(format!("dc-glossary-example-{}.json", std::process::id()));
+        BpsGlossary::from_terms(&target).save(&path).expect("save");
+        let g = BpsGlossary::load(&path.to_string_lossy());
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(alias_en("Keterangan", &g), Some("Note"));
+        assert_eq!(alias_en("kec", &g), Some("Subdistrict"));
     }
 }
 
@@ -1604,7 +2077,7 @@ pub(crate) mod flow_tests {
         assert!(target.notes_fid.is_some(), "Must detect notes frame");
 
         // 4. Collect units
-        let units = ai::collect_table_page_units(&app, &target);
+        let units = ai::collect_table_page_units(&app, &target, &st.glossary);
         let texts: Vec<&str> = units.iter().map(|(k, _)| k.as_str()).collect();
         assert!(
             texts.contains(&"Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025"),

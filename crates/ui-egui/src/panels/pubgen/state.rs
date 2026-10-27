@@ -9,6 +9,7 @@ use super::ai;
 use super::ai_cover;
 use super::ai_cover_job;
 use super::locale::Locale;
+use super::summarize;
 
 pub(super) fn default_file_col() -> usize {
     3
@@ -181,9 +182,24 @@ pub struct PubgenState {
     /// Source RTF -> temp translated RTF (for the EN narrative spread).
     #[serde(skip)]
     pub translated_bodies: HashMap<String, PathBuf>,
+    /// Official BPS terminology (bundled asset or the user's override).
+    #[serde(skip)]
+    pub glossary: ai::BpsGlossary,
+    /// The glossary was resolved from prefs for this panel session.
+    #[serde(skip)]
+    pub glossary_loaded: bool,
     /// Signature of the slice the finished job translated; a mismatch re-collects.
     #[serde(skip)]
     pub translations_slice_key: String,
+    /// A running background chapter-review draft.
+    #[serde(skip)]
+    pub narrative_job: Option<summarize::NarrativeJob>,
+    /// The drafted blocks awaiting Apply/Discard.
+    #[serde(skip)]
+    pub narrative_preview: Option<Vec<(String, String)>>,
+    /// The review page the blocks will be placed into.
+    #[serde(skip)]
+    pub narrative_target: Option<ai::PageTarget>,
     /// Targeted translation: only RXX/BXX review pages (narrative), tables and other
     /// page kinds stay Indonesian. Useful under tight provider token limits.
     #[serde(default)]
@@ -485,7 +501,12 @@ impl Default for PubgenState {
             translate_job: None,
             translations: HashMap::new(),
             translated_bodies: HashMap::new(),
+            glossary: ai::BpsGlossary::load(""),
+            glossary_loaded: false,
             translations_slice_key: String::new(),
+            narrative_job: None,
+            narrative_preview: None,
+            narrative_target: None,
             ai_only_reviews: false,
             ai_pending_excel_path: String::new(),
             ai_page_target: None,

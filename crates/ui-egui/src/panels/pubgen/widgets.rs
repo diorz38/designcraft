@@ -39,14 +39,14 @@ fn toggle_lang_button(ui: &mut Ui, t: &Tokens, bilingual: bool) -> Option<bool> 
         p.rect_stroke(r, 3.0, Stroke::new(1.0, t.field_border), egui::StrokeKind::Inside);
         crate::rtl::paint(p, r.center(), egui::Align2::CENTER_CENTER, label, crate::theme::semibold(11.0), t.text_dim);
     }
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
 
     if resp.clicked() { Some(!bilingual) } else { None }
 }
 
 /// Load and cache the PubGen logo from `plan/pubgen/docs_images/pubgen_logo.png`.
 fn pubgen_logo_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
-    let key = egui::Id::new("pubgen_logo_texture");
+    let key = egui::Id::unique("pubgen_logo_texture");
     if let Some(tex) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(key)) {
         return Some(tex);
     }
@@ -76,7 +76,7 @@ fn pubgen_logo_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
 
 /// About PubGen popup dialog modal styled like About DesignCraft.
 pub(crate) fn about_pubgen_dialog(app: &mut DesignApp, ctx: &egui::Context, open: &mut bool, t: &Tokens) {
-    let area = egui::Id::new("about_pubgen_modal");
+    let area = egui::Id::unique("about_pubgen_modal");
     let instance = area.with("placement");
     let resp = crate::modal_drag::modal(ctx, area, instance).show(ctx, |ui| {
         ui.set_width(420.0);
@@ -148,7 +148,7 @@ pub(crate) fn primary_outline_button(ui: &mut Ui, t: &Tokens, label: &str, width
     }
     p.rect_stroke(r, 3.0, Stroke::new(1.2, t.accent), egui::StrokeKind::Inside);
     crate::rtl::paint(p, r.center(), egui::Align2::CENTER_CENTER, label, crate::theme::semibold(11.0), t.text_strong);
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
     resp
 }
 
@@ -243,12 +243,13 @@ pub(crate) fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
                 "Select a generated RXX review page or Table page to translate in place."
             });
         if page_btn.clicked() && let Some(target) = table_target {
-            let mut units = ai::collect_table_page_units(app, &target);
+            let mut units = ai::collect_table_page_units(app, &target, &st.glossary);
             units.retain(|(k, _)| !st.translations.contains_key(k));
             if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
                 if !units.is_empty() {
                     st.ai_table_target = Some(target);
-                    st.translate_job = Some(ai::TranslateJob::spawn(&provider, &key, &model, units, ui.ctx().clone()));
+                    let terms = st.glossary.prompt_pairs();
+                    st.translate_job = Some(ai::TranslateJob::spawn(&provider, &key, &model, units, terms, ui.ctx().clone()));
                     st.header_status = Some(("Translating table page with AI…".into(), true));
                 } else {
                     ai::apply_table_page_result(app, st, &target);
@@ -260,19 +261,60 @@ pub(crate) fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
             } else {
                 st.header_status = Some(("AI translation: no backend configured — click 'AI Translator' to set up.".into(), false));
             }
-        } else if page_btn.clicked() && let Some(target) = review_target {
-            let mut units = ai::collect_page_units(app, &target);
+        } else if page_btn.clicked() && let Some(target) = review_target.as_ref() {
+            let mut units = ai::collect_page_units(app, target);
             units.retain(|(k, _)| !st.translations.contains_key(k));
             if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
-                st.ai_page_target = Some(target);
-                st.translate_job = Some(ai::TranslateJob::spawn(&provider, &key, &model, units, ui.ctx().clone()));
+                st.ai_page_target = Some(target.clone());
+                let terms = st.glossary.prompt_pairs();
+                st.translate_job = Some(ai::TranslateJob::spawn(&provider, &key, &model, units, terms, ui.ctx().clone()));
                 st.header_status = Some(("Translating page with AI…".into(), true));
             } else if units.is_empty() {
                 // Everything cached: re-apply from the map.
-                ai::apply_page_result(app, st, &target);
+                ai::apply_page_result(app, st, target);
                 st.header_status = Some(("Page translated from cache.".into(), true));
             } else {
                 st.header_status = Some(("AI translation: no backend configured — click 'AI Translator' to set up.".into(), false));
+            }
+        }
+
+        // "Draft Review" — the chapter review written from the catalog's table statistics.
+        let groq_ready = app.session.prefs.translation_provider == "groq"
+            && !app.session.prefs.translation_groq_api_key.trim().is_empty();
+        let can_draft = is_review && groq_ready && super::summarize::has_catalog_tables(st);
+        let draft_btn = ui
+            .add_enabled(can_draft, egui::Button::new("Draft Review"))
+            .on_hover_text("Write this chapter's review from its table statistics, preview the blocks, then apply them to the page.")
+            .on_disabled_hover_text(if !groq_ready {
+                "Configure the Groq provider first: click 'AI Translator' above."
+            } else if !is_review {
+                "Select a generated RXX review page."
+            } else {
+                "The catalog has no table CSV rows to summarise."
+            });
+        if draft_btn.clicked() && let Some(target) = review_target.as_ref() {
+            let summaries = super::summarize::collect_table_summaries(st);
+            if summaries.is_empty() {
+                st.header_status = Some(("No numeric table data found in the catalog CSVs.".into(), false));
+            } else if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
+                if st.narrative_job.as_ref().is_some_and(|j| !j.finished) {
+                    st.header_status = Some(("A chapter review is already being drafted.".into(), false));
+                } else {
+                    st.narrative_target = Some(target.clone());
+                    let terms = st.glossary.prompt_pairs();
+                    st.narrative_job = Some(super::summarize::NarrativeJob::spawn(
+                        &provider,
+                        &key,
+                        &model,
+                        summaries,
+                        target.id_title.clone(),
+                        terms,
+                        ui.ctx().clone(),
+                    ));
+                    st.header_status = Some(("Drafting the chapter review with AI…".into(), true));
+                }
+            } else {
+                st.header_status = Some(("AI: no backend configured — click 'AI Translator' to set up.".into(), false));
             }
         }
 
@@ -324,7 +366,7 @@ pub(crate) fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
                 } else {
                     let mut all_units = Vec::new();
                     for t in &targets {
-                        all_units.extend(ai::collect_table_page_units(app, t));
+                        all_units.extend(ai::collect_table_page_units(app, t, &st.glossary));
                     }
                     all_units.retain(|(k, _)| !st.translations.contains_key(k));
                     all_units.sort_by(|a, b| a.0.cmp(&b.0));
@@ -333,7 +375,8 @@ pub(crate) fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
                     if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
                         if !all_units.is_empty() {
                             st.ai_table_targets_batch = targets;
-                            st.translate_job = Some(ai::TranslateJob::spawn(&provider, &key, &model, all_units, ui.ctx().clone()));
+                            let terms = st.glossary.prompt_pairs();
+                            st.translate_job = Some(ai::TranslateJob::spawn(&provider, &key, &model, all_units, terms, ui.ctx().clone()));
                             st.header_status = Some(("Translating table pages with AI…".into(), true));
                         } else {
                             let mut count = 0;

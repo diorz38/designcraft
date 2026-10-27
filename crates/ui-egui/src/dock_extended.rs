@@ -10,8 +10,12 @@ use crate::{DesignApp, panels};
 pub mod pubgen;
 
 /// (id, label, icon) of the Properties · Pages · Layers group of the default dock.
-pub const DOCK_TABS: &[(&str, &str, &str)] =
-    &[("properties", "Properties", "panel-properties"), ("pages", "Pages", "panel-pages"), ("layers", "Layers", "panel-layers"), ("pubgen", "Pubgen", "panel-pages")];
+pub const DOCK_TABS: &[(&str, &str, &str)] = &[
+    ("properties", "Properties", "panel-properties"),
+    ("pages", "Pages", "panel-pages"),
+    ("layers", "Layers", "panel-layers"),
+    ("pubgen", "Pubgen", "panel-pages"),
+];
 
 /// (id, label, icon) of the other dock panels, which start in the iconic column.
 pub const ICON_PANELS: &[(&str, &str, &str)] = &[

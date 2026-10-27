@@ -61,7 +61,19 @@ const ALLOWED: &[(&str, &str)] = &[
         "downloads and caches offline NLLB translation model weights and vocabulary files into the user-configured model directory",
     ),
     ("translate/src/models.rs", "checks presence of required offline model files in the configured translation model directory"),
-    ("ui-egui/src/panels/pubgen/ai.rs", "reads source RTF and cover assets and writes translated RTF files for pubgen AI translation workflow"),
+    ("ui-egui/src/panels/pubgen/ai.rs", "reads source RTF and the BPS glossary and writes translated/narrative RTF files for pubgen AI workflows"),
+    (
+        "ui-egui/src/panels/pubgen/ai_cover.rs",
+        "Pubgen AI covers read a developer `.env` for a Cloudflare token (environment variables win) and probe the generated cover output folder",
+    ),
+    (
+        "ui-egui/src/panels/pubgen/ai_cover_job.rs",
+        "Pubgen AI cover jobs write the generated image to the output path the user chose before the cover pipeline places it",
+    ),
+    (
+        "ui-egui/src/panels/pubgen/summarize.rs",
+        "Pubgen narrative summarizer reads the user-picked catalog's table CSVs and writes the drafted RTF into the per-process temp folder for file.place",
+    ),
 ];
 
 fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {

@@ -19,3 +19,7 @@
 .env
 /ai_image_cover/
 /ai_cover_generation/
+*.zip
+*.csv
+# The Terminology pane's starter sheet is documentation, not generated output.
+!docs/pubgen-glossary.example.csv

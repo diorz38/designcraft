@@ -409,4 +409,177 @@ mod tests {
         assert!(prompt_corp.contains("navy blue"), "{prompt_corp}");
         assert!(!prompt_corp.contains("deep teal green"), "{prompt_corp}");
     }
+
+    /// Live validation of every AI cover style against Cloudflare Workers AI:
+    /// replays each preset × palette through the exact production request path
+    /// (`build_prompt` + `Aspect::Wrap` + 18 steps, like `trigger_generate_cover`)
+    /// and saves into `ai_cover_generation/` the wire request (token redacted),
+    /// the raw provider JPEG and the cropped pipeline PNG for every combination.
+    #[cfg(feature = "ai-cover-online")]
+    mod live_all_styles {
+        use super::*;
+        use designcraft_imagegen as imagegen;
+        use std::sync::atomic::AtomicBool;
+
+        fn slug(s: &str) -> String {
+            s.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect()
+        }
+
+        fn credentials(repo: &std::path::Path) -> (String, String) {
+            let mut acct = std::env::var("CLOUDFLARE_ACCOUNT_ID").unwrap_or_default().trim().to_string();
+            let mut tok = std::env::var("CLOUDFLARE_API_TOKEN").unwrap_or_default().trim().to_string();
+            if acct.is_empty() || tok.is_empty() {
+                if let Ok(content) = std::fs::read_to_string(repo.join(".env")) {
+                    for line in content.lines() {
+                        let line = line.trim();
+                        if line.starts_with('#') || line.is_empty() {
+                            continue;
+                        }
+                        if let Some((k, v)) = line.split_once('=') {
+                            let v = v.trim().trim_matches('"').trim_matches('\'').trim().to_string();
+                            if acct.is_empty() && k.trim().eq_ignore_ascii_case("CLOUDFLARE_ACCOUNT_ID") {
+                                acct = v;
+                            } else if tok.is_empty() && k.trim().eq_ignore_ascii_case("CLOUDFLARE_API_TOKEN") {
+                                tok = v;
+                            }
+                        }
+                    }
+                }
+            }
+            (acct, tok)
+        }
+
+        #[test]
+        #[ignore = "live Cloudflare run: spends free-tier Neurons and writes ai_cover_generation/ (AICOVER_COMBOS=101:3,104:1 retries a subset)"]
+        fn live_generate_every_ai_style_and_palette() {
+            let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+            let (acct, tok) = credentials(&repo);
+            assert!(!acct.is_empty(), "CLOUDFLARE_ACCOUNT_ID not found (env or {}/.env)", repo.display());
+            assert!(!tok.is_empty(), "CLOUDFLARE_API_TOKEN not found (env or {}/.env)", repo.display());
+
+            let only: Vec<(usize, usize)> = std::env::var("AICOVER_COMBOS")
+                .ok()
+                .map(|spec| {
+                    spec.split(',')
+                        .filter_map(|pair| pair.trim().split_once(':'))
+                        .filter_map(|(s, p)| Some((s.trim().parse().ok()?, p.trim().parse().ok()?)))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let out_dir = repo.join("ai_cover_generation");
+            let req_dir = out_dir.join("requests");
+            std::fs::create_dir_all(&req_dir).expect("create ai_cover_generation/requests");
+
+            let client = imagegen::cloudflare::CloudflareClient::new(&acct, &tok);
+            let cancel = AtomicBool::new(false);
+            let title = "Analisis Ketenagakerjaan Kabupaten Karawang 2026";
+            let seed = super::super::super::ai_cover_job::seed_from_title(title);
+            let neg = imagegen::GenRequest::clean_cover_negative_prompt();
+
+            let mut manifest: Vec<serde_json::Value> = Vec::new();
+            let mut quota_hit = false;
+            for (i, preset) in AI_PRESETS.iter().enumerate() {
+                for (j, pal) in preset.palettes.iter().enumerate() {
+                    let style_id = AI_STYLE_BASE + i;
+                    if !only.is_empty() && !only.contains(&(style_id, j)) {
+                        continue;
+                    }
+                    let prompt = build_prompt(preset, pal);
+                    let req = imagegen::GenRequest::new(prompt.clone(), neg.clone(), imagegen::Aspect::Wrap, 18).with_seed(seed);
+                    let stem = format!("s{}_p{}__{}__{}", style_id, j, slug(preset.name), slug(pal.name));
+
+                    let request_json = json!({
+                        "style_id": style_id,
+                        "preset": preset.name,
+                        "palette": pal.name,
+                        "palette_colors": {"primary": pal.primary, "accent": pal.accent, "dark": pal.dark},
+                        "method": "POST",
+                        "url": "https://api.cloudflare.com/client/v4/accounts/<account_id>/ai/run/@cf/black-forest-labs/flux-1-schnell",
+                        "headers": {"Content-Type": "application/json", "Authorization": "Bearer <redacted>"},
+                        "body": serde_json::from_str::<serde_json::Value>(&imagegen::cloudflare::request_body_for(&req)).expect("wire body is JSON"),
+                        "local_only_never_sent": {
+                            "negative_prompt": neg,
+                            "seed_from_title": seed,
+                            "seed_title": title,
+                            "steps_requested": req.num_steps,
+                            "target_bucket": [req.width, req.height],
+                            "note": "flux-1-schnell rejects width/height/seed/negative_prompt (error 5006); it always returns a 1024x1024 JPEG which the client center-crops to the target bucket"
+                        }
+                    });
+                    std::fs::write(
+                        req_dir.join(format!("{stem}_request.json")),
+                        serde_json::to_string_pretty(&request_json).expect("serialize request"),
+                    )
+                    .expect("write request json");
+
+                    let entry = match client.generate_with_raw(&req, &cancel) {
+                        Ok(out) => {
+                            let png_path = out_dir.join(format!("{stem}.png"));
+                            let raw_path = out_dir.join(format!("{stem}_raw.jpg"));
+                            std::fs::write(&png_path, &out.png).expect("write png");
+                            std::fs::write(&raw_path, &out.raw).expect("write raw jpeg");
+                            println!("ok   {stem}: {} raw JPEG bytes, {} bucket PNG bytes", out.raw.len(), out.png.len());
+                            json!({
+                                "style_id": style_id, "preset": preset.name, "palette": pal.name, "ok": true,
+                                "prompt": prompt, "steps_sent": 8,
+                                "raw": raw_path.file_name().map(|s| s.to_string_lossy()).unwrap_or_default(),
+                                "png": png_path.file_name().map(|s| s.to_string_lossy()).unwrap_or_default(),
+                            })
+                        }
+                        Err(imagegen::ImageGenError::Auth) => panic!("Cloudflare rejected the credentials"),
+                        Err(e) => {
+                            println!("fail {stem}: {e}");
+                            if matches!(e, imagegen::ImageGenError::Quota(_)) {
+                                quota_hit = true;
+                            }
+                            json!({
+                                "style_id": style_id, "preset": preset.name, "palette": pal.name, "ok": false,
+                                "prompt": prompt, "error": e.to_string(),
+                            })
+                        }
+                    };
+                    manifest.push(entry);
+                    if quota_hit {
+                        break;
+                    }
+                }
+                if quota_hit {
+                    break;
+                }
+            }
+
+            let unix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            // A filtered retry merges into an existing manifest so the folder keeps the full picture.
+            let key = |e: &serde_json::Value| {
+                format!("{}|{}", e.get("preset").and_then(|v| v.as_str()).unwrap_or(""), e.get("palette").and_then(|v| v.as_str()).unwrap_or(""))
+            };
+            let mut merged: std::collections::BTreeMap<String, serde_json::Value> = std::fs::read_to_string(out_dir.join("manifest.json"))
+                .ok()
+                .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+                .and_then(|doc| doc.get("results").and_then(|r| r.as_array()).cloned())
+                .map(|results| results.into_iter().map(|e| (key(&e), e)).collect())
+                .unwrap_or_default();
+            for e in &manifest {
+                merged.insert(key(e), e.clone());
+            }
+            let mut results: Vec<serde_json::Value> = merged.into_values().collect();
+            results.sort_by_key(|e| {
+                (e.get("style_id").and_then(|v| v.as_u64()).unwrap_or(0), e.get("palette").and_then(|v| v.as_str()).unwrap_or("").to_string())
+            });
+            let ok = results.iter().filter(|e| e.get("ok").and_then(|v| v.as_bool()) == Some(true)).count();
+            let doc = json!({
+                "model": "@cf/black-forest-labs/flux-1-schnell",
+                "endpoint": "POST /client/v4/accounts/{account_id}/ai/run/@cf/black-forest-labs/flux-1-schnell",
+                "generated_unix": unix,
+                "combos": results.len(),
+                "succeeded": ok,
+                "request_contract": {"prompt": "<style words>, <palette words>, minimalist 2d vector cover design, sleek layout, flat vector art, no text", "steps": 8},
+                "results": results,
+            });
+            std::fs::write(out_dir.join("manifest.json"), serde_json::to_string_pretty(&doc).expect("serialize manifest")).expect("write manifest");
+            assert!(ok > 0, "no combination generated successfully — see ai_cover_generation/manifest.json");
+            println!("done: {ok}/{} combinations in ai_cover_generation/", doc["combos"]);
+        }
+    }
 }

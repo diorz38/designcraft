@@ -65,6 +65,10 @@ day one (never-crash standard).
 - `CloudflareClient::new(account_id, token)` + `with_base_url` (test override).
   `generate(&self, req, cancel: &AtomicBool) -> Result<Vec<u8>, ImageGenError>`.
 - Timeout, response-size cap, no `unsafe`, no panics on malformed JSON.
+- HTTP 400 with error 8007 ("Input prompt contains NSFW content") is retried twice with a
+  500 ms pause: Cloudflare's flux prompt classifier is stochastic — the same prompt is rejected
+  on one request and accepted on the next (measured live across the Retro Waves palettes) — and
+  a rejected request is not billed. Other 400s (e.g. the 5006 schema rejection) stay final.
 - Cargo: `cloudflare = ["dep:ureq", "dep:serde_json"]`; every type exists without the feature,
   calls return `Unavailable` (translate pattern, lib.rs:48).
 

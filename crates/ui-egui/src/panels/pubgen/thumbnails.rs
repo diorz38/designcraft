@@ -18,7 +18,7 @@ pub(crate) fn adjust_hex(hex: &str, factor: f32) -> String {
 }
 
 fn style_thumbnail_texture(ctx: &egui::Context, style_idx: usize) -> Option<egui::TextureHandle> {
-    let key = egui::Id::new(("pubgen_cover_style_thumbnail_tex", style_idx));
+    let key = egui::Id::unique(("pubgen_cover_style_thumbnail_tex", style_idx));
     if let Some(tex) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(key)) {
         return Some(tex);
     }
