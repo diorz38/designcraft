@@ -121,14 +121,13 @@ pub fn style_name(cover_style: usize) -> Option<String> {
     preset(cover_style).map(|p| format!("AI {}", p.name))
 }
 
-/// The full prompt sent for a preset + palette: pure style words, palette words,
-/// native SDXL 3:2 landscape dimensions (1216x832), and full-bleed panoramic layout.
-/// Avoids mockup triggers (booklet, cover, template, bifold, front/back cover).
+/// The full prompt sent for a preset + palette: the flux recipe validated in
+/// `ai_cover_generation/` — pure style words, palette words, and the flat-vector
+/// cover wrapper. No SDXL dimension tail (flux has a fixed square output, a
+/// strict two-field schema, and no reaction to the mockup-trigger words that
+/// wording had to avoid with SDXL).
 pub fn build_prompt(preset: &AiPreset, palette: &AiPalette) -> String {
-    format!(
-        "{}, {}, width 1216 height 832, aspect ratio 3:2 landscape, wide panoramic wallpaper, full bleed edge to edge, flat 2D vector graphic, continuous seamless artwork, generous blank copy space for typography, high resolution",
-        preset.style_words, palette.words
-    )
+    format!("{}, {}, minimalist 2d vector cover design, sleek layout, flat vector art, no text", preset.style_words, palette.words)
 }
 
 // ---------------------------------------------------------------------------
@@ -370,13 +369,17 @@ mod tests {
     }
 
     #[test]
-    fn prompt_carries_style_palette_and_layout_constraints() {
+    fn prompt_carries_style_palette_and_flux_wrapper() {
         let prompt = build_prompt(&AI_PRESETS[0], &AI_PALETTES[0]);
         assert!(prompt.contains("mid-century modern"), "{prompt}");
         assert!(prompt.contains("terracotta red"), "{prompt}");
-        assert!(prompt.contains("copy space"), "{prompt}");
-        assert!(prompt.contains("1216") && prompt.contains("832"), "{prompt}");
-        assert!(prompt.contains("3:2"), "{prompt}");
+        assert!(prompt.contains("minimalist 2d vector cover design"), "{prompt}");
+        assert!(prompt.contains("sleek layout"), "{prompt}");
+        assert!(prompt.contains("flat vector art"), "{prompt}");
+        assert!(prompt.contains("no text"), "{prompt}");
+        // No SDXL dimension tail: flux has a fixed square output and ignores it.
+        assert!(!prompt.contains("1216") && !prompt.contains("832"), "{prompt}");
+        assert!(!prompt.contains("3:2"), "{prompt}");
         assert!(!prompt.contains("booklet"), "{prompt}");
         assert!(!prompt.contains("template"), "{prompt}");
         assert!(!prompt.contains("front cover"), "{prompt}");

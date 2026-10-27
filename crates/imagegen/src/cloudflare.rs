@@ -1,9 +1,12 @@
-//! Cloudflare Workers AI REST client: one POST per image, binary image bytes back.
+//! Cloudflare Workers AI REST client: one POST per image, cover-bucket PNG back.
 //!
-//! Endpoint: `POST {base}/accounts/{account_id}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0`
-//! with a JSON body (prompt, negative_prompt, width, height, num_steps, optional seed)
-//! and `Bearer` auth. The reply body is the encoded image (PNG/JPEG) — if Cloudflare
-//! ever changes that contract, this file is the only place that adapts.
+//! Endpoint: `POST {base}/accounts/{account_id}/ai/run/@cf/black-forest-labs/flux-1-schnell`
+//! with a JSON body (`prompt`, `steps` only — the schema rejects every other
+//! property) and `Bearer` auth. The reply is JSON `{"result":{"image":"<base64
+//! JPEG>"}}`: decoded here, then center-cropped to the requested aspect bucket
+//! and re-encoded as PNG, so callers keep the old bytes-in / image-bytes-out
+//! contract. If Cloudflare ever changes that contract, this file is the only
+//! place that adapts.
 //!
 //! Without the `cloudflare` feature the type exists and every call returns
 //! [`ImageGenError::Unavailable`].
@@ -20,7 +23,7 @@ use std::io::Read as _;
 /// queueing at peak (the caller's worker thread owns the waiting, not the UI).
 #[cfg(feature = "cloudflare")]
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
-/// A ~1MP PNG never reaches this; a prose error page does. Input-derived cap.
+/// A ~1MP image never reaches this; a prose error page does. Input-derived cap.
 #[cfg(feature = "cloudflare")]
 const MAX_IMAGE_BYTES: usize = 32 * 1024 * 1024;
 
@@ -55,14 +58,14 @@ impl CloudflareClient {
         c
     }
 
-    /// Generate one image; returns the encoded image bytes.
+    /// Generate one image; returns PNG bytes in the requested aspect bucket.
     pub fn generate(&self, req: &GenRequest, cancel: &AtomicBool) -> Result<Vec<u8>, ImageGenError> {
         #[cfg(feature = "cloudflare")]
         {
             if cancel.load(Ordering::Relaxed) {
                 return Err(ImageGenError::Cancelled);
             }
-            let url = format!("{}/accounts/{}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0", self.base_url, self.account_id);
+            let url = format!("{}/accounts/{}/ai/run/@cf/black-forest-labs/flux-1-schnell", self.base_url, self.account_id);
             let res = self
                 .agent
                 .post(&url)
@@ -86,17 +89,18 @@ impl CloudflareClient {
             if !(200..300).contains(&status) {
                 return Err(ImageGenError::BadResponse(format!("HTTP {status}")));
             }
-            let mut bytes = Vec::new();
+            let mut raw = Vec::new();
             // `into_reader()` hands back a trait object; `by_ref()` makes it `Sized`
             // so `take` applies and the cap actually bounds the read.
-            reader.by_ref().take((MAX_IMAGE_BYTES + 1) as u64).read_to_end(&mut bytes)?;
-            if bytes.len() > MAX_IMAGE_BYTES {
-                return Err(ImageGenError::BadResponse(format!("image exceeds the {MAX_IMAGE_BYTES}-byte cap")));
+            reader.by_ref().take((MAX_IMAGE_BYTES + 1) as u64).read_to_end(&mut raw)?;
+            if raw.len() > MAX_IMAGE_BYTES {
+                return Err(ImageGenError::BadResponse(format!("response exceeds the {MAX_IMAGE_BYTES}-byte cap")));
             }
-            if bytes.is_empty() {
-                return Err(ImageGenError::BadResponse("provider returned an empty image".into()));
+            if raw.is_empty() {
+                return Err(ImageGenError::BadResponse("provider returned an empty response".into()));
             }
-            Ok(bytes)
+            let jpeg = decode_flux_image(&raw)?;
+            to_cover_png(&jpeg, req)
         }
         #[cfg(not(feature = "cloudflare"))]
         {
@@ -106,25 +110,70 @@ impl CloudflareClient {
     }
 }
 
-/// The exact JSON contract of the SDXL text-to-image call (pinned by a test).
+/// The exact JSON contract of the flux-1-schnell text-to-image call (pinned by a
+/// test). The schema is strict: `width`, `height`, `seed` and `negative_prompt`
+/// are each rejected with error 5006 (verified against the live endpoint), so
+/// those GenRequest fields stay local — the target size drives the post-crop
+/// ([`to_cover_png`]) and seeds cannot pin variations on this endpoint.
 #[cfg(feature = "cloudflare")]
 fn request_body(req: &GenRequest) -> String {
-    // `guidance` is left out on purpose: the server default (7.5) is what the presets
-    // assume, and unknown params are the one thing a provider may reject instead of
-    // ignoring. ponytail: add it when a preset first needs a different CFG.
-    let mut body = serde_json::json!({
+    serde_json::json!({
         "prompt": req.prompt,
-        "negative_prompt": req.negative_prompt,
-        "num_steps": req.num_steps,
-        "width": req.width,
-        "height": req.height,
-    });
-    if let Some(seed) = req.seed
-        && let Some(obj) = body.as_object_mut()
-    {
-        obj.insert("seed".into(), serde_json::json!(seed));
+        "steps": flux_steps(req.num_steps),
+    })
+    .to_string()
+}
+
+/// flux-1-schnell is a distilled 4-step model; the endpoint accepts 1–8 steps.
+/// Presets ask for SDXL-era 15–18, which lands at the 8-step ceiling.
+#[cfg(feature = "cloudflare")]
+fn flux_steps(steps: u32) -> u32 {
+    steps.clamp(1, 8)
+}
+
+/// The flux reply wraps the image as base64 inside JSON — unlike SDXL, which
+/// answered with raw image bytes. A malformed body is a provider contract
+/// change: error, never a guess.
+#[cfg(feature = "cloudflare")]
+fn decode_flux_image(raw: &[u8]) -> Result<Vec<u8>, ImageGenError> {
+    let v: serde_json::Value = serde_json::from_slice(raw).map_err(|e| ImageGenError::BadResponse(format!("reply is not JSON: {e}")))?;
+    let b64 =
+        v.pointer("/result/image").and_then(|s| s.as_str()).ok_or_else(|| ImageGenError::BadResponse("reply has no result.image field".into()))?;
+    use base64::Engine as _;
+    let bytes =
+        base64::engine::general_purpose::STANDARD.decode(b64).map_err(|e| ImageGenError::BadResponse(format!("result.image is not base64: {e}")))?;
+    if bytes.is_empty() {
+        return Err(ImageGenError::BadResponse("provider returned an empty image".into()));
     }
-    body.to_string()
+    Ok(bytes)
+}
+
+/// flux always emits a fixed 1024×1024 square; the cover pipeline expects the
+/// aspect bucket the request asked for. Center-crop to the target ratio, then
+/// resize to the exact bucket pixels (at most ~1.2× upscale — invisible on flat
+/// vector art). Output is PNG so callers keep the SDXL-era bytes contract.
+#[cfg(feature = "cloudflare")]
+fn to_cover_png(jpeg: &[u8], req: &GenRequest) -> Result<Vec<u8>, ImageGenError> {
+    if req.width == 0 || req.height == 0 {
+        return Err(ImageGenError::BadResponse(format!("invalid target dimensions {}×{}", req.width, req.height)));
+    }
+    let src = image::load_from_memory(jpeg).map_err(|e| ImageGenError::BadResponse(format!("image decode failed: {e}")))?;
+    let (sw, sh) = (src.width(), src.height());
+    let target_ratio = f64::from(req.width) / f64::from(req.height);
+    let src_ratio = f64::from(sw) / f64::from(sh);
+    // Largest centered crop with the target ratio (checked: dims come from the
+    // provider, ratios from the Aspect table — both bounded, clamp anyway).
+    let (cw, ch) = if src_ratio > target_ratio { ((f64::from(sh) * target_ratio) as u32, sh) } else { (sw, (f64::from(sw) / target_ratio) as u32) };
+    let cw = cw.clamp(1, sw);
+    let ch = ch.clamp(1, sh);
+    let x = sw.saturating_sub(cw) / 2;
+    let y = sh.saturating_sub(ch) / 2;
+    let resized = src.crop_imm(x, y, cw, ch).resize_exact(req.width, req.height, image::imageops::FilterType::Lanczos3);
+    let mut out = Vec::new();
+    resized
+        .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+        .map_err(|e| ImageGenError::BadResponse(format!("PNG encode failed: {e}")))?;
+    Ok(out)
 }
 
 #[cfg(feature = "cloudflare")]
@@ -187,31 +236,75 @@ mod tests {
         r
     }
 
+    /// A tiny real JPEG wrapped in the flux JSON envelope, as the live endpoint sends it.
+    fn flux_reply_jpeg(w: u32, h: u32) -> Vec<u8> {
+        use base64::Engine as _;
+        let img = image::DynamicImage::new_rgb8(w, h);
+        let mut jpeg = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut jpeg), image::ImageFormat::Jpeg).expect("encode jpeg");
+        format!("{{\"result\":{{\"image\":\"{}\"}}}}", base64::engine::general_purpose::STANDARD.encode(jpeg)).into_bytes()
+    }
+
     #[test]
     fn request_body_pins_the_contract() {
         let v: serde_json::Value = serde_json::from_str(&request_body(&req())).expect("valid JSON");
         assert_eq!(v.pointer("/prompt"), Some(&serde_json::json!("retro waves cover background")));
-        assert!(v.pointer("/negative_prompt").and_then(|n| n.as_str()).is_some_and(|n| n.contains("typography")));
-        assert_eq!(v.pointer("/num_steps"), Some(&serde_json::json!(18)));
-        assert_eq!(v.pointer("/width"), Some(&serde_json::json!(832)));
-        assert_eq!(v.pointer("/height"), Some(&serde_json::json!(1176)));
-        assert_eq!(v.pointer("/seed"), Some(&serde_json::json!(42)));
-        // No seed: the field is absent, so the provider rolls a fresh variation.
-        let mut no_seed = req();
-        no_seed.seed = None;
-        let v: serde_json::Value = serde_json::from_str(&request_body(&no_seed)).expect("valid JSON");
-        assert!(v.get("seed").is_none(), "seed must be absent, not null");
-        assert!(v.get("guidance").is_none(), "guidance stays at the server default");
+        assert_eq!(v.pointer("/steps"), Some(&serde_json::json!(8)), "18 clamps to the flux ceiling");
+        assert_eq!(flux_steps(1), 1);
+        assert_eq!(flux_steps(8), 8);
+        assert_eq!(flux_steps(99), 8);
+        // The strict flux schema rejects every other property (live-verified error 5006).
+        for absent in ["negative_prompt", "width", "height", "seed", "guidance", "num_steps"] {
+            assert!(v.get(absent).is_none(), "{absent} must be absent from the flux body");
+        }
     }
 
     #[test]
     fn generate_round_trips_image_bytes_against_a_local_listener() {
-        let png = vec![0x89, b'P', b'N', b'G', 1, 2, 3, 4, 5];
-        let base = canned_server("HTTP/1.1 200 OK", "", png.clone());
+        // Iso bucket: 1024×1024 square reply must come back as an 832×1176 PNG.
+        let body = flux_reply_jpeg(1024, 1024);
+        let base = canned_server("HTTP/1.1 200 OK", "", body);
         let c = CloudflareClient::with_base("acct", "tok", base);
         let cancel = AtomicBool::new(false);
         let out = c.generate(&req(), &cancel).expect("round trip");
-        assert_eq!(out, png);
+        assert_eq!(&out[..4], b"\x89PNG", "output is PNG bytes");
+        let img = image::load_from_memory(&out).expect("decodable PNG");
+        assert_eq!((img.width(), img.height()), (832, 1176), "cropped+resized to the Iso bucket");
+    }
+
+    #[test]
+    fn wide_bucket_crops_to_landscape() {
+        let body = flux_reply_jpeg(1024, 1024);
+        let base = canned_server("HTTP/1.1 200 OK", "", body);
+        let c = CloudflareClient::with_base("acct", "tok", base);
+        let cancel = AtomicBool::new(false);
+        let mut r = req();
+        r.width = 1216;
+        r.height = 832;
+        let out = c.generate(&r, &cancel).expect("round trip");
+        let img = image::load_from_memory(&out).expect("decodable PNG");
+        assert_eq!((img.width(), img.height()), (1216, 832), "Wrap bucket");
+    }
+
+    #[test]
+    fn generate_rejects_malformed_flux_replies() {
+        let cancel = AtomicBool::new(false);
+        // 200 with a non-JSON body is not a flux reply.
+        let base = canned_server("HTTP/1.1 200 OK", "", b"not json".to_vec());
+        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).err().expect("non-JSON errors");
+        assert!(matches!(err, ImageGenError::BadResponse(_)), "{err}");
+        // 200 with JSON but no result.image.
+        let base = canned_server("HTTP/1.1 200 OK", "", br#"{"result":{}}"#.to_vec());
+        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).err().expect("missing field errors");
+        assert!(matches!(err, ImageGenError::BadResponse(_)), "{err}");
+        // 200 with JSON but invalid base64.
+        let base = canned_server("HTTP/1.1 200 OK", "", br#"{"result":{"image":"!!not-base64!!"}}"#.to_vec());
+        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).err().expect("bad base64 errors");
+        assert!(matches!(err, ImageGenError::BadResponse(_)), "{err}");
+        // 200 with base64 that is not a decodable image.
+        let base = canned_server("HTTP/1.1 200 OK", "", br#"{"result":{"image":"AAAA"}}"#.to_vec());
+        let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).err().expect("bad image errors");
+        assert!(matches!(err, ImageGenError::BadResponse(_)), "{err}");
     }
 
     #[test]
@@ -233,7 +326,7 @@ mod tests {
         let base = canned_server("HTTP/1.1 500 Internal Server Error", "", b"boom".to_vec());
         let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).err().expect("500 errors");
         assert!(matches!(err, ImageGenError::BadResponse(_)), "{err}");
-        // 200 with an empty body is not an image.
+        // 200 with an empty body is not a flux reply.
         let base = canned_server("HTTP/1.1 200 OK", "", Vec::new());
         let err = CloudflareClient::with_base("a", "t", base).generate(&req(), &cancel).err().expect("empty errors");
         assert!(matches!(err, ImageGenError::BadResponse(_)), "{err}");
@@ -241,7 +334,7 @@ mod tests {
 
     #[test]
     fn generate_honours_the_cancel_flag_before_sending() {
-        let base = canned_server("HTTP/1.1 200 OK", "", vec![1, 2, 3]);
+        let base = canned_server("HTTP/1.1 200 OK", "", flux_reply_jpeg(4, 4));
         let c = CloudflareClient::with_base("a", "t", base);
         let cancel = AtomicBool::new(true);
         let err = c.generate(&req(), &cancel).err().expect("cancelled errors");
@@ -276,14 +369,14 @@ mod tests {
         let client = CloudflareClient::new(&acct, &tok);
         let cancel = AtomicBool::new(false);
         let mut r = req();
-        r.width = 256;
-        r.height = 256;
         r.num_steps = 1;
         let res = client.generate(&r, &cancel);
         match res {
             Ok(bytes) => {
-                println!("SUCCESS: Received {} image bytes from Cloudflare Workers AI!", bytes.len());
-                assert!(!bytes.is_empty());
+                println!("SUCCESS: Received {} PNG bytes from Cloudflare flux-1-schnell!", bytes.len());
+                assert_eq!(&bytes[..4], b"\x89PNG");
+                let img = image::load_from_memory(&bytes).expect("decodable PNG");
+                assert_eq!((img.width(), img.height()), (832, 1176), "Iso bucket out");
             }
             Err(e) => {
                 panic!("Cloudflare reachability check failed: {e}");

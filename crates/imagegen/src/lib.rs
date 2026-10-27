@@ -1,4 +1,5 @@
-//! AI image generation for Pubgen covers: Cloudflare Workers AI (SDXL), text-to-image.
+//! AI image generation for Pubgen covers: Cloudflare Workers AI (flux-1-schnell),
+//! text-to-image.
 //!
 //! Pure bytes-in / bytes-out: no doc, no egui. The provider is an optional cargo
 //! feature (`cloudflare`); without it every type still exists and every entry point
@@ -16,7 +17,9 @@
 
 pub mod cloudflare;
 
-/// Estimated Cloudflare Workers AI Neurons cost per SDXL 18-step image.
+/// Estimated Cloudflare Workers AI Neurons per generated image. Held at the
+/// SDXL-era 220 so free-tier batch math stays conservative until flux-1-schnell
+/// (4–8 steps) is measured on the account.
 pub const ESTIMATED_NEURONS_PER_IMAGE: u64 = 220;
 
 /// Cloudflare free daily neuron limit (resets 00:00 UTC).
@@ -75,7 +78,11 @@ pub enum ImageGenError {
 }
 
 /// One text-to-image request. Dimensions come only from [`Aspect`] — raw user
-/// numbers never reach the payload (hostile-input rule).
+/// numbers never reach the payload (hostile-input rule). They are the *target*
+/// bucket: flux-1-schnell always returns a fixed 1024×1024 square, and the
+/// provider center-crops + resizes to these dimensions. The flux schema has no
+/// `negative_prompt` or `seed` (each is rejected with error 5006): both fields
+/// stay in the request for API stability, the seed cannot pin variations.
 #[derive(Debug, Clone)]
 pub struct GenRequest {
     pub prompt: String,
@@ -88,14 +95,15 @@ pub struct GenRequest {
 }
 
 impl GenRequest {
-    /// Steps clamped into the provider's sane range (presets pass 15–18; values
-    /// beyond 25 only burn quota without visible quality).
+    /// Steps clamped into a sane range; the flux provider clamps further to its
+    /// own 1–8 step ceiling (presets pass SDXL-era 15–18, which land at 8).
     pub fn new(prompt: impl Into<String>, negative_prompt: impl Into<String>, aspect: Aspect, num_steps: u32) -> Self {
         let (width, height) = aspect.dimensions();
         Self { prompt: prompt.into(), negative_prompt: negative_prompt.into(), width, height, num_steps: num_steps.clamp(1, 25), seed: None }
     }
 
-    /// Estimated Cloudflare Workers AI Neurons cost per SDXL 18-step image.
+    /// Estimated Cloudflare Workers AI Neurons per generated image (see the
+    /// crate constant: SDXL-era conservative value).
     pub const ESTIMATED_NEURONS_PER_IMAGE: u64 = 220;
 
     /// Cloudflare free daily neuron limit (resets 00:00 UTC).
