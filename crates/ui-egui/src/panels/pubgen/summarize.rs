@@ -264,12 +264,22 @@ pub fn build_narrative_rtf(blocks: &[(String, String)]) -> String {
     )
 }
 
+/// Write the narrative RTF into `dir`, creating the directory when it does not exist yet: a
+/// session that never translated a page has no pubgen temp dir, so the first Apply must not
+/// fail on the missing folder.
+#[cfg(not(target_arch = "wasm32"))]
+fn write_narrative_rtf_in(dir: &std::path::Path, page_idx: usize, blocks: &[(String, String)]) -> Result<std::path::PathBuf, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    let path = dir.join(format!("narrative-{page_idx}.rtf"));
+    std::fs::write(&path, build_narrative_rtf(blocks)).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    Ok(path)
+}
+
 /// Place the narrative into the review page's English body frame: writes the RTF, then lets
 /// `file.place` import it with its paragraph styles (one undo step).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn apply_narrative(app: &mut DesignApp, target: &ai::PageTarget, blocks: &[(String, String)]) -> Result<usize, String> {
-    let path = ai::temp_dir().join(format!("narrative-{}.rtf", target.page_idx));
-    std::fs::write(&path, build_narrative_rtf(blocks)).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    let path = write_narrative_rtf_in(&ai::temp_dir(), target.page_idx, blocks)?;
     app.run("file.place", json!({"path": path.to_string_lossy(), "frame": target.en_body_fid, "autoflow": true}))
         .map_err(|e| format!("could not place the narrative: {e}"))?;
     Ok(blocks.len())
@@ -455,7 +465,12 @@ impl NarrativeJob {
                     }
                     NarrativeMsg::Failed(e) => {
                         self.finished = true;
-                        st.header_status = Some((format!("Chapter review failed: {e}"), false));
+                        // A Cancel from the draft window is not a failure, whatever the worker saw.
+                        st.header_status = Some(if self.cancel.load(Ordering::Relaxed) {
+                            ("Chapter review cancelled.".into(), true)
+                        } else {
+                            (format!("Chapter review failed: {e}"), false)
+                        });
                     }
                 }
             }
@@ -464,46 +479,73 @@ impl NarrativeJob {
     }
 }
 
-/// The preview modal: every block in order, Apply (one undo step via `file.place`) or Discard.
+/// The draft window: while the worker runs it shows progress with a working Cancel; once the
+/// blocks arrive it lists them for Apply (one undo step via `file.place`) or Discard. Closing it
+/// mid-draft cancels the request, so no draft is ever left running unseen.
 pub fn preview_ui(app: &mut DesignApp, st: &mut PubgenState, ui: &mut egui::Ui) {
-    if st.narrative_preview.is_none() {
+    let drafting = st.narrative_job.as_ref().is_some_and(|job| !job.finished);
+    if st.narrative_preview.is_none() && !drafting {
         return;
+    }
+    // The worker only repaints when it finishes; keep the progress window live until then.
+    if drafting {
+        ui.ctx().request_repaint();
     }
     let mut open = true;
     let mut apply = false;
     let mut discard = false;
-    egui::Window::new(egui::RichText::new("AI Chapter Review").size(15.0))
-        .open(&mut open)
-        .collapsible(false)
-        .resizable(true)
-        .default_width(560.0)
-        .show(ui.ctx(), |ui| {
-            if let Some(blocks) = &st.narrative_preview {
-                egui::ScrollArea::vertical().max_height(380.0).show(ui, |ui| {
-                    for (role, text) in blocks {
-                        ui.label(egui::RichText::new(role.to_uppercase()).size(9.0).strong());
-                        ui.label(egui::RichText::new(text).size(11.5));
-                        ui.add_space(5.0);
-                    }
-                });
+    let mut cancel = false;
+    let title = if st.narrative_preview.is_some() { "AI Chapter Review" } else { "AI Chapter Review — drafting" };
+    egui::Window::new(egui::RichText::new(title).size(15.0)).open(&mut open).collapsible(false).resizable(true).default_width(560.0).show(
+        ui.ctx(),
+        |ui| {
+            match &st.narrative_preview {
+                Some(blocks) => {
+                    egui::ScrollArea::vertical().max_height(380.0).show(ui, |ui| {
+                        for (role, text) in blocks {
+                            ui.label(egui::RichText::new(role.to_uppercase()).size(9.0).strong());
+                            ui.label(egui::RichText::new(text).size(11.5));
+                            ui.add_space(5.0);
+                        }
+                    });
+                }
+                None => {
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label("Drafting the chapter review with AI… one request per chapter.");
+                    });
+                    ui.add_space(8.0);
+                }
             }
             ui.separator();
             ui.horizontal(|ui| {
-                if ui.button("Apply to page").clicked() {
-                    apply = true;
+                if let Some(blocks) = &st.narrative_preview {
+                    if ui.button("Apply to page").clicked() {
+                        apply = true;
+                    }
+                    if ui.button("Discard").clicked() {
+                        discard = true;
+                    }
+                    ui.label(egui::RichText::new(format!("{} block(s)", blocks.len())).size(10.0));
                 }
-                if ui.button("Discard").clicked() {
-                    discard = true;
-                }
-                if st.narrative_job.as_ref().is_some_and(|j| !j.finished)
-                    && ui.button("Cancel").clicked()
-                    && let Some(job) = &st.narrative_job
-                {
-                    job.cancel();
+                if drafting && ui.button("Cancel").clicked() {
+                    cancel = true;
                 }
             });
-        });
+        },
+    );
+    if cancel {
+        if let Some(job) = &st.narrative_job {
+            job.cancel();
+        }
+        st.header_status = Some(("Cancelling the chapter review…".into(), true));
+    }
     if !open || discard {
+        // A window closed mid-draft cancels the request: otherwise the preview would pop back up.
+        if drafting && let Some(job) = &st.narrative_job {
+            job.cancel();
+        }
         st.narrative_preview = None;
         st.narrative_target = None;
         return;
@@ -514,18 +556,36 @@ pub fn preview_ui(app: &mut DesignApp, st: &mut PubgenState, ui: &mut egui::Ui) 
             st.header_status = Some(("No page selected — select the review page first.".into(), false));
             return;
         };
-        #[cfg(not(target_arch = "wasm32"))]
-        match apply_narrative(app, &target, &blocks) {
-            Ok(n) => st.header_status = Some((format!("{n} block(s) applied to the page."), true)),
-            Err(e) => st.header_status = Some((e, false)),
+        // Only a placed narrative clears the draft: a failed write keeps the blocks (and the API
+        // spend behind them) so the user can retry.
+        if apply_narrative_or_report(app, &target, &blocks, &mut st.header_status) {
+            st.narrative_preview = None;
+            st.narrative_target = None;
         }
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _ = (app, target, blocks);
-            st.header_status = Some(("Applying a narrative is not available in the web build.".into(), false));
+    }
+}
+
+/// Place the blocks into the review page; true when the document changed. The web build has no
+/// file I/O, so it reports the limitation instead.
+fn apply_narrative_or_report(app: &mut DesignApp, target: &ai::PageTarget, blocks: &[(String, String)], status: &mut Option<(String, bool)>) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        match apply_narrative(app, target, blocks) {
+            Ok(n) => {
+                *status = Some((format!("{n} block(s) applied to the page."), true));
+                true
+            }
+            Err(e) => {
+                *status = Some((e, false));
+                false
+            }
         }
-        st.narrative_preview = None;
-        st.narrative_target = None;
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (app, target, blocks);
+        *status = Some(("Applying a narrative is not available in the web build.".into(), false));
+        false
     }
 }
 
@@ -539,7 +599,7 @@ mod tests {
         assert_eq!(parse_number("1,234.56"), Some(1234.56));
         assert_eq!(parse_number("1.234"), Some(1234.0));
         assert_eq!(parse_number("1.234.567"), Some(1234567.0));
-        assert_eq!(parse_number("3.14"), Some(3.14));
+        assert_eq!(parse_number("3.15"), Some(3.15));
         assert_eq!(parse_number("0.125"), Some(0.125));
         assert_eq!(parse_number("1,5"), Some(1.5));
         assert_eq!(parse_number("(1.234)"), Some(-1234.0));
@@ -651,7 +711,37 @@ mod tests {
     fn parsing_a_cancelled_draft_stops_before_the_request() {
         let cancel = AtomicBool::new(true);
         let t = translate::OnlineTranslator::new("", "");
-        let err = draft_blocks(&t, &[], "Geografi", &[], &cancel).err().expect("cancelled");
+        let err = draft_blocks(&t, &[], "Geografi", &[], &cancel).expect_err("cancelled");
         assert_eq!(err, "cancelled");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn narrative_rtf_lands_in_a_temp_dir_that_does_not_exist_yet() {
+        // A session that never translated a page has no pubgen temp dir: the write must create
+        // it instead of failing with "the system cannot find the path specified".
+        let dir = std::env::temp_dir().join(format!("dc-narrative-fresh-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let blocks = vec![("lead".to_string(), "One.".to_string())];
+        let path = write_narrative_rtf_in(&dir, 0, &blocks).expect("creates the directory");
+        assert!(path.exists());
+        let rtf = std::fs::read_to_string(&path).expect("read");
+        assert!(rtf.starts_with("{\\rtf1"), "{rtf}");
+        assert!(rtf.contains("One."), "{rtf}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_cancelled_draft_reports_cancelled_not_failed() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let cancel = std::sync::Arc::new(AtomicBool::new(true));
+        let mut job = NarrativeJob { rx: std::sync::Arc::new(std::sync::Mutex::new(rx)), cancel, finished: false };
+        tx.send(NarrativeMsg::Failed("cancelled".into())).expect("send");
+        let mut st = PubgenState::default();
+        let progressed = job.poll(&mut st);
+        assert!(job.finished);
+        assert!(!progressed);
+        assert_eq!(st.header_status, Some(("Chapter review cancelled.".to_string(), true)));
     }
 }

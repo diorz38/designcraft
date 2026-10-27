@@ -2937,9 +2937,7 @@ pub(crate) mod tests {
             Ok(())
         });
 
-        let mut st = PubgenState::default();
-        st.toc_style = "TOC Chapter".to_string();
-        st.toc_insert_after = true;
+        let mut st = PubgenState { toc_style: "TOC Chapter".to_string(), toc_insert_after: true, ..Default::default() };
 
         // Select Page 1 (0-based index 0)
         app.session.active_mut().unwrap().selection.page = Some(0);
@@ -2984,24 +2982,22 @@ pub(crate) mod tests {
         // Simulate toggling to Dual Lang mode
         let was_bilingual = st.bilingual_output;
         st.bilingual_output = !st.bilingual_output;
-        if let Some(old_title) = toc_kind_title(st.toc_kind, was_bilingual) {
-            if st.toc_title.trim().is_empty() || st.toc_title.trim() == old_title {
-                if let Some(new_title) = toc_kind_title(st.toc_kind, st.bilingual_output) {
-                    st.toc_title = new_title.to_string();
-                }
-            }
+        if let Some(old_title) = toc_kind_title(st.toc_kind, was_bilingual)
+            && (st.toc_title.trim().is_empty() || st.toc_title.trim() == old_title)
+            && let Some(new_title) = toc_kind_title(st.toc_kind, st.bilingual_output)
+        {
+            st.toc_title = new_title.to_string();
         }
         assert_eq!(st.toc_title, "Daftar Tabel / List of Tables");
 
         // Simulate toggling back to Single Lang mode
         let was_bilingual = st.bilingual_output;
         st.bilingual_output = !st.bilingual_output;
-        if let Some(old_title) = toc_kind_title(st.toc_kind, was_bilingual) {
-            if st.toc_title.trim().is_empty() || st.toc_title.trim() == old_title {
-                if let Some(new_title) = toc_kind_title(st.toc_kind, st.bilingual_output) {
-                    st.toc_title = new_title.to_string();
-                }
-            }
+        if let Some(old_title) = toc_kind_title(st.toc_kind, was_bilingual)
+            && (st.toc_title.trim().is_empty() || st.toc_title.trim() == old_title)
+            && let Some(new_title) = toc_kind_title(st.toc_kind, st.bilingual_output)
+        {
+            st.toc_title = new_title.to_string();
         }
         assert_eq!(st.toc_title, "Daftar Tabel");
 
@@ -3009,12 +3005,11 @@ pub(crate) mod tests {
         st.toc_title = "Custom Table List".into();
         let was_bilingual = st.bilingual_output;
         st.bilingual_output = !st.bilingual_output;
-        if let Some(old_title) = toc_kind_title(st.toc_kind, was_bilingual) {
-            if st.toc_title.trim().is_empty() || st.toc_title.trim() == old_title {
-                if let Some(new_title) = toc_kind_title(st.toc_kind, st.bilingual_output) {
-                    st.toc_title = new_title.to_string();
-                }
-            }
+        if let Some(old_title) = toc_kind_title(st.toc_kind, was_bilingual)
+            && (st.toc_title.trim().is_empty() || st.toc_title.trim() == old_title)
+            && let Some(new_title) = toc_kind_title(st.toc_kind, st.bilingual_output)
+        {
+            st.toc_title = new_title.to_string();
         }
         assert_eq!(st.toc_title, "Custom Table List");
     }

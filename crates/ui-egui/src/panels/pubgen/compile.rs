@@ -143,18 +143,12 @@ pub(crate) struct FrontMatterSpec {
     pub workbook: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct ChapterSpec {
     pub chapter: u32,
     pub path: String,
     pub title: String,
-}
-
-impl Default for ChapterSpec {
-    fn default() -> Self {
-        Self { chapter: 0, path: String::new(), title: String::new() }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -600,14 +594,16 @@ pub(crate) struct CompileJob {
 
 impl CompileJob {
     pub(crate) fn new(plan: CompilePlan) -> Self {
-        let mut base = PubgenState::default();
-        base.bilingual_output = plan.manifest.bilingual;
-        base.toc_pair_bilingual = plan.manifest.bilingual;
-        base.cover_style = plan.manifest.cover.style;
-        base.cover_theme_preset = plan.manifest.cover.theme_preset;
-        base.cover_include_inside_back = false;
-        base.toc_hanging_indent = plan.manifest.toc.hanging_indent;
-        base.translate_with_ai = false;
+        let mut base = PubgenState {
+            bilingual_output: plan.manifest.bilingual,
+            toc_pair_bilingual: plan.manifest.bilingual,
+            cover_style: plan.manifest.cover.style,
+            cover_theme_preset: plan.manifest.cover.theme_preset,
+            cover_include_inside_back: false,
+            toc_hanging_indent: plan.manifest.toc.hanging_indent,
+            translate_with_ai: false,
+            ..PubgenState::default()
+        };
         if !plan.manifest.publication_title.trim().is_empty() {
             base.cover_title = plan.manifest.publication_title.trim().to_string();
         }
@@ -1315,10 +1311,11 @@ pub(crate) fn compile_card_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
         if compile.clicked() {
             start_compile(app, &path, st);
         }
-        if running && ui.button(crate::i18n::tr(&lang, "Cancel")).clicked() {
-            if let Some(job) = &st.compile_job {
-                job.cancel();
-            }
+        if running
+            && ui.button(crate::i18n::tr(&lang, "Cancel")).clicked()
+            && let Some(job) = &st.compile_job
+        {
+            job.cancel();
         }
     });
 

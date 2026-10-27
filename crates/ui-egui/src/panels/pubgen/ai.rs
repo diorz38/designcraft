@@ -308,23 +308,35 @@ fn terminology_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSe
                 Err(err) => dialog.terms_status = Some((format!("Could not read {path}: {err}"), false)),
             }
         }
-        if ui.button("Reset to bundled").clicked() {
-            dialog.terms = BpsGlossary::load("").prompt_pairs();
-            dialog.terms_status = Some(("Bundled terms restored — Save to keep a copy.".into(), true));
+        if ui.button("Reset to bundled").on_hover_text("Go back to the bundled glossary: clears the custom path saved in preferences.").clicked() {
+            // Clearing the path is what makes the bundled terms win again: the preference
+            // outranks the asset whenever it is non-empty.
+            let _ = app.run("prefs.set", json!({"pubgenGlossaryPath": ""}));
+            st.glossary = BpsGlossary::load("");
+            st.glossary_loaded = true;
+            dialog.terms = st.glossary.prompt_pairs();
+            dialog.terms_status =
+                Some((format!("Bundled terms restored ({} term(s)); the custom path is cleared.", st.glossary.exact_mappings.len()), true));
         }
         #[cfg(not(target_arch = "wasm32"))]
         if ui.button("Save…").clicked() {
-            let glossary = BpsGlossary::from_terms(&dialog.terms);
-            if let Some(path) = app.pick_save("bps_glossary.json") {
-                match glossary.save(std::path::Path::new(&path)) {
-                    Ok(()) => {
-                        let _ = app.run("prefs.set", json!({"pubgenGlossaryPath": path}));
-                        st.glossary = BpsGlossary::load(&path);
-                        st.glossary_loaded = true;
-                        dialog.terms = st.glossary.prompt_pairs();
-                        dialog.terms_status = Some((format!("Saved {} term(s) to {path}.", st.glossary.exact_mappings.len()), true));
+            // A half-filled row or an empty list never reaches the file: say why and stay open.
+            match glossary_save_error(&dialog.terms) {
+                Some(err) => dialog.terms_status = Some((err, false)),
+                None => {
+                    let glossary = BpsGlossary::from_terms(&dialog.terms);
+                    if let Some(path) = app.pick_save("bps_glossary.json") {
+                        match glossary.save(std::path::Path::new(&path)) {
+                            Ok(()) => {
+                                let _ = app.run("prefs.set", json!({"pubgenGlossaryPath": path}));
+                                st.glossary = BpsGlossary::load(&path);
+                                st.glossary_loaded = true;
+                                dialog.terms = st.glossary.prompt_pairs();
+                                dialog.terms_status = Some((format!("Saved {} term(s) to {path}.", st.glossary.exact_mappings.len()), true));
+                            }
+                            Err(err) => dialog.terms_status = Some((format!("Could not save: {err}"), false)),
+                        }
                     }
-                    Err(err) => dialog.terms_status = Some((format!("Could not save: {err}"), false)),
                 }
             }
         }
@@ -823,6 +835,24 @@ pub fn merge_terms(target: &mut Vec<(String, String)>, imported: Vec<(String, St
         }
     }
     (added, updated)
+}
+
+/// Why the dialog's rows cannot be saved: a half-filled row, or nothing to write at all.
+/// `None` when the rows are worth writing.
+pub fn glossary_save_error(terms: &[(String, String)]) -> Option<String> {
+    for (idx, (id, en)) in terms.iter().enumerate() {
+        let (id, en) = (id.trim(), en.trim());
+        if id.is_empty() && en.is_empty() {
+            continue; // a spare row the user has not filled in yet
+        }
+        if id.is_empty() {
+            return Some(format!("Row {}: add the Indonesian term, or remove the row.", idx + 1));
+        }
+        if en.is_empty() {
+            return Some(format!("Row {}: \"{id}\" has no English term — fill it in or remove the row.", idx + 1));
+        }
+    }
+    BpsGlossary::from_terms(terms).is_empty().then(|| "The glossary is empty — add at least one term before saving.".to_string())
 }
 
 /// One table, two lines per cell: \`id\u{2028}en\` for translatable cells with a
@@ -1790,26 +1820,47 @@ mod tests {
     }
 
     #[test]
-    fn bundled_glossary_keeps_legacy_spellings_and_abbreviations() {
+    fn bundled_glossary_keeps_the_legacy_spellings_with_their_english() {
+        // The parity gate: every spelling the pre-glossary hardcoded map resolved must still
+        // resolve, to the same English it did then — not merely to something.
         let g = glossary();
-        for id in [
-            "jumlah",
-            "total",
-            "tahun",
-            "kabupaten",
-            "kecamatan",
-            "kec",
-            "provinsi",
-            "propinsi",
-            "keterangan",
-            "ket.",
-            "ket",
-            "catatan",
-            "sumber",
-            "no",
+        for (id, en) in [
+            ("jumlah", "Total"),
+            ("total", "Total"),
+            ("tahun", "Year"),
+            ("kabupaten", "Regency"),
+            ("kecamatan", "Subdistrict"),
+            ("kec", "Subdistrict"),
+            ("provinsi", "Province"),
+            ("propinsi", "Province"),
+            ("keterangan", "Note"),
+            ("ket.", "Note"),
+            ("ket", "Note"),
+            ("catatan", "Note"),
+            ("sumber", "Source"),
+            ("no", "No"),
         ] {
-            assert!(alias_en(id, &g).is_some(), "legacy spelling {id} must stay mapped");
+            assert_eq!(alias_en(id, &g), Some(en), "legacy spelling {id}");
         }
+    }
+
+    #[test]
+    fn saving_is_refused_for_a_half_filled_row_or_an_empty_list() {
+        let empty = Some("The glossary is empty — add at least one term before saving.".to_string());
+        assert_eq!(glossary_save_error(&[("Kecamatan".to_string(), "Subdistrict".to_string())]), None);
+        assert_eq!(glossary_save_error(&[]), empty);
+        assert_eq!(glossary_save_error(&[(String::new(), String::new())]), empty);
+        assert_eq!(
+            glossary_save_error(&[(String::new(), "Subdistrict".to_string())]),
+            Some("Row 1: add the Indonesian term, or remove the row.".to_string())
+        );
+        assert_eq!(
+            glossary_save_error(&[("Desa".to_string(), String::new())]),
+            Some("Row 1: \"Desa\" has no English term — fill it in or remove the row.".to_string())
+        );
+        // A spare blank row among good ones is not an error.
+        let terms = vec![("Desa".to_string(), "Village".to_string()), (String::new(), String::new())];
+        assert_eq!(glossary_save_error(&terms), None);
     }
 
     #[test]

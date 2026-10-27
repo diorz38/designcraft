@@ -279,13 +279,18 @@ pub(crate) fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
         }
 
         // "Draft Review" — the chapter review written from the catalog's table statistics.
+        // The drafting worker is native only: on the web build the button stays off rather than
+        // arming a job that could never report back.
+        let web = cfg!(target_arch = "wasm32");
         let groq_ready = app.session.prefs.translation_provider == "groq"
             && !app.session.prefs.translation_groq_api_key.trim().is_empty();
-        let can_draft = is_review && groq_ready && super::summarize::has_catalog_tables(st);
+        let can_draft = !web && is_review && groq_ready && super::summarize::has_catalog_tables(st);
         let draft_btn = ui
             .add_enabled(can_draft, egui::Button::new("Draft Review"))
             .on_hover_text("Write this chapter's review from its table statistics, preview the blocks, then apply them to the page.")
-            .on_disabled_hover_text(if !groq_ready {
+            .on_disabled_hover_text(if web {
+                "Drafting a chapter review needs the desktop app."
+            } else if !groq_ready {
                 "Configure the Groq provider first: click 'AI Translator' above."
             } else if !is_review {
                 "Select a generated RXX review page."

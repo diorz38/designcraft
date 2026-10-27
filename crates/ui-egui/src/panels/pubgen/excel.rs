@@ -3104,7 +3104,7 @@ mod tests {
         assert_eq!(img, Some("plan/pubgen/samples/infografik_02.png".to_string()));
 
         // 2. Conversion test when DIV is omitted
-        let res = convert_excel_to_csv_data(&[r02_sheet.clone()], "RXX_IMAGE_TEST");
+        let res = convert_excel_to_csv_data(std::slice::from_ref(&r02_sheet), "RXX_IMAGE_TEST");
         let lines: Vec<&str> = res.catalog_csv_content.lines().collect();
         assert_eq!(lines.len(), 3); // Header, Divider, Ulasan
         assert!(

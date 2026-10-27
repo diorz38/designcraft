@@ -490,7 +490,7 @@ pub(crate) mod tests {
         // 2. Table Options quick action opens tableOptions dialog
         crate::dialogs::open_table_options(&mut app).unwrap();
         assert_eq!(app.ui.dialog.as_ref().unwrap().id, "tableOptions");
-        assert_eq!(app.ui.dialog.as_ref().unwrap().b("inTable"), false);
+        assert!(!app.ui.dialog.as_ref().unwrap().b("inTable"));
     }
 
     #[test]
