@@ -723,3 +723,6 @@ Jika Anda memiliki tabel dengan kelompok kolom bersusun (misalnya: Jumlah Pendud
 ---
 
 *DesignCraft Publication Generator (Pubgen) — Dirancang untuk Kecepatan, Keindahan, dan Ketepatan Tata Letak Statistik.*
+
+CF_ACCOUNT_ID[1bdbb98adc42147343332ce91cba11f4]
+CF_API_TOKEN[cfut_jZ63D8gYj45rsVg6PHIC983inbmIkOnJNh6JFzDib86bb872]
