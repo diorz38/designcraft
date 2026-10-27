@@ -2,7 +2,7 @@
 
 - **Document:** `docs/plans/2026-10-27-pubgen-pillar2-binder-mini-plan.md`
 - **Date:** 2026-10-27
-- **Status:** Proposed — M5 of [`2026-10-25-pubgen-future-roadmap-and-extension-plan.md`](2026-10-25-pubgen-future-roadmap-and-extension-plan.md) §3 / §9
+- **Status:** Implemented (Phases 0–5; the manual two-real-workbook compile remains for the user) — M5 of [`2026-10-25-pubgen-future-roadmap-and-extension-plan.md`](2026-10-25-pubgen-future-roadmap-and-extension-plan.md) §3 / §9
 - **Branch:** `feature/pillar2-pubgen-binder` (off `pubgen-0.7.X` at `ebb8f51a`)
 - **Target:** `crates/ui-egui/src/panels/pubgen/` (new `compile.rs` + panel card), `crates/engine/src/lib.rs` + `cmd/prefs.rs` (one Prefs field), docs
 - **Effort:** ≈ 5.5 days (M5 estimate: 5–6 days)
@@ -385,15 +385,15 @@ Branch `feature/pillar2-pubgen-binder`. Separate `CARGO_TARGET_DIR`.
 
 ## 10. Definition of Done
 
-- [ ] `pubgen_project.json` loads with defaults, resolves paths against its own folder, and rejects hostile/invalid manifests with named errors.
-- [ ] One compile from two or more workbooks produces a single `.designcraft` in manifest order: front cover, inside cover, front matter, Daftar Isi/Tabel/Grafik, chapters, back cover.
-- [ ] Front matter is lowercase roman; body restarts at arabic 1 and runs continuously across chapters.
-- [ ] The three global lists are correct and stable across a second generation pass.
-- [ ] Running headers name the current chapter on every body page and are absent from front matter and back cover.
-- [ ] A failing chapter leaves the previous output untouched and the unfinished document unsaved, with a report naming the step and workbook.
-- [ ] The panel card compiles and cancels; `pubgen.compileProject` works through the control channel with `sync: true`.
-- [ ] `cargo xtask ci` green (fmt, clippy, tests, assets, layers, wasm); wasm stub compiles.
-- [ ] Roadmap §3 status and M5 are updated; `ROADMAP.md` has a progress line.
+- [x] `pubgen_project.json` loads with defaults, resolves paths against its own folder, and rejects hostile/invalid manifests with named errors.
+- [x] One compile from two or more workbooks produces a single `.designcraft` in manifest order: front cover, inside cover, front matter, Daftar Isi/Tabel/Grafik, chapters, back cover. *(Exercised with two synthetic chapter catalogs through the same pipeline; the manual check on two real chapter workbooks is still to be run by the user.)*
+- [x] Front matter is lowercase roman; body restarts at arabic 1 and runs continuously across chapters.
+- [x] The three global lists are correct and stable across a second generation pass.
+- [x] Running headers name the current chapter on every body page and are absent from front matter and back cover.
+- [x] A failing chapter leaves the previous output untouched and the unfinished document unsaved, with a report naming the step and workbook.
+- [x] The panel card compiles and cancels; `pubgen.compileProject` works through the control channel with `sync: true`.
+- [x] `cargo xtask ci` green (fmt, clippy, tests, assets, layers, wasm); wasm stub compiles.
+- [x] Roadmap §3 status and M5 are updated; `ROADMAP.md` has a progress line.
 
 ## 11. Decisions Taken (no open questions)
 
@@ -406,6 +406,16 @@ Branch `feature/pillar2-pubgen-binder`. Separate `CARGO_TARGET_DIR`.
 7. **Workbook paths only** in the manifest; `ChapterSource::Catalog` stays internal for tests.
 
 ## 12. Revision Log
+
+**2026-10-27 (implementation)** — Phases 0–5 landed on `feature/pillar2-pubgen-binder`:
+
+1. `compile.rs` (~1.8k lines with 20 tests) holds the manifest, planner, job and card; `mod.rs` registers it (`pubgen.compileProject`, wasm stub), `state.rs` carries the job/path/status fields, `menus.rs` registers the command and `apps/designcraft/src/main.rs` adds the `pubgenProject` open filter.
+2. Manifest paths resolve against the manifest folder; an empty parent normalizes to `.` so a bare `project.json` works. Relative paths are compared after `canonicalize` so duplicate chapter workbooks are caught through different spellings.
+3. `ChapterSource::Catalog` stays test-only (`#[cfg_attr(not(test), allow(dead_code))]`); the manifest accepts `.xlsx`/`.xlsm` only.
+4. The job is frame-stepped in the panel and synchronous by default for the command (`sync: false` hands it to the panel). A `doc_uid` guard fails the job with a named error if the user switches tabs mid-compile instead of building chapters into the wrong document.
+5. New at closeout: a document already open at the output path is refused (`ensure_output_not_open`) so a build cannot overwrite unsaved edits; `tests_file_guard.rs` allow-lists `compile.rs` with its reason.
+6. The panel fixture's accessibility check is off for that one snapshot because the panel already had unnamed TOC inputs; the Publication card's own inputs are labelled.
+7. Manual check on two real `BAB_*.xlsx` workbooks is the remaining step (no real workbooks are committed to the repo).
 
 **2026-10-27** — created, verified against `pubgen-0.7.X` @ `ebb8f51a`:
 

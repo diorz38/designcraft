@@ -129,6 +129,8 @@ Introduce a publication project descriptor that groups chapter workbooks:
 5. **Phase 5: Back Cover Finalization**
    - Generates Back Cover echoing front cover geometry and places it on the final page of the document.
 
+> **Status (2026-10-27): implemented** as `pubgen.compileProject` plus the Publication Compiler card (design: [`2026-10-27-pubgen-pillar2-binder-mini-plan.md`](2026-10-27-pubgen-pillar2-binder-mini-plan.md)). One `pubgen_project.json` compiles covers, front matter, chapters, the three global lists, running headers and the back cover into one `.designcraft` (optional PDF); front matter is lowercase roman and the body restarts at arabic 1. Manifest paths resolve against the manifest folder; the build is skipped for a document already open in a tab; saving is the second-to-last step, so a failure or cancel leaves the previous build untouched. Short form: `sync: true` for the command palette, control channel and scripts; the panel runs one step per frame with a Cancel button.
+
 ---
 
 ## 4. Pillar 3: Statistical Layout Preflight & Quality Assurance (QA Audit)
@@ -380,7 +382,7 @@ Each profile defines:
 | **M2: Preflight QA Audit** | Build `audit/` engine checking cell overset, missing sources, and image DPI. Add Audit button to UI. | 3–4 days |
 | **M3: Glossary Memory** | Implement `bps_glossary.json` injection into AI translation system prompt with user UI override editor. | 2 days — **✅ implemented 2026-10-27 (see §5)** |
 | **M4: Vector Chart Engine** | Implement native vector bar/line/donut chart rendering from `CXX` Excel sheets. | 5–7 days |
-| **M5: Batch Multi-Chapter Binder** | Implement project manifest and one-click compiler for entire `BAB_01`..`BAB_10` workbook directories. | 5–6 days |
+| **M5: Batch Multi-Chapter Binder** | Implement project manifest and one-click compiler for entire `BAB_01`..`BAB_10` workbook directories. | 5–6 days — **✅ implemented 2026-10-27 (see §3; manual two-workbook check pending)** |
 | **M6: Dual PDF Profiles** | Integrate one-click PDF/X-4 (print) and compact hyperlinked PDF (web) export presets. | 3–4 days |
 | **M7: Universal Profiles** | Decouple BPS-specific keywords into `PubgenProfile` schema; ship built-in profiles (Corporate, Academic, Catalog) + custom profile import/export. | 4–5 days |
 

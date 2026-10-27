@@ -83,6 +83,13 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.placeWithOptions", "Place with Import Options…", Some("Cmd+Shift+D"), "{} — Word/RTF style mapping before placing"),
     ("app.exportText", "Export Text…", None, "{path?} — the story being edited, as Text Only (.txt) or Rich Text Format (.rtf)"),
     ("app.exportPdf", "Export PDF…", None, "{path?, …file.exportPdf options} — asks for a path when none is given"),
+    #[cfg(feature = "pubgen")]
+    (
+        "pubgen.compileProject",
+        "Compile Publication…",
+        None,
+        "{path? (default: the manifest last opened), sync?: bool (default true; false hands the job to the Pubgen panel, one step per frame), pdf?: path (export the PDF here)} — compile a pubgen_project.json into one .designcraft and report {document, pdf, pages, chapters, warnings, elapsedMs}",
+    ),
     ("app.palette", "Quick Apply…", Some("Cmd+Return"), "{} — search styles and commands"),
     ("app.preferences", "Preferences…", Some("Cmd+K"), "{}"),
     ("window.uiScale", "UI Scaling", None, "{scale: 0.5–3 (1 = 100%)} — the size of the whole interface"),
@@ -2080,6 +2087,8 @@ fn run_ui_inner(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value
             app.restyle = true;
             Ok(Value::Null)
         }
+        #[cfg(feature = "pubgen")]
+        "pubgen.compileProject" => crate::dock::pubgen::compile_project(app, p),
         _ => return None,
     })
 }

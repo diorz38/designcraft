@@ -74,6 +74,10 @@ const ALLOWED: &[(&str, &str)] = &[
         "ui-egui/src/panels/pubgen/summarize.rs",
         "Pubgen narrative summarizer reads the user-picked catalog's table CSVs and writes the drafted RTF into the per-process temp folder for file.place",
     ),
+    (
+        "ui-egui/src/panels/pubgen/compile.rs",
+        "Pubgen publication compiler reads the user-picked manifest and its chapter workbooks, probes that the output folders are writable, and canonicalizes paths to refuse building over a document open in a tab",
+    ),
 ];
 
 fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {

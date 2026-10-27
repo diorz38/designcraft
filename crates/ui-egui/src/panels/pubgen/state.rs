@@ -340,6 +340,24 @@ pub struct PubgenState {
     #[serde(default)]
     pub header_status: Option<(String, bool)>,
 
+    // Publication compiler (docs/plans/2026-10-27-pubgen-pillar2-binder-mini-plan.md).
+    /// The manifest chosen in the Publication card; empty uses `Prefs.pubgen_project_path`.
+    #[serde(default)]
+    pub compile_manifest_path: String,
+    /// The path [`Self::compile_summary`] was computed for.
+    #[serde(skip)]
+    pub compile_checked: String,
+    /// What the manifest makes, or the error that stopped it loading.
+    #[serde(skip)]
+    pub compile_summary: String,
+    /// The frame-stepped compile the panel advances one step per frame (desktop only).
+    #[cfg(not(target_arch = "wasm32"))]
+    #[serde(skip)]
+    pub(crate) compile_job: Option<Box<super::compile::CompileJob>>,
+    /// Progress and the last report, shown under the card's buttons.
+    #[serde(default)]
+    pub compile_status: Option<(String, bool)>,
+
     /// Target locale for single-language generation mode.
     #[serde(default)]
     pub locale: Locale,
@@ -590,6 +608,12 @@ impl Default for PubgenState {
             excel_auto_generate: true,
             excel_had_cover: false,
             header_status: None,
+            compile_manifest_path: String::new(),
+            compile_checked: String::new(),
+            compile_summary: String::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            compile_job: None,
+            compile_status: None,
             locale: Locale::Id,
             bilingual_output: false,
             doc_language: String::new(),
