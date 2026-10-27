@@ -5,11 +5,34 @@
 //! error string, never written into a document. Without the \`groq\` feature the type
 //! exists and every call returns \`TranslateError::Unavailable\`.
 
-use std::sync::atomic::AtomicBool;
 #[cfg(feature = "groq")]
 use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 
 use super::{Lang, TranslateError};
+
+/// Last `x-ratelimit-remaining-requests` value Groq returned for this key
+/// (server-computed, so it already covers every consumer of the key).
+/// `u32::MAX` = nothing seen yet.
+static GROQ_REMAINING_REQUESTS: AtomicU32 = AtomicU32::new(u32::MAX);
+
+/// Approximate remaining chat-completion requests on the configured Groq key
+/// today, straight from Groq's own rate-limit response header. `None` until the
+/// first request against the key in this app session.
+pub fn remaining_requests() -> Option<u32> {
+    match GROQ_REMAINING_REQUESTS.load(std::sync::atomic::Ordering::Relaxed) {
+        u32::MAX => None,
+        v => Some(v),
+    }
+}
+
+/// Remember the rate-limit header from a chat-completions response (200 or 429).
+#[cfg(feature = "groq")]
+fn store_remaining(r: &ureq::Response) {
+    if let Some(v) = r.header("x-ratelimit-remaining-requests").and_then(|v| v.trim().parse::<u32>().ok()) {
+        GROQ_REMAINING_REQUESTS.store(v, Ordering::Relaxed);
+    }
+}
 
 /// Units per request: small enough for free-tier rate caps, big enough to amortise.
 #[cfg(feature = "groq")]
@@ -206,8 +229,12 @@ impl OnlineTranslator {
             .set("Content-Type", "application/json")
             .send_string(body);
         let (status, raw) = match res {
-            Ok(r) => (r.status(), r.into_string().map_err(|e| TranslateError::Provider(e.to_string()))?),
+            Ok(r) => {
+                store_remaining(&r);
+                (r.status(), r.into_string().map_err(|e| TranslateError::Provider(e.to_string()))?)
+            }
             Err(ureq::Error::Status(code, r)) => {
+                store_remaining(&r);
                 let retry = r.header("Retry-After").and_then(|v| v.trim().parse::<u64>().ok()).map(|s| s.clamp(1, 30));
                 let raw = r.into_string().map_err(|e| TranslateError::Provider(e.to_string()))?;
                 if code == 429 {
@@ -443,7 +470,7 @@ mod tests {
                 }
             }
             let reply = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nx-ratelimit-remaining-requests: 812\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                 reply_body.len(),
                 reply_body
             );
@@ -466,6 +493,8 @@ mod tests {
         let out =
             t.translate(&["Kecamatan Karawang Timur".into()], Lang::Indonesian, Lang::English, None, &cancel, &mut |_, _| {}).expect("round trip");
         assert_eq!(out, vec!["Karawang Timur Subdistrict"]);
+        // The canned reply carries x-ratelimit-remaining-requests: 812; the client must surface it.
+        assert_eq!(remaining_requests(), Some(812));
     }
 
     #[test]

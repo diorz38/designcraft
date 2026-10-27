@@ -421,6 +421,11 @@ pub struct PubgenState {
     /// Running AI Base cover generation job.
     #[serde(skip)]
     pub cover_job: Option<ai_cover_job::CoverJob>,
+    /// Covers still available today on the shared Cloudflare free tier (from the
+    /// Supabase tracker, reported by the last finished job). Persists after the job
+    /// is cleared so both quota labels keep rendering.
+    #[serde(skip)]
+    pub cover_quota_covers: Option<u64>,
     /// Pending batch cover items awaiting quota confirmation.
     #[serde(skip)]
     pub cover_batch_pending: Option<Vec<ai_cover_job::CoverBatchItem>>,
@@ -594,6 +599,7 @@ impl Default for PubgenState {
             cover_ai_dialog: None,
             cover_ai_error: None,
             cover_job: None,
+            cover_quota_covers: None,
             cover_batch_pending: None,
             excel_batch_covers: Vec::new(),
             excel_auto_generate: true,

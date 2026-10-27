@@ -160,6 +160,11 @@ pub fn online_available() -> bool {
     online::compiled_in()
 }
 
+/// Approximate remaining chat-completion requests on the configured Groq key
+/// today, from Groq's own \`x-ratelimit-remaining-requests\` header (server-computed
+/// for the whole key). \`None\` until the first Groq call in this session.
+pub use online::remaining_requests;
+
 /// Are the model files for the offline model present in \`dir\`?
 pub fn model_files_present(dir: &Path) -> bool {
     models::files_present(dir)

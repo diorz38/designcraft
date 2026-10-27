@@ -1332,6 +1332,12 @@ pub(crate) fn compile_card_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
         let color = if *ok { egui::Color32::from_rgb(80, 200, 120) } else { egui::Color32::from_rgb(220, 80, 80) };
         ui.add(egui::Label::new(RichText::new(msg).size(10.5).color(color)).wrap());
     }
+
+    // Shared Cloudflare free-tier remaining (from the Supabase tracker) — shown in
+    // the compile/download card as well, per the quota-notification requirement.
+    if let Some(n) = st.cover_quota_covers {
+        ui.add(egui::Label::new(RichText::new(format!("Cloudflare AI: ~{n} covers left today")).size(10.0).color(t.text_dim)));
+    }
 }
 
 fn start_compile(app: &mut DesignApp, path: &str, st: &mut PubgenState) {

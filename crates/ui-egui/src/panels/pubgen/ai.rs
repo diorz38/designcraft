@@ -1259,6 +1259,16 @@ pub fn slice_signature(st: &PubgenState) -> String {
     format!("ai|{start}..{end}|{slice:?}|{}|{}", st.cover_title.trim(), st.cover_title2.trim())
 }
 
+/// " · Groq: ~N requests left today" when the last Groq response reported its
+/// rate-limit header this session; empty string otherwise (offline provider, or
+/// a build without `ai-translate-online`).
+pub fn groq_quota_suffix() -> String {
+    match translate::remaining_requests() {
+        Some(n) => format!(" · Groq: ~{n} requests left today"),
+        None => String::new(),
+    }
+}
+
 /// Build the backend the panel should use right now from the persisted prefs.
 pub fn backend_from_prefs(app: &DesignApp) -> Option<(String, String, String)> {
     let prefs = &app.session.prefs;

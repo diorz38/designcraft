@@ -107,17 +107,31 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
         let ok = job.poll(&mut st);
         if job.finished {
             st.translate_job = None;
+            // Mirror Groq's remaining-request count into the shared Supabase tracker,
+            // keyed by a fingerprint of this user's key so different accounts are
+            // tracked separately (best effort, off the UI thread).
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let cred = ai::backend_from_prefs(app)
+                    .filter(|(provider, _, _)| provider == "groq")
+                    .map(|(_, key, _)| designcraft_imagegen::quota::fingerprint(&key));
+                if let (Some(cred), Some(n)) = (cred, designcraft_translate::remaining_requests()) {
+                    let _ = std::thread::Builder::new().name("pubgen-groq-quota".into()).spawn(move || {
+                        designcraft_imagegen::quota::report_groq(&cred, n);
+                    });
+                }
+            }
             if ok {
                 // Page-targeted job: write the results into the page's own textboxes.
                 if let Some(target) = st.ai_page_target.take() {
                     ai::apply_page_result(app, &st, &target);
-                    st.header_status = Some(("Page translated with AI.".into(), true));
+                    st.header_status = Some((format!("Page translated with AI.{}", ai::groq_quota_suffix()), true));
                     ui.data_mut(|d| d.insert_temp(state_id, st));
                     return;
                 }
                 if let Some(target) = st.ai_table_target.take() {
                     ai::apply_table_page_result(app, &st, &target);
-                    st.header_status = Some(("Table page translated with AI.".into(), true));
+                    st.header_status = Some((format!("Table page translated with AI.{}", ai::groq_quota_suffix()), true));
                     ui.data_mut(|d| d.insert_temp(state_id, st));
                     return;
                 }
@@ -127,7 +141,10 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
                     for target in &targets {
                         count += ai::apply_table_page_result(app, &st, target);
                     }
-                    st.header_status = Some((format!("{} table item(s) across {} page(s) translated with AI.", count, targets.len()), true));
+                    st.header_status = Some((
+                        format!("{} table item(s) across {} page(s) translated with AI.{}", count, targets.len(), ai::groq_quota_suffix()),
+                        true,
+                    ));
                     ui.data_mut(|d| d.insert_temp(state_id, st));
                     return;
                 }
@@ -140,7 +157,7 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
                     execute_excel_and_generate(app, &mut st, &path)
                 };
                 st.card1_status = Some(match res {
-                    Ok(msg) => (msg, true),
+                    Ok(msg) => (format!("{msg}{}", ai::groq_quota_suffix()), true),
                     Err(err) => (err, false),
                 });
                 ui.data_mut(|d| d.insert_temp(state_id, st));
@@ -166,12 +183,13 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
             let _ = covers::apply_ai_cover_batch_item(app, &st, &title, &path_str);
         }
         if job.finished {
+            st.cover_quota_covers = job.remaining_covers();
             st.cover_job = None;
             if ok && let Some(bg_path) = job.completed_path.take() {
                 let path_str = bg_path.to_string_lossy().to_string();
                 let res = covers::apply_ai_cover_result(app, &st, &path_str);
                 st.cover_status = Some(match res {
-                    Ok(msg) => (msg, true),
+                    Ok(msg) => (format!("{msg}{}", job.quota_suffix()), true),
                     Err(err) => (err, false),
                 });
                 ui.data_mut(|d| d.insert_temp(state_id, st));

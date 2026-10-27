@@ -194,6 +194,11 @@ pub(crate) fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
         if ai_setup_resp.clicked() {
             st.ai_dialog = Some(ai::AiSetupDialog::open(app, st));
         }
+        // Groq's own rate-limit header (per API key): shown once the first
+        // translation has been made this session.
+        if let Some(n) = designcraft_translate::remaining_requests() {
+            ui.label(RichText::new(format!("Groq: ~{n} requests left today")).size(10.0).color(t.text_dim));
+        }
 
         // Justify-between: right-aligned About icon button
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1177,6 +1182,12 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
 
     if gen_btn.clicked() {
         covers::trigger_generate_cover(app, st, ui.ctx().clone());
+    }
+
+    // Shared Supabase counter (remaining neurons / 96), persisted in state after the
+    // reporting job finishes so the label stays visible under the button.
+    if is_ai && let Some(n) = st.cover_quota_covers {
+        ui.label(RichText::new(format!("Cloudflare AI: ~{n} covers left today")).size(10.0).color(t.text_dim));
     }
 
     if let Some(pending) = &st.cover_batch_pending {

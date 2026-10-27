@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 thiserror = { workspace = true }
+log = { workspace = true }
 serde_json = { workspace = true, optional = true }
 # Cloudflare Workers AI REST shares one TLS stack with the translate online client.
 ureq = { version = "2", optional = true, default-features = false, features = ["tls"] }
