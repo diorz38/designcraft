@@ -3555,10 +3555,17 @@ pub(crate) fn master_excel_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
     {
         st.excel_source_path = path.clone();
         let res = execute_excel_and_generate(app, st, &path);
-        let (msg, ok) = match res {
+        let collected = super::vocab::collect_document(app, st);
+        if st.auto_fill_ai_drafts {
+            super::ai::fill_blank_drafts(app, st, ui.ctx().clone());
+        }
+        let (mut msg, ok) = match res {
             Ok(msg) => (msg, true),
             Err(e) => (e, false),
         };
+        if ok && collected > 0 {
+            msg.push_str(&format!(" Vocabulary: {collected} new term(s) collected."));
+        }
         st.excel_status = Some((msg.clone(), ok));
         st.card3_status = Some((msg, ok));
     }

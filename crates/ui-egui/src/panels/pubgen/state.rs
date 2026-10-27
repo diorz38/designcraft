@@ -9,7 +9,6 @@ use super::ai;
 use super::ai_cover;
 use super::ai_cover_job;
 use super::locale::Locale;
-use super::summarize;
 
 pub(super) fn default_file_col() -> usize {
     3
@@ -188,18 +187,12 @@ pub struct PubgenState {
     /// The glossary was resolved from prefs for this panel session.
     #[serde(skip)]
     pub glossary_loaded: bool,
+    /// After a collection run, ask the AI for drafts of the blank terms automatically.
+    #[serde(default = "default_true")]
+    pub auto_fill_ai_drafts: bool,
     /// Signature of the slice the finished job translated; a mismatch re-collects.
     #[serde(skip)]
     pub translations_slice_key: String,
-    /// A running background chapter-review draft.
-    #[serde(skip)]
-    pub narrative_job: Option<summarize::NarrativeJob>,
-    /// The drafted blocks awaiting Apply/Discard.
-    #[serde(skip)]
-    pub narrative_preview: Option<Vec<(String, String)>>,
-    /// The review page the blocks will be placed into.
-    #[serde(skip)]
-    pub narrative_target: Option<ai::PageTarget>,
     /// Targeted translation: only RXX/BXX review pages (narrative), tables and other
     /// page kinds stay Indonesian. Useful under tight provider token limits.
     #[serde(default)]
@@ -521,10 +514,8 @@ impl Default for PubgenState {
             translated_bodies: HashMap::new(),
             glossary: ai::BpsGlossary::load(""),
             glossary_loaded: false,
+            auto_fill_ai_drafts: true,
             translations_slice_key: String::new(),
-            narrative_job: None,
-            narrative_preview: None,
-            narrative_target: None,
             ai_only_reviews: false,
             ai_pending_excel_path: String::new(),
             ai_page_target: None,

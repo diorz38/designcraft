@@ -192,7 +192,7 @@ pub(crate) fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
         };
         let ai_setup_resp = outline_button(ui, ai_setup_label, 90.0).on_hover_text(ai_setup_tip);
         if ai_setup_resp.clicked() {
-            st.ai_dialog = Some(ai::AiSetupDialog::open(app));
+            st.ai_dialog = Some(ai::AiSetupDialog::open(app, st));
         }
 
         // Justify-between: right-aligned About icon button
@@ -242,7 +242,7 @@ pub(crate) fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
             } else {
                 "Select a generated RXX review page or Table page to translate in place."
             });
-        if page_btn.clicked() && let Some(target) = table_target {
+        if page_btn.clicked() && let Some(target) = table_target.clone() {
             let mut units = ai::collect_table_page_units(app, &target, &st.glossary);
             units.retain(|(k, _)| !st.translations.contains_key(k));
             if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
@@ -278,48 +278,89 @@ pub(crate) fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
             }
         }
 
-        // "Draft Review" — the chapter review written from the catalog's table statistics.
-        // The drafting worker is native only: on the web build the button stays off rather than
-        // arming a job that could never report back.
-        let web = cfg!(target_arch = "wasm32");
-        let groq_ready = app.session.prefs.translation_provider == "groq"
-            && !app.session.prefs.translation_groq_api_key.trim().is_empty();
-        let can_draft = !web && is_review && groq_ready && super::summarize::has_catalog_tables(st);
-        let draft_btn = ui
-            .add_enabled(can_draft, egui::Button::new("Draft Review"))
-            .on_hover_text("Write this chapter's review from its table statistics, preview the blocks, then apply them to the page.")
-            .on_disabled_hover_text(if web {
-                "Drafting a chapter review needs the desktop app."
-            } else if !groq_ready {
-                "Configure the Groq provider first: click 'AI Translator' above."
-            } else if !is_review {
-                "Select a generated RXX review page."
-            } else {
-                "The catalog has no table CSV rows to summarise."
-            });
-        if draft_btn.clicked() && let Some(target) = review_target.as_ref() {
-            let summaries = super::summarize::collect_table_summaries(st);
-            if summaries.is_empty() {
-                st.header_status = Some(("No numeric table data found in the catalog CSVs.".into(), false));
-            } else if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
-                if st.narrative_job.as_ref().is_some_and(|j| !j.finished) {
-                    st.header_status = Some(("A chapter review is already being drafted.".into(), false));
+        // "Fix Terms": enforce the glossary on this page's existing translations — the
+        // correction pass for AI text written before (or against) the current glossary.
+        let can_fix = (is_review || is_table) && !st.translations.is_empty() && !st.glossary.is_empty();
+        let fix_btn = ui
+            .add_enabled(can_fix, egui::Button::new("Fix Terms"))
+            .on_hover_text("Apply the glossary to this page's existing translations: whole-cell terms are corrected in place; text missing an official term is re-translated on the next Translate click.")
+            .on_disabled_hover_text("Select a translated review or table page — the glossary corrects the AI text already cached for it.");
+        if fix_btn.clicked() {
+            let (corrected, recheck) = ai::apply_glossary_corrections(&st.glossary, &mut st.translations);
+            if let Some(target) = table_target.as_ref() {
+                ai::apply_table_page_result(app, st, target);
+            } else if let Some(target) = review_target.as_ref() {
+                ai::apply_page_result(app, st, target);
+            }
+            st.header_status = Some(if recheck.is_empty() {
+                if corrected == 0 {
+                    ("The glossary already agrees with this page's translations.".into(), true)
                 } else {
-                    st.narrative_target = Some(target.clone());
-                    let terms = st.glossary.prompt_pairs();
-                    st.narrative_job = Some(super::summarize::NarrativeJob::spawn(
-                        &provider,
-                        &key,
-                        &model,
-                        summaries,
-                        target.id_title.clone(),
-                        terms,
-                        ui.ctx().clone(),
-                    ));
-                    st.header_status = Some(("Drafting the chapter review with AI…".into(), true));
+                    (format!("Glossary applied: {corrected} term(s) corrected on the page."), true)
                 }
             } else {
-                st.header_status = Some(("AI: no backend configured — click 'AI Translator' to set up.".into(), false));
+                (
+                    format!(
+                        "Glossary applied: {corrected} term(s) corrected; {} text(s) marked — click 'Retranslate (Glossary)' to re-run them with the official terms.",
+                        recheck.len()
+                    ),
+                    true,
+                )
+            });
+        }
+
+        // "Retranslate (Glossary)": enforce the official terms for real — deterministic
+        // corrections first, then a fresh AI pass over exactly the units the glossary
+        // flagged, using the prompt that carries the official terms.
+        let can_retr = can_fix && backend_ready;
+        let retr_btn = ui
+            .add_enabled(can_retr, egui::Button::new("Retranslate (Glossary)"))
+            .on_hover_text("Correct this page with the glossary's official terms, then re-translate the texts the glossary flagged (one AI request batch).")
+            .on_disabled_hover_text(if !backend_ready {
+                "Configure AI Provider first: click 'AI Translator' button above."
+            } else {
+                "Select a translated review or table page."
+            });
+        if retr_btn.clicked() {
+            let (corrected, recheck) = ai::apply_glossary_corrections(&st.glossary, &mut st.translations);
+            if let Some(target) = table_target.as_ref() {
+                ai::apply_table_page_result(app, st, target);
+            } else if let Some(target) = review_target.as_ref() {
+                ai::apply_page_result(app, st, target);
+            }
+            if recheck.is_empty() {
+                st.header_status = Some(if corrected == 0 {
+                    ("The glossary already agrees with this page's translations.".into(), true)
+                } else {
+                    (format!("Glossary applied: {corrected} term(s) corrected on the page."), true)
+                });
+            } else if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
+                let mut units = if let Some(target) = table_target.as_ref() {
+                    ai::collect_table_page_units(app, target, &st.glossary)
+                } else if let Some(target) = review_target.as_ref() {
+                    ai::collect_page_units(app, target)
+                } else {
+                    Vec::new()
+                };
+                units.retain(|(k, _)| recheck.iter().any(|r| r == k));
+                if units.is_empty() {
+                    st.header_status =
+                        Some((format!("Glossary corrected {corrected} term(s); the {} flagged text(s) are not on this page.", recheck.len()), true));
+                } else if st.translate_job.as_ref().is_some_and(|j| !j.finished) {
+                    st.header_status = Some(("A translation is already running — try again when it finishes.".into(), false));
+                } else {
+                    let terms = st.glossary.prompt_pairs();
+                    if let Some(target) = table_target.clone() {
+                        st.ai_table_target = Some(target);
+                    } else if let Some(target) = review_target.clone() {
+                        st.ai_page_target = Some(target);
+                    }
+                    st.translate_job = Some(ai::TranslateJob::spawn(&provider, &key, &model, units, terms, ui.ctx().clone()));
+                    st.header_status = Some((format!("Retranslating {} text(s) with the official terms…", recheck.len()), true));
+                }
+            } else {
+                st.header_status =
+                    Some((format!("Glossary corrected {corrected} term(s); {} text(s) need AI re-translation — configure the provider first.", recheck.len()), false));
             }
         }
 
@@ -520,8 +561,12 @@ pub(crate) fn card1_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenSta
     let can_gen = !st.card1_records.is_empty();
     if ui.add_enabled(can_gen, egui::Button::new("Generate Pages")).clicked() {
         let res = execute_generate_pages(app, st);
+        let collected = super::vocab::collect_document(app, st);
+        if st.auto_fill_ai_drafts {
+            ai::fill_blank_drafts(app, st, ui.ctx().clone());
+        }
         st.card1_status = Some(match res {
-            Ok(msg) => (msg, true),
+            Ok(msg) => (if collected > 0 { format!("{msg} Vocabulary: {collected} new term(s) collected.") } else { msg }, true),
             Err(err) => (err, false),
         });
     }
@@ -670,8 +715,12 @@ pub(crate) fn card2_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenSta
             load_card2_csv(st, &st.card2_path.clone());
         }
         let res = execute_insert_table(app, st);
+        let collected = super::vocab::collect_document(app, st);
+        if st.auto_fill_ai_drafts {
+            ai::fill_blank_drafts(app, st, ui.ctx().clone());
+        }
         st.card2_status = Some(match res {
-            Ok(msg) => (msg, true),
+            Ok(msg) => (if collected > 0 { format!("{msg} Vocabulary: {collected} new term(s) collected.") } else { msg }, true),
             Err(err) => (err, false),
         });
     }

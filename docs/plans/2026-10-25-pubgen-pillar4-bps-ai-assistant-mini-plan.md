@@ -7,6 +7,14 @@
 - **Branch:** `feature/pillar4-bps-glossary` (off `pubgen-0.7.X`, created 2026-10-27)
 - **Target:** `crates/translate/src/`, `crates/ui-egui/src/panels/pubgen/`, `crates/engine/src/`, `assets/pubgen/`
 
+> **Descoped 2026-10-27 (later the same day):** the BPS Statistical AI Assistant half (the
+> chapter-review summarizer: `summarize.rs`, the "Draft Review" button, `NarrativeJob` and the
+> preview dialog) was removed from the build — not needed for now. The whole half is recorded as
+> a future improvement in §8; its last full implementation (including the post-review fixes in
+> §11) lives in git history on this branch. Pillar 4 continues as the **Official Terminology
+> Memory** only: a collected, three-column vocabulary (`indonesian_term` / `ai_english_term` /
+> `official_english_term`) that translation fills and the user curates into official terms.
+
 ---
 
 ## 1. Goal
@@ -345,6 +353,12 @@ Branch `feature/pillar4-bps-glossary`. Separate `CARGO_TARGET_DIR`.
 
 ## 8. Out of Scope
 
+- **Future improvement (descoped 2026-10-27): the BPS Statistical AI Assistant.** The automated
+  executive narrative summarizer — deterministic table statistics (`analyze_table`,
+  `TableSummary`), the one-request-per-chapter draft via `OnlineTranslator::complete`, the strict
+  `{"blocks":[…]}` JSON contract, Rust-built `\stylesheet` RTF, the preview/Apply dialog and the
+  cancelable `NarrativeJob`. Bring back from git history on this branch when the chapter-review
+  workflow is wanted; the design and its tests were sound (see §4.4 and §11).
 - Post-translation replacement inside prose (rejected in §4.2 as corrupting; warnings only, if ever).
 - Modifying the offline NLLB path to support prompts (seq2seq).
 - Multi-language glossaries beyond ID→EN (future: `target_lang`).
@@ -378,6 +392,26 @@ No new workspace dependencies, no new external crates.
 _State (2026-10-27): a box is ticked where an executed check proves the claim (the checks are listed in §11). The Terminology pane and the Draft Review flow exist, compile and are exercised by the module tests, but their runtime behaviour — pane editing, the enable gating, the Apply path into a real RXX page — still has no automated coverage, so those two stay unticked rather than claimed. The CI box stays unticked because a full `cargo xtask ci` was not run (see §11)._
 
 ## 11. Revision Log
+
+**2026-10-27 (terminology-memory rework).** Pillar 4 reduced to the Official Terminology
+Memory and reshaped into a collected, curated vocabulary (§5 diverges accordingly):
+
+1. The summarizer half was removed (see the descope note at the top).
+2. `BpsGlossary` is now a three-column vocabulary: `GlossaryTerm { id, ai, official, count }`.
+   Only `official` is ever applied (`lookup`/`alias_en`) or prompted (`prompt_pairs`); `ai`
+   keeps what the model wrote for review. Legacy `{"exact_mappings": …}` files (the bundled
+   asset) still load, seeding `official`.
+3. New `vocab.rs` collects vocabulary from the generated pages — whole header cells, row
+   labels and titles, note/source line parts (`Sumber: BPS Kabupaten Karawang/Dinas terkait`),
+   stopword-delimited content-word runs from prose, and 2+-word capitalized name runs (a
+   single capitalized word only for org keywords) — each with a seen-count for review
+   priority. Generic function words are never collected.
+4. "Generate Pages" / "Insert Table" and a "Collect Vocabulary" button in the Terminology
+   pane feed the store; `TranslateJob::poll` fills the `ai` column of known terms.
+5. The Terminology pane gained the third column, a Seen count, add/remove rows; "Reset to
+   bundled" refills `official` from the asset while keeping AI drafts and collected terms.
+6. "Retranslate (Glossary)" joins "Fix Terms": deterministic corrections first, then a fresh
+   AI pass over exactly the units whose cached translation contradicts an official term.
 
 **2026-10-27 (implementation).** Phases 0–5 landed on `feature/pillar4-bps-glossary`. Small divergences from the written spec, all recorded in §5:
 

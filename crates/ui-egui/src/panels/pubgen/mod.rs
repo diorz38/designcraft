@@ -37,12 +37,12 @@ mod helpers;
 mod page_utils;
 mod pages;
 mod state;
-mod summarize;
 mod tables;
 mod testutil;
 mod themes;
 mod thumbnails;
 mod toc;
+mod vocab;
 mod widgets;
 
 pub(crate) use covers::*;
@@ -181,16 +181,7 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
             st.cover_job = Some(job);
         }
     }
-    // AI chapter-review drafting: the finished blocks land in the preview dialog.
-    if let Some(mut job) = st.narrative_job.take() {
-        let _ = job.poll(&mut st);
-        if !job.finished {
-            st.narrative_job = Some(job);
-        }
-    }
-
     ai::dialog_ui(app, &mut st, ui);
-    summarize::preview_ui(app, &mut st, ui);
 
     pubgen_header_band(app, ui, &mut st, &t);
 
@@ -279,7 +270,8 @@ mod tests {
                 if !ready {
                     crate::theme::install_fonts(ui.ctx(), "en");
                     crate::theme::apply(ui.ctx(), &Tokens::for_brightness(crate::theme::Brightness::MediumDark));
-                    let dialog = ai::AiSetupDialog { tab: ai::DIALOG_TAB_TERMINOLOGY, ..ai::AiSetupDialog::open(app) };
+                    let st = PubgenState::default();
+                    let dialog = ai::AiSetupDialog { tab: ai::DIALOG_TAB_TERMINOLOGY, ..ai::AiSetupDialog::open(app, &st) };
                     let st = PubgenState { ai_dialog: Some(dialog), ..Default::default() };
                     ui.data_mut(|d| d.insert_temp(egui::Id::unique(PANEL_ID), st));
                     ready = true;
@@ -292,44 +284,6 @@ mod tests {
         harness.input_mut().max_texture_side = Some(8192);
         harness.run_steps(4);
         harness.render().unwrap().save(directory.join("pubgen-terminology.png")).unwrap();
-    }
-
-    /// Opt-in evidence: the drafted chapter-review preview (blocks + Apply/Discard).
-    /// The a11y check is off for the same pre-existing unnamed panel inputs as above.
-    #[test]
-    fn capture_pubgen_narrative_preview_fixture() {
-        let Some(directory) = std::env::var_os("CRAFT_UI_VISUAL_FIXTURES").map(std::path::PathBuf::from) else { return };
-        std::fs::create_dir_all(&directory).unwrap();
-        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
-        app.run("file.new", json!({})).unwrap();
-        let mut ready = false;
-        let mut harness = egui_kittest::Harness::builder().with_size(vec2(760.0, 760.0)).with_accessibility_check(false).wgpu().build_ui_state(
-            move |ui, app: &mut DesignApp| {
-                if !ready {
-                    crate::theme::install_fonts(ui.ctx(), "en");
-                    crate::theme::apply(ui.ctx(), &Tokens::for_brightness(crate::theme::Brightness::MediumDark));
-                    let blocks = vec![
-                        ("lead".to_string(), "The district's villages cover 4,734.75 km2 in 2024, led by Karawang Kulon.".to_string()),
-                        ("heading2".to_string(), "Land area by village".to_string()),
-                        (
-                            "body".to_string(),
-                            "Karawang Kulon holds the largest area at 3,500.25 km2; Warungbambu the smallest at 1,234.5 km2.".to_string(),
-                        ),
-                        ("heading2".to_string(), "Population".to_string()),
-                        ("body".to_string(), "The 20,500 residents are spread across the district, with Warungbambu the most populous.".to_string()),
-                    ];
-                    let st = PubgenState { narrative_preview: Some(blocks), ..Default::default() };
-                    ui.data_mut(|d| d.insert_temp(egui::Id::unique(PANEL_ID), st));
-                    ready = true;
-                    return;
-                }
-                show(app, ui);
-            },
-            app,
-        );
-        harness.input_mut().max_texture_side = Some(8192);
-        harness.run_steps(4);
-        harness.render().unwrap().save(directory.join("pubgen-narrative-preview.png")).unwrap();
     }
 
     /// Opt-in evidence: the Publication Cover card with an AI Base style selected
