@@ -11,8 +11,12 @@ thiserror = { workspace = true }
 serde_json = { workspace = true, optional = true }
 # Cloudflare Workers AI REST shares one TLS stack with the translate online client.
 ureq = { version = "2", optional = true, default-features = false, features = ["tls"] }
+# flux-1-schnell replies base64-in-JSON (not raw bytes), and the square reply is
+# re-encoded to the requested cover bucket before it leaves this crate.
+base64 = { version = "0.22", optional = true, default-features = false, features = ["std"] }
+image = { workspace = true, optional = true }
 
 [features]
 default = []
-# Cloudflare Workers AI image models (SDXL). Stub without it; never enabled on wasm.
-cloudflare = ["dep:ureq", "dep:serde_json"]
+# Cloudflare Workers AI image models (flux-1-schnell). Stub without it; never enabled on wasm.
+cloudflare = ["dep:ureq", "dep:serde_json", "dep:base64", "dep:image"]
