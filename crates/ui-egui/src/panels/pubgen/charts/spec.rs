@@ -150,7 +150,7 @@ pub fn parse_cell_number(s: &str) -> Option<f64> {
         return None;
     }
     // Strip leading currency symbols and spaces.
-    let mut clean = s.trim_start_matches(|c: char| c == '$' || c == '€' || c == '£').trim();
+    let mut clean = s.trim_start_matches(['$', '€', '£']).trim();
     if clean.starts_with("Rp") || clean.starts_with("rp") || clean.starts_with("RP") {
         clean = clean[2..].trim();
     } else if clean.starts_with("IDR") || clean.starts_with("idr") {
@@ -175,8 +175,9 @@ pub fn parse_cell_number(s: &str) -> Option<f64> {
     let has_comma = clean.contains(',');
 
     let val = if has_dot && has_comma {
-        let last_dot = clean.rfind('.').unwrap();
-        let last_comma = clean.rfind(',').unwrap();
+        let (Some(last_dot), Some(last_comma)) = (clean.rfind('.'), clean.rfind(',')) else {
+            return None;
+        };
         if last_dot < last_comma {
             // Indonesian / European: 1.234,56
             let eu = clean.replace('.', "").replace(',', ".");

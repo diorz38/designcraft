@@ -144,7 +144,7 @@ pub fn compute_layout(
     let bottom_axis_h = if is_hbar { 16.0 } else { AXIS_LABEL_H };
 
     let legend_rows = if spec.show_legend && !spec.series.is_empty() {
-        (spec.series.len() + 2) / 3
+        spec.series.len().div_ceil(3)
     } else {
         0
     };
@@ -245,7 +245,7 @@ pub fn compute_layout(
     if spec.show_legend && !spec.series.is_empty() {
         let leg_y_start = margin.y1 - legend_h + 4.0;
         let total_series = spec.series.len();
-        let items_per_row = total_series.min(3).max(1);
+        let items_per_row = total_series.clamp(1, 3);
         let col_w = (margin.x1 - margin.x0) / items_per_row as f64;
 
         for (s_idx, series) in spec.series.iter().enumerate() {

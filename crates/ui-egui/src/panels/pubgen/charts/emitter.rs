@@ -24,10 +24,10 @@ pub fn ensure_swatch(app: &mut DesignApp, hex_or_name: &str) -> Result<String, S
     if name.is_empty() || matches!(name, "[None]" | "[Paper]" | "[Black]" | "Registration") {
         return Ok(name.to_string());
     }
-    if let Some(active) = app.session.active() {
-        if active.doc.swatch(name).is_some() {
-            return Ok(name.to_string());
-        }
+    if let Some(active) = app.session.active()
+        && active.doc.swatch(name).is_some()
+    {
+        return Ok(name.to_string());
     }
     let res = app
         .run("swatch.create", json!({"name": name, "color": name}))
@@ -254,10 +254,11 @@ pub fn emit_chart(
             let slash_idx = leg.label.find(" / ").unwrap_or(0);
             let b_start = slash_idx + 3;
             let _b_end = leg.label.len();
-            if let Some(active) = app.session.active() {
-                if let Some(it) = active.doc.spreads[spread_idx].items.iter().find(|i| i.id.0 == lfid) {
-                    if let designcraft_doc::Content::Text(tf) = &it.content {
-                        let sid = tf.story;
+            if let Some(active) = app.session.active()
+                && let Some(it) = active.doc.spreads[spread_idx].items.iter().find(|i| i.id.0 == lfid)
+                && let designcraft_doc::Content::Text(tf) = &it.content
+            {
+                let sid = tf.story;
                         let _ = app.session.edit(|doc, _| {
                             if let Some(story) = doc.story_mut(sid) {
                                 let mut offset = 0;
@@ -272,8 +273,6 @@ pub fn emit_chart(
                             Ok(Value::Null)
                         });
                     }
-                }
-            }
         }
         frame_ids.push(lfid);
     }
