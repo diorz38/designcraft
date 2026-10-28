@@ -726,3 +726,4 @@ Rows 10–30 in the same sheet:
 | **4** | Wire into `pages.rs` / `excel.rs`, summary update, 5 tests | 1 |
 | **5** | Bilingual labels, rotation, TOC, batch, error polish, 8 tests | 1 |
 | **Total** | Full vector chart engine | **6.5 days** |
+
