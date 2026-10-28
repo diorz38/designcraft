@@ -1,367 +1,195 @@
-# Plan: Pubgen Dedicated Top-Level Menu (Option 2)
+# Plan: Replace Pubgen Side Panel with Dedicated Top-Level Menu & Popup Dialogs
 
 - **Date:** 2026-10-28
 - **Author:** Antigravity Agent & diorz38
 - **Branch:** `feature/pubgen-panel-ux-redesign`
-- **Target files:** `dock_extended.rs`, `menus/bar.rs`, `menus/run.rs`
+- **Target Files:**
+  - `crates/ui-egui/src/dock_extended.rs` (Pubgen menu & dialog dispatch)
+  - `crates/ui-egui/src/menus/bar.rs` (1-line menu injection)
+  - `crates/ui-egui/src/app.rs` (1-line popup dialog render hook)
+  - `crates/ui-egui/src/panels/pubgen/dialogs.rs` (New: modal dialog forms for Pubgen options)
+  - `crates/ui-egui/src/panels/pubgen/state.rs` (Dialog open/close state flags)
 - **Status:** Planned
 
 ---
 
-## 1. Goal
+## 1. Executive Summary & Objective
 
-Add a **dedicated `Pubgen` top-level menu** to the main menu bar, isolated in `dock_extended.rs` (the pubgen-owned file), injected via a single `#[cfg(feature = "pubgen")]` call in `menus/bar.rs`.
+Currently, the Pubgen workflow is hosted inside an expanded tab in the right dock panel (`DOCK_TABS`). This introduces two major downsides:
+1. **Dock Clutter & Upstream Divergence:** Adding `pubgen` to `DOCK_TABS` changes the dock layout, alters default column tab counts, and requires downstream overrides in `panel_docking/tests.rs`.
+2. **Horizontal Constraint Friction:** Complex forms (multi-column CSV mapping, full-featured cover design, table styling, and multi-sheet options) feel cramped inside a 260pt dock column.
 
-This avoids editing the upstream `MENUS` static array entirely — zero risk of merge conflicts when the main repo updates `menus/tables.rs`.
+### The New Architecture:
+- **Dedicated Top-Level Menu:** A `Pubgen` top-level menu in the main app bar (between `Window` and `Help` or beside `Window`).
+- **Modal Popup Windows:** Every form option (Excel options, TOC builder, Cover generator, Header/Footer setup, Manual CSV/Table, AI Terminology) opens as a **floating / modal popup dialog** with proper margins, full field visibility, and standard `OK / Cancel / Generate` actions.
+- **Complete Side Panel Removal:** Once the menu and dialogs are in place, `pubgen` is removed from `DOCK_TABS` and the side dock returns to clean InDesign parity (`Properties`, `Pages`, `Layers`).
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ File  Edit  Layout  Type  Object  Table  View  Window  Pubgen  Help   │
+└──────────────────────────────────────────────────────────┬─────────────┘
+                                                           │
+                                ┌──────────────────────────▼──────────────┐
+                                │ ▶ Master Excel (.xlsx) Import…          │
+                                │   Auto-Generate from Active Excel       │
+                                │   Download Generated CSVs as ZIP        │
+                                │ ─────────────────────────────────────── │
+                                │ ▶ Table of Contents (TOC) Options…      │
+                                │   Add Table of Contents                 │
+                                │   Rebuild All TOCs                      │
+                                │ ─────────────────────────────────────── │
+                                │ ▶ Publication Cover Generator…          │
+                                │ ▶ Manual CSV / Table Importer…          │
+                                │ ▶ Header & Footer Templates…            │
+                                │ ▶ Page Margins & Renumbering…           │
+                                │ ─────────────────────────────────────── │
+                                │ ▶ AI Translation & Terminology…         │
+                                │   Compile Publication (Project Wizard)… │
+                                │ ─────────────────────────────────────── │
+                                │   About PubGen…                         │
+                                └─────────────────────────────────────────┘
+```
 
 ---
 
-## 2. Architecture
+## 2. Zero-Conflict Upstream Strategy
 
-### Injection point
+To ensure painless rebasing and merging when updates arrive from upstream:
 
-**`crates/ui-egui/src/menus/bar.rs` — `menu_bar()` function (line 85–94)**
+1. **`menus/tables.rs` remains 100% UNTOUCHED.** We do not insert items into upstream's static `MENUS` array.
+2. **`dock_extended.rs` is our fork's owner file.** All Pubgen menu rendering and dialog dispatching live here.
+3. **Only two 1-line hooks in upstream files:**
+   - In `crates/ui-egui/src/menus/bar.rs` (inside `menu_bar()`):
+     ```rust
+     #[cfg(feature = "pubgen")]
+     crate::dock::pubgen_menu(app, ui);
+     ```
+   - In `crates/ui-egui/src/app.rs` (inside the main UI frame after `dialogs::show()`):
+     ```rust
+     #[cfg(feature = "pubgen")]
+     crate::dock::pubgen_dialogs(self, &ctx);
+     ```
+4. **Dock Tests Return to 100% Upstream Parity:** Removing `pubgen` from `DOCK_TABS` means `crates/ui-egui/src/panel_docking/tests.rs` no longer needs fork-specific assertions!
+
+---
+
+## 3. Popup Windows & Form Options Design
+
+All existing card contents from the side panel are modularized into dedicated popup dialogs:
+
+| Dialog | Trigger Menu Item | Size (WxH) | Key Content & Actions |
+|---|---|---|---|
+| **Excel Ingest & Generate** | `Master Excel (.xlsx) Import…` | 520 × 480 | File picker, Sheet detection summary, Auto-generate checkbox, Single/Dual Lang toggle, AI translate toggle, `[Convert & Generate]` |
+| **Table of Contents Options** | `Table of Contents (TOC) Options…` | 480 × 520 | TOC Style (Entry, Table, Chart, Paragraph), Layout (Standard, TablePage), Title field, Hanging indent, Page filter words, Pair bilingual checkbox, Insert after selected page, `[Add TOC]`, `[Rebuild TOC]` |
+| **Cover Generator** | `Publication Cover Generator…` | 560 × 640 | Cover preset styles (12 styles), Colors (Primary, Accent, Dark), Metadata overrides (Title 1, Title 2, Year, Volume, Agency), Image slots (Hero, Skyline, Logo), AI Prompt & Palette, `[Generate Cover]` |
+| **Header & Footer Setup** | `Header & Footer Templates…` | 500 × 520 | Style preset, Sided rules, Scope (All, Section, Range), Rule weight, Accent bar, Colors, `[Apply H/F]`, `[Remove H/F]`, `[Save Template]` |
+| **Manual CSV / Table** | `Manual CSV / Table Importer…` | 540 × 560 | Tab 1: Page from CSV (Column mappings, template resolution, range). Tab 2: Table from CSV (Theme, row conditions, column widths). `[Generate Pages]`, `[Insert Table]` |
+| **Page Utilities** | `Page Margins & Renumbering…` | 420 × 360 | BPS margin reset (20/25/25mm), Section renumbering start, Page from RTF, Page from Image |
+| **AI Translation & Terminology** | `AI Translation & Terminology…` | 580 × 600 | Existing `ai::AiSetupDialog`: Groq API key, model selection, BPS Glossary table editor, search & draft auto-fill |
+| **Compilation Wizard** | `Compile Publication (Project Wizard)…` | 520 × 440 | Existing `compile::NewProjectDialog`: Manifest path, chapter plans, PDF export |
+| **About PubGen** | `About PubGen…` | 420 × 380 | Existing `about_pubgen_dialog`: Logo, author attribution, BPS Karawang info |
+
+---
+
+## 4. Modal Dialog Implementation Pattern
+
+Dialogs use DesignCraft's standard `modal_drag::modal` or `egui::Window` with center-screen placement:
 
 ```rust
-// CURRENT:
-pub fn menu_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
-    let lang = app.ui.language.clone();
-    let mut menus = menu_tree();
-    if crate::i18n::is_rtl(&lang) {
-        menus.reverse();
+// In crates/ui-egui/src/panels/pubgen/dialogs.rs:
+
+pub fn show_all_dialogs(app: &mut DesignApp, ctx: &egui::Context, st: &mut PubgenState) {
+    if st.dialog_excel_open {
+        excel_import_dialog(app, ctx, st);
     }
-    for (menu, entries) in menus {
-        menu_button(ui, crate::rtl::widget(ui, crate::i18n::tr(&lang, menu)), |ui| {
-            menu_column(app, ui, &[(menu, entries)]);
-        });
+    if st.dialog_toc_open {
+        toc_dialog(app, ctx, st);
     }
-}
-
-// PATCH (add ONE cfg block after the for loop):
-pub fn menu_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
-    // ... existing code unchanged ...
-    for (menu, entries) in menus {
-        menu_button(ui, crate::rtl::widget(ui, crate::i18n::tr(&lang, menu)), |ui| {
-            menu_column(app, ui, &[(menu, entries)]);
-        });
+    if st.dialog_cover_open {
+        cover_dialog(app, ctx, st);
     }
-    // Pubgen dedicated menu — lives entirely in dock_extended.rs (no upstream conflict)
-    #[cfg(feature = "pubgen")]
-    crate::dock::pubgen_menu(app, ui);
-}
-```
-
-### How UI commands work (from `menus/run.rs`)
-
-Menu items dispatch through `app.run(id, params)`, which routes:
-- `"window.panel"` → `panel_docking::command` → activates panel tab
-- `"toc.generate"` / `"toc.update"` → engine commands (already in Layout menu)
-- `"pubgen.compileProject"` → `crate::dock::pubgen::compile_project(app, p)` (already wired in `run.rs` line 159–160)
-- New `"pubgen.*"` UI commands → add to `run_ui_inner` match arm in `menus/run.rs` with `#[cfg(feature = "pubgen")]`
-
----
-
-## 3. Complete Function Inventory of the Pubgen Panel
-
-### 3.1 Panel Sections (`mod.rs`)
-
-| Section function | UI call | Engine command called |
-|-----------------|---------|----------------------|
-| `pubgen_header_band()` | renders header with lang toggle + AI status | — (state mutation) |
-| `master_excel_ui()` | renders Section 1: Excel import + auto-generate | `execute_excel_and_generate()` → file picker → generate pages |
-| `card_toc_ui()` | renders Section 2: TOC controls | `execute_add_toc()`, `execute_rebuild_toc()` |
-| `manual_import_accordion_ui()` | renders Section 3: collapsible Cover/CSV/HF | delegates to sub-UIs |
-| `page_utilities_ui()` | renders Section 4: page utils | `execute_renumber_page()`, `execute_set_page_margins()` |
-| `about_pubgen_dialog()` | About PubGen modal | — |
-| `ai_quota_popup_ui()` | AI quota remaining popup | — |
-| `compile_card_ui()` | Compilation project card | `compile_project()` |
-
-### 3.2 Excel Module (`excel.rs`)
-
-| Function | Role |
-|----------|------|
-| `execute_excel_to_csvs(st, path)` | Converts `.xlsx` → CSVs, updates `PubgenState` |
-| `execute_excel_and_generate(app, st, path)` | Full pipeline: Excel → CSV → generate all pages |
-| `execute_download_csv_zip(app, st)` | Packages generated CSVs as ZIP for download |
-| `master_excel_ui(app, ui, st, t)` | **UI renderer** for Section 1 |
-| `parse_xlsx_sheets(path)` | Low-level: parses `.xlsx` into `ExcelSheetData[]` |
-| `convert_excel_to_csv_data(sheets, stem)` | Converts sheets → `ExcelConversionResult` |
-| `execute_convert_excel(path)` | High-level conversion entry point |
-| `apply_excel_cover(st, cover, base_dir)` | Applies cover data from Excel `COVER` sheet to state |
-| `cover_style_index(spec)` | Maps cover style name → index |
-| Many `parse_*_sheet()` fns | Specialized parsers: cover, table, chart, divider, RTF, note sheets |
-
-### 3.3 TOC Module (`toc.rs`)
-
-| Function | Role |
-|----------|------|
-| `execute_add_toc(app, st)` | **Main action**: generates TOC on new page after selection |
-| `execute_rebuild_toc(app, st)` | **Main action**: rebuilds all existing TOCs |
-| `rebuild_all_tocs(app, st)` | Low-level: rebuilds all TOC stories |
-| `generate_toc(app, st, page, plan, replace)` | Core generator: produces TOC on a page |
-| `enrich_toc_story(...)` | Styles and formats the generated TOC story |
-| `ensure_toc_entry_style(...)` | Creates/updates TOC paragraph styles |
-| `toc_kind_words(kind)` | Maps kind index → page-title filter words |
-| `toc_kind_title(kind, bilingual)` | Default title per TOC kind + lang mode |
-| `toc_kind_of_words(words)` | Reverse: words → kind index |
-| `toc_story_on_page(app, page)` | Finds the TOC story on a given page |
-| `page_margin_width(app, page)` | Width of the page within its margins |
-| `apply_toc_post_process(...)` | Post-processing: continuation headers, styles |
-| `add_toc_self_entry(...)` | Inserts a self-referencing TOC header row |
-
-### 3.4 Covers Module (`covers.rs`)
-
-| Function | Role |
-|----------|------|
-| `execute_generate_front_cover(app, st)` | Generates the front cover spread |
-| `execute_generate_back_cover(app, st)` | Generates the back cover page |
-| `execute_generate_inside_cover(app)` | Generates the inside front cover |
-| `execute_generate_cover(app, st)` | Full cover generation (front + back + inside) |
-| `trigger_generate_cover(app, st, ctx)` | Triggers AI cover generation job |
-| `apply_ai_cover_result(app, st, bg_path)` | Applies a generated AI cover image |
-| `replace_existing_covers(app, st)` | Removes existing cover pages before regenerating |
-| `find_existing_covers(doc)` | Finds existing cover page indices |
-| `apply_report_palette(st)` / `apply_urban_palette(st)` | Quick palette presets |
-
-### 3.5 Pages Module (`pages.rs`)
-
-| Function | Role |
-|----------|------|
-| `execute_generate_pages(app, st)` | **Core**: generates all publication pages from CSV catalog |
-| `resolve_template_path_spec(catalog_path, spec)` | Resolves template file path |
-
-### 3.6 Page Utilities (`page_utils.rs`)
-
-| Function | Role |
-|----------|------|
-| `page_utilities_ui(app, ui, st, t)` | **UI renderer** for Section 4 |
-| `execute_renumber_page(app, st)` | Renumbers pages from selected page |
-| `execute_continue_numbering(app, st)` | Continues numbering from previous section |
-| `execute_set_page_margins(app)` | Adjusts page margins |
-| `execute_page_from_rtf(app, st, path)` | Inserts page from RTF file |
-| `execute_page_from_image(app, st, path)` | Inserts page from image file |
-
-### 3.7 Compile Module (`compile.rs`)
-
-| Function | Role |
-|----------|------|
-| `compile_project(app, p)` | Compiles `pubgen_project.json` → full document |
-| `poll_compile_job(app, st)` | Polls async compilation job, updates status |
-| `compile_card_ui(app, ui, st, t)` | **UI renderer** for the compiler card |
-| `compile_new_project_dialog_ui(...)` | UI for creating a new project manifest |
-
-### 3.8 AI Module (`ai.rs`)
-
-| Function | Role |
-|----------|------|
-| `dialog_ui(app, st, ui)` | AI setup dialog (Groq / Offline / Terminology tabs) |
-| `fill_blank_drafts(app, st, ctx)` | AI-fills blank bilingual drafts |
-| `collect_translation_units(st)` | Gathers all translatable strings |
-| `apply_page_result(app, st, target)` | Applies AI translation to a page |
-| `apply_table_page_result(app, st, target)` | Applies AI translation to a table page |
-| `push_groq_quota_popup(st)` | Shows Groq quota remaining popup |
-| `backend_from_prefs(app)` | Reads AI provider + key from preferences |
-
-### 3.9 Helpers (`helpers.rs`)
-
-| Function | Role |
-|----------|------|
-| `target_page_index(app)` | Returns current page index (0-based) |
-| `ensure_para_style(app, name)` | Creates paragraph style if absent |
-| `frame_with_style(app, spread_idx, rect, text, style)` | Creates a styled text frame |
-| `resolve_catalog_related_file(catalog_path, file_str, ext)` | Resolves relative CSV-referenced paths |
-| `place_catalog_image(...)` | Places an image from catalog |
-| `harmonize_signatory_block(...)` | Adjusts signatory/signature frame sizing |
-| `story_is_overset(app, sid)` | Checks if a story is overset |
-
-### 3.10 Locale (`locale.rs`)
-
-| Type/Fn | Role |
-|---------|------|
-| `enum Locale { Id, En }` | Single-lang mode target locale |
-| `struct LocaleWords` | Vocabulary per locale (table, figure, chapter, TOC titles, etc.) |
-| `ID_WORDS`, `EN_WORDS` | Static locale word tables |
-
-### 3.11 Key Engine Commands (from `crates/engine/src/cmd/`)
-
-| Command ID | Label | What it does |
-|-----------|-------|-------------|
-| `toc.generate` | Table of Contents… | Generates a new TOC (entries, layout, title, page) |
-| `toc.update` | Update Table of Contents | Regenerates all TOCs in document |
-| `toc.entries` | TOC Entries (query) | Returns TOC entries without modifying document |
-
-> **Note:** The Pubgen panel does NOT call `toc.generate`/`toc.update` directly — it uses its own `execute_add_toc()` / `execute_rebuild_toc()` which build a richer BPS-specific TOC via `generate_toc()` in `toc.rs`. The engine commands are the standard InDesign-compatible ones; pubgen's TOC is a superset.
-
----
-
-## 4. Proposed `Pubgen` Menu Structure & Form Options
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Pubgen                                                      │
-├─────────────────────────────────────────────────────────────┤
-│  Show Pubgen Panel                 (Cmd+Shift+G)            │
-│  Compile Publication…              (pubgen.compileProject)  │
-│  ─────────────────────────────────────────────────────────  │
-│  ▶ Data Source & Generate                                   │
-│     Excel to CSV Data…             (Pick .xlsx & Ingest)    │
-│     Generate All Pages             (Batch generation)       │
-│     Download Generated CSVs (ZIP)                           │
-│  ─────────────────────────────────────────────────────────  │
-│  ▶ Table of Contents (TOC)                                  │
-│     Add Table of Contents…         (New TOC on active/next) │
-│     Rebuild Table of Contents      (Update existing TOC)    │
-│     Rebuild All Document TOCs      (Sync after renumber)    │
-│  ─────────────────────────────────────────────────────────  │
-│  ▶ Cover & Front Matter                                     │
-│     Generate Front & Back Cover                             │
-│     Cover Form Options…            (Focus Cover Form Card)  │
-│  ─────────────────────────────────────────────────────────  │
-│  ▶ Settings & Options                                       │
-│     AI Translation & Terminology…  (AI Setup Dialog Modal)  │
-│     Header & Footer Templates…     (Focus H/F Card)         │
-│     Page Margins & Renumber…       (Focus Utilities Card)   │
-│  ─────────────────────────────────────────────────────────  │
-│  About PubGen…                     (About Dialog Modal)     │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 5. How Form Options & Dialogs Are Called
-
-In DesignCraft, there are three distinct patterns for opening form options from a menu:
-
-### Pattern A: Direct Modal Dialogs
-These dialogs are rendered as centered draggable modal popups on the screen:
-1. **AI Setup & Terminology Dialog**:
-   - Calling mechanism: In `PubgenState`, set `st.ai_dialog = Some(ai::AiSetupDialog::open(app, &st));`
-   - UI renderer: `ai::dialog_ui(app, &mut st, ui)` runs in the main UI loop when `st.ai_dialog.is_some()`.
-   - Allows users to configure Groq API keys, model parameters, offline glossary terms, and view terminology translations.
-2. **About PubGen Dialog**:
-   - Calling mechanism: In `PubgenState`, set `st.show_about_dialog = true;`
-   - UI renderer: `about_pubgen_dialog(app, ctx, &mut st.show_about_dialog, &t)`.
-3. **New Compilation Project Wizard**:
-   - Calling mechanism: In `PubgenState`, set `st.compile_new_dialog = Some(compile::NewProjectDialog::default());`
-   - UI renderer: `compile_new_project_dialog_ui(app, ui, &mut st, &t)`.
-
-### Pattern B: Form Activation via Dock Panel
-For forms that live in the panel cards (Cover options, CSV column mapping, Table formatting, Header/Footer):
-1. **Panel Activation**:
-   - Calling `app.run("window.panel", json!({"panel": "pubgen"}))` activates and un-minimizes the Pubgen tab in the dock.
-2. **Direct Accordion Expansion & Section Focus**:
-   - In `PubgenState`, we add/utilize section expand flags (e.g. `st.manual_accordion_open = true`, `st.cover_accordion_open = true`).
-   - When the user selects "Cover Form Options…" from the menu, the menu handler:
-     1. Activates the pubgen panel (`window.panel`).
-     2. Sets `st.cover_accordion_open = true` in `PubgenState`.
-     3. Requests UI repaint so the user immediately lands with the form open and visible!
-
-### Pattern C: Native OS File Dialog + Direct Pipeline
-For actions like "Excel to CSV Data…":
-1. Open native OS file picker: `if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("excel"))` or via `rfd`.
-2. Directly execute `execute_excel_and_generate(app, &mut st, &path)`.
-3. Post notification/status to `st.excel_status` and update document immediately.
-
----
-
-## 6. The State Access Pattern in Menu Callbacks
-
-Because `pubgen_menu(app, ui)` takes `ui: &mut egui::Ui`:
-- `ui.ctx()` gives immediate access to the egui `Context`.
-- We can inspect or update `PubgenState` cleanly through a small helper in `dock_extended.rs`:
-
-```rust
-// In dock_extended.rs:
-pub(crate) fn with_pubgen_state<F, R>(ctx: &egui::Context, f: F) -> R
-where
-    F: FnOnce(&mut PubgenState) -> R,
-{
-    let id = egui::Id::unique(pubgen::PANEL_ID);
-    let mut st: PubgenState = ctx.data(|d| d.get_temp(id)).unwrap_or_else(|| PubgenState {
-        bilingual_output: true,
-        cover_include_inside_back: true,
-        ..Default::default()
-    });
-    let result = f(&mut st);
-    ctx.data_mut(|d| d.insert_temp(id, st));
-    result
+    if st.dialog_hf_open {
+        header_footer_dialog(app, ctx, st);
+    }
+    if st.dialog_manual_open {
+        manual_import_dialog(app, ctx, st);
+    }
+    if st.dialog_utils_open {
+        page_utils_dialog(app, ctx, st);
+    }
+    if st.show_about_dialog {
+        about_pubgen_dialog(app, ctx, &mut st.show_about_dialog, &Tokens::get(ctx));
+    }
+    if st.ai_dialog.is_some() {
+        ai::dialog_ui_ctx(app, st, ctx);
+    }
 }
 ```
 
-This guarantees that clicking any menu item (like "Add TOC" or "AI Translation…") has synchronous, safe, single-source-of-truth access to the exact same `PubgenState` used by the dock panel.
+Each dialog has:
+- Draggable header bar with title and `✕` close button
+- ESC key dismisses the dialog
+- Clear primary action button (e.g., `Generate`, `Apply`) and a `Cancel` button
+- Non-blocking: background jobs (like AI translation or Excel parsing) display their progress indicators directly inside the dialog or as floating toast notifications.
 
 ---
 
-## 7. Implementation Phases
+## 5. Complete Function Inventory (Submodule Reference)
 
-### Phase 1 — Menu skeleton (no functionality, just structure)
-- [ ] Add `pub fn pubgen_menu(app: &mut DesignApp, ui: &mut egui::Ui)` to `dock_extended.rs`
-- [ ] Add `#[cfg(feature = "pubgen")] crate::dock::pubgen_menu(app, ui);` to `menus/bar.rs` after the `for` loop
-- [ ] Add `"Show Pubgen Panel"` item → calls `app.run("window.panel", json!({"panel":"pubgen"}))`
-- [ ] Add `"Compile Publication…"` item → calls `app.run("pubgen.compileProject", json!({}))`
-- [ ] Verify: menu renders, panel opens, compile works
+The subagent research mapped all ~120 pub/pub(crate) functions across the 15 modules:
 
-### Phase 2 — Data Source submenu
-- [ ] Add `pubgen.excelDialog` to `UI_COMMANDS` (`#[cfg(feature = "pubgen")]`) and `run_ui_inner`
-- [ ] Handler: opens OS file picker, calls `execute_excel_and_generate()` with pubgen state
-- [ ] Add `pubgen.generatePages` → reads state, calls `execute_generate_pages()`
-- [ ] Add `pubgen.downloadCsvs` → reads state, calls `execute_download_csv_zip()`
-- [ ] Add Data Source submenu with these 3 items to `pubgen_menu()`
-
-### Phase 3 — TOC submenu
-- [ ] Add `pubgen.addToc` → reads state, calls `execute_add_toc()`
-- [ ] Add `pubgen.rebuildToc` → reads state, calls `execute_rebuild_toc()`
-- [ ] Add `enabled` guard: `pubgen.rebuildToc` enabled only when document has a TOC
-- [ ] Add TOC submenu to `pubgen_menu()`
-
-### Phase 4 — Cover & Utilities submenus
-- [ ] Add `pubgen.generateCover` → reads state, calls `execute_generate_cover()`
-- [ ] Add `pubgen.renumberPage` → reads state, calls `execute_renumber_page()`
-- [ ] Add these submenus to `pubgen_menu()`
-
-### Phase 5 — `enabled` guards & Quick Apply
-- [ ] `pubgen.generatePages` enabled only when `st.catalog_csv_path` is non-empty
-- [ ] `pubgen.addToc` / `pubgen.rebuildToc` enabled only when document is open
-- [ ] Add pubgen commands to `Quick Apply` (they're auto-included from `UI_COMMANDS`)
+1. **`excel.rs`**: `execute_excel_and_generate`, `execute_excel_to_csvs`, `execute_download_csv_zip`, `execute_convert_excel`, `parse_xlsx_sheets`, `convert_excel_to_csv_data`, `apply_excel_cover`.
+2. **`toc.rs`**: `execute_add_toc`, `execute_rebuild_toc`, `rebuild_all_tocs`, `generate_toc`, `enrich_toc_story`, `ensure_toc_entry_style`, `sync_toc_continuation_headers`.
+3. **`covers.rs`**: `execute_generate_cover`, `execute_generate_front_cover`, `execute_generate_back_cover`, `execute_generate_inside_cover`, `trigger_generate_cover`, `apply_ai_cover_result`.
+4. **`pages.rs`**: `execute_generate_pages`, `resolve_template_path_spec`.
+5. **`tables.rs`**: `execute_insert_table`, `execute_insert_table_matrix`, `detect_condition_rows`.
+6. **`page_utils.rs`**: `execute_set_page_margins`, `execute_renumber_page`, `execute_continue_numbering`, `execute_page_from_rtf`, `execute_page_from_image`.
+7. **`header_footer.rs`**: `execute_apply_header_footer`, `execute_remove_header_footer`, `execute_save_hf_template`, `execute_delete_hf_template`.
+8. **`compile.rs`**: `compile_project`, `poll_compile_job`, `CompileJob`.
+9. **`ai.rs`**: `dialog_ui`, `fill_blank_drafts`, `apply_page_result`, `apply_table_page_result`, `push_groq_quota_popup`.
+10. **`locale.rs`**: `words`, `detect_from_records`, `split_pair`, `split_table_title`, `split_chart_title_parts`.
+11. **`themes.rs`**: `TableColorTheme`, `parse_table_color_theme`, `ensure_swatch`.
+12. **`csv.rs`**: `parse_csv_content_with_delim`, `load_card1_csv`, `load_card2_csv`.
 
 ---
 
-## 8. Files Changed (complete list)
+## 6. Implementation Steps
 
-| File | Change type | Upstream conflict risk |
-|------|------------|----------------------|
-| `crates/ui-egui/src/dock_extended.rs` | Add `pubgen_menu()` fn + helper | **None** (pubgen-owned) |
-| `crates/ui-egui/src/menus/bar.rs` | +1 `#[cfg]` line after `for` loop | **Very low** (stable code) |
-| `crates/ui-egui/src/menus/run.rs` | Add `#[cfg(feature="pubgen")]` match arms | **Low** (add at end of match) |
-| `crates/ui-egui/src/menus/ui_commands.rs` | Add `#[cfg(feature="pubgen")]` UI_COMMANDS entries | **Low** (append to end) |
+### Phase 1: Dialog Infrastructure & State Flags
+- Add dialog open boolean flags to `PubgenState` in `crates/ui-egui/src/panels/pubgen/state.rs`:
+  - `dialog_excel_open: bool`
+  - `dialog_toc_open: bool`
+  - `dialog_cover_open: bool`
+  - `dialog_hf_open: bool`
+  - `dialog_manual_open: bool`
+  - `dialog_utils_open: bool`
+- Create `crates/ui-egui/src/panels/pubgen/dialogs.rs` extracting the card bodies into clean modal windows.
 
-> All changes in `tables.rs` (the high-risk upstream file) are **avoided entirely**.
+### Phase 2: Pubgen Top-Level Menu in `dock_extended.rs`
+- Implement `pub fn pubgen_menu(app: &mut DesignApp, ui: &mut egui::Ui)` in `dock_extended.rs`.
+- Inject `crate::dock::pubgen_menu(app, ui)` into `menus/bar.rs`.
+- Wire each menu button to toggle the corresponding dialog flag in `PubgenState` via `with_pubgen_state(ui.ctx(), ...)`.
 
----
+### Phase 3: Global Dialog Renderer Hook
+- Implement `pub fn pubgen_dialogs(app: &mut DesignApp, ctx: &egui::Context)` in `dock_extended.rs`.
+- Inject `crate::dock::pubgen_dialogs(self, &ctx);` into `crates/ui-egui/src/app.rs`.
 
-## 9. Conflict Avoidance Rules
-
-1. **Never add to `MENUS` in `tables.rs`** — the entire Pubgen menu lives in `dock_extended.rs`
-2. **All new `UI_COMMANDS` entries use `#[cfg(feature = "pubgen")]`** and are appended at the end
-3. **All new `run_ui_inner` match arms use `#[cfg(feature = "pubgen")]`** and are at the end of the match
-4. **One touch in `bar.rs`**: a single line after the `for` loop, stable and easily resolved
-
----
-
-## 10. Open Questions
-
-- [ ] **Q1:** Does `DesignApp` expose `egui::Context` directly, or must state commands come from a UI context? → Inspect `DesignApp` struct in `crates/ui-egui/src/lib.rs`
-- [ ] **Q2:** Should `pubgen.excelDialog` activate the panel first (so the user sees progress in the panel), or silently execute and show a status bar message?
-- [ ] **Q3:** Keyboard shortcut for `Show Pubgen Panel`? Suggestion: `Cmd+Shift+G` (G for Generate)
-- [ ] **Q4:** Where should the Pubgen menu appear in the bar? Recommendation: **between `Window` and `Help`** (after all domain menus, before help)
+### Phase 4: Side Panel Removal & Upstream Parity Clean Up
+- Remove `"pubgen"` from `DOCK_TABS` in `dock_extended.rs`.
+- Revert any pubgen-specific assertions in `crates/ui-egui/src/panel_docking/tests.rs` so tests are 100% standard upstream.
+- Verify that `cargo test` and `cargo xtask ci` pass cleanly.
 
 ---
 
-## 11. Quick Verification After Each Phase
+## 7. Verification Checklist
 
-```bash
-cargo xtask ci           # fmt + clippy + tests + assets + layers + wasm
-cargo test -p designcraft-ui  # panel_docking tests (tests.rs assertions on tab groups)
-```
-
-Key test to watch: `tests.rs` line 585–592 asserts panel group membership — the `pubgen` tab already appears in expected lists under `#[cfg(feature = "pubgen")]`, so no change needed there.
+- [ ] `cargo check --features pubgen` compiles without warnings.
+- [ ] Top bar displays `Pubgen` menu between `Window` and `Help`.
+- [ ] Clicking `Master Excel (.xlsx) Import…` opens the Excel modal popup window.
+- [ ] Clicking `Table of Contents Options…` opens the TOC modal popup window.
+- [ ] Clicking `Publication Cover Generator…` opens the Cover modal popup window.
+- [ ] Clicking `Header & Footer Templates…` opens the H/F modal popup window.
+- [ ] Clicking `AI Translation & Terminology…` opens the AI modal dialog.
+- [ ] The right dock panel has NO "Pubgen" tab (Properties, Pages, Layers only).
+- [ ] Closing dialogs with `✕` or `Cancel` or `Esc` works reliably.
+- [ ] Quality gate: `cargo xtask ci` passes all lint, test, and layer checks.
