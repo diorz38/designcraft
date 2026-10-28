@@ -289,7 +289,6 @@ pub fn pubgen_menu(app: &mut DesignApp, ui: &mut egui::Ui) {
                     {
                         pubgen::with_state(ui.ctx(), |st| {
                             st.dialog_utils_open = true;
-                            st.show_table_range_popup = true;
                         });
                         ui.close();
                     }
