@@ -23,6 +23,7 @@ pub use locale::Locale;
 pub mod ai;
 pub mod ai_cover;
 pub mod ai_cover_job;
+pub mod charts;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod compile;
@@ -45,6 +46,7 @@ mod toc;
 mod vocab;
 mod widgets;
 
+pub use charts::*;
 pub(crate) use covers::*;
 pub(crate) use csv::*;
 pub(crate) use excel::*;
