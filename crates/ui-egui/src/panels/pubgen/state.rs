@@ -347,6 +347,10 @@ pub struct PubgenState {
     #[cfg(not(target_arch = "wasm32"))]
     #[serde(skip)]
     pub(crate) compile_job: Option<Box<super::compile::CompileJob>>,
+    /// Dialog for creating a new `pubgen_project.json` manifest.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[serde(skip)]
+    pub(crate) compile_new_dialog: Option<Box<super::compile::NewProjectDialog>>,
     /// Progress and the last report, shown under the card's buttons.
     #[serde(default)]
     pub compile_status: Option<(String, bool)>,
@@ -621,6 +625,8 @@ impl Default for PubgenState {
             compile_summary: String::new(),
             #[cfg(not(target_arch = "wasm32"))]
             compile_job: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            compile_new_dialog: None,
             compile_status: None,
             locale: Locale::Id,
             bilingual_output: false,

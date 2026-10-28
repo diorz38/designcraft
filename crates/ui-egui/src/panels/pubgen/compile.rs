@@ -14,7 +14,7 @@ use std::time::Instant;
 
 use designcraft_doc::{Selection, TextSel};
 use egui::{RichText, Ui};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{
@@ -44,7 +44,7 @@ pub(crate) enum HeaderScope {
     All,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct ProjectManifest {
     pub version: u32,
@@ -80,7 +80,7 @@ impl Default for ProjectManifest {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct OutputSpec {
     /// Compiled document path; empty = `<manifest stem>.designcraft` beside the manifest.
@@ -89,7 +89,7 @@ pub(crate) struct OutputSpec {
     pub pdf: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct DocumentSpec {
     pub preset: String,
@@ -104,7 +104,7 @@ impl Default for DocumentSpec {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct MarginSpec {
     pub top: f64,
@@ -119,7 +119,7 @@ impl Default for MarginSpec {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct CoverSpec {
     /// Workbook carrying the `COVER` sheet; empty = the first chapter workbook with one.
@@ -136,14 +136,14 @@ impl Default for CoverSpec {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct FrontMatterSpec {
     /// Dedicated front-matter workbook; empty = the leading narrative rows of chapter 1.
     pub workbook: String,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct ChapterSpec {
     pub chapter: u32,
@@ -151,7 +151,7 @@ pub(crate) struct ChapterSpec {
     pub title: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct PaginationSpec {
     pub front_matter_format: String,
@@ -165,7 +165,7 @@ impl Default for PaginationSpec {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct TocSpec {
     /// `afterFrontMatter` or `end`.
@@ -187,7 +187,7 @@ impl Default for TocSpec {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct HeaderFooterSpec {
     pub preset: String,
@@ -200,7 +200,7 @@ impl Default for HeaderFooterSpec {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct BuildSpec {
     pub keep_intermediate: bool,
@@ -1263,6 +1263,255 @@ pub(crate) fn poll_compile_job(app: &mut DesignApp, st: &mut PubgenState) {
     }
 }
 
+pub(crate) const COVER_STYLES: &[&str] = &[
+    "Wave Curves",
+    "Geometric & Medallion",
+    "Folded Origami",
+    "Chevron & Medallion",
+    "Honeycomb Hexagon",
+    "Corporate Headline",
+    "Diagonal Arrow",
+    "Modern Horizon",
+    "Business Report",
+    "Urban Angle",
+    "Tri-Color Bands",
+    "Prism Diamonds",
+    "Quarter Stack",
+];
+
+pub(crate) const COVER_THEMES: &[&str] = &[
+    "Classic BPS (Blue/Gold)",
+    "Emerald Growth (Green)",
+    "Sunset Crimson (Red)",
+    "Corporate Navy (Deep Blue)",
+    "Modern Slate (Gray)",
+    "Business Report (Report Blue)",
+    "Urban Dark (Charcoal/Gold)",
+];
+
+fn cover_style_label(style: usize) -> String {
+    if let Some(name) = super::ai_cover::style_name(style) {
+        format!("AI {name} (online)")
+    } else {
+        COVER_STYLES.get(style).copied().unwrap_or("Wave Curves").to_string()
+    }
+}
+
+fn deduce_chapter_title(stem: &str, num: u32) -> String {
+    let lower = stem.to_lowercase();
+    let bps_standard = [
+        "Geografi",
+        "Iklim",
+        "Pemerintahan",
+        "Kependudukan",
+        "Sosial",
+        "Pertanian",
+        "Industri & Energi",
+        "Pariwisata",
+        "Transportasi & Komunikasi",
+        "Keuangan",
+        "Pengeluaran Penduduk",
+        "Perdagangan",
+    ];
+    if (1..=12).contains(&num) {
+        let idx = (num - 1) as usize;
+        if (lower.contains(&format!("bab_0{num}")) || lower.contains(&format!("bab_{num}")) || lower.contains(&format!("bab {num}")))
+            && let Some(t) = bps_standard.get(idx)
+        {
+            return t.to_string();
+        }
+    }
+    stem.replace(['_', '-'], " ").trim().to_string()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NewProjectTab {
+    Files,
+    Cover,
+    TocAndLayout,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct NewProjectDialog {
+    pub tab: NewProjectTab,
+    pub manifest_save_path: String,
+    pub publication_title: String,
+    pub bilingual: bool,
+    pub output_document: String,
+    pub export_pdf: bool,
+    pub output_pdf: String,
+    pub chapters: Vec<ChapterSpec>,
+    pub new_chapter_num: u32,
+    pub new_chapter_title: String,
+    pub new_chapter_path: String,
+    pub front_matter_workbook: String,
+    pub cover_source: String,
+    pub cover_style: usize,
+    pub cover_theme_preset: usize,
+    pub cover_include_inside: bool,
+    pub cover_include_back: bool,
+    pub toc_placement: String,
+    pub toc_contents: bool,
+    pub toc_tables: bool,
+    pub toc_charts: bool,
+    pub toc_title_bilingual: bool,
+    pub toc_hanging_indent: bool,
+    pub pagination_front_format: String,
+    pub pagination_body_format: String,
+    pub pagination_restart_body: bool,
+    pub header_footer_preset: String,
+    pub error_message: Option<String>,
+}
+
+impl Default for NewProjectDialog {
+    fn default() -> Self {
+        Self {
+            tab: NewProjectTab::Files,
+            manifest_save_path: String::new(),
+            publication_title: String::new(),
+            bilingual: true,
+            output_document: String::new(),
+            export_pdf: true,
+            output_pdf: String::new(),
+            chapters: Vec::new(),
+            new_chapter_num: 1,
+            new_chapter_title: String::new(),
+            new_chapter_path: String::new(),
+            front_matter_workbook: String::new(),
+            cover_source: String::new(),
+            cover_style: 11,       // Prism Diamonds
+            cover_theme_preset: 0, // Classic BPS
+            cover_include_inside: true,
+            cover_include_back: true,
+            toc_placement: "afterFrontMatter".into(),
+            toc_contents: true,
+            toc_tables: true,
+            toc_charts: true,
+            toc_title_bilingual: true,
+            toc_hanging_indent: true,
+            pagination_front_format: "lowerRoman".into(),
+            pagination_body_format: "arabic".into(),
+            pagination_restart_body: true,
+            header_footer_preset: "book".into(),
+            error_message: None,
+        }
+    }
+}
+
+impl NewProjectDialog {
+    pub(crate) fn build_manifest(&self) -> Result<(PathBuf, ProjectManifest), String> {
+        let manifest_path_str = self.manifest_save_path.trim();
+        if manifest_path_str.is_empty() {
+            return Err("Please specify a path to save pubgen_project.json".into());
+        }
+        let save_path = PathBuf::from(manifest_path_str);
+        if save_path.extension().and_then(std::ffi::OsStr::to_str).map(|e| e.to_ascii_lowercase()) != Some("json".into()) {
+            return Err(format!("{}: manifest file must have a .json extension", save_path.display()));
+        }
+        if self.chapters.is_empty() {
+            return Err("Please add at least one chapter workbook (.xlsx)".into());
+        }
+        for (i, ch) in self.chapters.iter().enumerate() {
+            if ch.path.trim().is_empty() {
+                return Err(format!("Chapter {} has an empty path", i + 1));
+            }
+        }
+
+        let manifest_dir = save_path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+
+        let rel = |raw: &str| -> String {
+            let s = raw.trim();
+            if s.is_empty() {
+                return String::new();
+            }
+            let target = Path::new(s);
+            if let Ok(r) = target.strip_prefix(manifest_dir) { r.to_string_lossy().replace('\\', "/") } else { s.replace('\\', "/") }
+        };
+
+        let title = self.publication_title.trim().to_string();
+
+        let output_doc = if self.output_document.trim().is_empty() { String::new() } else { rel(&self.output_document) };
+
+        let output_pdf = if !self.export_pdf || self.output_pdf.trim().is_empty() { String::new() } else { rel(&self.output_pdf) };
+
+        let chapters =
+            self.chapters.iter().map(|c| ChapterSpec { chapter: c.chapter, path: rel(&c.path), title: c.title.trim().to_string() }).collect();
+
+        let mut lists = Vec::new();
+        if self.toc_contents {
+            lists.push("contents".into());
+        }
+        if self.toc_tables {
+            lists.push("tables".into());
+        }
+        if self.toc_charts {
+            lists.push("charts".into());
+        }
+
+        let manifest = ProjectManifest {
+            version: 1,
+            publication_title: title,
+            bilingual: self.bilingual,
+            output: OutputSpec { document: output_doc, pdf: output_pdf },
+            document: DocumentSpec::default(),
+            cover: CoverSpec {
+                source: rel(&self.cover_source),
+                style: self.cover_style,
+                theme_preset: self.cover_theme_preset,
+                include_inside: self.cover_include_inside,
+                include_back: self.cover_include_back,
+            },
+            front_matter: FrontMatterSpec { workbook: rel(&self.front_matter_workbook) },
+            chapters,
+            pagination: PaginationSpec {
+                front_matter_format: self.pagination_front_format.clone(),
+                body_format: self.pagination_body_format.clone(),
+                restart_at_body: self.pagination_restart_body,
+            },
+            toc: TocSpec {
+                placement: self.toc_placement.clone(),
+                lists,
+                title_bilingual: self.toc_title_bilingual,
+                hanging_indent: self.toc_hanging_indent,
+            },
+            header_footer: HeaderFooterSpec { preset: self.header_footer_preset.clone(), scope: "body".into() },
+            build: BuildSpec { keep_intermediate: true, export_pdf: self.export_pdf },
+        };
+
+        Ok((save_path, manifest))
+    }
+
+    pub(crate) fn save_manifest(&self) -> Result<PathBuf, String> {
+        let (save_path, manifest) = self.build_manifest()?;
+        if let Some(parent) = save_path.parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                std::fs::create_dir_all(parent).map_err(|e| format!("create folder {}: {e}", parent.display()))?;
+            }
+            if !manifest.output.document.is_empty() {
+                let doc_path = resolve_against(parent, &manifest.output.document);
+                if let Some(doc_parent) = doc_path.parent()
+                    && !doc_parent.as_os_str().is_empty()
+                    && !doc_parent.exists()
+                {
+                    let _ = std::fs::create_dir_all(doc_parent);
+                }
+            }
+            if !manifest.output.pdf.is_empty() {
+                let pdf_path = resolve_against(parent, &manifest.output.pdf);
+                if let Some(pdf_parent) = pdf_path.parent()
+                    && !pdf_parent.as_os_str().is_empty()
+                    && !pdf_parent.exists()
+                {
+                    let _ = std::fs::create_dir_all(pdf_parent);
+                }
+            }
+        }
+        let json_str = serde_json::to_string_pretty(&manifest).map_err(|e| format!("serialize manifest: {e}"))?;
+        std::fs::write(&save_path, json_str).map_err(|e| format!("write {}: {e}", save_path.display()))?;
+        Ok(save_path)
+    }
+}
+
 /// The Publication card at the top of the Pubgen panel.
 pub(crate) fn compile_card_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     let lang = app.ui.language.clone();
@@ -1271,7 +1520,7 @@ pub(crate) fn compile_card_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
     let remembered = app.session.prefs.pubgen_project_path.trim().to_string();
     ui.horizontal(|ui| {
         let label = ui.label(RichText::new(crate::i18n::tr(&lang, "Manifest:")).size(11.0).color(t.text));
-        let width = (ui.available_width() - 70.0).clamp(80.0, 260.0);
+        let width = (ui.available_width() - 110.0).clamp(60.0, 200.0);
         let mut edited = st.compile_manifest_path.clone();
         let resp = ui
             .add_sized(
@@ -1284,12 +1533,15 @@ pub(crate) fn compile_card_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
             st.compile_checked.clear();
             st.compile_summary.clear();
         }
-        if outline_button(ui, crate::i18n::tr(&lang, "Open…"), 64.0).clicked()
+        if outline_button(ui, crate::i18n::tr(&lang, "Open…"), 50.0).clicked()
             && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("pubgenProject"))
         {
             st.compile_manifest_path = path;
             st.compile_checked.clear();
             st.compile_summary.clear();
+        }
+        if outline_button(ui, crate::i18n::tr(&lang, "New…"), 46.0).clicked() {
+            st.compile_new_dialog = Some(Box::new(NewProjectDialog::default()));
         }
     });
 
@@ -1303,6 +1555,20 @@ pub(crate) fn compile_card_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
     }
     if !st.compile_summary.is_empty() {
         ui.add(egui::Label::new(RichText::new(&st.compile_summary).size(10.0).color(t.text_dim)).wrap());
+    }
+
+    if path.is_empty() {
+        ui.add_space(2.0);
+        ui.vertical_centered(|ui| {
+            if ui
+                .button(RichText::new(crate::i18n::tr(&lang, "Create New Project Manifest…")).size(11.0).color(t.accent))
+                .on_hover_text(crate::i18n::tr(&lang, "Open the project builder form to create a new pubgen_project.json"))
+                .clicked()
+            {
+                st.compile_new_dialog = Some(Box::new(NewProjectDialog::default()));
+            }
+        });
+        ui.add_space(2.0);
     }
 
     let running = st.compile_job.is_some();
@@ -1337,6 +1603,359 @@ pub(crate) fn compile_card_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
     // the compile/download card as well, per the quota-notification requirement.
     if let Some(n) = st.cover_quota_covers {
         ui.add(egui::Label::new(RichText::new(format!("Cloudflare AI: ~{n} covers left today")).size(10.0).color(t.text_dim)));
+    }
+
+    // Modal dialog to create a new pubgen_project.json
+    compile_new_project_dialog_ui(app, ui, st, t);
+}
+
+fn render_new_project_files_tab(app: &mut DesignApp, ui: &mut Ui, dialog: &mut NewProjectDialog, t: &Tokens, lang: &str) {
+    ui.label(RichText::new(crate::i18n::tr(lang, "Publication Details:")).strong().size(12.0).color(t.text));
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Title:").size(11.0).color(t.text));
+        let w = (ui.available_width() - 10.0).max(180.0);
+        let resp = ui
+            .add_sized([w, FIELD_H], egui::TextEdit::singleline(&mut dialog.publication_title).hint_text("e.g. Kabupaten Karawang Dalam Angka 2026"));
+        if resp.changed() && dialog.output_document.is_empty() && !dialog.publication_title.trim().is_empty() {
+            let stem: String = dialog.publication_title.chars().map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' }).collect();
+            dialog.output_document = format!("build/{stem}.designcraft");
+            if dialog.export_pdf {
+                dialog.output_pdf = format!("build/{stem}.pdf");
+            }
+        }
+    });
+
+    ui.checkbox(&mut dialog.bilingual, crate::i18n::tr(lang, "Bilingual Publication (Indonesian / English)"));
+
+    ui.add_space(4.0);
+    ui.label(RichText::new(crate::i18n::tr(lang, "Manifest Save Path:")).strong().size(12.0).color(t.text));
+    ui.horizontal(|ui| {
+        let w = (ui.available_width() - 75.0).max(120.0);
+        ui.add_sized(
+            [w, FIELD_H],
+            egui::TextEdit::singleline(&mut dialog.manifest_save_path).hint_text("e.g. C:/Projects/Karawang/pubgen_project.json"),
+        );
+        if outline_button(ui, crate::i18n::tr(lang, "Browse…"), 64.0).clicked()
+            && let Some(picked) = app.services.pick_save.as_mut().and_then(|f| f("pubgen_project.json"))
+        {
+            dialog.manifest_save_path = picked;
+        }
+    });
+    ui.label(RichText::new("All chapter and output paths will be saved relative to this manifest folder.").size(10.0).color(t.text_dim));
+
+    ui.add_space(6.0);
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(format!("Chapters ({})", dialog.chapters.len())).strong().size(12.0).color(t.text));
+        if outline_button(ui, crate::i18n::tr(lang, "+ Add Workbook…"), 130.0).clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
+        {
+            let p = PathBuf::from(&path);
+            let num = (dialog.chapters.len() + 1) as u32;
+            let stem = p.file_stem().and_then(std::ffi::OsStr::to_str).unwrap_or("Chapter");
+            let title = deduce_chapter_title(stem, num);
+            dialog.chapters.push(ChapterSpec { chapter: num, path, title });
+            if dialog.manifest_save_path.is_empty()
+                && let Some(parent) = p.parent()
+            {
+                dialog.manifest_save_path = parent.join("pubgen_project.json").to_string_lossy().to_string();
+            }
+        }
+    });
+
+    // Manual quick-add row
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Quick add:").size(10.5).color(t.text_dim));
+        ui.add_sized([35.0, FIELD_H], egui::DragValue::new(&mut dialog.new_chapter_num).prefix("#"));
+        ui.add_sized([90.0, FIELD_H], egui::TextEdit::singleline(&mut dialog.new_chapter_title).hint_text("Title"));
+        let w = (ui.available_width() - 60.0).max(80.0);
+        ui.add_sized([w, FIELD_H], egui::TextEdit::singleline(&mut dialog.new_chapter_path).hint_text("Path to .xlsx"));
+        if ui.button(crate::i18n::tr(lang, "Add")).clicked() && !dialog.new_chapter_path.trim().is_empty() {
+            let num = dialog.new_chapter_num;
+            let title =
+                if dialog.new_chapter_title.trim().is_empty() { format!("Chapter {num}") } else { dialog.new_chapter_title.trim().to_string() };
+            dialog.chapters.push(ChapterSpec { chapter: num, path: dialog.new_chapter_path.trim().to_string(), title });
+            dialog.new_chapter_num = dialog.new_chapter_num.saturating_add(1);
+            dialog.new_chapter_title.clear();
+            dialog.new_chapter_path.clear();
+        }
+    });
+
+    if dialog.chapters.is_empty() {
+        ui.label(
+            RichText::new(crate::i18n::tr(lang, "No chapters added yet. Click '+ Add Workbook…' to select chapter files."))
+                .size(10.5)
+                .color(t.text_dim),
+        );
+    } else {
+        let mut to_remove = None;
+        let mut to_move_up = None;
+        let mut to_move_down = None;
+        let len = dialog.chapters.len();
+
+        for (idx, ch) in dialog.chapters.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(format!("#{}:", ch.chapter)).strong().color(t.text));
+                ui.add_sized([100.0, FIELD_H], egui::TextEdit::singleline(&mut ch.title).hint_text("Title"));
+                let w = (ui.available_width() - 85.0).max(80.0);
+                ui.add_sized([w, FIELD_H], egui::TextEdit::singleline(&mut ch.path).hint_text("Path"));
+                if idx > 0 && ui.button("▲").on_hover_text("Move up").clicked() {
+                    to_move_up = Some(idx);
+                }
+                if idx + 1 < len && ui.button("▼").on_hover_text("Move down").clicked() {
+                    to_move_down = Some(idx);
+                }
+                if ui.button("✕").on_hover_text("Remove").clicked() {
+                    to_remove = Some(idx);
+                }
+            });
+        }
+
+        if let Some(idx) = to_remove {
+            dialog.chapters.remove(idx);
+            for (i, c) in dialog.chapters.iter_mut().enumerate() {
+                c.chapter = (i + 1) as u32;
+            }
+        }
+        if let Some(idx) = to_move_up {
+            dialog.chapters.swap(idx, idx - 1);
+            for (i, c) in dialog.chapters.iter_mut().enumerate() {
+                c.chapter = (i + 1) as u32;
+            }
+        }
+        if let Some(idx) = to_move_down {
+            dialog.chapters.swap(idx, idx + 1);
+            for (i, c) in dialog.chapters.iter_mut().enumerate() {
+                c.chapter = (i + 1) as u32;
+            }
+        }
+    }
+
+    ui.add_space(6.0);
+    ui.label(RichText::new(crate::i18n::tr(lang, "Front Matter Workbook (Optional):")).strong().size(11.5).color(t.text));
+    ui.horizontal(|ui| {
+        let w = (ui.available_width() - 75.0).max(120.0);
+        ui.add_sized([w, FIELD_H], egui::TextEdit::singleline(&mut dialog.front_matter_workbook).hint_text("e.g. workbooks/00_Front_Matter.xlsx"));
+        if outline_button(ui, crate::i18n::tr(lang, "Browse…"), 64.0).clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
+        {
+            dialog.front_matter_workbook = path;
+        }
+    });
+    ui.label(
+        RichText::new("If empty, leading narrative rows (G/Note/Ulasan) of Chapter 1 are emitted as front matter.").size(10.0).color(t.text_dim),
+    );
+
+    ui.add_space(6.0);
+    ui.label(RichText::new(crate::i18n::tr(lang, "Output Files:")).strong().size(11.5).color(t.text));
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Document:").size(11.0).color(t.text));
+        let w = (ui.available_width() - 10.0).max(140.0);
+        ui.add_sized([w, FIELD_H], egui::TextEdit::singleline(&mut dialog.output_document).hint_text("Optional (default: beside manifest)"));
+    });
+    ui.checkbox(&mut dialog.export_pdf, crate::i18n::tr(lang, "Export PDF alongside document"));
+    if dialog.export_pdf {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("PDF Path:").size(11.0).color(t.text));
+            let w = (ui.available_width() - 10.0).max(140.0);
+            ui.add_sized([w, FIELD_H], egui::TextEdit::singleline(&mut dialog.output_pdf).hint_text("Optional (default: beside document)"));
+        });
+    }
+}
+
+fn render_new_project_cover_tab(app: &mut DesignApp, ui: &mut Ui, dialog: &mut NewProjectDialog, t: &Tokens, lang: &str) {
+    ui.label(RichText::new(crate::i18n::tr(lang, "Cover Template & Theme:")).strong().size(12.0).color(t.text));
+
+    // Cover Style
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Cover style:").size(11.0).color(t.text));
+        let cur_name = cover_style_label(dialog.cover_style);
+        let combo_w = (ui.available_width() - 10.0).clamp(120.0, 240.0);
+        egui::ComboBox::from_id_salt("new_proj_cover_style").selected_text(cur_name).width(combo_w).show_ui(ui, |ui| {
+            for (idx, name) in COVER_STYLES.iter().enumerate() {
+                ui.selectable_value(&mut dialog.cover_style, idx, *name);
+            }
+            ui.separator();
+            for (i, p) in super::ai_cover::AI_PRESETS.iter().enumerate() {
+                let sid = super::ai_cover::AI_STYLE_BASE + i;
+                ui.selectable_value(&mut dialog.cover_style, sid, format!("AI {} (online)", p.name));
+            }
+        });
+    });
+
+    // Cover Theme
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Color theme:").size(11.0).color(t.text));
+        let cur_theme = COVER_THEMES.get(dialog.cover_theme_preset).copied().unwrap_or("Classic BPS (Blue/Gold)");
+        let combo_w = (ui.available_width() - 10.0).clamp(120.0, 240.0);
+        egui::ComboBox::from_id_salt("new_proj_cover_theme").selected_text(cur_theme).width(combo_w).show_ui(ui, |ui| {
+            for (idx, name) in COVER_THEMES.iter().enumerate() {
+                ui.selectable_value(&mut dialog.cover_theme_preset, idx, *name);
+            }
+        });
+    });
+
+    ui.add_space(4.0);
+    ui.checkbox(&mut dialog.cover_include_inside, crate::i18n::tr(lang, "Include Inside Cover (Halaman Judul)"));
+    ui.checkbox(&mut dialog.cover_include_back, crate::i18n::tr(lang, "Include Back Cover"));
+
+    ui.add_space(6.0);
+    ui.label(RichText::new(crate::i18n::tr(lang, "Cover Source Workbook (Optional):")).strong().size(11.5).color(t.text));
+    ui.horizontal(|ui| {
+        let w = (ui.available_width() - 75.0).max(120.0);
+        ui.add_sized([w, FIELD_H], egui::TextEdit::singleline(&mut dialog.cover_source).hint_text("e.g. workbooks/BAB_01_2025.xlsx"));
+        if outline_button(ui, crate::i18n::tr(lang, "Browse…"), 64.0).clicked()
+            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
+        {
+            dialog.cover_source = path;
+        }
+    });
+    ui.label(
+        RichText::new("Workbook carrying the COVER sheet. If empty, the first chapter workbook with a COVER sheet supplies values.")
+            .size(10.0)
+            .color(t.text_dim),
+    );
+}
+
+fn render_new_project_toc_tab(ui: &mut Ui, dialog: &mut NewProjectDialog, t: &Tokens, lang: &str) {
+    ui.label(RichText::new(crate::i18n::tr(lang, "Table of Contents Lists:")).strong().size(12.0).color(t.text));
+    ui.checkbox(&mut dialog.toc_contents, crate::i18n::tr(lang, "Daftar Isi (Contents — Chapters & Narratives)"));
+    ui.checkbox(&mut dialog.toc_tables, crate::i18n::tr(lang, "Daftar Tabel (List of Tables)"));
+    ui.checkbox(&mut dialog.toc_charts, crate::i18n::tr(lang, "Daftar Grafik (List of Charts)"));
+
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Placement:").size(11.0).color(t.text));
+        ui.radio_value(&mut dialog.toc_placement, "afterFrontMatter".into(), crate::i18n::tr(lang, "After Front Matter"));
+        ui.radio_value(&mut dialog.toc_placement, "end".into(), crate::i18n::tr(lang, "At End of Document"));
+    });
+
+    ui.checkbox(&mut dialog.toc_title_bilingual, crate::i18n::tr(lang, "Bilingual TOC Titles (e.g. Daftar Isi / Contents)"));
+    ui.checkbox(&mut dialog.toc_hanging_indent, crate::i18n::tr(lang, "Indent wrapped TOC entries (hanging indent)"));
+
+    ui.separator();
+    ui.label(RichText::new(crate::i18n::tr(lang, "Page Numbering & Sections:")).strong().size(12.0).color(t.text));
+
+    const NUMBERING_STYLES: &[(&str, &str)] = &[
+        ("lowerRoman", "Lower Roman (i, ii, iii)"),
+        ("arabic", "Arabic (1, 2, 3)"),
+        ("upperRoman", "Upper Roman (I, II, III)"),
+        ("lowerLetters", "Lower Letters (a, b, c)"),
+        ("upperLetters", "Upper Letters (A, B, C)"),
+    ];
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Front matter format:").size(11.0).color(t.text));
+        let cur = NUMBERING_STYLES.iter().find(|(k, _)| *k == dialog.pagination_front_format).map(|(_, l)| *l).unwrap_or("Lower Roman");
+        egui::ComboBox::from_id_salt("new_proj_fm_fmt").selected_text(cur).width(160.0).show_ui(ui, |ui| {
+            for (val, label) in NUMBERING_STYLES {
+                ui.selectable_value(&mut dialog.pagination_front_format, (*val).into(), *label);
+            }
+        });
+    });
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Body format:").size(11.0).color(t.text));
+        let cur = NUMBERING_STYLES.iter().find(|(k, _)| *k == dialog.pagination_body_format).map(|(_, l)| *l).unwrap_or("Arabic");
+        egui::ComboBox::from_id_salt("new_proj_body_fmt").selected_text(cur).width(160.0).show_ui(ui, |ui| {
+            for (val, label) in NUMBERING_STYLES {
+                ui.selectable_value(&mut dialog.pagination_body_format, (*val).into(), *label);
+            }
+        });
+    });
+
+    ui.checkbox(&mut dialog.pagination_restart_body, crate::i18n::tr(lang, "Restart numbering at arabic 1 on Chapter 1"));
+
+    ui.separator();
+    ui.label(RichText::new(crate::i18n::tr(lang, "Running Headers & Footers:")).strong().size(12.0).color(t.text));
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Preset:").size(11.0).color(t.text));
+        let presets = ["book", "standard", "minimal"];
+        egui::ComboBox::from_id_salt("new_proj_hf_preset").selected_text(&dialog.header_footer_preset).width(120.0).show_ui(ui, |ui| {
+            for p in presets {
+                ui.selectable_value(&mut dialog.header_footer_preset, p.into(), p);
+            }
+        });
+    });
+    ui.label(
+        RichText::new("Running headers propagate each chapter's title across its body pages and skip covers/front matter.")
+            .size(10.0)
+            .color(t.text_dim),
+    );
+}
+
+pub(crate) fn compile_new_project_dialog_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    let Some(mut dialog) = st.compile_new_dialog.take() else { return };
+    let mut open = true;
+    let mut close = false;
+    let mut save_and_compile = false;
+    let mut save_and_open = false;
+
+    let lang = app.ui.language.clone();
+
+    egui::Window::new(RichText::new(crate::i18n::tr(&lang, "New Publication Project (pubgen_project.json)")).size(14.0).color(t.text))
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(true)
+        .default_width(580.0)
+        .default_height(600.0)
+        .show(ui.ctx(), |ui| {
+            // Tabs
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut dialog.tab, NewProjectTab::Files, crate::i18n::tr(&lang, "1. Files & Chapters"));
+                ui.selectable_value(&mut dialog.tab, NewProjectTab::Cover, crate::i18n::tr(&lang, "2. Cover Style"));
+                ui.selectable_value(&mut dialog.tab, NewProjectTab::TocAndLayout, crate::i18n::tr(&lang, "3. TOC & Layout"));
+            });
+            ui.separator();
+
+            egui::ScrollArea::vertical().max_height(480.0).show(ui, |ui| match dialog.tab {
+                NewProjectTab::Files => render_new_project_files_tab(app, ui, &mut dialog, t, &lang),
+                NewProjectTab::Cover => render_new_project_cover_tab(app, ui, &mut dialog, t, &lang),
+                NewProjectTab::TocAndLayout => render_new_project_toc_tab(ui, &mut dialog, t, &lang),
+            });
+
+            ui.separator();
+            if let Some(err) = &dialog.error_message {
+                ui.label(RichText::new(err).size(11.0).color(egui::Color32::from_rgb(220, 80, 80)));
+            }
+
+            ui.horizontal(|ui| {
+                if ui.button(crate::i18n::tr(&lang, "Cancel")).clicked() {
+                    close = true;
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button(RichText::new(crate::i18n::tr(&lang, "Save & Compile Now")).color(t.accent)).clicked() {
+                        save_and_compile = true;
+                    }
+                    if ui.button(crate::i18n::tr(&lang, "Save Project Manifest")).clicked() {
+                        save_and_open = true;
+                    }
+                });
+            });
+        });
+
+    if save_and_open || save_and_compile {
+        match dialog.save_manifest() {
+            Ok(saved_path) => {
+                let path_str = saved_path.to_string_lossy().to_string();
+                st.compile_manifest_path = path_str.clone();
+                st.compile_checked.clear();
+                st.compile_summary.clear();
+                let _ = remember_manifest(app, &path_str);
+                if save_and_compile {
+                    start_compile(app, &path_str, st);
+                } else {
+                    st.compile_status = Some(("Project manifest saved. Ready to compile.".into(), true));
+                }
+                close = true;
+            }
+            Err(e) => {
+                dialog.error_message = Some(e);
+            }
+        }
+    }
+
+    if open && !close {
+        st.compile_new_dialog = Some(dialog);
     }
 }
 
@@ -1856,6 +2475,88 @@ mod tests {
         let path = dir.join("missing.json");
         let error = compile_project(&mut app, &serde_json::json!({"path": path.to_string_lossy()})).unwrap_err();
         assert!(error.contains("missing.json"), "{error}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn new_project_dialog_defaults_and_build() {
+        let dir = temp_dir("new-dialog");
+        let wb1 = workbook(&dir, "BAB_01.xlsx");
+        let wb2 = workbook(&dir, "BAB_02.xlsx");
+
+        let mut dialog = NewProjectDialog::default();
+        dialog.manifest_save_path = dir.join("pubgen_project.json").to_string_lossy().to_string();
+        dialog.publication_title = "Kabupaten Karawang 2026".to_string();
+        dialog.chapters.push(ChapterSpec { chapter: 1, path: wb1, title: "Geografi".into() });
+        dialog.chapters.push(ChapterSpec { chapter: 2, path: wb2, title: "Iklim".into() });
+
+        let (save_path, manifest) = dialog.build_manifest().unwrap();
+        assert_eq!(save_path, dir.join("pubgen_project.json"));
+        assert_eq!(manifest.publication_title, "Kabupaten Karawang 2026");
+        assert!(manifest.bilingual);
+        assert_eq!(manifest.chapters.len(), 2);
+        assert_eq!(manifest.chapters[0].title, "Geografi");
+        assert_eq!(manifest.cover.style, 11);
+        assert_eq!(manifest.toc.lists, ["contents", "tables", "charts"]);
+        assert!(manifest.build.export_pdf);
+
+        let plan = CompilePlan::from_manifest(&save_path, manifest).unwrap();
+        assert_eq!(plan.chapters.len(), 2);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn new_project_dialog_validates_path_and_chapters() {
+        let mut dialog = NewProjectDialog::default();
+        assert!(dialog.build_manifest().unwrap_err().contains("specify a path"));
+
+        dialog.manifest_save_path = "project.txt".into();
+        assert!(dialog.build_manifest().unwrap_err().contains(".json"));
+
+        dialog.manifest_save_path = "project.json".into();
+        assert!(dialog.build_manifest().unwrap_err().contains("at least one chapter"));
+
+        dialog.chapters.push(ChapterSpec { chapter: 1, path: "  ".into(), title: "Title".into() });
+        assert!(dialog.build_manifest().unwrap_err().contains("empty path"));
+    }
+
+    #[test]
+    fn new_project_dialog_saves_file_and_loads() {
+        let dir = temp_dir("new-dialog-save");
+        let wb = workbook(&dir, "BAB_01.xlsx");
+        let manifest_file = dir.join("pubgen_project.json");
+
+        let mut dialog = NewProjectDialog::default();
+        dialog.manifest_save_path = manifest_file.to_string_lossy().to_string();
+        dialog.publication_title = "Test Publication".into();
+        dialog.chapters.push(ChapterSpec { chapter: 1, path: wb, title: "Geografi".into() });
+
+        let saved = dialog.save_manifest().unwrap();
+        assert_eq!(saved, manifest_file);
+        assert!(manifest_file.is_file());
+
+        let plan = CompilePlan::load(&manifest_file).unwrap();
+        assert_eq!(plan.manifest.publication_title, "Test Publication");
+        assert_eq!(plan.chapters.len(), 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn new_project_dialog_normalizes_relative_paths() {
+        let dir = temp_dir("new-dialog-rel");
+        let workbooks_dir = dir.join("workbooks");
+        std::fs::create_dir_all(&workbooks_dir).unwrap();
+        let wb = workbooks_dir.join("BAB_01.xlsx");
+        std::fs::write(&wb, b"xlsx content").unwrap();
+
+        let manifest_file = dir.join("pubgen_project.json");
+
+        let mut dialog = NewProjectDialog::default();
+        dialog.manifest_save_path = manifest_file.to_string_lossy().to_string();
+        dialog.chapters.push(ChapterSpec { chapter: 1, path: wb.to_string_lossy().to_string(), title: "Geografi".into() });
+
+        let (_, manifest) = dialog.build_manifest().unwrap();
+        assert_eq!(manifest.chapters[0].path, "workbooks/BAB_01.xlsx");
         std::fs::remove_dir_all(&dir).ok();
     }
 }
