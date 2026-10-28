@@ -1423,6 +1423,73 @@ pub(crate) fn manual_import_accordion_ui(app: &mut DesignApp, ui: &mut Ui, st: &
     .show(ui, |ui| {
         card_header_footer_body_ui(app, ui, st, t);
     });
+
+    divider(ui);
+
+    egui::CollapsingHeader::new(crate::rtl::widget(
+        ui,
+        egui::RichText::new(crate::i18n::tr(&app.ui.language, "Vector Chart (Add or Edit Chart)")).size(11.0).color(t.text_strong),
+    ))
+    .id_salt("pubgen_collapse_chart")
+    .default_open(true)
+    .show(ui, |ui| {
+        card_chart_body_ui(app, ui, st, t);
+    });
+}
+
+
+pub(crate) fn card_chart_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    let lang = app.ui.language.clone();
+    let has_doc = app.session.active().is_some();
+    let cur_page = crate::canvas::current_page(app).unwrap_or(0);
+    let cur_spread = app.session.active().and_then(|a| a.doc.page_loc(cur_page)).map_or(0, |(si, _)| si);
+
+    // Check if current spread has a chart
+    let has_chart_on_spread = app.session.active().is_some_and(|active| {
+        active.doc.spreads.get(cur_spread).is_some_and(|sp| {
+            sp.items.iter().any(|it| {
+                if let designcraft_doc::Content::Text(tf) = &it.content
+                    && let Some(story) = active.doc.story(tf.story)
+                {
+                    let text = story.text.trim();
+                    text.starts_with("Grafik") || text.starts_with("Figure")
+                } else {
+                    false
+                }
+            })
+        })
+    });
+
+    let status_str = if !has_doc {
+        crate::i18n::tr(&lang, "No document open").to_string()
+    } else if has_chart_on_spread {
+        format!("{} (Spread {})", crate::i18n::tr(&lang, "Chart detected on current spread"), cur_spread + 1)
+    } else {
+        format!("{} (Spread {})", crate::i18n::tr(&lang, "No chart on current spread"), cur_spread + 1)
+    };
+
+    ui.label(RichText::new(status_str).size(10.5).color(if has_chart_on_spread { egui::Color32::from_rgb(46, 125, 50) } else { t.text_dim }));
+
+    ui.add_space(4.0);
+
+    ui.horizontal(|ui| {
+        let add_btn = ui.add_enabled(has_doc, egui::Button::new(RichText::new(crate::i18n::tr(&lang, "➕ Add New Chart…")).size(11.0)));
+        if add_btn.clicked() {
+            st.chart_dialog = Some(Box::new(super::charts::dialog::ChartDialog::new(app, false)));
+        }
+
+        let edit_btn = ui.add_enabled(has_doc && has_chart_on_spread, egui::Button::new(RichText::new(crate::i18n::tr(&lang, "✏️ Edit Current Chart…")).size(11.0)));
+        if edit_btn.clicked() {
+            st.chart_dialog = Some(Box::new(super::charts::dialog::ChartDialog::new(app, true)));
+        }
+    });
+
+    ui.add_space(4.0);
+    ui.label(
+        RichText::new(crate::i18n::tr(&lang, "Supports Bar, Stacked, Horizontal, Line, Area, and Donut with BPS palette & bilingual titles."))
+            .size(9.5)
+            .color(t.text_dim),
+    );
 }
 
 #[cfg(test)]

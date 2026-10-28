@@ -27,6 +27,7 @@ pub use page_utils::execute_set_page_margins;
 pub mod ai;
 pub mod ai_cover;
 pub mod ai_cover_job;
+pub mod charts;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod compile;
@@ -49,6 +50,7 @@ mod toc;
 mod vocab;
 mod widgets;
 
+pub use charts::*;
 pub(crate) use covers::*;
 pub(crate) use csv::*;
 pub(crate) use excel::*;
@@ -67,6 +69,26 @@ use cover_art::CoverArtVals;
 use divider_art::DividerArtVals;
 
 pub(crate) const PANEL_ID: &str = "pubgen_panel_state";
+
+/// Open the Vector Chart Options dialog window.
+pub fn open_chart_dialog(app: &mut DesignApp, edit: bool) -> Result<(), String> {
+    let state_id = egui::Id::unique(PANEL_ID);
+    let mut st = app
+        .egui_ctx
+        .as_ref()
+        .and_then(|ctx| ctx.data(|d| d.get_temp::<PubgenState>(state_id)))
+        .unwrap_or_else(|| PubgenState {
+            bilingual_output: true,
+            cover_include_inside_back: true,
+            ..Default::default()
+        });
+    st.chart_dialog = Some(Box::new(charts::dialog::ChartDialog::new(app, edit)));
+    if let Some(ctx) = &app.egui_ctx {
+        ctx.data_mut(|d| d.insert_temp(state_id, st));
+        ctx.request_repaint();
+    }
+    Ok(())
+}
 
 /// Compiling a publication reads and writes files: the web build only explains why it can't.
 #[cfg(target_arch = "wasm32")]
@@ -334,6 +356,8 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
     ai_quota_popup_ui(&mut st, ui, &t);
 
     ai::dialog_ui(app, &mut st, ui);
+
+    charts::dialog::chart_dialog_ui(app, ui, &mut st, &t);
 
     pubgen_header_band(app, ui, &mut st, &t);
 

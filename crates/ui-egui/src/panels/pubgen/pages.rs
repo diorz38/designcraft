@@ -516,6 +516,7 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
     let mut inserted_tables_count = 0usize;
     let mut inserted_rtfs_count = 0usize;
     let mut inserted_images_count = 0usize;
+    let mut vector_charts_count = 0usize;
 
     // Every preset tags its title (or the combined TOC line) with the TOC paragraph style, so the
     // Quick Actions "Add TOC" lists one entry per generated page. The narrative pages (the G and
@@ -1568,8 +1569,77 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                 frame_with_centered_bold_title(app, spread_idx, title_rect, &full_text, Some(&st.toc_style));
             }
 
-            // 2. Place image from 'file' column inside margins below the title
-            if let Some(file_str) = Some(file_val).filter(|s| !s.is_empty()) {
+            // 2. Vector chart engine first, with raster image fallback
+            let dir = std::path::Path::new(&st.card1_path).parent().unwrap_or(std::path::Path::new("."));
+            let clean_num = excel::sanitize_filename(num_val);
+            let c_candidates = [
+                if file_val.ends_with(".csv") { dir.join(file_val) } else { std::path::PathBuf::new() },
+                dir.join(format!("{file_val}.csv")),
+                dir.join(format!("{clean_num}.csv")),
+                dir.join(format!("C{clean_num}.csv")),
+                dir.join(format!("c{clean_num}.csv")),
+                dir.join(format!("C{}.csv", clean_num.replace('.', "_"))),
+                dir.join(format!("c{}.csv", clean_num.replace('.', "_"))),
+            ];
+
+            let mut vector_rendered = false;
+            for candidate in &c_candidates {
+                if candidate.as_os_str().is_empty() || !candidate.exists() || !candidate.is_file() {
+                    continue;
+                }
+                if let Ok(content) = std::fs::read_to_string(candidate) {
+                    let delim = detect_delimiter(&content);
+                    let grid = parse_csv_content_with_delim(&content, delim);
+                    let sheet_data = excel::ExcelSheetData {
+                        name: num_val.to_string(),
+                        grid,
+                        merges: Vec::new(),
+                    };
+                    if let Some(spec) = super::charts::spec::parse_chart_spec(&sheet_data) {
+                        match super::charts::spec::extract_chart_data(&sheet_data, &spec) {
+                            Ok((categories, series_values)) => {
+                                let chart_margin = designcraft_geom::Rect {
+                                    x0: margin.x0,
+                                    y0: margin.y0 + title_h + 8.0,
+                                    x1: margin.x1,
+                                    y1: margin.y1,
+                                };
+                                let layout = super::charts::layout::compute_layout(
+                                    &spec,
+                                    &categories,
+                                    &series_values,
+                                    chart_margin,
+                                    st.bilingual_output,
+                                );
+                                let palette = if !theme_val.is_empty() {
+                                    vec![theme_val.to_string()]
+                                } else if let Some(ref th) = st.card2_theme_override {
+                                    vec![th.clone()]
+                                } else if !st.cover_color_primary.is_empty() {
+                                    vec![st.cover_color_primary.clone(), st.cover_color_accent.clone()]
+                                } else {
+                                    Vec::new()
+                                };
+                                match super::charts::emitter::emit_chart(app, spread_idx, &spec, &layout, &palette, st.bilingual_output) {
+                                    Ok(_n) => {
+                                        vector_charts_count = vector_charts_count.saturating_add(1);
+                                        vector_rendered = true;
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        log::warn!("Vector chart emit failed: {e}; falling back to raster");
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("Vector chart data extraction failed: {e}; falling back to raster");
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !vector_rendered && let Some(file_str) = Some(file_val).filter(|s| !s.is_empty()) {
                 let resolved_img = resolve_image_file(&st.card1_path, file_str, &["png", "jpg", "jpeg"]);
 
                 if let Some(img_file) = resolved_img {
@@ -2007,6 +2077,9 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
     let mut details = Vec::new();
     if inserted_rtfs_count > 0 {
         details.push(format!("{inserted_rtfs_count} RTF chapter(s) placed"));
+    }
+    if vector_charts_count > 0 {
+        details.push(format!("{vector_charts_count} vector chart(s) rendered"));
     }
     if inserted_images_count > 0 {
         details.push(format!("{inserted_images_count} chart image(s) placed"));
@@ -4189,5 +4262,254 @@ pub(crate) mod tests {
         let table_bounds = table_item.bounds();
         assert!(note_bounds.y0 >= table_bounds.y1, "Note textbox must be placed below table");
         assert!(note_bounds.height() >= 18.0 && note_bounds.height() < 120.0, "Textbox height must be fitted to content");
+    }
+
+    #[test]
+    fn test_vector_chart_sheet_renders_vector_and_skips_raster() {
+        let dir = tempfile::tempdir().unwrap();
+        let chart_csv_path = dir.path().join("C02_01.csv");
+        let chart_content = "chart_type;bar_clustered\n\
+title;Grafik 02.01 Penduduk Menurut Desa\n\
+title_en;Chart 02.01 Population by Village\n\
+category_col;A\n\
+series_1_col;B\n\
+series_1_label;Laki-laki\n\
+series_1_label_en;Male\n\
+data_start_row;9\n\
+data_end_row;10\n\
+Desa A;100\n\
+Desa B;200\n";
+        std::fs::write(&chart_csv_path, chart_content).unwrap();
+
+        let catalog_path = dir.path().join("catalog.csv");
+        let catalog_content = "type,number,title,file\n\
+Grafik,02.01,Grafik 02.01 Penduduk Menurut Desa,C02_01.csv\n";
+        std::fs::write(&catalog_path, catalog_content).unwrap();
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
+
+        let st = PubgenState {
+            card1_path: catalog_path.to_string_lossy().to_string(),
+            card1_records: vec![vec!["Grafik".into(), "02.01".into(), "Grafik 02.01 Penduduk Menurut Desa".into(), "C02_01.csv".into()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_file_col: 3,
+            card1_range_all: true,
+            bilingual_output: false,
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st).unwrap();
+        assert!(res.contains("1 vector chart(s) rendered"), "Summary should report vector chart: {res}");
+
+        let active = app.session.active().unwrap();
+        let spread = active.doc.spreads.last().unwrap();
+        // Emitted chart is grouped
+        let has_group = spread.items.iter().any(|it| matches!(it.content, designcraft_doc::Content::Group { .. }));
+        assert!(has_group, "Vector chart must be emitted and grouped on the page");
+    }
+
+    #[test]
+    fn test_raster_fallback_used_when_no_chart_type_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let img_path = dir.path().join("chart.png");
+        // Minimal 1x1 png
+        let png_bytes = [
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+            0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+            0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+            0x42, 0x60, 0x82,
+        ];
+        std::fs::write(&img_path, png_bytes).unwrap();
+
+        let catalog_path = dir.path().join("catalog.csv");
+        let catalog_content = "type,number,title,file\n\
+Grafik,02.01,Grafik 02.01 Image Only,chart.png\n";
+        std::fs::write(&catalog_path, catalog_content).unwrap();
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
+
+        let st = PubgenState {
+            card1_path: catalog_path.to_string_lossy().to_string(),
+            card1_records: vec![vec!["Grafik".into(), "02.01".into(), "Grafik 02.01 Image Only".into(), "chart.png".into()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_file_col: 3,
+            card1_range_all: true,
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st).unwrap();
+        assert!(res.contains("1 chart image(s) placed"), "Summary should report raster image placed: {res}");
+    }
+
+    #[test]
+    fn test_vector_chart_appears_in_list_of_charts_toc() {
+        let dir = tempfile::tempdir().unwrap();
+        let chart_csv_path = dir.path().join("C01_01.csv");
+        let chart_content = "chart_type;bar_clustered\n\
+title;Grafik 01.01 Pertumbuhan Ekonomi\n\
+category_col;A\n\
+series_1_col;B\n\
+series_1_label;Nilai\n\
+data_start_row;7\n\
+data_end_row;8\n\
+2024;5.2\n\
+2025;5.5\n";
+        std::fs::write(&chart_csv_path, chart_content).unwrap();
+
+        let catalog_path = dir.path().join("catalog.csv");
+        let catalog_content = "type,number,title,file\n\
+Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
+        std::fs::write(&catalog_path, catalog_content).unwrap();
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
+
+        let mut st = PubgenState {
+            card1_path: catalog_path.to_string_lossy().to_string(),
+            card1_records: vec![vec!["Grafik".into(), "01.01".into(), "Grafik 01.01 Pertumbuhan Ekonomi".into(), "C01_01.csv".into()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_file_col: 3,
+            card1_range_all: true,
+            toc_style: "TOC Entry".into(),
+            toc_kind: 2, // List of Charts (Daftar Grafik)
+            ..Default::default()
+        };
+
+        execute_generate_pages(&mut app, &st).unwrap();
+
+        // Now generate TOC kind 2 (Daftar Grafik)
+        let toc_res = super::toc::execute_add_toc(&mut app, &mut st);
+        assert!(toc_res.is_ok(), "execute_add_toc should succeed: {toc_res:?}");
+
+        let active = app.session.active().unwrap();
+        let has_chart_entry = active.doc.stories.values().any(|s| {
+            s.text.contains("Pertumbuhan Ekonomi") || s.text.contains("01.01")
+        });
+        assert!(has_chart_entry, "List of Charts TOC should contain the vector chart entry");
+    }
+
+    #[test]
+    fn test_bilingual_legend_labels_have_italic_english() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
+
+        let spec = super::charts::spec::ChartSpec {
+            chart_type: super::charts::spec::ChartType::BarClustered,
+            title_id: "Grafik Penduduk".into(),
+            title_en: "Population Chart".into(),
+            category_col: "A".into(),
+            series: vec![super::charts::spec::SeriesSpec {
+                col: "B".into(),
+                label_id: "Laki-laki".into(),
+                label_en: "Male".into(),
+            }],
+            data_start_row: 1,
+            data_end_row: 2,
+            value_format: super::charts::spec::ValueFormat::Number,
+            show_value_labels: false,
+            show_legend: true,
+            show_grid: false,
+            max_value_override: None,
+        };
+        let categories = vec!["Desa A".into()];
+        let values = vec![vec![100.0]];
+        let margin = designcraft_geom::Rect { x0: 36.0, y0: 36.0, x1: 500.0, y1: 700.0 };
+
+        let layout = super::charts::layout::compute_layout(&spec, &categories, &values, margin, true);
+        super::charts::emitter::emit_chart(&mut app, 0, &spec, &layout, &[], true).unwrap();
+
+        let active = app.session.active().unwrap();
+        let leg_story = active.doc.stories.values().find(|s| s.text.contains("Laki-laki / Male")).expect("Legend story must exist");
+        let en_pos = leg_story.text.find("Male").unwrap();
+        let en_fmt = leg_story.char_format_of(en_pos);
+        assert_eq!(en_fmt.over.font_style.as_deref(), Some("Italic"), "English legend part must be Italic");
+    }
+
+    #[test]
+    fn test_long_x_labels_are_rotated() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
+
+        let spec = super::charts::spec::ChartSpec {
+            chart_type: super::charts::spec::ChartType::BarClustered,
+            title_id: "Grafik".into(),
+            title_en: "".into(),
+            category_col: "A".into(),
+            series: vec![super::charts::spec::SeriesSpec {
+                col: "B".into(),
+                label_id: "Val".into(),
+                label_en: "".into(),
+            }],
+            data_start_row: 1,
+            data_end_row: 2,
+            value_format: super::charts::spec::ValueFormat::Number,
+            show_value_labels: false,
+            show_legend: false,
+            show_grid: false,
+            max_value_override: None,
+        };
+        let categories = vec!["Desa Karanganyar Subang".into()]; // > 12 chars
+        let values = vec![vec![100.0]];
+        let margin = designcraft_geom::Rect { x0: 36.0, y0: 36.0, x1: 500.0, y1: 700.0 };
+
+        let layout = super::charts::layout::compute_layout(&spec, &categories, &values, margin, false);
+        assert!(layout.x_tick_labels[0].rotated, "Label longer than 12 chars must have rotated flag");
+
+        let _ = super::charts::emitter::emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
+        let active = app.session.active().unwrap();
+        // Item should have rotation applied
+        let mut all_items: Vec<std::sync::Arc<designcraft_doc::Item>> = Vec::new();
+        for it in &active.doc.spreads[0].items {
+            all_items.push(it.clone());
+            if let designcraft_doc::Content::Group { items } = &it.content {
+                all_items.extend(items.iter().cloned());
+            }
+        }
+        let rotated_frame = all_items.iter().any(|it| {
+            designcraft_geom::decompose::decompose(it.xf).rotation.abs() > 1.0
+        });
+        assert!(rotated_frame, "Rotated X-tick frame should have non-zero rotation transform");
+    }
+
+    #[test]
+    fn test_all_error_paths_fall_back_without_panic() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
+
+        // Empty data sheet
+        let dir = tempfile::tempdir().unwrap();
+        let bad_csv_path = dir.path().join("bad.csv");
+        std::fs::write(&bad_csv_path, "chart_type;bar_clustered\ncategory_col;A\nseries_1_col;B\ndata_start_row;5\ndata_end_row;3\n").unwrap();
+
+        let catalog_path = dir.path().join("catalog.csv");
+        std::fs::write(&catalog_path, "type,number,title,file\nGrafik,01.01,Broken Chart,bad.csv\n").unwrap();
+
+        let st = PubgenState {
+            card1_path: catalog_path.to_string_lossy().to_string(),
+            card1_records: vec![vec!["Grafik".into(), "01.01".into(), "Broken Chart".into(), "bad.csv".into()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_file_col: 3,
+            card1_range_all: true,
+            ..Default::default()
+        };
+
+        // Must succeed without panic
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "Error in chart data must cleanly fall back: {res:?}");
     }
 }

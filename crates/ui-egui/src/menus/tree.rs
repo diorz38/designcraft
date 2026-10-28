@@ -81,7 +81,22 @@ pub(super) fn parse_entries(entries: &[&str]) -> Vec<Item> {
 
 /// The whole menu tree (InDesign order).
 pub fn menu_tree() -> Vec<(&'static str, Vec<Item>)> {
-    MENUS.iter().map(|(m, e)| (*m, parse_entries(e))).collect()
+    let mut tree: Vec<(&'static str, Vec<Item>)> = MENUS.iter().map(|(m, e)| (*m, parse_entries(e))).collect();
+    #[cfg(feature = "pubgen")]
+    {
+        for (name, items) in &mut tree {
+            if *name == "Object" {
+                items.push(Item::Sep);
+                items.push(Item::Cmd {
+                    id: "pubgen.chartDialog".into(),
+                    label: "Chart Options…".into(),
+                    params: serde_json::Value::Null,
+                    shortcut: None,
+                });
+            }
+        }
+    }
+    tree
 }
 
 /// A row of the macOS application menu (the menu named after the app).
