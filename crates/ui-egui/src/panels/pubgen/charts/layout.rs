@@ -154,8 +154,10 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
     };
     let bottom_gap = if any_rotated { 16.0 } else { 4.0 };
 
+    let use_category_legend = is_donut || spec.series.len() <= 1;
+
     let legend_rows = if spec.show_legend {
-        if is_donut {
+        if use_category_legend && !categories.is_empty() {
             categories.len().div_ceil(4)
         } else if !spec.series.is_empty() {
             spec.series.len().div_ceil(3)
@@ -244,8 +246,8 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
     // Legend items
     let mut legend_items = Vec::new();
     if spec.show_legend {
-        if is_donut {
-            // For Donut charts, each slice represents a category!
+        if use_category_legend && !categories.is_empty() {
+            // For Donut charts or any chart with only 1 series data, legend always takes category items
             let leg_y_start = (margin.y1 - legend_h + 4.0).max(plot_y1 + bottom_axis_h + bottom_gap);
             let total_cats = categories.len();
             let items_per_row = total_cats.clamp(1, 4);
@@ -363,14 +365,15 @@ fn layout_bar_clustered(
             let y1 = plot_rect[3];
 
             let label_str = spec.value_format.format(val, bilingual);
-            bars.push(BarRect { rect: [x0, y0, x1, y1], value: val, series_idx: s_idx, category_idx: c_idx, label: label_str.clone() });
+            let color_idx = if spec.series.len() <= 1 { c_idx } else { s_idx };
+            bars.push(BarRect { rect: [x0, y0, x1, y1], value: val, series_idx: color_idx, category_idx: c_idx, label: label_str.clone() });
 
             if spec.show_value_labels && val > 0.0 {
                 let lbl_w = bar_w.max(28.0);
                 let lbl_x0 = (x0 + x1) / 2.0 - lbl_w / 2.0;
                 let lbl_y1 = (y0 - 2.0).max(plot_rect[1]);
                 let lbl_y0 = lbl_y1 - 10.0;
-                value_labels.push((s_idx, [lbl_x0, lbl_y0, lbl_x0 + lbl_w, lbl_y1], label_str));
+                value_labels.push((color_idx, [lbl_x0, lbl_y0, lbl_x0 + lbl_w, lbl_y1], label_str));
             }
         }
 
@@ -435,11 +438,12 @@ fn layout_bar_stacked(
             cur_y = y0;
 
             let label_str = spec.value_format.format(val, bilingual);
-            bars.push(BarRect { rect: [x0, y0, x1, y1], value: val, series_idx: s_idx, category_idx: c_idx, label: label_str.clone() });
+            let color_idx = if spec.series.len() <= 1 { c_idx } else { s_idx };
+            bars.push(BarRect { rect: [x0, y0, x1, y1], value: val, series_idx: color_idx, category_idx: c_idx, label: label_str.clone() });
 
             if spec.show_value_labels && bar_h > 12.0 {
                 let lbl_y = (y0 + y1) / 2.0 - 5.0;
-                value_labels.push((s_idx, [x0, lbl_y, x1, lbl_y + 10.0], label_str));
+                value_labels.push((color_idx, [x0, lbl_y, x1, lbl_y + 10.0], label_str));
             }
         }
 
@@ -507,11 +511,12 @@ fn layout_horizontal_bar(
             let y1 = y0 + bar_h;
 
             let label_str = spec.value_format.format(val, bilingual);
-            bars.push(BarRect { rect: [x0, y0, x1, y1], value: val, series_idx: s_idx, category_idx: c_idx, label: label_str.clone() });
+            let color_idx = if spec.series.len() <= 1 { c_idx } else { s_idx };
+            bars.push(BarRect { rect: [x0, y0, x1, y1], value: val, series_idx: color_idx, category_idx: c_idx, label: label_str.clone() });
 
             if spec.show_value_labels && val > 0.0 {
                 let lbl_x = x1 + 4.0;
-                value_labels.push((s_idx, [lbl_x, y0, lbl_x + 36.0, y1], label_str));
+                value_labels.push((color_idx, [lbl_x, y0, lbl_x + 36.0, y1], label_str));
             }
         }
 
@@ -870,5 +875,30 @@ mod tests {
         let swatch_cy = (first_leg.swatch_rect[1] + first_leg.swatch_rect[3]) / 2.0;
         let label_cy = (first_leg.label_rect[1] + first_leg.label_rect[3]) / 2.0;
         assert!((swatch_cy - label_cy).abs() < 1e-4, "Legend swatch center y ({swatch_cy}) must match label center y ({label_cy})");
+    }
+
+    #[test]
+    fn single_series_chart_legend_takes_category_items() {
+        let mut spec = sample_spec(ChartType::BarClustered);
+        spec.series.truncate(1);
+        let categories = vec!["Cat Alpha".into(), "Cat Beta".into(), "Cat Gamma".into()];
+        let values = vec![vec![10.0, 20.0, 30.0]];
+        let margin = sample_margin();
+
+        let layout = compute_layout(&spec, &categories, &values, margin, false);
+
+        assert_eq!(layout.legend_items.len(), 3, "Legend must have 3 items for the 3 categories");
+        assert_eq!(layout.legend_items[0].label, "Cat Alpha");
+        assert_eq!(layout.legend_items[1].label, "Cat Beta");
+        assert_eq!(layout.legend_items[2].label, "Cat Gamma");
+        assert_eq!(layout.legend_items[0].series_idx, 0);
+        assert_eq!(layout.legend_items[1].series_idx, 1);
+        assert_eq!(layout.legend_items[2].series_idx, 2);
+
+        // Bars should also have category color indexes matching the legend
+        assert_eq!(layout.bars.len(), 3);
+        assert_eq!(layout.bars[0].series_idx, 0);
+        assert_eq!(layout.bars[1].series_idx, 1);
+        assert_eq!(layout.bars[2].series_idx, 2);
     }
 }
