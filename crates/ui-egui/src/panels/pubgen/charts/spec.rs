@@ -506,6 +506,20 @@ pub fn col_letter_to_index(col: &str) -> Option<usize> {
     Some(idx.saturating_sub(1))
 }
 
+/// Convert a 0-based index to an Excel column letter (0 → `"A"`, 1 → `"B"`, 25 → `"Z"`, 26 → `"AA"`).
+pub fn index_to_col_letter(mut idx: usize) -> String {
+    let mut s = String::new();
+    loop {
+        let rem = (idx % 26) as u8;
+        s.push((b'A' + rem) as char);
+        if idx < 26 {
+            break;
+        }
+        idx = (idx / 26) - 1;
+    }
+    s.chars().rev().collect()
+}
+
 /// Parse a boolean string (`"true"`, `"yes"`, `"1"`, `"false"`, `"no"`, `"0"`).
 /// Returns `default` when `s` is `None` or unrecognised.
 fn parse_bool(s: Option<&str>, default: bool) -> bool {
@@ -517,7 +531,7 @@ fn parse_bool(s: Option<&str>, default: bool) -> bool {
 }
 
 /// Returns `true` when `s` looks like a column-header marker such as `"(1)"`, `"(2)"`, `"1"`.
-fn is_column_header(s: &str) -> bool {
+pub fn is_column_header(s: &str) -> bool {
     let s = s.trim();
     // Parenthesised single digit: (1), (2) …
     if s.starts_with('(') && s.ends_with(')') {
@@ -622,6 +636,21 @@ mod tests {
         assert_eq!(col_letter_to_index("a"), Some(0)); // lowercase
         assert_eq!(col_letter_to_index(""), None);
         assert_eq!(col_letter_to_index("1"), None);
+    }
+
+    #[test]
+    fn index_to_col_letter_handles_single_and_multi_letter() {
+        assert_eq!(index_to_col_letter(0), "A");
+        assert_eq!(index_to_col_letter(1), "B");
+        assert_eq!(index_to_col_letter(25), "Z");
+        assert_eq!(index_to_col_letter(26), "AA");
+        assert_eq!(index_to_col_letter(27), "AB");
+        assert_eq!(index_to_col_letter(701), "ZZ");
+        assert_eq!(index_to_col_letter(702), "AAA");
+        for i in 0..100 {
+            let col = index_to_col_letter(i);
+            assert_eq!(col_letter_to_index(&col), Some(i));
+        }
     }
 
     // -----------------------------------------------------------------------

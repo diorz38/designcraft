@@ -7,7 +7,7 @@ use egui::RichText;
 use serde_json::json;
 
 use super::layout::compute_layout;
-use super::spec::{ChartSpec, ChartType, SeriesSpec, ValueFormat, extract_chart_data};
+use super::spec::{ChartSpec, ChartType, SeriesSpec, ValueFormat, extract_chart_data, index_to_col_letter, is_column_header, parse_cell_number};
 use crate::DesignApp;
 use crate::dock::pubgen::excel::ExcelSheetData;
 use crate::dock::pubgen::state::PubgenState;
@@ -50,6 +50,8 @@ pub struct ChartDialog {
     pub raw_data: String,
     /// Target spread index where the chart will be placed.
     pub target_spread: usize,
+    /// 1-based page number to import table data from.
+    pub import_page: usize,
     /// If editing an existing chart on the spread, store its item ID to replace it.
     pub editing_item_id: Option<u64>,
     /// Status message (text, is_success).
@@ -83,6 +85,7 @@ impl Default for ChartDialog {
             max_value_override: String::new(),
             raw_data: DEFAULT_SAMPLE_CSV.into(),
             target_spread: 0,
+            import_page: 1,
             editing_item_id: None,
             status: None,
         }
@@ -100,6 +103,7 @@ impl ChartDialog {
         let cur_page = crate::canvas::current_page(app).unwrap_or(0);
         let cur_spread = active.doc.page_loc(cur_page).map_or(0, |(si, _)| si);
         dlg.target_spread = cur_spread;
+        dlg.import_page = cur_page.saturating_add(1);
 
         if edit {
             // Check if any selected item or spread item is a chart
@@ -250,6 +254,263 @@ impl ChartDialog {
         self.status = Some((format!("Chart successfully rendered ({} vector objects emitted)", count), true));
         Ok(count as u64)
     }
+
+    /// Read table from the specified 1-based page number and auto-fill dialog fields.
+    pub fn import_from_table_page(&mut self, app: &DesignApp, page_1_based: usize) -> Result<(), String> {
+        let page_idx = page_1_based.saturating_sub(1);
+        let target = super::super::ai::detect_table_page_target(app, page_idx).ok_or_else(|| format!("No table found on page {}", page_1_based))?;
+
+        let active = app.session.active().ok_or("No active document open")?;
+        let story = active.doc.story(target.table_sid).ok_or("Table story not found")?;
+        let table = story.tables.get(&target.table_id).ok_or("Table not found")?;
+
+        // 1. Title recognition from title frame
+        if let Some(tfid) = target.title_fid
+            && let Some(item) = active.doc.item(designcraft_doc::ItemId(tfid))
+            && let Some(tf) = item.text_frame()
+            && let Some(tstory) = active.doc.story(tf.story)
+        {
+            let full_title = tstory.text.trim();
+            let (id_raw, en_raw) = if let Some((p1, p2)) = full_title.split_once('\n') {
+                (p1.trim(), Some(p2.trim()))
+            } else if let Some((p1, p2)) = full_title.split_once(" / ") {
+                (p1.trim(), Some(p2.trim()))
+            } else {
+                (full_title, None)
+            };
+
+            let to_grafik = |s: &str| -> String {
+                let trimmed = s.trim();
+                if let Some(rest) = trimmed.strip_prefix("Tabel ") {
+                    format!("Grafik {rest}")
+                } else if let Some(rest) = trimmed.strip_prefix("tabel ") {
+                    format!("Grafik {rest}")
+                } else if let Some(rest) = trimmed.strip_prefix("Table ") {
+                    format!("Grafik {rest}")
+                } else {
+                    trimmed.to_string()
+                }
+            };
+
+            let to_figure = |s: &str| -> String {
+                let trimmed = s.trim();
+                if let Some(rest) = trimmed.strip_prefix("Table ") {
+                    format!("Figure {rest}")
+                } else if let Some(rest) = trimmed.strip_prefix("table ") {
+                    format!("Figure {rest}")
+                } else if let Some(rest) = trimmed.strip_prefix("Tabel ") {
+                    format!("Figure {rest}")
+                } else {
+                    trimmed.to_string()
+                }
+            };
+
+            self.title_id = to_grafik(id_raw);
+            if let Some(en_part) = en_raw {
+                self.title_en = to_figure(en_part);
+            } else if let (clean, Some(prefix)) = super::super::ai::extract_table_title_parts(id_raw) {
+                let num_part = prefix.split_whitespace().nth(1).unwrap_or("");
+                if !num_part.is_empty() {
+                    self.title_en = format!("Figure {num_part} {clean}");
+                }
+            }
+        }
+
+        // 2. Extract 2D cell text
+        let nrows = table.nrows();
+        let ncols = table.ncols();
+        if nrows < 2 || ncols < 2 {
+            return Err("Table must have at least 2 rows and 2 columns".into());
+        }
+
+        let mut raw_cells: Vec<Vec<String>> = Vec::with_capacity(nrows);
+        for r in 0..nrows {
+            let mut row = Vec::with_capacity(ncols);
+            for c in 0..ncols {
+                let txt = table.cell(r, c).map(|cell| cell.text.text.trim().to_string()).unwrap_or_default();
+                row.push(txt);
+            }
+            raw_cells.push(row);
+        }
+
+        // 3. Helper to detect column numbering markers like "(1)", "1", "(2)", etc.
+        let is_col_header_marker = |s: &str| -> bool {
+            let t = s.trim();
+            if is_column_header(t) {
+                return true;
+            }
+            if t.starts_with('(') && t.ends_with(')') {
+                let inner = t[1..t.len() - 1].trim();
+                return !inner.is_empty() && inner.chars().all(|c| c.is_ascii_alphanumeric());
+            }
+            false
+        };
+
+        // 4. Header labels (ID and EN) for each column
+        let mut col_headers: Vec<(String, String)> = Vec::with_capacity(ncols);
+        for c in 0..ncols {
+            let header_text = &raw_cells[0][c];
+            let (h_id, h_en) = if let Some((p1, p2)) = header_text.split_once('\n') {
+                (p1.trim().to_string(), p2.trim().to_string())
+            } else if let Some((p1, p2)) = header_text.split_once(" / ") {
+                (p1.trim().to_string(), p2.trim().to_string())
+            } else {
+                (header_text.clone(), header_text.clone())
+            };
+            col_headers.push((h_id, h_en));
+        }
+
+        // 5. Detect numeric data columns (starting from col 1), skipping column header rows
+        let mut numeric_cols: Vec<usize> = Vec::new();
+        for c in 1..ncols {
+            let num_count = (1..nrows).filter(|&r| !is_col_header_marker(&raw_cells[r][0]) && parse_cell_number(&raw_cells[r][c]).is_some()).count();
+            if num_count > 0 {
+                numeric_cols.push(c);
+            }
+        }
+
+        if numeric_cols.is_empty() {
+            return Err("No numeric data columns detected in table".into());
+        }
+
+        // 6. Classify data rows vs summary rows vs empty/section rows
+        let is_summary_cat = |cat: &str| -> bool {
+            let l = cat.to_lowercase();
+            l.starts_with("jumlah")
+                || l.starts_with("total")
+                || l.starts_with("rata-rata")
+                || l.starts_with("average")
+                || l.starts_with("kec.")
+                || l.starts_with("kecamatan")
+                || l.starts_with("kab.")
+                || l.starts_with("kabupaten")
+                || l.starts_with("prov.")
+                || l.starts_with("provinsi")
+        };
+
+        let mut valid_data_rows: Vec<Vec<String>> = Vec::new();
+        let mut summary_rows: Vec<Vec<String>> = Vec::new();
+
+        for r in 1..nrows {
+            let cat_cell = &raw_cells[r][0];
+            let clean_cat = if let Some((id_p, _)) = cat_cell.split_once('\n') {
+                id_p.trim()
+            } else if let Some((id_p, _)) = cat_cell.split_once(" / ") {
+                id_p.trim()
+            } else {
+                cat_cell.as_str()
+            };
+
+            if clean_cat.is_empty() || is_col_header_marker(clean_cat) {
+                continue;
+            }
+
+            let has_num = numeric_cols.iter().any(|&c| parse_cell_number(&raw_cells[r][c]).is_some());
+            if !has_num {
+                // Section header row without numbers (e.g. "Desa" or "Kelurahan")
+                continue;
+            }
+
+            let mut clean_row: Vec<String> = Vec::with_capacity(ncols);
+            clean_row.push(clean_cat.replace(',', " "));
+            for c in 1..ncols {
+                let cell = &raw_cells[r][c];
+                if let Some(num) = parse_cell_number(cell) {
+                    if num.fract().abs() < 1e-6 {
+                        clean_row.push(format!("{}", num as i64));
+                    } else {
+                        clean_row.push(format!("{:.2}", num));
+                    }
+                } else {
+                    clean_row.push(cell.replace(',', " "));
+                }
+            }
+
+            if is_summary_cat(clean_cat) {
+                summary_rows.push(clean_row);
+            } else {
+                valid_data_rows.push(clean_row);
+            }
+        }
+
+        if valid_data_rows.is_empty() && !summary_rows.is_empty() {
+            valid_data_rows = summary_rows;
+            summary_rows = Vec::new();
+        }
+
+        if valid_data_rows.is_empty() {
+            return Err("No data rows found in table".into());
+        }
+
+        // 7. Assemble CSV in self.raw_data
+        let mut csv_lines: Vec<String> = Vec::new();
+        let header_line: Vec<String> = (0..ncols).map(|c| col_headers[c].0.replace(',', " ")).collect();
+        csv_lines.push(header_line.join(","));
+
+        for row in &valid_data_rows {
+            csv_lines.push(row.join(","));
+        }
+        let data_end_idx = csv_lines.len(); // 1-based row index for end of normal data rows
+
+        for row in &summary_rows {
+            csv_lines.push(row.join(","));
+        }
+        self.raw_data = csv_lines.join("\n");
+
+        // 8. Populate row range
+        self.data_start_row = 2;
+        self.data_end_row = data_end_idx;
+
+        // 9. Populate columns and series
+        self.category_col = "A".into();
+        let col1 = numeric_cols[0];
+        self.series_1_col = index_to_col_letter(col1);
+        self.series_1_label_id = col_headers[col1].0.clone();
+        self.series_1_label_en = col_headers[col1].1.clone();
+
+        if numeric_cols.len() >= 2 {
+            let col2 = numeric_cols[1];
+            self.series_2_enabled = true;
+            self.series_2_col = index_to_col_letter(col2);
+            self.series_2_label_id = col_headers[col2].0.clone();
+            self.series_2_label_en = col_headers[col2].1.clone();
+        } else {
+            self.series_2_enabled = false;
+        }
+
+        if numeric_cols.len() >= 3 {
+            let col3 = numeric_cols[2];
+            self.series_3_enabled = true;
+            self.series_3_col = index_to_col_letter(col3);
+            self.series_3_label_id = col_headers[col3].0.clone();
+            self.series_3_label_en = col_headers[col3].1.clone();
+        } else {
+            self.series_3_enabled = false;
+        }
+
+        // 10. Infer ValueFormat
+        let h_lower = col_headers[col1].0.to_lowercase();
+        if h_lower.contains('%') || h_lower.contains("persen") || h_lower.contains("percentage") {
+            self.value_format = ValueFormat::Percent;
+        } else if h_lower.contains("rp") || h_lower.contains("rupiah") || h_lower.contains("idr") {
+            self.value_format = ValueFormat::CurrencyIdr;
+        } else {
+            self.value_format = ValueFormat::Number;
+        }
+
+        self.status = Some((
+            format!(
+                "✓ Imported table from page {} ({} rows, {} series columns: {})",
+                page_1_based,
+                valid_data_rows.len(),
+                numeric_cols.len(),
+                numeric_cols.iter().map(|&c| index_to_col_letter(c)).collect::<Vec<_>>().join(", ")
+            ),
+            true,
+        ));
+
+        Ok(())
+    }
 }
 
 /// Render the Chart Options dialog window in egui.
@@ -283,6 +544,25 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
         .show(ctx, |ui| {
             egui::ScrollArea::vertical().max_width(540.0).max_height(scroll_h).auto_shrink([false, true]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(6.0, 5.0);
+
+                // Section 0: Import from Table Page (Smart Auto-fill)
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("📊").size(13.0));
+                        ui.label(RichText::new(crate::i18n::tr(&lang, "Import from Table Page:")).strong().size(11.5).color(t.text_strong));
+                        let max_pages = app.session.active().map(|s| s.doc.page_count()).unwrap_or(1).max(1);
+                        ui.label(RichText::new(crate::i18n::tr(&lang, "Page:")).size(11.0).color(t.text));
+                        ui.add(egui::DragValue::new(&mut dialog.import_page).range(1..=max_pages));
+
+                        if ui.button(RichText::new(crate::i18n::tr(&lang, "📥 Read & Auto-fill")).strong()).clicked() {
+                            if let Err(e) = dialog.import_from_table_page(app, dialog.import_page) {
+                                dialog.status = Some((e, false));
+                            }
+                        }
+                    });
+                });
+
+                ui.add_space(2.0);
 
                 // Section 1: Titles & Chart Type
                 ui.label(RichText::new(crate::i18n::tr(&lang, "Chart Type & Titles")).strong().size(11.5).color(t.text_strong));
@@ -533,5 +813,70 @@ mod tests {
     fn test_chart_dialog_ui_command_registered() {
         let exists = crate::menus::UI_COMMANDS.iter().any(|(id, ..)| *id == "pubgen.chartDialog");
         assert!(exists, "pubgen.chartDialog must be registered in UI_COMMANDS");
+    }
+
+    #[test]
+    fn test_import_from_table_page_smart_recognition() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
+
+        // 1. Create Title frame on page 0
+        app.run(
+            "frame.create",
+            json!({
+                "spread": 0,
+                "rect": [36.0, 36.0, 400.0, 60.0],
+                "content": "text",
+                "text": "Tabel 01.01 Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025",
+                "caret": false
+            }),
+        )
+        .unwrap();
+
+        // 2. Insert Table with column numbers and section header
+        let matrix = vec![
+            vec!["Desa/Kelurahan".into(), "Luas Area (km2)".into(), "Persentase terhadap Luas Kecamatan".into()],
+            vec!["(1)".into(), "(2)".into(), "(3)".into()],
+            vec!["Desa".into(), "".into(), "".into()],
+            vec!["Warungbambu".into(), "1.65".into(), "21.32".into()],
+            vec!["Kondangjaya".into(), "2.44".into(), "8.84".into()],
+            vec!["Jumlah".into(), "4.09".into(), "30.16".into()],
+        ];
+        let st = PubgenState { card2_placement: 1, card2_first_row_header: true, ..Default::default() };
+        crate::dock::pubgen::execute_insert_table_matrix(&mut app, &st, Some(&matrix), Some(0)).unwrap();
+
+        // 3. Test import_from_table_page on page 1 (1-based)
+        let mut dlg = ChartDialog::default();
+        let res = dlg.import_from_table_page(&app, 1);
+        assert!(res.is_ok(), "import_from_table_page failed: {:?}", res);
+
+        assert!(dlg.title_id.starts_with("Grafik 01.01"), "Title ID must start with Grafik: {}", dlg.title_id);
+        assert_eq!(dlg.category_col, "A");
+        assert_eq!(dlg.series_1_col, "B");
+        assert!(dlg.series_1_label_id.contains("Luas Area"), "Series 1 label: {}", dlg.series_1_label_id);
+        assert!(dlg.series_2_enabled, "Series 2 must be enabled");
+        assert_eq!(dlg.series_2_col, "C");
+        assert!(dlg.series_2_label_id.contains("Persentase"), "Series 2 label: {}", dlg.series_2_label_id);
+        assert!(!dlg.series_3_enabled, "Series 3 must not be enabled");
+
+        // Row 1 is headers, Row 2 is Warungbambu, Row 3 is Kondangjaya. Row 4 is Jumlah.
+        // Data rows = 2 (Warungbambu and Kondangjaya), so data_end_row = 3, excluding Jumlah.
+        assert_eq!(dlg.data_start_row, 2);
+        assert_eq!(dlg.data_end_row, 3);
+        assert_eq!(dlg.value_format, ValueFormat::Number);
+
+        // Section header "Desa" without numbers must have been skipped
+        assert!(!dlg.raw_data.contains("\nDesa,"), "Must not include section header row with no numbers");
+        assert!(dlg.raw_data.contains("Warungbambu,1.65,21.32"));
+        assert!(dlg.raw_data.contains("Jumlah,4.09,30.16"));
+
+        // 4. Verify applying chart with the imported data succeeds
+        let apply_res = dlg.apply_chart(&mut app, false);
+        assert!(apply_res.is_ok(), "apply_chart with imported data must succeed: {:?}", apply_res);
+
+        // 5. Test non-existent page error
+        let mut dlg_err = ChartDialog::default();
+        let err_res = dlg_err.import_from_table_page(&app, 99);
+        assert!(err_res.is_err(), "Must return Err for non-existent page");
     }
 }
