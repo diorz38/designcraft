@@ -27,7 +27,7 @@ This document details the architectural specifications for the next seven major 
 
 | # | Pillar | Status | Where |
 | :--- | :--- | :--- | :--- |
-| 1 | Native Statistical Infographics & Vector Chart Engine | **Partial** — `CXX` sheets and bilingual chart titles work; charts are placed as raster images, not vectors | §2 |
+| 1 | Native Statistical Infographics & Vector Chart Engine | **Implemented** 2026-10-28 — Full vector charting engine (`charts/`), 6 archetypes, BPS theme palette binding, interactive popup dialog, and top-level Pubgen menu | §2 |
 | 2 | Multi-Chapter Binder & Project Compiler | **Implemented** 2026-10-27 — `pubgen.compileProject` + the Publication Compiler card (merged from `feature/pillar2-pubgen-binder`) | §3 |
 | 3 | Statistical Layout Preflight / QA Audit | **Partial** — generic `preflight.run` covers overset, low DPI and links; no `PRF-*` rules or Pubgen audit UI | §4 |
 | 4 | BPS Statistical AI Assistant & Terminology Memory | **Implemented** 2026-10-27 | §5 |
@@ -41,7 +41,7 @@ Legend: **Implemented** = usable end to end with tests; **Partial** = the underl
 
 ## 2. Pillar 1: Native Statistical Infographics & Vector Chart Engine
 
-> **Status (2026-10-27): partially implemented — image placement only, no vector engine.** `CXX_XX` sheets are recognized (`is_chart_sheet` / `parse_chart_sheet_with_template` in `crates/ui-egui/src/panels/pubgen/excel.rs`) and become a chart page with a bilingual, partly italicised title; the graphic itself is a **raster image** resolved from the sheet's `file;…` row and placed in an image frame (`pages.rs`, chart branch; the generation summary reports `N chart image(s) placed`). What does **not** exist: the chart-type/data-range sheet schema (`bar_clustered`, `stacked`, `line`, `donut`), category/series parsing, vector emission as `Content::Shape` items, axis/grid/legend construction, and DIV-palette binding. Editors still draw charts externally and export PNG/JPG.
+> **Status (2026-10-28): Implemented.** Fully integrated on `feature/pubgen-panel-ux-redesign` (merged from `origin/feature/pillar1-vector-chart-engine`). Supports 6 statistical archetypes (`bar_clustered`, `bar_stacked`, `horizontal_bar`, `line`, `area`, `donut`), category/series data extraction from Excel `CXX_XX` sheets, coordinate mapping to page margins box, chapter DIV theme palette binding, rotated X-axis labels, interactive in-app modal dialog (`Statistical Vector Chart…`), and automatic indexing in Daftar Grafik (List of Charts).
 
 ### 2.1 Problem Statement
 In official publications (*Kecamatan Dalam Angka*, *Provinsi Dalam Angka*), visual data summaries appear between the narrative reviews (`RXX`) and data tables (`XX_XX`). Currently, workbooks carry chart data in sheets named `C01`, `C02`, etc. Editors must generate charts externally in Microsoft Excel or Python, export them as static images, and manually place them into the publication.
