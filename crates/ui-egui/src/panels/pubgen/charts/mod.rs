@@ -33,12 +33,15 @@
 //! | `show_legend`    | `true`              | optional            |
 //! | `show_grid`      | `true`              | optional            |
 
+pub mod layout;
+pub mod palette;
 pub mod spec;
-// Phase 2:
-// pub mod layout;
-// pub mod palette;
 // Phase 3:
 // pub mod emitter;
 
-pub use spec::{ChartSpec, ChartType, ValueFormat, parse_chart_spec, extract_chart_data};
-
+pub use layout::{
+    AXIS_LABEL_H, AXIS_LABEL_W, BAR_GROUP_GAP, BAR_SERIES_GAP, BarRect, ChartLayout, DonutSlice, GridLine, LegendItem, XTickLabel,
+    compute_layout,
+};
+pub use palette::{BPS_CHART_PALETTE, series_color};
+pub use spec::{ChartSpec, ChartType, SeriesSpec, ValueFormat, extract_chart_data, parse_chart_spec};

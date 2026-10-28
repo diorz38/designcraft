@@ -24,6 +24,17 @@ pub struct SeriesSpec {
     pub label_en: String,
 }
 
+impl SeriesSpec {
+    /// Formatted display label: `"Indonesian / English"` if bilingual, otherwise `"Indonesian"`.
+    pub fn display_label(&self, bilingual: bool) -> String {
+        if bilingual && !self.label_en.is_empty() && self.label_en != self.label_id {
+            format!("{} / {}", self.label_id, self.label_en)
+        } else {
+            self.label_id.clone()
+        }
+    }
+}
+
 /// Supported chart archetypes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChartType {
