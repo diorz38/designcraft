@@ -21,6 +21,19 @@ Tahun,Pertanian,Industri,Jasa
 2024,4.3,5.1,6.2
 2025,4.5,5.4,6.5";
 
+/// Recognized table on a page available for chart data extraction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AvailableTable {
+    /// 1-based page number.
+    pub page_1_based: usize,
+    /// Table number prefix / identifier, e.g. "01.01".
+    pub table_num: String,
+    /// Table clean title, e.g. "Luas Daerah Menurut Desa/Kelurahan...".
+    pub title: String,
+    /// Human-friendly display label for ComboBox, e.g. "Tabel 01.01 — Luas Daerah... (Page 14)".
+    pub label: String,
+}
+
 /// Form state for the Chart Options popup window.
 #[derive(Debug, Clone)]
 pub struct ChartDialog {
@@ -52,6 +65,8 @@ pub struct ChartDialog {
     pub target_spread: usize,
     /// 1-based page number to import table data from.
     pub import_page: usize,
+    /// Whether to automatically insert a new page after the table/reference page and place the chart on it.
+    pub insert_on_new_page: bool,
     /// If editing an existing chart on the spread, store its item ID to replace it.
     pub editing_item_id: Option<u64>,
     /// Status message (text, is_success).
@@ -86,6 +101,7 @@ impl Default for ChartDialog {
             raw_data: DEFAULT_SAMPLE_CSV.into(),
             target_spread: 0,
             import_page: 1,
+            insert_on_new_page: true,
             editing_item_id: None,
             status: None,
         }
@@ -106,6 +122,7 @@ impl ChartDialog {
         dlg.import_page = cur_page.saturating_add(1);
 
         if edit {
+            dlg.insert_on_new_page = false;
             // Check if any selected item or spread item is a chart
             if let Some(spread) = active.doc.spreads.get(cur_spread) {
                 // If user selected an item, check that first
@@ -226,26 +243,40 @@ impl ChartDialog {
 
         let (categories, series_values) = extract_chart_data(&sheet_data, &spec).map_err(|e| format!("Failed to extract chart data: {e}"))?;
 
-        let (margin, spread_count) = {
+        // If insert_on_new_page is enabled and not editing an existing chart,
+        // automatically create a new blank page for the chart right after the table / reference page.
+        let target_page_idx = if self.insert_on_new_page && self.editing_item_id.is_none() {
+            let ref_page = if self.import_page > 0 { self.import_page.saturating_sub(1) } else { crate::canvas::current_page(app).unwrap_or(0) };
+            super::super::page_utils::execute_add_blank_page(app, ref_page)?;
+            let new_page = ref_page + 1;
+            crate::canvas::go_to_page(app, new_page);
+            Some(new_page)
+        } else {
+            crate::canvas::current_page(app)
+        };
+
+        let (margin, target_sp) = {
             let active = app.session.active().ok_or("No active document open")?;
             let sp_count = active.doc.spreads.len();
-            let spread_idx = self.target_spread.min(sp_count.saturating_sub(1));
+            if sp_count == 0 {
+                return Err("Document contains no spreads".into());
+            }
+
+            let (spread_idx, page_idx_in_sp) = if let Some(p) = target_page_idx {
+                active.doc.page_loc(p).unwrap_or((0, 0))
+            } else {
+                (self.target_spread.min(sp_count.saturating_sub(1)), 0)
+            };
             let spread = active.doc.spreads.get(spread_idx).ok_or("Invalid spread index")?;
-            let page = spread.pages.first();
+            let page = spread.pages.get(page_idx_in_sp).or_else(|| spread.pages.first());
             let rect = if let Some(pg) = page {
                 let m = pg.margin_rect();
                 designcraft_geom::Rect { x0: m.x0, y0: m.y0 + 20.0, x1: m.x1, y1: m.y1 - 10.0 }
             } else {
                 designcraft_geom::Rect { x0: 36.0, y0: 56.0, x1: 559.0, y1: 780.0 }
             };
-            (rect, sp_count)
+            (rect, spread_idx)
         };
-
-        if spread_count == 0 {
-            return Err("Document contains no spreads".into());
-        }
-
-        let target_sp = self.target_spread.min(spread_count.saturating_sub(1));
 
         // If editing an existing chart item, clear the old one first
         if let Some(old_id) = self.editing_item_id {
@@ -262,11 +293,142 @@ impl ChartDialog {
             let _ = super::emitter::emit_text(app, target_sp, title_rect, &title_line, 10.0, true, "center", Some("#1A1A1A"));
         }
 
-        self.status = Some((format!("Chart successfully rendered ({} vector objects emitted)", count), true));
+        let page_msg = if let Some(p) = target_page_idx {
+            let lbl = app.session.page_label(p);
+            format!(" on Page {lbl}")
+        } else {
+            String::new()
+        };
+        self.status = Some((format!("Chart successfully rendered{page_msg} ({} vector objects emitted)", count), true));
         Ok(count as u64)
     }
 
+    /// Scans the active document for pages containing tables and extracts their table numbers and titles.
+    pub fn find_available_tables(&self, app: &DesignApp, st: Option<&PubgenState>) -> Vec<AvailableTable> {
+        let Some(active) = app.session.active() else {
+            return Vec::new();
+        };
+
+        let total_pages = active.doc.page_count();
+        let mut tables = Vec::new();
+
+        for p in 0..total_pages {
+            let Some(target) = super::super::ai::detect_table_page_target(app, p) else {
+                continue;
+            };
+
+            let page_1_based = p + 1;
+            let (si, _) = match active.doc.page_loc(p) {
+                Some(loc) => loc,
+                None => continue,
+            };
+            let spread = match active.doc.spreads.get(si) {
+                Some(s) => s,
+                None => continue,
+            };
+
+            // 1. Detect table number (e.g. "01.01")
+            let mut detected_num = None;
+
+            // 1a. Check items on this spread that represent table number slots
+            for it in &spread.items {
+                let lbl = it.label.to_lowercase();
+                if (lbl.contains("number") || lbl.contains("table_num") || lbl.contains("table_number"))
+                    && let Some(tf) = it.text_frame()
+                    && let Some(story) = active.doc.story(tf.story)
+                {
+                    let raw = story.text.trim();
+                    let stripped = raw
+                        .strip_prefix("Tabel ")
+                        .or_else(|| raw.strip_prefix("tabel "))
+                        .or_else(|| raw.strip_prefix("Table "))
+                        .or_else(|| raw.strip_prefix("table "))
+                        .unwrap_or(raw)
+                        .trim();
+                    if stripped.chars().any(|c| c.is_ascii_digit()) && stripped.contains('.') {
+                        detected_num = Some(stripped.to_string());
+                        break;
+                    }
+                }
+            }
+
+            // 1b. Check title frame prefix if not found in slots
+            if detected_num.is_none()
+                && let Some(tfid) = target.title_fid
+                && let Some(item) = active.doc.item(designcraft_doc::ItemId(tfid))
+                && let Some(tf) = item.text_frame()
+                && let Some(tstory) = active.doc.story(tf.story)
+            {
+                let full = tstory.text.trim();
+                let first_line = full.lines().next().unwrap_or(full);
+                let (_clean_title, prefix_opt) = super::super::ai::extract_table_title_parts(first_line);
+                if let Some(prefix) = prefix_opt {
+                    let num_part = prefix.split_whitespace().nth(1).unwrap_or("");
+                    if !num_part.is_empty() && num_part.contains('.') {
+                        detected_num = Some(num_part.to_string());
+                    }
+                }
+            }
+
+            // 1c. Match with st.card2_sheet_tables if available
+            if detected_num.is_none()
+                && let Some(st_ref) = st
+                && let Some(csv_p) = st_ref.card2_sheet_tables.get(tables.len())
+            {
+                let stem = std::path::Path::new(csv_p).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                let formatted = stem.replace('_', ".");
+                if formatted.chars().any(|c| c.is_ascii_digit()) && formatted.contains('.') {
+                    detected_num = Some(formatted);
+                }
+            }
+
+            let table_num = detected_num.unwrap_or_else(|| format!("{:02}.01", tables.len() + 1));
+
+            // 2. Extract clean title
+            let mut clean_title = String::new();
+            if let Some(tfid) = target.title_fid
+                && let Some(item) = active.doc.item(designcraft_doc::ItemId(tfid))
+                && let Some(tf) = item.text_frame()
+                && let Some(tstory) = active.doc.story(tf.story)
+            {
+                let full = tstory.text.trim();
+                let first_line = full.lines().next().unwrap_or(full);
+                let (first_part, _) = first_line.split_once(" / ").unwrap_or((first_line, ""));
+                let (clean, _) = super::super::ai::extract_table_title_parts(first_part.trim());
+                clean_title = clean.trim().to_string();
+            }
+
+            let short_title: String = if clean_title.is_empty() {
+                format!("Tabel {}", table_num)
+            } else if clean_title.chars().count() > 38 {
+                format!("{}…", clean_title.chars().take(38).collect::<String>())
+            } else {
+                clean_title.clone()
+            };
+
+            let label = format!("Tabel {} — {} (p. {})", table_num, short_title, page_1_based);
+
+            tables.push(AvailableTable { page_1_based, table_num, title: clean_title, label });
+        }
+
+        // If no table pages in document yet, fall back to sheet table paths
+        if tables.is_empty()
+            && let Some(st_ref) = st
+            && !st_ref.card2_sheet_tables.is_empty()
+        {
+            for (idx, csv_p) in st_ref.card2_sheet_tables.iter().enumerate() {
+                let stem = std::path::Path::new(csv_p).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                let table_num = stem.replace('_', ".");
+                let label = format!("Tabel {} (Sheet {})", table_num, idx + 1);
+                tables.push(AvailableTable { page_1_based: idx + 1, table_num, title: format!("Tabel Sheet {}", idx + 1), label });
+            }
+        }
+
+        tables
+    }
+
     /// Read table from the specified 1-based page number and auto-fill dialog fields.
+    #[allow(clippy::needless_range_loop)]
     pub fn import_from_table_page(&mut self, app: &DesignApp, page_1_based: usize) -> Result<(), String> {
         let page_idx = page_1_based.saturating_sub(1);
         let target = super::super::ai::detect_table_page_target(app, page_idx).ok_or_else(|| format!("No table found on page {}", page_1_based))?;
@@ -580,19 +742,54 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
 
                 // Section 0: Import from Table Page (Smart Auto-fill)
                 ui.group(|ui| {
+                    let available_tables = dialog.find_available_tables(app, Some(st));
+
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("📊").size(13.0));
-                        ui.label(RichText::new(crate::i18n::tr(&lang, "Import from Table Page:")).strong().size(11.5).color(t.text_strong));
-                        let max_pages = app.session.active().map(|s| s.doc.page_count()).unwrap_or(1).max(1);
-                        ui.label(RichText::new(crate::i18n::tr(&lang, "Page:")).size(11.0).color(t.text));
-                        ui.add(egui::DragValue::new(&mut dialog.import_page).range(1..=max_pages));
+                        ui.label(RichText::new(crate::i18n::tr(&lang, "Import from Table:")).strong().size(11.5).color(t.text_strong));
 
-                        if ui.button(RichText::new(crate::i18n::tr(&lang, "📥 Read & Auto-fill")).strong()).clicked() {
-                            if let Err(e) = dialog.import_from_table_page(app, dialog.import_page) {
-                                dialog.status = Some((e, false));
+                        if !available_tables.is_empty() {
+                            let cur_idx = available_tables.iter().position(|t| t.page_1_based == dialog.import_page).unwrap_or(0);
+                            let cur_label = available_tables.get(cur_idx).map(|t| t.label.as_str()).unwrap_or("Select Table");
+                            let combo_w = (ui.available_width() - 110.0).clamp(160.0, 310.0);
+
+                            let mut selected_new = None;
+                            craft_ui::ComboBox::from_id_salt("pubgen_chart_table_selector").selected_text(cur_label).width(combo_w).show_ui(
+                                ui,
+                                |ui| {
+                                    for tbl in &available_tables {
+                                        let is_sel = tbl.page_1_based == dialog.import_page;
+                                        if ui.selectable_label(is_sel, &tbl.label).clicked() {
+                                            selected_new = Some(tbl.page_1_based);
+                                        }
+                                    }
+                                },
+                            );
+
+                            if let Some(pg) = selected_new {
+                                dialog.import_page = pg;
+                                if let Err(e) = dialog.import_from_table_page(app, pg) {
+                                    dialog.status = Some((e, false));
+                                }
                             }
+                        } else {
+                            let max_pages = app.session.active().map(|s| s.doc.page_count()).unwrap_or(1).max(1);
+                            ui.label(RichText::new(crate::i18n::tr(&lang, "Page:")).size(11.0).color(t.text));
+                            ui.add(egui::DragValue::new(&mut dialog.import_page).range(1..=max_pages));
+                        }
+
+                        if ui.button(RichText::new(crate::i18n::tr(&lang, "📥 Auto-fill")).strong()).clicked()
+                            && let Err(e) = dialog.import_from_table_page(app, dialog.import_page)
+                        {
+                            dialog.status = Some((e, false));
                         }
                     });
+
+                    if !is_editing {
+                        ui.horizontal(|ui| {
+                            ui.checkbox(&mut dialog.insert_on_new_page, crate::i18n::tr(&lang, "Automatically insert new Chart Page after Table"));
+                        });
+                    }
                 });
 
                 ui.add_space(2.0);
@@ -820,6 +1017,7 @@ mod tests {
         app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
 
         let mut dlg = ChartDialog::default();
+        dlg.insert_on_new_page = false;
         let res = dlg.apply_chart(&mut app, true);
         assert!(res.is_ok(), "apply_chart failed: {:?}", res);
         let count = res.unwrap();
@@ -835,6 +1033,7 @@ mod tests {
         app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
 
         let mut dlg = ChartDialog::default();
+        dlg.insert_on_new_page = false;
         let _ = dlg.apply_chart(&mut app, true).unwrap();
 
         let initial_items_count = app.session.active().unwrap().doc.spreads[0].items.len();
@@ -976,5 +1175,40 @@ mod tests {
         // Verify applying donut chart succeeds
         let apply_res = dlg.apply_chart(&mut app, false);
         assert!(apply_res.is_ok(), "apply_chart for donut must succeed: {:?}", apply_res);
+    }
+
+    #[test]
+    fn test_chart_dialog_inserts_on_new_page_after_table() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"pages": 3})).unwrap();
+
+        let initial_pages = app.session.active().unwrap().doc.page_count();
+        assert_eq!(initial_pages, 3);
+
+        let mut dlg = ChartDialog::default();
+        dlg.insert_on_new_page = true;
+        dlg.import_page = 2; // Insert after page 2 -> new page becomes page 3
+        let res = dlg.apply_chart(&mut app, false);
+        assert!(res.is_ok(), "apply_chart failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 4, "A new chart page should have been inserted");
+    }
+
+    #[test]
+    fn test_chart_dialog_find_available_tables() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"pages": 2})).unwrap();
+
+        let matrix =
+            vec![vec!["Tabel 01.01".into(), "Luas Wilayah".into()], vec!["Desa".into(), "Luas".into()], vec!["Sukajaya".into(), "12.5".into()]];
+        let st = PubgenState::default();
+        crate::dock::pubgen::execute_insert_table_matrix(&mut app, &st, Some(&matrix), Some(0)).unwrap();
+
+        let dlg = ChartDialog::default();
+        let tables = dlg.find_available_tables(&app, Some(&st));
+        assert!(!tables.is_empty(), "find_available_tables should find the table");
+        assert_eq!(tables[0].page_1_based, 1);
+        assert!(tables[0].table_num.contains("01.01") || tables[0].label.contains("01.01"));
     }
 }

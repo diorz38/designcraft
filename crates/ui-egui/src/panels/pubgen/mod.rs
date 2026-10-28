@@ -22,7 +22,7 @@ pub use locale::Locale;
 
 pub mod dialogs;
 pub use dialogs::{pubgen_dialogs, show_all_dialogs};
-pub use page_utils::execute_set_page_margins;
+pub use page_utils::{execute_add_blank_page, execute_set_page_margins};
 
 pub mod ai;
 pub mod ai_cover;

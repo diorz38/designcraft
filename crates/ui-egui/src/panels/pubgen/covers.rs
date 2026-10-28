@@ -521,7 +521,6 @@ pub fn execute_generate_back_cover(app: &mut DesignApp, st: &PubgenState) -> Res
     let _ = app.session.edit(|doc, _| {
         if let Some(sp) = doc.spreads.get_mut(back_si) {
             let sp = std::sync::Arc::make_mut(sp);
-            sp.allow_shuffle = false;
             if let Some(pg) = sp.pages.get_mut(back_pi) {
                 pg.margins = designcraft_doc::Margins::uniform(0.0);
                 pg.local_margins = true;
