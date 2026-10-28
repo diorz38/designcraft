@@ -101,11 +101,34 @@ fn parse_consume_response(raw: &str) -> Option<f64> {
     serde_json::from_str::<serde_json::Value>(raw).ok()?.pointer("/ai_cf_consume").and_then(|v| v.as_f64())
 }
 
+/// Resolve the final PostgREST base URL from an explicit URL or a bare project id.
+/// `SUPABASE_ID` (the bare project ref) becomes `https://<id>.supabase.co`; an
+/// explicit `SUPABASE_URL` passes through untouched.
+#[cfg(feature = "cloudflare")]
+fn finalize_supabase_url(url: &str, id: &str) -> Option<String> {
+    let mut url = url.trim().trim_end_matches('/').to_string();
+    if url.is_empty() {
+        url = id.trim().trim_end_matches('/').to_string();
+    }
+    if url.is_empty() {
+        return None;
+    }
+    if !url.contains("://") {
+        url = format!("https://{url}.supabase.co");
+    }
+    Some(url)
+}
+
 /// `SUPABASE_URL` / `SUPABASE_ANON_KEY` from the process env, falling back to a local
 /// `.env` (same lookup order as the Cloudflare credentials in the Pubgen UI).
+///
+/// `SUPABASE_ID` (the bare project ref) is also accepted: see
+/// [`finalize_supabase_url`] — a `.env` carrying the project id alone still gets a
+/// working quota counter.
 #[cfg(feature = "cloudflare")]
 fn supabase_creds() -> Option<(String, String)> {
     let mut url = std::env::var("SUPABASE_URL").unwrap_or_default();
+    let mut id = std::env::var("SUPABASE_ID").unwrap_or_default();
     let mut key = std::env::var("SUPABASE_ANON_KEY").unwrap_or_default();
     if url.is_empty() || key.is_empty() {
         let content = std::fs::read_to_string(".env").ok()?;
@@ -118,16 +141,19 @@ fn supabase_creds() -> Option<(String, String)> {
                 let v = v.trim().trim_matches('"').trim_matches('\'').trim();
                 if url.is_empty() && k.trim().eq_ignore_ascii_case("SUPABASE_URL") {
                     url = v.to_string();
+                } else if id.is_empty() && k.trim().eq_ignore_ascii_case("SUPABASE_ID") {
+                    id = v.to_string();
                 } else if key.is_empty() && k.trim().eq_ignore_ascii_case("SUPABASE_ANON_KEY") {
                     key = v.to_string();
                 }
             }
         }
     }
-    if url.is_empty() || key.is_empty() {
+    let url = finalize_supabase_url(&url, &id)?;
+    if key.is_empty() {
         return None;
     }
-    Some((url.trim_end_matches('/').to_string(), key))
+    Some((url, key))
 }
 
 #[cfg(all(test, feature = "cloudflare"))]
@@ -159,16 +185,22 @@ mod tests {
     }
 
     #[test]
-    fn creds_fall_back_to_the_env_file_format() {
-        let content = "# comment\nSUPABASE_URL=https://example.supabase.co/\nOTHER=1\n";
-        let mut url = String::new();
-        for line in content.lines() {
-            if let Some((k, v)) = line.split_once('=') {
-                if url.is_empty() && k.trim().eq_ignore_ascii_case("SUPABASE_URL") {
-                    url = v.trim().trim_end_matches('/').to_string();
-                }
-            }
-        }
-        assert_eq!(url, "https://example.supabase.co");
+    fn bare_project_id_becomes_the_supabase_url() {
+        // A .env carrying only SUPABASE_ID (no SUPABASE_URL) still yields a URL.
+        assert_eq!(
+            finalize_supabase_url("", "abcdefghij").as_deref(),
+            Some("https://abcdefghij.supabase.co")
+        );
+        assert_eq!(
+            finalize_supabase_url("", "abcdefghij/").as_deref(),
+            Some("https://abcdefghij.supabase.co")
+        );
+        // An explicit URL passes through untouched (trailing slash trimmed).
+        assert_eq!(
+            finalize_supabase_url("https://example.supabase.co/", "other").as_deref(),
+            Some("https://example.supabase.co")
+        );
+        // Neither present: no URL, no quota reporting.
+        assert_eq!(finalize_supabase_url("", ""), None);
     }
 }
