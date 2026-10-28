@@ -47,11 +47,7 @@ pub(crate) fn toc_style_name(t: &designcraft_doc::Toc, tocs: &[designcraft_doc::
             obase == base
         })
         .count();
-    if matching_before == 0 {
-        base.to_string()
-    } else {
-        format!("{base} {}", matching_before + 1)
-    }
+    if matching_before == 0 { base.to_string() } else { format!("{base} {}", matching_before + 1) }
 }
 
 pub(crate) fn toc_style_id(t: &designcraft_doc::Toc, tocs: &[designcraft_doc::Toc]) -> String {

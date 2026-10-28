@@ -285,6 +285,8 @@ impl DesignApp {
         }
         story_editor::show(self, &ctx);
         dialogs::show(self, &ctx);
+        #[cfg(feature = "pubgen")]
+        crate::dock::pubgen_dialogs(self, &ctx);
         about::show(self, &ctx);
         updates_ui::show(self, &ctx);
         menus::palette(self, &ctx);

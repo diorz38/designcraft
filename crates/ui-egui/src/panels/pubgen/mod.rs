@@ -20,6 +20,10 @@ pub mod excel;
 pub mod locale;
 pub use locale::Locale;
 
+pub mod dialogs;
+pub use dialogs::{pubgen_dialogs, show_all_dialogs};
+pub use page_utils::execute_set_page_margins;
+
 pub mod ai;
 pub mod ai_cover;
 pub mod ai_cover_job;
@@ -68,6 +72,122 @@ pub(crate) const PANEL_ID: &str = "pubgen_panel_state";
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn compile_project(_app: &mut DesignApp, _p: &Value) -> Result<Value, String> {
     Err("compiling a publication needs the desktop app".to_string())
+}
+
+/// Runs any closure with mutable access to PubgenState, persisting it to Context temp storage.
+pub fn with_state<R>(ctx: &egui::Context, f: impl FnOnce(&mut PubgenState) -> R) -> R {
+    let state_id = egui::Id::unique(PANEL_ID);
+    let mut st: PubgenState = ctx.data(|d| d.get_temp(state_id)).unwrap_or_else(|| PubgenState {
+        bilingual_output: true,
+        cover_include_inside_back: true,
+        ..Default::default()
+    });
+    let res = f(&mut st);
+    ctx.data_mut(|d| d.insert_temp(state_id, st));
+    res
+}
+
+/// Polls active async background tasks (AI translation, AI covers, publication compiler).
+pub fn poll_active_jobs(app: &mut DesignApp, st: &mut PubgenState) {
+    #[cfg(not(target_arch = "wasm32"))]
+    poll_compile_job(app, st);
+
+    if app.session.active().is_none() {
+        return;
+    }
+
+    if !st.glossary_loaded {
+        st.glossary = ai::BpsGlossary::load(&app.session.prefs.pubgen_glossary_path);
+        st.glossary_loaded = true;
+    }
+
+    if let Some(mut job) = st.translate_job.take() {
+        let ok = job.poll(st);
+        if job.finished {
+            st.translate_job = None;
+            ai::push_groq_quota_popup(st);
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let cred = ai::backend_from_prefs(app)
+                    .filter(|(provider, _, _)| provider == "groq")
+                    .map(|(_, key, _)| designcraft_imagegen::quota::fingerprint(&key));
+                if let (Some(cred), Some(n)) = (cred, designcraft_translate::remaining_requests()) {
+                    let _ = std::thread::Builder::new().name("pubgen-groq-quota".into()).spawn(move || {
+                        designcraft_imagegen::quota::report_groq(&cred, n);
+                    });
+                }
+            }
+            if ok {
+                if let Some(target) = st.ai_page_target.take() {
+                    ai::apply_page_result(app, st, &target);
+                    st.header_status = Some((format!("Page translated with AI.{}", ai::groq_quota_suffix()), true));
+                    return;
+                }
+                if let Some(target) = st.ai_table_target.take() {
+                    ai::apply_table_page_result(app, st, &target);
+                    st.header_status = Some((format!("Table page translated with AI.{}", ai::groq_quota_suffix()), true));
+                    return;
+                }
+                if !st.ai_table_targets_batch.is_empty() {
+                    let targets = std::mem::take(&mut st.ai_table_targets_batch);
+                    let mut count = 0;
+                    for target in &targets {
+                        count += ai::apply_table_page_result(app, st, target);
+                    }
+                    st.header_status =
+                        Some((format!("{} table items across {} pages translated with AI.{}", count, targets.len(), ai::groq_quota_suffix()), true));
+                    return;
+                }
+                st.card1_status = Some(("AI translation ready — generating…".into(), true));
+                let res = if st.ai_pending_excel_path.is_empty() {
+                    execute_generate_pages(app, st)
+                } else {
+                    let path = std::mem::take(&mut st.ai_pending_excel_path);
+                    execute_excel_and_generate(app, st, &path)
+                };
+                st.card1_status = Some(match res {
+                    Ok(msg) => (format!("{msg}{}", ai::groq_quota_suffix()), true),
+                    Err(err) => (err, false),
+                });
+                return;
+            }
+            st.translations_slice_key.clear();
+            st.ai_pending_excel_path.clear();
+            st.ai_page_target = None;
+            st.ai_table_target = None;
+            st.ai_table_targets_batch.clear();
+        } else {
+            st.translate_job = Some(job);
+        }
+    }
+
+    if let Some(mut job) = st.cover_job.take() {
+        let ok = job.poll(st);
+        while let Some((title, path)) = job.unapplied.pop() {
+            let path_str = path.to_string_lossy().to_string();
+            let _ = covers::apply_ai_cover_batch_item(app, st, &title, &path_str);
+        }
+        if job.finished {
+            st.cover_quota_covers = job.remaining_covers();
+            st.cover_job = None;
+            let error = if ok { None } else { st.cover_status.as_ref().map(|(m, _)| m.as_str()) };
+            st.ai_quota_popup = Some(job.quota_popup_lines(error));
+            if ok && let Some(bg_path) = job.completed_path.take() {
+                let path_str = bg_path.to_string_lossy().to_string();
+                let res = if st.excel_batch_covers.is_empty() {
+                    covers::replace_existing_covers(app, st).and_then(|()| covers::apply_ai_cover_result(app, st, &path_str))
+                } else {
+                    covers::apply_ai_cover_result(app, st, &path_str)
+                };
+                st.cover_status = Some(match res {
+                    Ok(msg) => (format!("{msg}{}", job.quota_suffix()), true),
+                    Err(err) => (err, false),
+                });
+            }
+        } else {
+            st.cover_job = Some(job);
+        }
+    }
 }
 
 pub fn show(app: &mut DesignApp, ui: &mut Ui) {

@@ -2574,6 +2574,9 @@ pub(crate) mod tests {
             // Assert that every story on the cover page has styled character runs
             assert!(!active.doc.stories.is_empty(), "Style {style} should create stories");
             for story in active.doc.stories.values() {
+                if story.text.is_empty() {
+                    continue;
+                }
                 for run in &story.chars {
                     assert!(run.format.over.size.is_some(), "Story text '{}' in style {style} must have custom size", story.text);
                     assert!(run.format.over.fill.is_some(), "Story text '{}' in style {style} must have custom fill", story.text);

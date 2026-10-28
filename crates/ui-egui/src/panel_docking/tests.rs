@@ -581,15 +581,9 @@ fn close_tab_group_hides_the_panels_tabbed_together() {
     let mut app = app();
     // The default dock: Properties, Pages and Layers are one tab group.
     let r = app.run("window.panel.closeGroup", json!({"panel":"pages"})).unwrap();
-    #[cfg(feature = "pubgen")]
-    let expected = json!(["properties", "pages", "layers", "pubgen"]);
-    #[cfg(not(feature = "pubgen"))]
     let expected = json!(["properties", "pages", "layers"]);
     assert_eq!(r["closed"], expected);
     let layout = app.ui.docking.clone().unwrap();
-    #[cfg(feature = "pubgen")]
-    assert!(["properties", "pages", "layers", "pubgen"].iter().all(|p| !layout.contains(&p.to_string())));
-    #[cfg(not(feature = "pubgen"))]
     assert!(["properties", "pages", "layers"].iter().all(|p| !layout.contains(&p.to_string())));
     // Window brings one back.
     app.run("window.panel.activate", json!({"panel":"pages"})).unwrap();
@@ -1036,26 +1030,17 @@ fn shared_panel_commands_float_dock_and_reject_atomically() {
     let mut tabbed = self::app();
     tabbed.run("window.panel.dock", json!({"panel": "layers", "side": "Start"})).unwrap();
     let layout = tabbed.ui.docking.clone().unwrap();
-    #[cfg(not(feature = "pubgen"))]
     assert_eq!(tab_group(&layout, "pages"), ["properties", "pages"]);
-    #[cfg(feature = "pubgen")]
-    assert_eq!(tab_group(&layout, "pages"), ["properties", "pages", "pubgen"]);
     assert!(matches!(&layout.root, Some(Node::Split { first, .. }) if matches!(&**first, Node::Dock { side: Side::Start, .. })));
     assert_eq!(tab_group(&layout, "layers"), ["layers"]);
     // A whole group, by any of its panels, then into a new column of the end dock.
     app.run("window.panel.float", json!({"panel": "pages", "group": true, "x": 80, "y": 80, "width": 300, "height": 400})).unwrap();
     let layout = app.ui.docking.clone().unwrap();
     assert_eq!(layout.floating.len(), 1);
-    #[cfg(not(feature = "pubgen"))]
     assert_eq!(window_groups(&layout.floating[0])[0].panels, ["properties", "pages", "layers"]);
-    #[cfg(feature = "pubgen")]
-    assert_eq!(window_groups(&layout.floating[0])[0].panels, ["properties", "pages", "layers", "pubgen"]);
     app.run("window.panel.dock", json!({"panel": "pages", "group": true, "side": "End"})).unwrap();
     let layout = app.ui.docking.clone().unwrap();
-    #[cfg(not(feature = "pubgen"))]
     assert_eq!(tab_group(&layout, "pages"), ["properties", "pages", "layers"]);
-    #[cfg(feature = "pubgen")]
-    assert_eq!(tab_group(&layout, "pages"), ["properties", "pages", "layers", "pubgen"]);
     // A lone panel to a new dock at the start edge.
     app.run("window.panel.float", json!({"panel": "stroke"})).unwrap();
     app.run("window.panel.dock", json!({"panel": "stroke", "side": "Start"})).unwrap();

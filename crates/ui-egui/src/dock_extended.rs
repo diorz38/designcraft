@@ -10,12 +10,8 @@ use crate::{DesignApp, panels};
 pub mod pubgen;
 
 /// (id, label, icon) of the Properties · Pages · Layers group of the default dock.
-pub const DOCK_TABS: &[(&str, &str, &str)] = &[
-    ("properties", "Properties", "panel-properties"),
-    ("pages", "Pages", "panel-pages"),
-    ("layers", "Layers", "panel-layers"),
-    ("pubgen", "Pubgen", "panel-pages"),
-];
+pub const DOCK_TABS: &[(&str, &str, &str)] =
+    &[("properties", "Properties", "panel-properties"), ("pages", "Pages", "panel-pages"), ("layers", "Layers", "panel-layers")];
 
 /// (id, label, icon) of the other dock panels, which start in the iconic column.
 pub const ICON_PANELS: &[(&str, &str, &str)] = &[
@@ -191,6 +187,155 @@ pub fn float_only_windows(app: &mut DesignApp, ctx: &egui::Context) {
     }
 }
 
+/// The Pubgen top-level application menu (shown in the main menu bar).
+pub fn pubgen_menu(app: &mut DesignApp, ui: &mut egui::Ui) {
+    let lang = app.ui.language.clone();
+    let rtl = crate::i18n::is_rtl(&lang);
+    crate::menus::menu_button(ui, crate::rtl::widget(ui, "Pubgen"), |ui| {
+        if rtl {
+            ui.set_max_width(320.0);
+        }
+        ui.with_layout(egui::Layout::top_down_justified(if rtl { egui::Align::Max } else { egui::Align::Min }), |ui| {
+            ui.set_min_width(260.0);
+
+            let has_doc = app.session.active().is_some();
+
+            // 1. Master Excel Import & Generate…
+            if ui.add_enabled(has_doc, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(&lang, "Master Excel Import & Generate…")))).clicked()
+            {
+                pubgen::with_state(ui.ctx(), |st| {
+                    st.dialog_excel_open = true;
+                });
+                ui.close();
+            }
+
+            // 2. Table of Contents…
+            if ui.add_enabled(has_doc, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(&lang, "Table of Contents…")))).clicked() {
+                pubgen::with_state(ui.ctx(), |st| {
+                    st.dialog_toc_open = true;
+                });
+                ui.close();
+            }
+
+            // 3. Publication Cover…
+            if ui.add_enabled(has_doc, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(&lang, "Publication Cover…")))).clicked() {
+                pubgen::with_state(ui.ctx(), |st| {
+                    st.dialog_cover_open = true;
+                });
+                ui.close();
+            }
+
+            // 4. Header & Footer Setup…
+            if ui.add_enabled(has_doc, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(&lang, "Header & Footer Setup…")))).clicked() {
+                pubgen::with_state(ui.ctx(), |st| {
+                    st.dialog_hf_open = true;
+                });
+                ui.close();
+            }
+
+            ui.separator();
+
+            // 5. Manual Ingest & Tables submenu
+            crate::menus::menu_button(ui, crate::rtl::widget(ui, crate::i18n::tr(&lang, "Manual Ingest & Tables")), |ui| {
+                ui.with_layout(egui::Layout::top_down_justified(if rtl { egui::Align::Max } else { egui::Align::Min }), |ui| {
+                    ui.set_min_width(220.0);
+                    if ui.add_enabled(has_doc, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(&lang, "Page from CSV…")))).clicked() {
+                        pubgen::with_state(ui.ctx(), |st| {
+                            st.dialog_manual_open = true;
+                            st.dialog_manual_tab = 0;
+                        });
+                        ui.close();
+                    }
+                    if ui.add_enabled(has_doc, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(&lang, "Table from CSV…")))).clicked() {
+                        pubgen::with_state(ui.ctx(), |st| {
+                            st.dialog_manual_open = true;
+                            st.dialog_manual_tab = 1;
+                        });
+                        ui.close();
+                    }
+                });
+            });
+
+            // 6. Page & Layout Utilities submenu
+            crate::menus::menu_button(ui, crate::rtl::widget(ui, crate::i18n::tr(&lang, "Page & Layout Utilities")), |ui| {
+                ui.with_layout(egui::Layout::top_down_justified(if rtl { egui::Align::Max } else { egui::Align::Min }), |ui| {
+                    ui.set_min_width(280.0);
+                    if ui
+                        .add_enabled(
+                            has_doc,
+                            egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(&lang, "Set Standard BPS Margins (20/20/19/15 mm)"))),
+                        )
+                        .clicked()
+                    {
+                        let _ = pubgen::execute_set_page_margins(app);
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui
+                        .add_enabled(
+                            has_doc,
+                            egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(&lang, "Page Margins & Renumbering Options…"))),
+                        )
+                        .clicked()
+                    {
+                        pubgen::with_state(ui.ctx(), |st| {
+                            st.dialog_utils_open = true;
+                        });
+                        ui.close();
+                    }
+                });
+            });
+
+            ui.separator();
+
+            // 7. Checkable Bilingual Output
+            let is_bilingual = pubgen::with_state(ui.ctx(), |st| st.bilingual_output);
+            let check_mark = if is_bilingual { "✓ " } else { "   " };
+            let bi_label = format!("{}{}", check_mark, crate::i18n::tr(&lang, "Dual Language Mode (Bilingual ID / EN)"));
+            if ui.button(crate::rtl::widget(ui, bi_label)).clicked() {
+                pubgen::with_state(ui.ctx(), |st| {
+                    st.bilingual_output = !st.bilingual_output;
+                });
+                ui.close();
+            }
+
+            // 8. AI Translation Setup…
+            if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&lang, "AI Translation Setup…"))).clicked() {
+                pubgen::with_state(ui.ctx(), |st| {
+                    st.ai_dialog = Some(pubgen::ai::AiSetupDialog::open(app, st));
+                });
+                ui.close();
+            }
+
+            // 9. Publication Compiler (native only)
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&lang, "Publication Compile Wizard…"))).clicked() {
+                    pubgen::with_state(ui.ctx(), |st| {
+                        st.dialog_excel_open = true;
+                    });
+                    ui.close();
+                }
+            }
+
+            ui.separator();
+
+            // 10. About PubGen…
+            if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&lang, "About PubGen…"))).clicked() {
+                pubgen::with_state(ui.ctx(), |st| {
+                    st.show_about_dialog = true;
+                });
+                ui.close();
+            }
+        });
+    });
+}
+
+/// Global dialogs and background tasks handler for Pubgen.
+pub fn pubgen_dialogs(app: &mut DesignApp, ctx: &egui::Context) {
+    pubgen::pubgen_dialogs(app, ctx);
+}
+
 #[cfg(test)]
 mod visual_regressions {
     use super::*;
@@ -281,5 +426,68 @@ mod visual_regressions {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod pubgen_menu_tests {
+    use super::*;
+
+    fn test_input(size: egui::Vec2) -> egui::RawInput {
+        let mut input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)), ..Default::default() };
+        input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(1.0);
+        input
+    }
+
+    #[test]
+    fn test_dock_tabs_parity_with_indesign() {
+        assert_eq!(DOCK_TABS.len(), 3);
+        assert_eq!(DOCK_TABS[0].0, "properties");
+        assert_eq!(DOCK_TABS[1].0, "pages");
+        assert_eq!(DOCK_TABS[2].0, "layers");
+        assert!(!DOCK_TABS.iter().any(|(id, ..)| *id == "pubgen"));
+    }
+
+    #[test]
+    fn test_pubgen_menu_renders_and_state_access() {
+        let ctx = egui::Context::default();
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), Default::default());
+        let mut ran = false;
+        let mut output = ctx.run_ui(test_input(vec2(800.0, 600.0)), |ui| {
+            pubgen_menu(&mut app, ui);
+            ran = true;
+        });
+        output.textures_delta.clear();
+        assert!(ran);
+
+        // Check with_state get and set
+        pubgen::with_state(&ctx, |st| {
+            assert!(st.bilingual_output);
+            st.dialog_excel_open = true;
+        });
+        pubgen::with_state(&ctx, |st| {
+            assert!(st.dialog_excel_open);
+        });
+    }
+
+    #[test]
+    fn test_pubgen_dialogs_renders_when_flags_set() {
+        let ctx = egui::Context::default();
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), Default::default());
+        pubgen::with_state(&ctx, |st| {
+            st.dialog_excel_open = true;
+            st.dialog_toc_open = true;
+            st.dialog_cover_open = true;
+            st.dialog_hf_open = true;
+            st.dialog_manual_open = true;
+            st.dialog_utils_open = true;
+        });
+        let mut ran = false;
+        let mut output = ctx.run_ui(test_input(vec2(1200.0, 900.0)), |_ui| {
+            pubgen_dialogs(&mut app, &ctx);
+            ran = true;
+        });
+        output.textures_delta.clear();
+        assert!(ran);
     }
 }

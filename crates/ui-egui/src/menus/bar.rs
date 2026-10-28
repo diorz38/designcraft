@@ -91,6 +91,8 @@ pub fn menu_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
     for (menu, entries) in menus {
         menu_button(ui, crate::rtl::widget(ui, crate::i18n::tr(&lang, menu)), |ui| menu_column(app, ui, &[(menu, entries)]));
     }
+    #[cfg(feature = "pubgen")]
+    crate::dock::pubgen_menu(app, ui);
 }
 
 /// One menu's rows, as the menu bar and the canvas context menus show them: runs of items, each

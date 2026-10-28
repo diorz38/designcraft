@@ -367,6 +367,21 @@ pub struct PubgenState {
     /// Show the PubGen About modal dialog.
     #[serde(skip)]
     pub show_about_dialog: bool,
+    /// Dialog open flags for Pubgen menu popup windows.
+    #[serde(skip)]
+    pub dialog_excel_open: bool,
+    #[serde(skip)]
+    pub dialog_toc_open: bool,
+    #[serde(skip)]
+    pub dialog_cover_open: bool,
+    #[serde(skip)]
+    pub dialog_hf_open: bool,
+    #[serde(skip)]
+    pub dialog_manual_open: bool,
+    #[serde(skip)]
+    pub dialog_manual_tab: usize,
+    #[serde(skip)]
+    pub dialog_utils_open: bool,
 
     // Card: Publication Cover (before Quick Actions)
     #[serde(default)]
@@ -632,6 +647,13 @@ impl Default for PubgenState {
             bilingual_output: false,
             doc_language: String::new(),
             show_about_dialog: false,
+            dialog_excel_open: false,
+            dialog_toc_open: false,
+            dialog_cover_open: false,
+            dialog_hf_open: false,
+            dialog_manual_open: false,
+            dialog_manual_tab: 0,
+            dialog_utils_open: false,
             hf_style: default_hf_style(),
             hf_custom_name: String::new(),
             hf_sided: 0,
