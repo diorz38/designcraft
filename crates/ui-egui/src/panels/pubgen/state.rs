@@ -403,6 +403,10 @@ pub struct PubgenState {
     pub cover_agency_text: String,
     #[serde(default = "default_true")]
     pub cover_include_inside_back: bool,
+    /// Replace the cover page(s) already in the document instead of adding a new
+    /// one in front (Publication Cover ▸ checkbox next to the generate button).
+    #[serde(default)]
+    pub cover_replace: bool,
     #[serde(default)]
     pub cover_image_back: String,
     #[serde(default)]
@@ -597,6 +601,7 @@ impl Default for PubgenState {
             cover_image_logo: default_cover_logo(),
             cover_agency_text: default_cover_agency_text(),
             cover_include_inside_back: false,
+            cover_replace: false,
             cover_image_back: String::new(),
             cover_office_address: String::new(),
             cover_status: None,

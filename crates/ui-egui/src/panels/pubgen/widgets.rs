@@ -1157,6 +1157,14 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
         });
     }
 
+    // Replace mode: swap the existing cover page(s) for regenerated ones instead
+    // of adding a new cover page in front of them.
+    ui.checkbox(&mut st.cover_replace, "Replace existing cover").on_hover_text(
+        "When checked, the existing cover page(s) are deleted and regenerated in place instead of adding a new cover page in front. \
+It detects what is already there - front cover only, or a full set (front, inside and back cover) - and the replacement matches the Add Inside cover and Back Cover setting: checked regenerates all three, unchecked leaves only a front cover. \
+When there is no cover page yet, this behaves the same as unchecked.",
+    );
+
     // Action button
     let fw = full_width(ui);
     let btn_label = if st.cover_include_inside_back { "Generate Cover Pages (Front, Inside, Back)" } else { "Generate Cover Page" };

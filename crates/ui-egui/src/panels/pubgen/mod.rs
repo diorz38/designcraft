@@ -193,7 +193,13 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
             st.ai_quota_popup = Some(job.quota_popup_lines(error));
             if ok && let Some(bg_path) = job.completed_path.take() {
                 let path_str = bg_path.to_string_lossy().to_string();
-                let res = covers::apply_ai_cover_result(app, &st, &path_str);
+                // Replace mode (single flow only): clear the existing cover set
+                // first so the new cover takes its place instead of stacking up.
+                let res = if st.excel_batch_covers.is_empty() {
+                    covers::replace_existing_covers(app, &st).and_then(|()| covers::apply_ai_cover_result(app, &st, &path_str))
+                } else {
+                    covers::apply_ai_cover_result(app, &st, &path_str)
+                };
                 st.cover_status = Some(match res {
                     Ok(msg) => (format!("{msg}{}", job.quota_suffix()), true),
                     Err(err) => (err, false),
