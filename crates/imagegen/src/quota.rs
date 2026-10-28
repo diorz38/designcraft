@@ -95,10 +95,14 @@ fn rpc(fn_name: &str, body: serde_json::Value) -> Option<String> {
     }
 }
 
-/// PostgREST answers a scalar RPC with `{"ai_cf_consume": <number>}`.
+/// PostgREST answers a scalar RPC with a bare JSON literal (`9808.0`), or with
+/// `{"ai_cf_consume": <number>}` when the object form is requested; some versions
+/// spell a numeric as a quoted string. Accept all three shapes.
 #[cfg(feature = "cloudflare")]
 fn parse_consume_response(raw: &str) -> Option<f64> {
-    serde_json::from_str::<serde_json::Value>(raw).ok()?.pointer("/ai_cf_consume").and_then(|v| v.as_f64())
+    let value = serde_json::from_str::<serde_json::Value>(raw.trim()).ok()?;
+    let scalar = |v: &serde_json::Value| v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse().ok()));
+    scalar(&value).or_else(|| value.pointer("/ai_cf_consume").and_then(|v| scalar(v)))
 }
 
 /// Resolve the final PostgREST base URL from an explicit URL or a bare project id.
@@ -162,8 +166,14 @@ mod tests {
 
     #[test]
     fn parses_the_postgrest_scalar_reply() {
+        // Bare literal (what live PostgREST answers this app's scalar RPC with).
+        assert_eq!(parse_consume_response("9808.0"), Some(9808.0));
+        assert_eq!(parse_consume_response("9808\n"), Some(9808.0));
+        // Object form (other PostgREST versions / the object Accept type).
         assert_eq!(parse_consume_response("{\"ai_cf_consume\":9942.4}"), Some(9942.4));
-        assert_eq!(parse_consume_response("{\"ai_cf_consume\":0}"), Some(0.0));
+        // Quoted-numeric spelling.
+        assert_eq!(parse_consume_response("{\"ai_cf_consume\":\"9808\"}"), Some(9808.0));
+        // Not a number, not the right key: nothing.
         assert_eq!(parse_consume_response("{\"message\":\"error\"}"), None);
         assert_eq!(parse_consume_response("not json"), None);
     }
@@ -187,19 +197,10 @@ mod tests {
     #[test]
     fn bare_project_id_becomes_the_supabase_url() {
         // A .env carrying only SUPABASE_ID (no SUPABASE_URL) still yields a URL.
-        assert_eq!(
-            finalize_supabase_url("", "abcdefghij").as_deref(),
-            Some("https://abcdefghij.supabase.co")
-        );
-        assert_eq!(
-            finalize_supabase_url("", "abcdefghij/").as_deref(),
-            Some("https://abcdefghij.supabase.co")
-        );
+        assert_eq!(finalize_supabase_url("", "abcdefghij").as_deref(), Some("https://abcdefghij.supabase.co"));
+        assert_eq!(finalize_supabase_url("", "abcdefghij/").as_deref(), Some("https://abcdefghij.supabase.co"));
         // An explicit URL passes through untouched (trailing slash trimmed).
-        assert_eq!(
-            finalize_supabase_url("https://example.supabase.co/", "other").as_deref(),
-            Some("https://example.supabase.co")
-        );
+        assert_eq!(finalize_supabase_url("https://example.supabase.co/", "other").as_deref(), Some("https://example.supabase.co"));
         // Neither present: no URL, no quota reporting.
         assert_eq!(finalize_supabase_url("", ""), None);
     }
