@@ -30,6 +30,11 @@ Currently, the Pubgen workflow is hosted inside an expanded tab in the right doc
 └──────────────────────────────────────────────────────────┬─────────────┘
                                                            │
                                 ┌──────────────────────────▼──────────────┐
+                                │ ▶ Language Mode                         │
+                                │     ✓ Dual Lang (Bilingual ID / EN)     │
+                                │       Single Lang (Indonesian)          │
+                                │       Single Lang (English)             │
+                                │ ─────────────────────────────────────── │
                                 │ ▶ Master Excel (.xlsx) Import…          │
                                 │   Auto-Generate from Active Excel       │
                                 │   Download Generated CSVs as ZIP        │
@@ -41,7 +46,12 @@ Currently, the Pubgen workflow is hosted inside an expanded tab in the right doc
                                 │ ▶ Publication Cover Generator…          │
                                 │ ▶ Manual CSV / Table Importer…          │
                                 │ ▶ Header & Footer Templates…            │
-                                │ ▶ Page Margins & Renumbering…           │
+                                │ ─────────────────────────────────────── │
+                                │ ▶ Page & Layout Utilities               │
+                                │     Set Standard BPS Margins            │
+                                │     Toggle Facing Pages (Single/Double) │
+                                │     Add Blank Page                      │
+                                │     Renumbering & Sections…             │
                                 │ ─────────────────────────────────────── │
                                 │ ▶ AI Translation & Terminology…         │
                                 │   Compile Publication (Project Wizard)… │
@@ -49,6 +59,18 @@ Currently, the Pubgen workflow is hosted inside an expanded tab in the right doc
                                 │   About PubGen…                         │
                                 └─────────────────────────────────────────┘
 ```
+
+---
+
+### Language Mode Replacement & Workflow:
+- **Location 1 (Top-Level Pubgen Menu):** A dedicated `Language Mode` submenu with checkmarks showing the active mode (`✓ Dual Lang (Bilingual ID / EN)` vs `Single Lang (Indonesian)` vs `Single Lang (English)`). Selecting any flips the document generation mode instantly.
+- **Location 2 (Inside Generation Dialogs):** In the **Master Excel Import Dialog** and **Manual CSV Dialog**, a prominent segmented switch (`[ Single Lang | Dual Lang* ]`) appears right at the top header, so the mode is crystal clear before starting batch generation.
+
+---
+
+### Set Page Margins Replacement & Workflow:
+- **Location 1 (Pubgen Menu › Page & Layout Utilities):** `Set Standard BPS Margins` is a direct action in the menu. Clicking it runs `execute_set_page_margins(app)` immediately across all spreads and parent pages (Top 20.20 mm, Bottom 20 mm, Inside 19 mm, Outside 15 mm, while safely preserving 0-margin Cover and Divider pages).
+- **Location 2 (Page & Layout Utilities Dialog):** In the `Renumbering & Sections…` popup window, a dedicated **BPS Standard Margins** button and custom margin adjustment fields allow fine-tuning margins per page or spread.
 
 ---
 
