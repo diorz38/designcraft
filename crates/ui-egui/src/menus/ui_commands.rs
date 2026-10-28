@@ -86,6 +86,13 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
         None,
         "{path? (default: the manifest last opened), sync?: bool (default true; false hands the job to the Pubgen panel, one step per frame), pdf?: path (export the PDF here)} — compile a pubgen_project.json into one .designcraft and report {document, pdf, pages, chapters, warnings, elapsedMs}",
     ),
+    #[cfg(feature = "pubgen")]
+    (
+        "pubgen.chartDialog",
+        "Chart Options…",
+        None,
+        "{edit?: bool} — open the vector chart options popup to add or edit a statistical chart on the active spread",
+    ),
     ("app.palette", "Quick Apply…", Some("Cmd+Return"), "{} — search styles and commands"),
     ("app.preferences", "Preferences…", Some("Cmd+K"), "{}"),
     ("window.uiScale", "UI Scaling", None, "{scale: 0.5–3 (1 = 100%)} — the size of the whole interface"),

@@ -351,6 +351,9 @@ pub struct PubgenState {
     #[cfg(not(target_arch = "wasm32"))]
     #[serde(skip)]
     pub(crate) compile_new_dialog: Option<Box<super::compile::NewProjectDialog>>,
+    /// Vector chart form options popup dialog.
+    #[serde(skip)]
+    pub chart_dialog: Option<Box<super::charts::dialog::ChartDialog>>,
     /// Progress and the last report, shown under the card's buttons.
     #[serde(default)]
     pub compile_status: Option<(String, bool)>,
@@ -627,6 +630,7 @@ impl Default for PubgenState {
             compile_job: None,
             #[cfg(not(target_arch = "wasm32"))]
             compile_new_dialog: None,
+            chart_dialog: None,
             compile_status: None,
             locale: Locale::Id,
             bilingual_output: false,

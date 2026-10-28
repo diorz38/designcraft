@@ -1018,6 +1018,11 @@ fn run_ui_inner(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value
         }
         #[cfg(feature = "pubgen")]
         "pubgen.compileProject" => crate::dock::pubgen::compile_project(app, p),
+        #[cfg(feature = "pubgen")]
+        "pubgen.chartDialog" => {
+            let edit = p.get("edit").and_then(Value::as_bool).unwrap_or(false);
+            crate::dock::pubgen::open_chart_dialog(app, edit).map(|()| Value::Null)
+        }
         _ => return None,
     })
 }
