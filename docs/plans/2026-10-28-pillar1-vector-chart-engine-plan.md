@@ -5,7 +5,7 @@
 - **Authors:** diorz38 & Antigravity Agent
 - **Milestone:** M4 (from the extension roadmap)
 - **Effort estimate:** 5–7 days across 5 phases
-- **Status:** Planning — implementation not started
+- **Status:** Completed — All 5 phases implemented and verified (310 unit tests passing)
 
 ---
 
