@@ -5,7 +5,7 @@
 //!    multi-page layouts using geometric templates.
 //! 2. "Table from CSV": Ingests tabular CSV matrix data and constructs native styled tables.
 
-use egui::{Color32, Rect, Response, RichText, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Color32, Response, RichText, Sense, Stroke, Ui, pos2, vec2};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 

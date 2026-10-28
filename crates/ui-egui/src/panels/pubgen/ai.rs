@@ -441,6 +441,8 @@ pub fn dialog_ui(app: &mut DesignApp, st: &mut PubgenState, ui: &mut egui::Ui) {
         .collapsible(false)
         .resizable(false)
         .default_width(460.0)
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(ui.ctx().content_rect().center())
         .show(ui.ctx(), |ui| {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut dialog.tab, DIALOG_TAB_SETUP, "Setup");
