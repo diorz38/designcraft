@@ -35,7 +35,12 @@ pub(crate) use item::path_to_uri;
 const PKG_NS: &str = "http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging";
 const NO_PARA_ID: &str = "ParagraphStyle/$ID/[No paragraph style]";
 const TOC_STYLE_ID: &str = "TOCStyle/Table of Contents";
-const TOC_STYLE_NAME: &str = "Table of Contents";
+pub(crate) fn toc_style_id(index: usize) -> String {
+    if index == 0 { TOC_STYLE_ID.to_string() } else { format!("{TOC_STYLE_ID} {}", index + 1) }
+}
+pub(crate) fn toc_style_name(index: usize) -> String {
+    if index == 0 { "Table of Contents".to_string() } else { format!("Table of Contents {}", index + 1) }
+}
 const NO_CHAR_ID: &str = "CharacterStyle/$ID/[No character style]";
 
 /// Export options.

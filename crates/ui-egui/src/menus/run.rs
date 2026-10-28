@@ -1016,6 +1016,8 @@ fn run_ui_inner(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value
             app.restyle = true;
             Ok(Value::Null)
         }
+        #[cfg(feature = "pubgen")]
+        "pubgen.compileProject" => crate::dock::pubgen::compile_project(app, p),
         _ => return None,
     })
 }

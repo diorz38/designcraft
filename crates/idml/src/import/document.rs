@@ -306,13 +306,15 @@ impl<'r> Importer<'r> {
 
     /// The table of contents: the TOC style a story is generated from (`AppliedTOCStyle`), with
     /// its entries. Styles the document doesn't have fall back to the generated TOC styles.
-    pub(super) fn toc_of(&self, top: &[El]) -> Option<designcraft_doc::Toc> {
+    pub(super) fn tocs_of(&self, top: &[El]) -> Vec<designcraft_doc::Toc> {
+        top.iter().filter(|e| e.local() == "TOCStyle").filter_map(|ts| self.toc_of(ts, top)).take(designcraft_doc::MAX_TOCS).collect()
+    }
+
+    pub(super) fn toc_of(&self, ts: &El, top: &[El]) -> Option<designcraft_doc::Toc> {
         use designcraft_doc::{TocEntry, TocPageNumber};
-        let (ts, story) = top.iter().filter(|e| e.local() == "TOCStyle").find_map(|ts| {
-            let id = ts.get("Self")?;
-            let story = top.iter().find(|e| e.local() == "Story" && e.get("AppliedTOCStyle") == Some(id))?;
-            Some((ts, *self.story_ids.get(story.get("Self")?)?))
-        })?;
+        let id = ts.get("Self")?;
+        let story = top.iter().find(|e| e.local() == "Story" && e.get("AppliedTOCStyle") == Some(id))?;
+        let story = *self.story_ids.get(story.get("Self")?)?;
         let known = |r: Option<&str>| r.map(|r| self.para_style_ref(r)).filter(|n| self.styles.para(n).is_some());
         // Character styles the document has; [None] is stored as no style.
         let known_chars = |r: Option<&str>| {
@@ -337,7 +339,20 @@ impl<'r> Importer<'r> {
                 let page_number_style = known_chars(e.get("PageNumberStyle"));
                 let separator_style = known_chars(e.get("SeparatorStyle"));
                 let sort = e.get("Sort").is_some_and(|v| v.trim() == "true");
-                Some(TocEntry { style, level, entry_style, page_number, separator, page_number_style, separator_style, sort })
+                Some(TocEntry {
+                    style,
+                    level,
+                    entry_style,
+                    page_number,
+                    separator,
+                    page_number_style,
+                    separator_style,
+                    sort,
+                    page_title: Vec::new(),
+                    chapter_number: false,
+                    pair_columns: false,
+                    pair_separator: None,
+                })
             })
             .take(64)
             .collect();

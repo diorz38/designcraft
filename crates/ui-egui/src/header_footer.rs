@@ -13,6 +13,7 @@ use crate::theme::Tokens;
 pub const PRESETS: [(&str, &str); 4] = [("minimal", "Minimal"), ("book", "Book"), ("editorial", "Editorial"), ("custom", "Custom")];
 
 /// The options height for the modal window.
+#[allow(dead_code)]
 pub(crate) const BODY_H: f32 = 540.0;
 const LABEL_W: f32 = 110.0;
 const FIELD_W: f32 = 70.0;
