@@ -174,7 +174,7 @@ impl ChartDialog {
             label_en: self.series_1_label_en.trim().to_string(),
         });
 
-        if self.series_2_enabled && !self.series_2_col.trim().is_empty() {
+        if self.chart_type != ChartType::Donut && self.series_2_enabled && !self.series_2_col.trim().is_empty() {
             series.push(SeriesSpec {
                 col: self.series_2_col.trim().to_uppercase(),
                 label_id: self.series_2_label_id.trim().to_string(),
@@ -182,7 +182,7 @@ impl ChartDialog {
             });
         }
 
-        if self.series_3_enabled && !self.series_3_col.trim().is_empty() {
+        if self.chart_type != ChartType::Donut && self.series_3_enabled && !self.series_3_col.trim().is_empty() {
             series.push(SeriesSpec {
                 col: self.series_3_col.trim().to_uppercase(),
                 label_id: self.series_3_label_id.trim().to_string(),
@@ -205,6 +205,17 @@ impl ChartDialog {
             show_legend: self.show_legend,
             show_grid: self.show_grid,
             max_value_override: max_val,
+        }
+    }
+
+    /// Adjust series and row count to fit the active chart archetype's capacity.
+    pub fn clamp_to_chart_type(&mut self) {
+        if self.chart_type == ChartType::Donut {
+            self.series_2_enabled = false;
+            self.series_3_enabled = false;
+            if self.data_end_row.saturating_sub(self.data_start_row) >= 6 {
+                self.data_end_row = self.data_start_row + 5;
+            }
         }
     }
 
@@ -461,15 +472,35 @@ impl ChartDialog {
         self.data_start_row = 2;
         self.data_end_row = data_end_idx;
 
-        // 9. Populate columns and series
+        // 9. Populate columns and series based on chart type capacity
         self.category_col = "A".into();
-        let col1 = numeric_cols[0];
+        let max_series = match self.chart_type {
+            ChartType::Donut => 1,
+            _ => 3,
+        };
+
+        // For Donut chart, prefer a percentage column if available
+        let col1 = if self.chart_type == ChartType::Donut {
+            numeric_cols
+                .iter()
+                .find(|&&c| {
+                    let h = col_headers[c].0.to_lowercase();
+                    h.contains('%') || h.contains("persen") || h.contains("percentage")
+                })
+                .copied()
+                .unwrap_or(numeric_cols[0])
+        } else {
+            numeric_cols[0]
+        };
+
         self.series_1_col = index_to_col_letter(col1);
         self.series_1_label_id = col_headers[col1].0.clone();
         self.series_1_label_en = col_headers[col1].1.clone();
 
-        if numeric_cols.len() >= 2 {
-            let col2 = numeric_cols[1];
+        let remaining_cols: Vec<usize> = numeric_cols.iter().copied().filter(|&c| c != col1).collect();
+
+        if max_series >= 2 && !remaining_cols.is_empty() {
+            let col2 = remaining_cols[0];
             self.series_2_enabled = true;
             self.series_2_col = index_to_col_letter(col2);
             self.series_2_label_id = col_headers[col2].0.clone();
@@ -478,14 +509,19 @@ impl ChartDialog {
             self.series_2_enabled = false;
         }
 
-        if numeric_cols.len() >= 3 {
-            let col3 = numeric_cols[2];
+        if max_series >= 3 && remaining_cols.len() >= 2 {
+            let col3 = remaining_cols[1];
             self.series_3_enabled = true;
             self.series_3_col = index_to_col_letter(col3);
             self.series_3_label_id = col_headers[col3].0.clone();
             self.series_3_label_en = col_headers[col3].1.clone();
         } else {
             self.series_3_enabled = false;
+        }
+
+        // For Donut chart, cap row count to at most 6 categories for slice readability
+        if self.chart_type == ChartType::Donut && (self.data_end_row.saturating_sub(self.data_start_row) + 1) > 6 {
+            self.data_end_row = (self.data_start_row + 5).min(data_end_idx);
         }
 
         // 10. Infer ValueFormat
@@ -498,16 +534,13 @@ impl ChartDialog {
             self.value_format = ValueFormat::Number;
         }
 
-        self.status = Some((
-            format!(
-                "✓ Imported table from page {} ({} rows, {} series columns: {})",
-                page_1_based,
-                valid_data_rows.len(),
-                numeric_cols.len(),
-                numeric_cols.iter().map(|&c| index_to_col_letter(c)).collect::<Vec<_>>().join(", ")
-            ),
-            true,
-        ));
+        let type_note = if self.chart_type == ChartType::Donut {
+            format!("fitted to 1 series '{}', {} slices", self.series_1_label_id, self.data_end_row - self.data_start_row + 1)
+        } else {
+            format!("{} series columns: {}", numeric_cols.len(), numeric_cols.iter().map(|&c| index_to_col_letter(c)).collect::<Vec<_>>().join(", "))
+        };
+
+        self.status = Some((format!("✓ Imported table from page {} ({} data rows, {})", page_1_based, valid_data_rows.len(), type_note), true));
 
         Ok(())
     }
@@ -587,6 +620,7 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                         ] {
                             if ui.selectable_label(dialog.chart_type == ct, name).clicked() {
                                 dialog.chart_type = ct;
+                                dialog.clamp_to_chart_type();
                             }
                         }
                     });
@@ -627,31 +661,38 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                     ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_1_label_en));
                 });
 
-                // Series 2
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut dialog.series_2_enabled, "Series 2:");
-                    if dialog.series_2_enabled {
-                        ui.label(RichText::new("Col:").size(10.5).color(t.text_dim));
-                        ui.add_sized([30.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_col));
-                        ui.label(RichText::new("Label (ID):").size(10.5).color(t.text_dim));
-                        ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_id));
-                        ui.label(RichText::new("Label (EN):").size(10.5).color(t.text_dim));
-                        ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_en));
-                    }
-                });
+                // Series 2 & 3 (hidden for archetypes that only fit 1 data series, such as Donut)
+                if dialog.chart_type != ChartType::Donut {
+                    // Series 2
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut dialog.series_2_enabled, "Series 2:");
+                        if dialog.series_2_enabled {
+                            ui.label(RichText::new("Col:").size(10.5).color(t.text_dim));
+                            ui.add_sized([30.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_col));
+                            ui.label(RichText::new("Label (ID):").size(10.5).color(t.text_dim));
+                            ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_id));
+                            ui.label(RichText::new("Label (EN):").size(10.5).color(t.text_dim));
+                            ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_en));
+                        }
+                    });
 
-                // Series 3
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut dialog.series_3_enabled, "Series 3:");
-                    if dialog.series_3_enabled {
-                        ui.label(RichText::new("Col:").size(10.5).color(t.text_dim));
-                        ui.add_sized([30.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_3_col));
-                        ui.label(RichText::new("Label (ID):").size(10.5).color(t.text_dim));
-                        ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_3_label_id));
-                        ui.label(RichText::new("Label (EN):").size(10.5).color(t.text_dim));
-                        ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_3_label_en));
-                    }
-                });
+                    // Series 3
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut dialog.series_3_enabled, "Series 3:");
+                        if dialog.series_3_enabled {
+                            ui.label(RichText::new("Col:").size(10.5).color(t.text_dim));
+                            ui.add_sized([30.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_3_col));
+                            ui.label(RichText::new("Label (ID):").size(10.5).color(t.text_dim));
+                            ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_3_label_id));
+                            ui.label(RichText::new("Label (EN):").size(10.5).color(t.text_dim));
+                            ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_3_label_en));
+                        }
+                    });
+                } else {
+                    ui.label(
+                        RichText::new(crate::i18n::tr(&lang, "ℹ Donut chart only fits 1 category and 1 data series.")).size(10.5).color(t.text_dim),
+                    );
+                }
 
                 ui.separator();
 
@@ -878,5 +919,62 @@ mod tests {
         let mut dlg_err = ChartDialog::default();
         let err_res = dlg_err.import_from_table_page(&app, 99);
         assert!(err_res.is_err(), "Must return Err for non-existent page");
+    }
+
+    #[test]
+    fn test_import_from_table_page_donut_fits_single_series() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
+
+        // Title frame on page 0
+        app.run(
+            "frame.create",
+            json!({
+                "spread": 0,
+                "rect": [36.0, 36.0, 400.0, 60.0],
+                "content": "text",
+                "text": "Tabel 01.01 Luas Daerah Menurut Desa/Kelurahan di Kecamatan  Karawang Timur, 2025",
+                "caret": false
+            }),
+        )
+        .unwrap();
+
+        // Insert Table with 2 numeric columns: Luas Area (km2) and Persentase (%)
+        let matrix = vec![
+            vec!["Desa/Kelurahan".into(), "Luas Area (km2)".into(), "Persentase terhadap Luas Kecamatan".into()],
+            vec!["(1)".into(), "(2)".into(), "(3)".into()],
+            vec!["Warungbambu".into(), "1.65".into(), "21.32".into()],
+            vec!["Kondangjaya".into(), "2.44".into(), "8.84".into()],
+            vec!["Margasari".into(), "2.76".into(), "7.17".into()],
+            vec!["Tegalsawah".into(), "4.38".into(), "13.48".into()],
+            vec!["Jumlah".into(), "29.77".into(), "100".into()],
+        ];
+        let st = PubgenState { card2_placement: 1, card2_first_row_header: true, ..Default::default() };
+        crate::dock::pubgen::execute_insert_table_matrix(&mut app, &st, Some(&matrix), Some(0)).unwrap();
+
+        // User sets chart type to Donut first
+        let mut dlg = ChartDialog::default();
+        dlg.chart_type = ChartType::Donut;
+
+        // Import from table page 1
+        let res = dlg.import_from_table_page(&app, 1);
+        assert!(res.is_ok(), "import_from_table_page failed for donut: {:?}", res);
+
+        // Donut must only fit 1 series, and smartly select the percentage column (Col C)
+        assert_eq!(dlg.category_col, "A");
+        assert_eq!(dlg.series_1_col, "C", "Donut should prefer percentage column for part-to-whole");
+        assert!(dlg.series_1_label_id.contains("Persentase"));
+        assert!(!dlg.series_2_enabled, "Series 2 must be disabled for Donut chart");
+        assert!(!dlg.series_3_enabled, "Series 3 must be disabled for Donut chart");
+        assert_eq!(dlg.value_format, ValueFormat::Percent);
+
+        // Verify build_spec produces only 1 series
+        let spec = dlg.build_spec();
+        assert_eq!(spec.chart_type, ChartType::Donut);
+        assert_eq!(spec.series.len(), 1, "Donut spec must contain exactly 1 series");
+
+        // Verify applying donut chart succeeds
+        let apply_res = dlg.apply_chart(&mut app, false);
+        assert!(apply_res.is_ok(), "apply_chart for donut must succeed: {:?}", apply_res);
     }
 }
