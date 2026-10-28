@@ -50,7 +50,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Preferences",
             [],
             None,
-            "{showHiddenCharacters?, typographersQuotes?, polygonSides?, starInset?, scaleStrokes?, dimensionsIncludeStroke?, transformationsAreTotals?, absolutePageNumbers?, highlightHj?, highlightKeeps?, highlightCustomTracking?, highlightSubstitutedFonts?, richBlackOutput?, favoriteFonts?: [family], recentFonts?: [family], showFontNamesInEnglish?, smartTextReflow?, autocorrect?, autocorrectList?: [[word, correction]], showAddedText?, showNoteAnchors?, cjkFeatures?: bool|null (CJK-only menu items and dialogs shown; null follows the interface language), linkTextFiles? (Create Links When Placing Text Files), recoveryMinutes?, recentFilesMax?: 0–100, translationModelDir?: path, translationModelId?: id, translationProvider?: \"offline\"|\"groq\", translationGroqApiKey?: string, translationGroqModel?: id, pubgenGlossaryPath?: path (custom BPS terminology JSON; empty = bundled), coverAiCloudflareAccountId?: string, coverAiCloudflareApiToken?: string (Pubgen AI Base cover, Workers AI Edit scope)} → all application preferences",
+            "{showHiddenCharacters?, typographersQuotes?, polygonSides?, starInset?, scaleStrokes?, dimensionsIncludeStroke?, transformationsAreTotals?, absolutePageNumbers?, highlightHj?, highlightKeeps?, highlightCustomTracking?, highlightSubstitutedFonts?, richBlackOutput?, favoriteFonts?: [family], recentFonts?: [family], showFontNamesInEnglish?, smartTextReflow?, autocorrect?, autocorrectList?: [[word, correction]], showAddedText?, showNoteAnchors?, cjkFeatures?: bool|null (CJK-only menu items and dialogs shown; null follows the interface language), linkTextFiles? (Create Links When Placing Text Files), recoveryMinutes?, recentFilesMax?: 0–100, translationModelDir?: path, translationModelId?: id, translationProvider?: \"offline\"|\"groq\", translationGroqApiKey?: string, translationGroqModel?: id, pubgenGlossaryPath?: path (custom BPS terminology JSON; empty = bundled), pubgenProjectPath?: path (last Pubgen publication manifest), coverAiCloudflareAccountId?: string, coverAiCloudflareApiToken?: string (Pubgen AI Base cover, Workers AI Edit scope)} → all application preferences",
             super::always,
             |s, p| {
                 let cur = serde_json::to_value(&s.prefs).map_err(|e| bad("prefs.set", e.to_string()))?;
@@ -127,6 +127,11 @@ mod tests {
         s.execute("prefs.set", &json!({"showFontNamesInEnglish": true})).unwrap();
         assert!(s.prefs.show_font_names_in_english);
         assert!(s.execute("prefs.set", &json!({"nope": 1})).is_err());
+        // The Pubgen glossary override (docs/plans/2026-10-25-pubgen-pillar4-bps-ai-assistant-mini-plan.md):
+        // the panel writes it with `prefs.set` and the glossary loader reads it back from Prefs.
+        let r = s.execute("prefs.set", &json!({"pubgenGlossaryPath": "C:/tmp/custom-glossary.json"})).unwrap();
+        assert_eq!(s.prefs.pubgen_glossary_path, "C:/tmp/custom-glossary.json", "the Pubgen glossary override persists");
+        assert_eq!(r["pubgenGlossaryPath"], "C:/tmp/custom-glossary.json", "and comes back from prefs.set");
         s.execute("file.new", &json!({})).unwrap();
         let r = s
             .execute("document.preferences", &json!({"horizontalUnits": "millimeters", "keyboardIncrement": 2.5, "grid": {"subdivisions": 4}}))

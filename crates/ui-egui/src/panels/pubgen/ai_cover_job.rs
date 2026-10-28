@@ -100,22 +100,29 @@ pub fn cover_page_exists(doc: &designcraft_doc::Document, title: &str, preset_na
 /// Provider abstraction to allow injecting mock/test generators without network access.
 pub trait ImageGenProvider: Send + Sync + 'static {
     fn generate(&self, req: &imagegen::GenRequest, cancel: &AtomicBool) -> Result<Vec<u8>, imagegen::ImageGenError>;
+    /// Non-secret grouping id for the shared quota tracker: the Cloudflare account id.
+    fn cred_id(&self) -> String;
 }
 
 /// Default provider implementation using Cloudflare Workers AI.
 pub struct CloudflareProvider {
     client: imagegen::cloudflare::CloudflareClient,
+    account_id: String,
 }
 
 impl CloudflareProvider {
     pub fn new(account_id: &str, token: &str) -> Self {
-        Self { client: imagegen::cloudflare::CloudflareClient::new(account_id, token) }
+        Self { client: imagegen::cloudflare::CloudflareClient::new(account_id, token), account_id: account_id.trim().to_string() }
     }
 }
 
 impl ImageGenProvider for CloudflareProvider {
     fn generate(&self, req: &imagegen::GenRequest, cancel: &AtomicBool) -> Result<Vec<u8>, imagegen::ImageGenError> {
         self.client.generate(req, cancel)
+    }
+
+    fn cred_id(&self) -> String {
+        self.account_id.clone()
     }
 }
 
@@ -133,6 +140,10 @@ where
     fn generate(&self, req: &imagegen::GenRequest, cancel: &AtomicBool) -> Result<Vec<u8>, imagegen::ImageGenError> {
         (self.0)(req, cancel)
     }
+
+    fn cred_id(&self) -> String {
+        "test-account".to_string()
+    }
 }
 
 /// The running background cover job owned by `PubgenState`.
@@ -148,6 +159,9 @@ pub struct CoverJob {
     pub batch_completed: Vec<(String, PathBuf)>,
     pub batch_missing: Vec<String>,
     pub unapplied: Vec<(String, PathBuf)>,
+    /// Remaining Cloudflare free neurons today (shared Supabase counter), updated by
+    /// the worker after each successful generation. `None` = not reported (yet).
+    pub cover_remaining: Arc<std::sync::Mutex<Option<f64>>>,
 }
 
 impl CoverJob {
@@ -169,6 +183,7 @@ impl CoverJob {
             batch_completed: Vec::new(),
             batch_missing: Vec::new(),
             unapplied: Vec::new(),
+            cover_remaining: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -178,6 +193,9 @@ impl CoverJob {
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_thread = cancel.clone();
         let tx_thread = tx.clone();
+        let cover_remaining = Arc::new(std::sync::Mutex::new(None));
+        let rem_thread = cover_remaining.clone();
+        let cred = provider.cred_id();
 
         let spawned = std::thread::Builder::new().name("designcraft-ai-cover".into()).spawn(move || {
             let res = (|| -> Result<PathBuf, String> {
@@ -210,6 +228,11 @@ impl CoverJob {
                 }
                 std::fs::write(&output_path, &bytes).map_err(|e| format!("Failed to save AI cover to {}: {e}", output_path.display()))?;
 
+                // Best-effort shared quota report (None = Supabase not configured / offline).
+                if let Some(remaining) = imagegen::quota::consume_cover(&cred, imagegen::quota::NEURONS_PER_COVER) {
+                    *rem_thread.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(remaining);
+                }
+
                 Ok(output_path)
             })();
 
@@ -238,6 +261,7 @@ impl CoverJob {
             batch_completed: Vec::new(),
             batch_missing: Vec::new(),
             unapplied: Vec::new(),
+            cover_remaining,
         }
     }
 
@@ -259,6 +283,7 @@ impl CoverJob {
             batch_completed: Vec::new(),
             batch_missing: Vec::new(),
             unapplied: Vec::new(),
+            cover_remaining: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -270,6 +295,9 @@ impl CoverJob {
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_thread = cancel.clone();
         let tx_thread = tx.clone();
+        let cover_remaining = Arc::new(std::sync::Mutex::new(None));
+        let rem_thread = cover_remaining.clone();
+        let cred = provider.cred_id();
 
         let spawned = std::thread::Builder::new().name("designcraft-ai-cover-batch".into()).spawn(move || {
             let mut completed: Vec<(String, PathBuf)> = Vec::new();
@@ -317,6 +345,11 @@ impl CoverJob {
                         let _ = tx_thread.send(CoverJobMsg::ItemDone { index: idx, title: item.title, path: item.output_path });
                         done = done.saturating_add(1);
                         let _ = tx_thread.send(CoverJobMsg::Progress(done, total));
+
+                        // Best-effort shared quota report (None = Supabase not configured / offline).
+                        if let Some(remaining) = imagegen::quota::consume_cover(&cred, imagegen::quota::NEURONS_PER_COVER) {
+                            *rem_thread.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(remaining);
+                        }
                     }
                     Err(imagegen::ImageGenError::Quota(_)) => {
                         // Stop-on-429: skip remaining items, record missing, report
@@ -364,12 +397,43 @@ impl CoverJob {
             batch_completed: Vec::new(),
             batch_missing: Vec::new(),
             unapplied: Vec::new(),
+            cover_remaining,
         }
     }
 
     /// Cancel the job early.
     pub fn cancel(&self) {
         self.cancel.store(true, Ordering::Relaxed);
+    }
+
+    /// Approximate covers still available today on the shared Cloudflare free tier
+    /// (remaining neurons / 96, from the Supabase counter the workers update).
+    pub fn remaining_covers(&self) -> Option<u64> {
+        let neurons = (*self.cover_remaining.lock().unwrap_or_else(std::sync::PoisonError::into_inner))?;
+        Some((neurons / imagegen::quota::NEURONS_PER_COVER).max(0.0) as u64)
+    }
+
+    /// " · Cloudflare AI: ~N covers left today" when the worker's quota report came
+    /// back; empty otherwise (Supabase not configured, offline, or report failed).
+    pub(crate) fn quota_suffix(&self) -> String {
+        match self.remaining_covers() {
+            Some(n) => format!(" \u{b7} Cloudflare AI: ~{n} covers left today"),
+            None => String::new(),
+        }
+    }
+
+    /// Popup lines for a finished cover job: the shared counter's remaining covers,
+    /// or an explicit fallback when nothing was reported — plus the failure reason
+    /// when the job stopped (e.g. HTTP 429 daily quota). Never empty.
+    pub(crate) fn quota_popup_lines(&self, error: Option<&str>) -> Vec<String> {
+        let mut lines = vec![match self.remaining_covers() {
+            Some(n) => format!("Cloudflare AI: ~{n} covers left today"),
+            None => "Cloudflare AI: usage counter unavailable this session (Supabase not configured or offline)".to_string(),
+        }];
+        if let Some(err) = error {
+            lines.push(err.to_string());
+        }
+        lines
     }
 
     /// Drain progress messages; on Done, record the output path. Returns true when finished successfully.
@@ -402,6 +466,7 @@ impl CoverJob {
                         self.done = 1;
                         self.finished = true;
                         self.completed_path = Some(path);
+                        st.cover_status = Some((format!("AI cover generated.{}", self.quota_suffix()), true));
                         finished_ok = true;
                     }
                     CoverJobMsg::BatchDone { completed, missing, error } => {
@@ -409,7 +474,7 @@ impl CoverJob {
                         self.batch_completed = completed;
                         self.batch_missing = missing.clone();
                         if missing.is_empty() && error.is_none() {
-                            let msg = format!("{} covers generated successfully!", self.batch_completed.len());
+                            let msg = format!("{} covers generated successfully!{}", self.batch_completed.len(), self.quota_suffix());
                             st.cover_status = Some((msg.clone(), true));
                             st.card1_status = Some((msg.clone(), true));
                             st.card3_status = Some((msg, true));
@@ -555,6 +620,33 @@ mod tests {
         assert!(!ok);
         assert!(status_msg.contains("cancelled"));
         assert!(!out_file.exists(), "Cancelled job should not produce output file");
+    }
+
+    #[test]
+    fn quota_popup_lines_reports_the_shared_counter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out_file = tmp.path().join("cover.png");
+        let fake_provider = Box::new(FakeImageGenProvider(|_req, _cancel| Err(imagegen::ImageGenError::Unavailable)));
+        let req = imagegen::GenRequest::new("p", "", imagegen::Aspect::Iso, 18);
+        let ctx = egui::Context::default();
+        let job = CoverJob::spawn_with_provider(fake_provider, req, out_file, ctx);
+        let start = std::time::Instant::now();
+        while !job.finished && start.elapsed().as_secs() < 3 {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        // Nothing reported (provider failed before any generation): explicit
+        // fallback line, plus the stop reason when one is given.
+        let lines = job.quota_popup_lines(Some("Daily Cloudflare free quota reached; resets 00:00 UTC"));
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(lines[0].contains("usage counter unavailable"), "{lines:?}");
+        assert!(lines[1].contains("quota"), "{lines:?}");
+        assert_eq!(job.quota_popup_lines(None).len(), 1);
+
+        // A reported counter becomes "~N covers left today" (neurons / 96).
+        *job.cover_remaining.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(960.0);
+        let lines = job.quota_popup_lines(None);
+        assert_eq!(lines, vec!["Cloudflare AI: ~10 covers left today".to_string()], "{lines:?}");
     }
 
     #[test]

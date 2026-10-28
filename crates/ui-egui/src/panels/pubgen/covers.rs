@@ -314,6 +314,91 @@ pub fn ensure_back_cover_at_end(app: &mut DesignApp) {
     }
 }
 
+/// Does this item (or anything nested inside a group) carry an `#slot:image:` tag?
+fn item_has_image_slot(it: &designcraft_doc::Item) -> bool {
+    if it.label.contains("#slot:image:") || it.name.contains("#slot:image:") {
+        return true;
+    }
+    if let designcraft_doc::Content::Group { items } = &it.content {
+        return items.iter().any(|sub| item_has_image_slot(sub));
+    }
+    false
+}
+
+/// A page this app generated as a cover. Every cover page it makes gets zero
+/// local margins, and its artwork either carries an `#slot:image:` frame (the
+/// template covers) or a full-bleed background shape (the procedural covers).
+/// The zero-margins requirement is what separates a cover from the batik
+/// divider template, which also has an image slot but keeps its 36 pt margins;
+/// body templates never drop their margins.
+pub(crate) fn is_cover_page(doc: &designcraft_doc::Document, page_idx: usize) -> bool {
+    let Some((si, pi)) = doc.page_loc(page_idx) else { return false };
+    let Some(sp) = doc.spreads.get(si) else { return false };
+    let Some(pg) = sp.pages.get(pi) else { return false };
+    if !pg.local_margins || pg.margins != designcraft_doc::Margins::uniform(0.0) {
+        return false;
+    }
+    let page = pg.bounds();
+    let page_area = page.width() * page.height();
+    if page_area <= 0.0 {
+        return false;
+    }
+    sp.items.iter().any(|it| {
+        if sp.page_at_x(it.bounds().center().x) != Some(pi) {
+            return false;
+        }
+        if item_has_image_slot(it) {
+            return true;
+        }
+        // Procedural covers draw their background as a plain shape without a
+        // slot tag: a shape covering most of the page marks the cover too.
+        let inter = it.bounds().intersect(page);
+        inter.width() * inter.height() >= 0.85 * page_area
+    })
+}
+
+/// The cover pages already in the document: front (page 0), inside (page 1)
+/// and back (wherever `find_back_cover_page` finds it). `None` when absent.
+pub(crate) fn find_existing_covers(doc: &designcraft_doc::Document) -> (Option<usize>, Option<usize>, Option<usize>) {
+    let front = is_cover_page(doc, 0).then_some(0);
+    let inside = (doc.page_count() > 1 && is_cover_page(doc, 1)).then_some(1);
+    let back = find_back_cover_page(doc);
+    (front, inside, back)
+}
+
+/// With "Replace existing cover" checked, delete the cover pages already in the
+/// document so regeneration starts clean instead of stacking a new cover in
+/// front. Detection is smart: whatever kind of cover set is there — front only
+/// or front + inside + back — goes, and regeneration then builds exactly the
+/// set the current options ask for. With no cover page present this changes
+/// nothing, so the box only matters when there is something to replace.
+pub(crate) fn replace_existing_covers(app: &mut DesignApp, st: &PubgenState) -> Result<(), String> {
+    if !st.cover_replace {
+        return Ok(());
+    }
+    let (front, inside, back, page_count) = {
+        let active = app.session.active().ok_or("No active document")?;
+        let (f, i, b) = find_existing_covers(&active.doc);
+        (f, i, b, active.doc.page_count())
+    };
+    let mut doomed: Vec<usize> = [front, inside, back].into_iter().flatten().collect();
+    doomed.sort_unstable();
+    doomed.dedup();
+    if doomed.is_empty() {
+        return Ok(());
+    }
+    // A document needs at least one page: when every page is a cover, first
+    // keep a blank page at the end so the deletion stays legal.
+    if doomed.len() >= page_count {
+        app.run("layout.pages.insert", json!({ "before": page_count, "count": 1 }))
+            .map_err(|e| format!("Failed to keep a page while replacing covers: {e}"))?;
+    }
+    // Highest index first: the indices of the remaining doomed pages stay valid.
+    doomed.sort_unstable_by(|a, b| b.cmp(a));
+    app.run("layout.pages.delete", json!({ "pages": doomed })).map_err(|e| format!("Failed to delete existing cover pages: {e}"))?;
+    Ok(())
+}
+
 pub struct MainCoverBranding {
     pub agency_text: String,
     pub agency_color: String,
@@ -1100,6 +1185,7 @@ pub fn execute_generate_front_cover(app: &mut DesignApp, st: &PubgenState) -> Re
 }
 
 pub fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
+    replace_existing_covers(app, st)?;
     let sname = execute_generate_front_cover(app, st)?;
     if st.cover_include_inside_back {
         execute_generate_inside_cover(app)?;
@@ -2071,6 +2157,97 @@ pub(crate) mod tests {
         assert_eq!(find_back_cover_page(&active2.doc), Some(5), "Back cover must move to the last page (page 5)");
     }
 
+    fn cover_replace_state(style: usize, include: bool, replace: bool) -> PubgenState {
+        PubgenState {
+            cover_style: style,
+            cover_image_skyline: "plan/pubgen/samples/images/bps_logo.png".into(),
+            cover_image_back: "plan/pubgen/samples/images/se2026.png".into(),
+            cover_include_inside_back: include,
+            cover_replace: replace,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_cover_replace_swaps_the_front_cover_in_place() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let st = cover_replace_state(0, false, false);
+        execute_generate_cover(&mut app, &st).unwrap();
+        assert_eq!(app.session.active().unwrap().doc.page_count(), 2, "cover + the initial body page");
+
+        // Replace checked: the cover is swapped in place, not stacked in front.
+        let st = cover_replace_state(0, false, true);
+        execute_generate_cover(&mut app, &st).unwrap();
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2, "replace keeps the page count: a third page would be a stacked cover");
+        assert!(is_cover_page(&active.doc, 0), "page 0 is the regenerated cover");
+        assert!(!is_cover_page(&active.doc, 1), "page 1 stays the original body page");
+    }
+
+    #[test]
+    fn test_cover_replace_collapses_a_full_set_to_what_the_checkbox_asks_for() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let st = cover_replace_state(0, true, false);
+        execute_generate_cover(&mut app, &st).unwrap();
+        {
+            let active = app.session.active().unwrap();
+            assert_eq!(active.doc.page_count(), 4, "front, inside, body, back");
+            assert_eq!(find_back_cover_page(&active.doc), Some(3));
+        }
+
+        // Replace with the inside/back box unchecked: the full set collapses to a front cover.
+        let st = cover_replace_state(0, false, true);
+        execute_generate_cover(&mut app, &st).unwrap();
+        {
+            let active = app.session.active().unwrap();
+            assert_eq!(active.doc.page_count(), 2, "front + body only");
+            assert!(is_cover_page(&active.doc, 0), "the front cover was regenerated");
+            assert_eq!(find_back_cover_page(&active.doc), None, "the old back cover is gone");
+        }
+
+        // Replace with the inside/back box checked again: the full set comes back.
+        let st = cover_replace_state(0, true, true);
+        execute_generate_cover(&mut app, &st).unwrap();
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 4, "front, inside, body, back");
+        assert!(is_cover_page(&active.doc, 0) && is_cover_page(&active.doc, 1), "front and inside cover regenerated");
+        assert_eq!(find_back_cover_page(&active.doc), Some(3), "back cover regenerated at the end");
+    }
+
+    #[test]
+    fn test_cover_replace_without_an_existing_cover_just_adds() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let st = cover_replace_state(0, false, true);
+        execute_generate_cover(&mut app, &st).unwrap();
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 2, "with nothing to replace, the box behaves like unchecked");
+        assert!(is_cover_page(&active.doc, 0));
+        assert!(!is_cover_page(&active.doc, 1));
+    }
+
+    #[test]
+    fn test_cover_detection_needs_cover_artwork_not_just_zero_margins() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+        let _ = app.session.edit(|doc, _| {
+            if let Some(sp) = doc.spreads.first_mut() {
+                let sp = std::sync::Arc::make_mut(sp);
+                if let Some(pg) = sp.pages.first_mut() {
+                    pg.margins = designcraft_doc::Margins::uniform(0.0);
+                    pg.local_margins = true;
+                }
+            }
+            Ok(serde_json::Value::Null)
+        });
+        let active = app.session.active().unwrap();
+        // Zero margins alone do not make a cover page: there is no cover artwork on it.
+        assert!(!is_cover_page(&active.doc, 0));
+    }
+
     #[test]
     fn test_ai_cover_branch_dispatch() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
@@ -2159,7 +2336,7 @@ pub(crate) mod tests {
             0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01,
             0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
         ];
-        std::fs::write(&png_path, &png_bytes).unwrap();
+        std::fs::write(&png_path, png_bytes).unwrap();
 
         let st = PubgenState {
             cover_style: super::ai_cover::AI_STYLE_BASE, // Retro Waves

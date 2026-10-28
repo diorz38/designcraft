@@ -24,6 +24,10 @@ pub mod ai;
 pub mod ai_cover;
 pub mod ai_cover_job;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod compile;
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use compile::{compile_card_ui, compile_project, poll_compile_job};
 mod cover_art;
 mod covers;
 mod csv;
@@ -33,12 +37,12 @@ mod helpers;
 mod page_utils;
 mod pages;
 mod state;
-mod summarize;
 mod tables;
 mod testutil;
 mod themes;
 mod thumbnails;
 mod toc;
+mod vocab;
 mod widgets;
 
 pub(crate) use covers::*;
@@ -58,16 +62,16 @@ pub(crate) use widgets::*;
 use cover_art::CoverArtVals;
 use divider_art::DividerArtVals;
 
-const PANEL_ID: &str = "pubgen_panel_state";
+pub(crate) const PANEL_ID: &str = "pubgen_panel_state";
+
+/// Compiling a publication reads and writes files: the web build only explains why it can't.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn compile_project(_app: &mut DesignApp, _p: &Value) -> Result<Value, String> {
+    Err("compiling a publication needs the desktop app".to_string())
+}
 
 pub fn show(app: &mut DesignApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
-    if app.session.active().is_none() {
-        selection_band(ui, "Pubgen");
-        crate::rtl::label(ui, RichText::new(crate::i18n::tr(&app.ui.language, "No document open")).color(t.text_dim));
-        return;
-    }
-
     let max_w = ui.available_width();
     ui.set_max_width(max_w);
     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
@@ -78,6 +82,19 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
         cover_include_inside_back: true,
         ..Default::default()
     });
+
+    // A compile runs whether or not a document is open: its first step creates one.
+    #[cfg(not(target_arch = "wasm32"))]
+    poll_compile_job(app, &mut st);
+
+    if app.session.active().is_none() {
+        selection_band(ui, "Pubgen");
+        crate::rtl::label(ui, RichText::new(crate::i18n::tr(&app.ui.language, "No document open")).color(t.text_dim));
+        #[cfg(not(target_arch = "wasm32"))]
+        compile_card_ui(app, ui, &mut st, &t);
+        ui.data_mut(|d| d.insert_temp(state_id, st));
+        return;
+    }
 
     // Resolve the BPS terminology once per panel session (and again after a glossary save).
     if !st.glossary_loaded {
@@ -90,17 +107,33 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
         let ok = job.poll(&mut st);
         if job.finished {
             st.translate_job = None;
+            // Popup: report how much of the Groq quota this AI operation left.
+            ai::push_groq_quota_popup(&mut st);
+            // Mirror Groq's remaining-request count into the shared Supabase tracker,
+            // keyed by a fingerprint of this user's key so different accounts are
+            // tracked separately (best effort, off the UI thread).
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let cred = ai::backend_from_prefs(app)
+                    .filter(|(provider, _, _)| provider == "groq")
+                    .map(|(_, key, _)| designcraft_imagegen::quota::fingerprint(&key));
+                if let (Some(cred), Some(n)) = (cred, designcraft_translate::remaining_requests()) {
+                    let _ = std::thread::Builder::new().name("pubgen-groq-quota".into()).spawn(move || {
+                        designcraft_imagegen::quota::report_groq(&cred, n);
+                    });
+                }
+            }
             if ok {
                 // Page-targeted job: write the results into the page's own textboxes.
                 if let Some(target) = st.ai_page_target.take() {
                     ai::apply_page_result(app, &st, &target);
-                    st.header_status = Some(("Page translated with AI.".into(), true));
+                    st.header_status = Some((format!("Page translated with AI.{}", ai::groq_quota_suffix()), true));
                     ui.data_mut(|d| d.insert_temp(state_id, st));
                     return;
                 }
                 if let Some(target) = st.ai_table_target.take() {
                     ai::apply_table_page_result(app, &st, &target);
-                    st.header_status = Some(("Table page translated with AI.".into(), true));
+                    st.header_status = Some((format!("Table page translated with AI.{}", ai::groq_quota_suffix()), true));
                     ui.data_mut(|d| d.insert_temp(state_id, st));
                     return;
                 }
@@ -110,7 +143,10 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
                     for target in &targets {
                         count += ai::apply_table_page_result(app, &st, target);
                     }
-                    st.header_status = Some((format!("{} table item(s) across {} page(s) translated with AI.", count, targets.len()), true));
+                    st.header_status = Some((
+                        format!("{} table item(s) across {} page(s) translated with AI.{}", count, targets.len(), ai::groq_quota_suffix()),
+                        true,
+                    ));
                     ui.data_mut(|d| d.insert_temp(state_id, st));
                     return;
                 }
@@ -123,7 +159,7 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
                     execute_excel_and_generate(app, &mut st, &path)
                 };
                 st.card1_status = Some(match res {
-                    Ok(msg) => (msg, true),
+                    Ok(msg) => (format!("{msg}{}", ai::groq_quota_suffix()), true),
                     Err(err) => (err, false),
                 });
                 ui.data_mut(|d| d.insert_temp(state_id, st));
@@ -149,12 +185,23 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
             let _ = covers::apply_ai_cover_batch_item(app, &st, &title, &path_str);
         }
         if job.finished {
+            st.cover_quota_covers = job.remaining_covers();
             st.cover_job = None;
+            // Popup: report how much of the shared Cloudflare free quota this run
+            // left (and the stop reason when the job failed, e.g. HTTP 429).
+            let error = if ok { None } else { st.cover_status.as_ref().map(|(m, _)| m.as_str()) };
+            st.ai_quota_popup = Some(job.quota_popup_lines(error));
             if ok && let Some(bg_path) = job.completed_path.take() {
                 let path_str = bg_path.to_string_lossy().to_string();
-                let res = covers::apply_ai_cover_result(app, &st, &path_str);
+                // Replace mode (single flow only): clear the existing cover set
+                // first so the new cover takes its place instead of stacking up.
+                let res = if st.excel_batch_covers.is_empty() {
+                    covers::replace_existing_covers(app, &st).and_then(|()| covers::apply_ai_cover_result(app, &st, &path_str))
+                } else {
+                    covers::apply_ai_cover_result(app, &st, &path_str)
+                };
                 st.cover_status = Some(match res {
-                    Ok(msg) => (msg, true),
+                    Ok(msg) => (format!("{msg}{}", job.quota_suffix()), true),
                     Err(err) => (err, false),
                 });
                 ui.data_mut(|d| d.insert_temp(state_id, st));
@@ -164,18 +211,19 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
             st.cover_job = Some(job);
         }
     }
-    // AI chapter-review drafting: the finished blocks land in the preview dialog.
-    if let Some(mut job) = st.narrative_job.take() {
-        let _ = job.poll(&mut st);
-        if !job.finished {
-            st.narrative_job = Some(job);
-        }
-    }
+    ai_quota_popup_ui(&mut st, ui, &t);
 
     ai::dialog_ui(app, &mut st, ui);
-    summarize::preview_ui(app, &mut st, ui);
 
     pubgen_header_band(app, ui, &mut st, &t);
+
+    // 0. Publication compiler (one manifest → the whole document)
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        compile_card_ui(app, ui, &mut st, &t);
+        divider(ui);
+        rule(ui);
+    }
 
     // 1. Data Source & Generate (Master Excel)
     master_excel_ui(app, ui, &mut st, &t);
@@ -218,7 +266,9 @@ mod tests {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({})).unwrap();
         let mut ready = false;
-        let mut harness = egui_kittest::Harness::builder().with_size(vec2(520.0, 2400.0)).wgpu().build_ui_state(
+        // The a11y check is off because the panel body has pre-existing unnamed inputs (the TOC
+        // title field and the TOC style combo box); the Publication card's own inputs are named.
+        let mut harness = egui_kittest::Harness::builder().with_size(vec2(520.0, 2400.0)).with_accessibility_check(false).wgpu().build_ui_state(
             move |ui, app: &mut DesignApp| {
                 if !ready {
                     crate::theme::install_fonts(ui.ctx(), "en");
@@ -252,7 +302,8 @@ mod tests {
                 if !ready {
                     crate::theme::install_fonts(ui.ctx(), "en");
                     crate::theme::apply(ui.ctx(), &Tokens::for_brightness(crate::theme::Brightness::MediumDark));
-                    let dialog = ai::AiSetupDialog { tab: ai::DIALOG_TAB_TERMINOLOGY, ..ai::AiSetupDialog::open(app) };
+                    let st = PubgenState::default();
+                    let dialog = ai::AiSetupDialog { tab: ai::DIALOG_TAB_TERMINOLOGY, ..ai::AiSetupDialog::open(app, &st) };
                     let st = PubgenState { ai_dialog: Some(dialog), ..Default::default() };
                     ui.data_mut(|d| d.insert_temp(egui::Id::unique(PANEL_ID), st));
                     ready = true;
@@ -265,44 +316,6 @@ mod tests {
         harness.input_mut().max_texture_side = Some(8192);
         harness.run_steps(4);
         harness.render().unwrap().save(directory.join("pubgen-terminology.png")).unwrap();
-    }
-
-    /// Opt-in evidence: the drafted chapter-review preview (blocks + Apply/Discard).
-    /// The a11y check is off for the same pre-existing unnamed panel inputs as above.
-    #[test]
-    fn capture_pubgen_narrative_preview_fixture() {
-        let Some(directory) = std::env::var_os("CRAFT_UI_VISUAL_FIXTURES").map(std::path::PathBuf::from) else { return };
-        std::fs::create_dir_all(&directory).unwrap();
-        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
-        app.run("file.new", json!({})).unwrap();
-        let mut ready = false;
-        let mut harness = egui_kittest::Harness::builder().with_size(vec2(760.0, 760.0)).with_accessibility_check(false).wgpu().build_ui_state(
-            move |ui, app: &mut DesignApp| {
-                if !ready {
-                    crate::theme::install_fonts(ui.ctx(), "en");
-                    crate::theme::apply(ui.ctx(), &Tokens::for_brightness(crate::theme::Brightness::MediumDark));
-                    let blocks = vec![
-                        ("lead".to_string(), "The district's villages cover 4,734.75 km2 in 2024, led by Karawang Kulon.".to_string()),
-                        ("heading2".to_string(), "Land area by village".to_string()),
-                        (
-                            "body".to_string(),
-                            "Karawang Kulon holds the largest area at 3,500.25 km2; Warungbambu the smallest at 1,234.5 km2.".to_string(),
-                        ),
-                        ("heading2".to_string(), "Population".to_string()),
-                        ("body".to_string(), "The 20,500 residents are spread across the district, with Warungbambu the most populous.".to_string()),
-                    ];
-                    let st = PubgenState { narrative_preview: Some(blocks), ..Default::default() };
-                    ui.data_mut(|d| d.insert_temp(egui::Id::unique(PANEL_ID), st));
-                    ready = true;
-                    return;
-                }
-                show(app, ui);
-            },
-            app,
-        );
-        harness.input_mut().max_texture_side = Some(8192);
-        harness.run_steps(4);
-        harness.render().unwrap().save(directory.join("pubgen-narrative-preview.png")).unwrap();
     }
 
     /// Opt-in evidence: the Publication Cover card with an AI Base style selected

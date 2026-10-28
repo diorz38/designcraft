@@ -192,7 +192,12 @@ pub(crate) fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
         };
         let ai_setup_resp = outline_button(ui, ai_setup_label, 90.0).on_hover_text(ai_setup_tip);
         if ai_setup_resp.clicked() {
-            st.ai_dialog = Some(ai::AiSetupDialog::open(app));
+            st.ai_dialog = Some(ai::AiSetupDialog::open(app, st));
+        }
+        // Groq's own rate-limit header (per API key): shown once the first
+        // translation has been made this session.
+        if let Some(n) = designcraft_translate::remaining_requests() {
+            ui.label(RichText::new(format!("Groq: ~{n} requests left today")).size(10.0).color(t.text_dim));
         }
 
         // Justify-between: right-aligned About icon button
@@ -242,7 +247,7 @@ pub(crate) fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
             } else {
                 "Select a generated RXX review page or Table page to translate in place."
             });
-        if page_btn.clicked() && let Some(target) = table_target {
+        if page_btn.clicked() && let Some(target) = table_target.clone() {
             let mut units = ai::collect_table_page_units(app, &target, &st.glossary);
             units.retain(|(k, _)| !st.translations.contains_key(k));
             if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
@@ -278,43 +283,89 @@ pub(crate) fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
             }
         }
 
-        // "Draft Review" — the chapter review written from the catalog's table statistics.
-        let groq_ready = app.session.prefs.translation_provider == "groq"
-            && !app.session.prefs.translation_groq_api_key.trim().is_empty();
-        let can_draft = is_review && groq_ready && super::summarize::has_catalog_tables(st);
-        let draft_btn = ui
-            .add_enabled(can_draft, egui::Button::new("Draft Review"))
-            .on_hover_text("Write this chapter's review from its table statistics, preview the blocks, then apply them to the page.")
-            .on_disabled_hover_text(if !groq_ready {
-                "Configure the Groq provider first: click 'AI Translator' above."
-            } else if !is_review {
-                "Select a generated RXX review page."
-            } else {
-                "The catalog has no table CSV rows to summarise."
-            });
-        if draft_btn.clicked() && let Some(target) = review_target.as_ref() {
-            let summaries = super::summarize::collect_table_summaries(st);
-            if summaries.is_empty() {
-                st.header_status = Some(("No numeric table data found in the catalog CSVs.".into(), false));
-            } else if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
-                if st.narrative_job.as_ref().is_some_and(|j| !j.finished) {
-                    st.header_status = Some(("A chapter review is already being drafted.".into(), false));
+        // "Fix Terms": enforce the glossary on this page's existing translations — the
+        // correction pass for AI text written before (or against) the current glossary.
+        let can_fix = (is_review || is_table) && !st.translations.is_empty() && !st.glossary.is_empty();
+        let fix_btn = ui
+            .add_enabled(can_fix, egui::Button::new("Fix Terms"))
+            .on_hover_text("Apply the glossary to this page's existing translations: whole-cell terms are corrected in place; text missing an official term is re-translated on the next Translate click.")
+            .on_disabled_hover_text("Select a translated review or table page — the glossary corrects the AI text already cached for it.");
+        if fix_btn.clicked() {
+            let (corrected, recheck) = ai::apply_glossary_corrections(&st.glossary, &mut st.translations);
+            if let Some(target) = table_target.as_ref() {
+                ai::apply_table_page_result(app, st, target);
+            } else if let Some(target) = review_target.as_ref() {
+                ai::apply_page_result(app, st, target);
+            }
+            st.header_status = Some(if recheck.is_empty() {
+                if corrected == 0 {
+                    ("The glossary already agrees with this page's translations.".into(), true)
                 } else {
-                    st.narrative_target = Some(target.clone());
-                    let terms = st.glossary.prompt_pairs();
-                    st.narrative_job = Some(super::summarize::NarrativeJob::spawn(
-                        &provider,
-                        &key,
-                        &model,
-                        summaries,
-                        target.id_title.clone(),
-                        terms,
-                        ui.ctx().clone(),
-                    ));
-                    st.header_status = Some(("Drafting the chapter review with AI…".into(), true));
+                    (format!("Glossary applied: {corrected} term(s) corrected on the page."), true)
                 }
             } else {
-                st.header_status = Some(("AI: no backend configured — click 'AI Translator' to set up.".into(), false));
+                (
+                    format!(
+                        "Glossary applied: {corrected} term(s) corrected; {} text(s) marked — click 'Retranslate (Glossary)' to re-run them with the official terms.",
+                        recheck.len()
+                    ),
+                    true,
+                )
+            });
+        }
+
+        // "Retranslate (Glossary)": enforce the official terms for real — deterministic
+        // corrections first, then a fresh AI pass over exactly the units the glossary
+        // flagged, using the prompt that carries the official terms.
+        let can_retr = can_fix && backend_ready;
+        let retr_btn = ui
+            .add_enabled(can_retr, egui::Button::new("Retranslate (Glossary)"))
+            .on_hover_text("Correct this page with the glossary's official terms, then re-translate the texts the glossary flagged (one AI request batch).")
+            .on_disabled_hover_text(if !backend_ready {
+                "Configure AI Provider first: click 'AI Translator' button above."
+            } else {
+                "Select a translated review or table page."
+            });
+        if retr_btn.clicked() {
+            let (corrected, recheck) = ai::apply_glossary_corrections(&st.glossary, &mut st.translations);
+            if let Some(target) = table_target.as_ref() {
+                ai::apply_table_page_result(app, st, target);
+            } else if let Some(target) = review_target.as_ref() {
+                ai::apply_page_result(app, st, target);
+            }
+            if recheck.is_empty() {
+                st.header_status = Some(if corrected == 0 {
+                    ("The glossary already agrees with this page's translations.".into(), true)
+                } else {
+                    (format!("Glossary applied: {corrected} term(s) corrected on the page."), true)
+                });
+            } else if let Some((provider, key, model)) = ai::backend_from_prefs(app) {
+                let mut units = if let Some(target) = table_target.as_ref() {
+                    ai::collect_table_page_units(app, target, &st.glossary)
+                } else if let Some(target) = review_target.as_ref() {
+                    ai::collect_page_units(app, target)
+                } else {
+                    Vec::new()
+                };
+                units.retain(|(k, _)| recheck.iter().any(|r| r == k));
+                if units.is_empty() {
+                    st.header_status =
+                        Some((format!("Glossary corrected {corrected} term(s); the {} flagged text(s) are not on this page.", recheck.len()), true));
+                } else if st.translate_job.as_ref().is_some_and(|j| !j.finished) {
+                    st.header_status = Some(("A translation is already running — try again when it finishes.".into(), false));
+                } else {
+                    let terms = st.glossary.prompt_pairs();
+                    if let Some(target) = table_target.clone() {
+                        st.ai_table_target = Some(target);
+                    } else if let Some(target) = review_target.clone() {
+                        st.ai_page_target = Some(target);
+                    }
+                    st.translate_job = Some(ai::TranslateJob::spawn(&provider, &key, &model, units, terms, ui.ctx().clone()));
+                    st.header_status = Some((format!("Retranslating {} text(s) with the official terms…", recheck.len()), true));
+                }
+            } else {
+                st.header_status =
+                    Some((format!("Glossary corrected {corrected} term(s); {} text(s) need AI re-translation — configure the provider first.", recheck.len()), false));
             }
         }
 
@@ -515,8 +566,12 @@ pub(crate) fn card1_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenSta
     let can_gen = !st.card1_records.is_empty();
     if ui.add_enabled(can_gen, egui::Button::new("Generate Pages")).clicked() {
         let res = execute_generate_pages(app, st);
+        let collected = super::vocab::collect_document(app, st);
+        if st.auto_fill_ai_drafts {
+            ai::fill_blank_drafts(app, st, ui.ctx().clone());
+        }
         st.card1_status = Some(match res {
-            Ok(msg) => (msg, true),
+            Ok(msg) => (if collected > 0 { format!("{msg} Vocabulary: {collected} new term(s) collected.") } else { msg }, true),
             Err(err) => (err, false),
         });
     }
@@ -665,8 +720,12 @@ pub(crate) fn card2_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenSta
             load_card2_csv(st, &st.card2_path.clone());
         }
         let res = execute_insert_table(app, st);
+        let collected = super::vocab::collect_document(app, st);
+        if st.auto_fill_ai_drafts {
+            ai::fill_blank_drafts(app, st, ui.ctx().clone());
+        }
         st.card2_status = Some(match res {
-            Ok(msg) => (msg, true),
+            Ok(msg) => (if collected > 0 { format!("{msg} Vocabulary: {collected} new term(s) collected.") } else { msg }, true),
             Err(err) => (err, false),
         });
     }
@@ -1098,6 +1157,14 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
         });
     }
 
+    // Replace mode: swap the existing cover page(s) for regenerated ones instead
+    // of adding a new cover page in front of them.
+    ui.checkbox(&mut st.cover_replace, "Replace existing cover").on_hover_text(
+        "When checked, the existing cover page(s) are deleted and regenerated in place instead of adding a new cover page in front. \
+It detects what is already there - front cover only, or a full set (front, inside and back cover) - and the replacement matches the Add Inside cover and Back Cover setting: checked regenerates all three, unchecked leaves only a front cover. \
+When there is no cover page yet, this behaves the same as unchecked.",
+    );
+
     // Action button
     let fw = full_width(ui);
     let btn_label = if st.cover_include_inside_back { "Generate Cover Pages (Front, Inside, Back)" } else { "Generate Cover Page" };
@@ -1123,6 +1190,12 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
 
     if gen_btn.clicked() {
         covers::trigger_generate_cover(app, st, ui.ctx().clone());
+    }
+
+    // Shared Supabase counter (remaining neurons / 96), persisted in state after the
+    // reporting job finishes so the label stays visible under the button.
+    if is_ai && let Some(n) = st.cover_quota_covers {
+        ui.label(RichText::new(format!("Cloudflare AI: ~{n} covers left today")).size(10.0).color(t.text_dim));
     }
 
     if let Some(pending) = &st.cover_batch_pending {
@@ -1168,6 +1241,37 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
     if let Some((msg, ok)) = &st.cover_status {
         let color = if *ok { Color32::from_rgb(80, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
         ui.add(egui::Label::new(RichText::new(msg).size(11.0).color(color)).wrap());
+    }
+}
+
+/// Modal popup after an AI operation completes (Groq translation or Cloudflare AI
+/// cover generation), reporting the remaining usage quota. Centered, on top of
+/// everything; closed by the OK button, the backdrop, or Escape.
+pub(crate) fn ai_quota_popup_ui(st: &mut PubgenState, ui: &mut Ui, t: &Tokens) {
+    if st.ai_quota_popup.is_none() {
+        return;
+    }
+    let mut close = false;
+    let modal = egui::Modal::new(egui::Id::unique("pubgen_ai_quota_popup")).show(ui.ctx(), |ui| {
+        ui.set_width(340.0);
+        ui.vertical(|ui| {
+            ui.label(RichText::new("AI usage update").size(13.0).color(t.text).strong());
+            ui.add_space(3.0);
+            if let Some(lines) = &st.ai_quota_popup {
+                for line in lines {
+                    ui.label(RichText::new(line).size(11.0).color(t.text));
+                }
+            }
+        });
+        ui.add_space(8.0);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("OK").clicked() {
+                close = true;
+            }
+        });
+    });
+    if close || modal.should_close() {
+        st.ai_quota_popup = None;
     }
 }
 
@@ -1317,4 +1421,63 @@ pub(crate) fn manual_import_accordion_ui(app: &mut DesignApp, ui: &mut Ui, st: &
     .show(ui, |ui| {
         card_header_footer_body_ui(app, ui, st, t);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+
+    use super::*;
+
+    fn popup_harness(st: PubgenState) -> Harness<'static, PubgenState> {
+        let mut h = Harness::builder().with_size(egui::vec2(800.0, 600.0)).build_ui_state(
+            |ui, st: &mut PubgenState| {
+                let t = crate::theme::Tokens::get(ui.ctx());
+                ai_quota_popup_ui(st, ui, &t);
+            },
+            st,
+        );
+        h.run_steps(4);
+        h
+    }
+
+    /// The usage popup renders its title, every queued line and the OK button, and
+    /// OK closes it.
+    #[test]
+    fn the_ai_quota_popup_renders_and_closes_on_ok() {
+        let st = PubgenState {
+            ai_quota_popup: Some(vec![
+                "Cloudflare AI: ~103 covers left today".into(),
+                "Groq AI: ~990 requests left today".into(),
+                "AI cover generation cancelled".into(),
+            ]),
+            ..Default::default()
+        };
+        let mut h = popup_harness(st);
+        for want in
+            ["AI usage update", "Cloudflare AI: ~103 covers left today", "Groq AI: ~990 requests left today", "AI cover generation cancelled", "OK"]
+        {
+            let _ = h.get_by_label(want);
+        }
+        h.get_by_label("OK").click();
+        h.run_steps(2);
+        assert!(h.state().ai_quota_popup.is_none(), "OK closed the popup");
+    }
+
+    /// Escape (or the backdrop, via `should_close`) also closes the popup.
+    #[test]
+    fn the_ai_quota_popup_closes_on_escape() {
+        let st = PubgenState { ai_quota_popup: Some(vec!["Cloudflare AI: ~103 covers left today".into()]), ..Default::default() };
+        let mut h = popup_harness(st);
+        h.input_mut().events.push(egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.run_steps(2);
+        assert!(h.state().ai_quota_popup.is_none(), "Escape closed the popup");
+    }
 }

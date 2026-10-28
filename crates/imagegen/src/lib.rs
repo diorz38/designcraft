@@ -16,16 +16,18 @@
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used, clippy::panic))]
 
 pub mod cloudflare;
+pub mod quota;
 
-/// Estimated Cloudflare Workers AI Neurons per generated image. Held at the
-/// SDXL-era 220 so free-tier batch math stays conservative until flux-1-schnell
-/// (4–8 steps) is measured on the account.
-pub const ESTIMATED_NEURONS_PER_IMAGE: u64 = 220;
+/// Cloudflare Workers AI Neurons per generated image on this app's flux endpoint:
+/// flux always answers 1024×1024 (four 512×512 tiles at 4.80 neurons) and the
+/// step ceiling is 8 (8 × 9.60 neurons) — exactly `quota::NEURONS_PER_COVER`.
+pub const ESTIMATED_NEURONS_PER_IMAGE: u64 = 96;
 
 /// Cloudflare free daily neuron limit (resets 00:00 UTC).
 pub const DAILY_FREE_NEURONS: u64 = 10_000;
 
-/// Maximum safe batch size on free tier before daily quota exhaustion (~10,000 / 220).
+/// Maximum safe batch size on free tier before daily quota exhaustion
+/// (~10,000 / 96, kept under the ~104 ceiling so dashboard usage has headroom).
 pub const MAX_SAFE_FREE_BATCH: usize = 45;
 
 /// Cover aspect buckets matched to the SDXL ~1-megapixel training buckets
@@ -103,13 +105,14 @@ impl GenRequest {
     }
 
     /// Estimated Cloudflare Workers AI Neurons per generated image (see the
-    /// crate constant: SDXL-era conservative value).
-    pub const ESTIMATED_NEURONS_PER_IMAGE: u64 = 220;
+    /// crate constant: exact for this app's fixed 1024² / 8-step flux calls).
+    pub const ESTIMATED_NEURONS_PER_IMAGE: u64 = 96;
 
     /// Cloudflare free daily neuron limit (resets 00:00 UTC).
     pub const DAILY_FREE_NEURONS: u64 = 10_000;
 
-    /// Maximum safe batch size on free tier before daily quota exhaustion (~10,000 / 220).
+    /// Maximum safe batch size on free tier before daily quota exhaustion
+    /// (~10,000 / 96, kept under the ~104 ceiling for headroom).
     pub const MAX_SAFE_FREE_BATCH: usize = 45;
 
     /// Attach a deterministic random seed to this generation request.

@@ -9,7 +9,6 @@ use super::ai;
 use super::ai_cover;
 use super::ai_cover_job;
 use super::locale::Locale;
-use super::summarize;
 
 pub(super) fn default_file_col() -> usize {
     3
@@ -188,18 +187,12 @@ pub struct PubgenState {
     /// The glossary was resolved from prefs for this panel session.
     #[serde(skip)]
     pub glossary_loaded: bool,
+    /// After a collection run, ask the AI for drafts of the blank terms automatically.
+    #[serde(default = "default_true")]
+    pub auto_fill_ai_drafts: bool,
     /// Signature of the slice the finished job translated; a mismatch re-collects.
     #[serde(skip)]
     pub translations_slice_key: String,
-    /// A running background chapter-review draft.
-    #[serde(skip)]
-    pub narrative_job: Option<summarize::NarrativeJob>,
-    /// The drafted blocks awaiting Apply/Discard.
-    #[serde(skip)]
-    pub narrative_preview: Option<Vec<(String, String)>>,
-    /// The review page the blocks will be placed into.
-    #[serde(skip)]
-    pub narrative_target: Option<ai::PageTarget>,
     /// Targeted translation: only RXX/BXX review pages (narrative), tables and other
     /// page kinds stay Indonesian. Useful under tight provider token limits.
     #[serde(default)]
@@ -340,6 +333,24 @@ pub struct PubgenState {
     #[serde(default)]
     pub header_status: Option<(String, bool)>,
 
+    // Publication compiler (docs/plans/2026-10-27-pubgen-pillar2-binder-mini-plan.md).
+    /// The manifest chosen in the Publication card; empty uses `Prefs.pubgen_project_path`.
+    #[serde(default)]
+    pub compile_manifest_path: String,
+    /// The path [`Self::compile_summary`] was computed for.
+    #[serde(skip)]
+    pub compile_checked: String,
+    /// What the manifest makes, or the error that stopped it loading.
+    #[serde(skip)]
+    pub compile_summary: String,
+    /// The frame-stepped compile the panel advances one step per frame (desktop only).
+    #[cfg(not(target_arch = "wasm32"))]
+    #[serde(skip)]
+    pub(crate) compile_job: Option<Box<super::compile::CompileJob>>,
+    /// Progress and the last report, shown under the card's buttons.
+    #[serde(default)]
+    pub compile_status: Option<(String, bool)>,
+
     /// Target locale for single-language generation mode.
     #[serde(default)]
     pub locale: Locale,
@@ -392,6 +403,10 @@ pub struct PubgenState {
     pub cover_agency_text: String,
     #[serde(default = "default_true")]
     pub cover_include_inside_back: bool,
+    /// Replace the cover page(s) already in the document instead of adding a new
+    /// one in front (Publication Cover ▸ checkbox next to the generate button).
+    #[serde(default)]
+    pub cover_replace: bool,
     #[serde(default)]
     pub cover_image_back: String,
     #[serde(default)]
@@ -410,9 +425,19 @@ pub struct PubgenState {
     /// Running AI Base cover generation job.
     #[serde(skip)]
     pub cover_job: Option<ai_cover_job::CoverJob>,
+    /// Covers still available today on the shared Cloudflare free tier (from the
+    /// Supabase tracker, reported by the last finished job). Persists after the job
+    /// is cleared so both quota labels keep rendering.
+    #[serde(skip)]
+    pub cover_quota_covers: Option<u64>,
     /// Pending batch cover items awaiting quota confirmation.
     #[serde(skip)]
     pub cover_batch_pending: Option<Vec<ai_cover_job::CoverBatchItem>>,
+    /// Popup shown after an AI operation completes (Groq translation or Cloudflare
+    /// cover generation): one line per usage signal, e.g. "Cloudflare AI: ~N covers
+    /// left today". Set by the job-completion poll; cleared when the user closes it.
+    #[serde(skip)]
+    pub ai_quota_popup: Option<Vec<String>>,
     /// Batch of covers parsed from Excel COVER sheet (when multiple publications/covers exist)
     #[serde(skip)]
     pub excel_batch_covers: Vec<super::excel::ExcelCoverData>,
@@ -503,10 +528,8 @@ impl Default for PubgenState {
             translated_bodies: HashMap::new(),
             glossary: ai::BpsGlossary::load(""),
             glossary_loaded: false,
+            auto_fill_ai_drafts: true,
             translations_slice_key: String::new(),
-            narrative_job: None,
-            narrative_preview: None,
-            narrative_target: None,
             ai_only_reviews: false,
             ai_pending_excel_path: String::new(),
             ai_page_target: None,
@@ -578,6 +601,7 @@ impl Default for PubgenState {
             cover_image_logo: default_cover_logo(),
             cover_agency_text: default_cover_agency_text(),
             cover_include_inside_back: false,
+            cover_replace: false,
             cover_image_back: String::new(),
             cover_office_address: String::new(),
             cover_status: None,
@@ -585,11 +609,19 @@ impl Default for PubgenState {
             cover_ai_dialog: None,
             cover_ai_error: None,
             cover_job: None,
+            cover_quota_covers: None,
             cover_batch_pending: None,
+            ai_quota_popup: None,
             excel_batch_covers: Vec::new(),
             excel_auto_generate: true,
             excel_had_cover: false,
             header_status: None,
+            compile_manifest_path: String::new(),
+            compile_checked: String::new(),
+            compile_summary: String::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            compile_job: None,
+            compile_status: None,
             locale: Locale::Id,
             bilingual_output: false,
             doc_language: String::new(),

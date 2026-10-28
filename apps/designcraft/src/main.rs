@@ -237,6 +237,7 @@ fn open_filters(purpose: &str) -> &'static [OpenFilter] {
         }],
         "dataMerge" => &[OpenFilter { name: "Data source (CSV, TSV, text, Excel)", extensions: &["csv", "tsv", "tab", "txt", "xlsx"] }],
         "glossary" => &[OpenFilter { name: "Glossary sheet (Indonesian, English)", extensions: &["csv", "tsv", "tab", "txt"] }],
+        "pubgenProject" => &[OpenFilter { name: "Publication manifest (JSON)", extensions: &["json"] }],
         "place" => &[
             OpenFilter {
                 name: "Graphics and text",

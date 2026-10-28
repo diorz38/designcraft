@@ -57,6 +57,10 @@ const ALLOWED: &[(&str, &str)] = &[
     ("engine/src/cmd/template/catalog.rs", "scans local template directories to discover canonical page templates and their previews"),
     ("engine/src/cmd/template/mod.rs", "reads template .designcraft document files to apply layout and styles to document pages"),
     (
+        "imagegen/src/quota.rs",
+        "the AI quota tracker reads the developer's local `.env` for the Supabase counter credentials (environment variables win), never a path a command names",
+    ),
+    (
         "translate/src/download.rs",
         "downloads and caches offline NLLB translation model weights and vocabulary files into the user-configured model directory",
     ),
@@ -71,8 +75,8 @@ const ALLOWED: &[(&str, &str)] = &[
         "Pubgen AI cover jobs write the generated image to the output path the user chose before the cover pipeline places it",
     ),
     (
-        "ui-egui/src/panels/pubgen/summarize.rs",
-        "Pubgen narrative summarizer reads the user-picked catalog's table CSVs and writes the drafted RTF into the per-process temp folder for file.place",
+        "ui-egui/src/panels/pubgen/compile.rs",
+        "Pubgen publication compiler reads the user-picked manifest and its chapter workbooks, probes that the output folders are writable, and canonicalizes paths to refuse building over a document open in a tab",
     ),
 ];
 

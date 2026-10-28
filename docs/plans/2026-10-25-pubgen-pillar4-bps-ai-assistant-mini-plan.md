@@ -7,6 +7,14 @@
 - **Branch:** `feature/pillar4-bps-glossary` (off `pubgen-0.7.X`, created 2026-10-27)
 - **Target:** `crates/translate/src/`, `crates/ui-egui/src/panels/pubgen/`, `crates/engine/src/`, `assets/pubgen/`
 
+> **Descoped 2026-10-27 (later the same day):** the BPS Statistical AI Assistant half (the
+> chapter-review summarizer: `summarize.rs`, the "Draft Review" button, `NarrativeJob` and the
+> preview dialog) was removed from the build — not needed for now. The whole half is recorded as
+> a future improvement in §8; its last full implementation (including the post-review fixes in
+> §11) lives in git history on this branch. Pillar 4 continues as the **Official Terminology
+> Memory** only: a collected, three-column vocabulary (`indonesian_term` / `ai_english_term` /
+> `official_english_term`) that translation fills and the user curates into official terms.
+
 ---
 
 ## 1. Goal
@@ -345,6 +353,12 @@ Branch `feature/pillar4-bps-glossary`. Separate `CARGO_TARGET_DIR`.
 
 ## 8. Out of Scope
 
+- **Future improvement (descoped 2026-10-27): the BPS Statistical AI Assistant.** The automated
+  executive narrative summarizer — deterministic table statistics (`analyze_table`,
+  `TableSummary`), the one-request-per-chapter draft via `OnlineTranslator::complete`, the strict
+  `{"blocks":[…]}` JSON contract, Rust-built `\stylesheet` RTF, the preview/Apply dialog and the
+  cancelable `NarrativeJob`. Bring back from git history on this branch when the chapter-review
+  workflow is wanted; the design and its tests were sound (see §4.4 and §11).
 - Post-translation replacement inside prose (rejected in §4.2 as corrupting; warnings only, if ever).
 - Modifying the offline NLLB path to support prompts (seq2seq).
 - Multi-language glossaries beyond ID→EN (future: `target_lang`).
@@ -364,18 +378,40 @@ No new workspace dependencies, no new external crates.
 
 ## 10. Definition of Done
 
-- [ ] `assets/pubgen/bps_glossary.json` contains the 15 roadmap terms **plus** the legacy spellings; `Keterangan → "Note"`.
-- [ ] `alias_en()` is backed by `BpsGlossary`; the parity test proves every previously mapped spelling still resolves.
-- [ ] `Prefs.pubgenGlossaryPath` persists and is honored by the loader (user path → cwd → manifest → empty).
-- [ ] `crates/translate` `translate()` accepts an optional glossary; the Groq prompt includes it when present; `None` output is byte-identical.
+- [x] `assets/pubgen/bps_glossary.json` contains the 15 roadmap terms **plus** the legacy spellings; `Keterangan → "Note"`.
+- [x] `alias_en()` is backed by `BpsGlossary`; the parity test proves every previously mapped spelling still resolves — and, since 2026-10-27, resolves to the *same* English.
+- [x] `Prefs.pubgenGlossaryPath` persists and is honored by the loader (user path → cwd → manifest → empty).
+- [x] `crates/translate` `translate()` accepts an optional glossary; the Groq prompt includes it when present; `None` output is byte-identical.
 - [ ] `AiSetupDialog` has a searchable, editable Terminology pane with save-to-file and reload.
-- [ ] `analyze_table` parses Indonesian number formats and has offline unit tests.
-- [ ] `build_narrative_rtf` produces RTF whose imported paragraph styles match `Heading 1` / `Heading 2` / `Lead Paragraph`.
+- [x] `analyze_table` parses Indonesian number formats and has offline unit tests.
+- [x] `build_narrative_rtf` produces RTF whose imported paragraph styles match `Heading 1` / `Heading 2` / `Lead Paragraph`.
 - [ ] "Draft Review" generates blocks via `OnlineTranslator::complete`, previews them, and applies on confirmation (one undo step).
 - [ ] `cargo xtask ci` green (fmt, clippy, tests, assets, layers, wasm).
-- [ ] `ROADMAP.md` updated; M3 closed.
+- [x] `ROADMAP.md` updated; M3 closed.
+
+_State (2026-10-27): a box is ticked where an executed check proves the claim (the checks are listed in §11). The Terminology pane and the Draft Review flow exist, compile and are exercised by the module tests, but their runtime behaviour — pane editing, the enable gating, the Apply path into a real RXX page — still has no automated coverage, so those two stay unticked rather than claimed. The CI box stays unticked because a full `cargo xtask ci` was not run (see §11)._
 
 ## 11. Revision Log
+
+**2026-10-27 (terminology-memory rework).** Pillar 4 reduced to the Official Terminology
+Memory and reshaped into a collected, curated vocabulary (§5 diverges accordingly):
+
+1. The summarizer half was removed (see the descope note at the top).
+2. `BpsGlossary` is now a three-column vocabulary: `GlossaryTerm { id, ai, official, count }`.
+   Only `official` is ever applied (`lookup`/`alias_en`) or prompted (`prompt_pairs`); `ai`
+   keeps what the model wrote for review. Legacy `{"exact_mappings": …}` files (the bundled
+   asset) still load, seeding `official`.
+3. New `vocab.rs` collects vocabulary from the generated pages — whole header cells, row
+   labels and titles, note/source line parts (`Sumber: BPS Kabupaten Karawang/Dinas terkait`),
+   stopword-delimited content-word runs from prose, and 2+-word capitalized name runs (a
+   single capitalized word only for org keywords) — each with a seen-count for review
+   priority. Generic function words are never collected.
+4. "Generate Pages" / "Insert Table" and a "Collect Vocabulary" button in the Terminology
+   pane feed the store; `TranslateJob::poll` fills the `ai` column of known terms.
+5. The Terminology pane gained the third column, a Seen count, add/remove rows; "Reset to
+   bundled" refills `official` from the asset while keeping AI drafts and collected terms.
+6. "Retranslate (Glossary)" joins "Fix Terms": deterministic corrections first, then a fresh
+   AI pass over exactly the units whose cached translation contradicts an official term.
 
 **2026-10-27 (implementation).** Phases 0–5 landed on `feature/pillar4-bps-glossary`. Small divergences from the written spec, all recorded in §5:
 
@@ -394,3 +430,25 @@ No new workspace dependencies, no new external crates.
 4. **Phase 2 scope corrected.** `Backend` is unused by the UI; the param must thread through `translate_batch` and `request_once`, not just `request_body`.
 5. **Phase 4 re-scoped.** Split into 4a (deterministic, testable) and 4b (LLM). Moved the HTTP boundary into `designcraft-translate` (mirroring `imagegen` for Cloudflare), replaced model-authored RTF with a JSON block contract built in Rust, called out that there is no workbook matrix store, and raised the estimate from 0.75 d to ~2.5 d.
 6. **Misc.** Fixed the `cargo xtest` typo; noted `egui_extras` is not a `ui-egui` dependency; added the wasm and asset-resolution risks.
+
+**2026-10-27 (post-review fixes).** A review of the as-built code (§5) found five defects; all are fixed on this branch, each with a test.
+
+1. **The first Apply of a session could fail.** `apply_narrative` wrote into `ai::temp_dir()` without creating it, and nothing creates that directory before a session translates a page, so Apply reported `cannot write …: the system cannot find the path specified`. The write now goes through `write_narrative_rtf_in`, which creates the directory first; `narrative_rtf_lands_in_a_temp_dir_that_does_not_exist_yet` covers it.
+2. **A failed Apply discarded the draft.** Only a successful placement clears `narrative_preview` / `narrative_target` now: a write error keeps the blocks (and the API spend behind them) so the user can retry.
+3. **Cancel was unreachable.** The window only rendered once the job had finished, so its Cancel — guarded on `!job.finished` — could never be clicked. The window now also renders while the worker runs (spinner, status line and a working Cancel), and closing it mid-draft cancels the request. A cancel that reaches the worker reports "Chapter review cancelled." rather than a failure.
+4. **No way back to the bundled glossary.** `Prefs.pubgenGlossaryPath` outranks the asset while non-empty, but nothing cleared it, so **Reset to bundled** only rewrote the grid. It now also clears the path and reloads the bundled terms.
+5. **Save had no validation.** Phase 3 specified rejecting an empty English value inline and a test that an empty map is refused; the code silently dropped incomplete rows instead. `glossary_save_error` now names the offending row — or an empty list — and blocks the write.
+
+Also strengthened the Phase 1 parity gate: it asserted only that the legacy spellings resolve, not to *what*; each is now pinned to the English the hardcoded map returned, which proves the merged spellings kept their values. The web build keeps its stub — **Draft Review** is disabled there instead of arming a job that could never report back.
+
+Verified on this branch, by execution: `cargo fmt --all -- --check`; `cargo test -p designcraft-ui-egui --features pubgen --lib dock::pubgen` (256 tests pass, the four new/strengthened ones included); `cargo test -p designcraft-engine --lib cmd::prefs` (8 pass — `application_and_document_preferences` now round-trips `pubgenGlossaryPath` through `prefs.set`, which is what that DoD box claims); `cargo check --target wasm32-unknown-unknown -p designcraft-ui-egui --features pubgen` (7 panel warnings before these fixes, 5 after: the two that disappear are the `unused variable: app` / `st` hits that existed only because the pane ignored them under `cfg`); `cargo xtask assets` (151 attributed); `cargo xtask layers` (23 crates, no violations).
+
+**2026-10-27 (lint gate).** The panel was compiled by CI but never linted: `cargo clippy --workspace` runs without the feature, so `panels/pubgen` escaped `-D warnings` entirely — and had accumulated 15 clippy errors (`derivable_impls`, `field_reassign_with_default`, five `collapsible_if`, `needless_borrow`, a clone-to-slice in `excel.rs`, `bool_assert_comparison`, `approx_constant`, `err_expect`). All 15 are fixed properly rather than allowed: a derived `Default` for `ChapterSpec`, struct-literal initialization, let-chains mirroring the panel's own `toggle_lang_button` handling, `std::slice::from_ref`, `expect_err`, `assert!(!…)`, and a test decimal that is not π. The `pubgen` CI step is now a lint gate instead of a bare compile:
+
+```
+cargo clippy -p designcraft-ui-egui --features pubgen --all-targets -- -D warnings
+```
+
+`--all-targets` is the point: eight of the fifteen lived in `#[cfg(test)]` code that a plain `check` never builds. The gate is clean on this branch (exit 0), and `cargo xtask ci`'s step list and `--help` text now name it.
+
+Still open, and recorded rather than assumed: a full `cargo xtask ci` — workspace clippy, the whole nextest suite, doctests and the all-crates wasm check — was not run here, and this machine needs `LIB` pointed at the Windows SDK (`C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64` plus the sibling `ucrt/x64`) before anything links at all. Hence the §10 CI box above stays unticked. Also note that the pubgen test suite rewrites three tracked template files under `assets/templates/` on every run; those were reverted so the branch carries only the intended files.

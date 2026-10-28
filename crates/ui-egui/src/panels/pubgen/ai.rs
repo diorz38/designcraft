@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use egui::{Color32, RichText};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::{PubgenState, detect_delimiter, effective_col, parse_csv_content_with_delim, resolve_catalog_related_file};
 use crate::DesignApp;
@@ -40,16 +40,18 @@ pub struct AiSetupDialog {
     /// Set by a successful Use AI: the dialog closes and stays closed.
     pub close_requested: bool,
     pub tab: usize,
-    /// Editable terminology rows (Indonesian, English), seeded from the resolved glossary.
-    pub terms: Vec<(String, String)>,
+    /// Editable vocabulary rows (Indonesian / AI draft / official), seeded from the
+    /// resolved glossary, most-collected first.
+    pub terms: Vec<GlossaryTerm>,
     pub terms_filter: String,
     pub terms_status: Option<(String, bool)>,
 }
 
 impl AiSetupDialog {
-    /// Prefill from the persisted preferences; probe the hardware synchronously (a
-    /// few microseconds — no thread needed).
-    pub fn open(app: &DesignApp) -> Self {
+    /// Prefill from the live glossary (collection and AI drafts live there) and the
+    /// persisted preferences; probe the hardware synchronously (a few microseconds — no
+    /// thread needed).
+    pub fn open(app: &DesignApp, st: &PubgenState) -> Self {
         let prefs = &app.session.prefs;
         let groq_model =
             if prefs.translation_groq_model.trim().is_empty() { "llama-3.3-70b-versatile".to_string() } else { prefs.translation_groq_model.clone() };
@@ -65,7 +67,7 @@ impl AiSetupDialog {
             error: None,
             close_requested: false,
             tab: DIALOG_TAB_SETUP,
-            terms: BpsGlossary::load(&prefs.pubgen_glossary_path).prompt_pairs(),
+            terms: sorted_terms(&st.glossary),
             terms_filter: String::new(),
             terms_status: None,
         }
@@ -233,14 +235,15 @@ fn offline_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSetupD
     }
 }
 
-/// BPS terminology editor: search, edit, add/remove, reset to the bundled asset and save
-/// the result as the user's glossary (`prefs.pubgen_glossary_path`).
+/// BPS terminology editor: search, edit the three columns (Indonesian / AI draft /
+/// official), add or remove rows, reset to the bundled asset and save the vocabulary as
+/// the user's glossary (`prefs.pubgen_glossary_path`).
 fn terminology_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSetupDialog, ui: &mut egui::Ui) {
     ui.label(
         RichText::new(
-            "Official BPS terminology. Matching is case-insensitive and whole-cell only: \
+            "Official terminology memory. Matching is case-insensitive and whole-cell only: \
              \"Luas Wilayah\" is replaced, \"Luas Wilayah (km²)\" still goes to the model. \
-             Import a two-column sheet (Indonesian, English) or edit the rows below.",
+             Official English is what pages use; the AI column is kept for review.",
         )
         .size(10.0),
     );
@@ -248,25 +251,59 @@ fn terminology_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSe
         ui.label("Search:");
         ui.add(egui::TextEdit::singleline(&mut dialog.terms_filter).hint_text("Indonesian or English").desired_width(180.0))
             .accessible_name("Search terminology");
-        if ui.button("Add term").clicked() {
-            dialog.terms.push((String::new(), String::new()));
+        if ui
+            .button("Add term")
+            .on_hover_text("Add a row: fill the Indonesian term and the official English — the AI column stays empty for manually added terms.")
+            .clicked()
+        {
+            dialog.terms.push(GlossaryTerm::default());
             dialog.terms_status = None;
         }
+        if ui
+            .button("Collect Vocabulary")
+            .on_hover_text("Walk every generated page and add its Indonesian words and phrases to this list with blank English: table headers, titles, note and source lines, and non-generic prose phrases.")
+            .clicked()
+        {
+            let added = super::vocab::collect_document(app, st);
+            st.glossary.terms.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.id.to_lowercase().cmp(&b.id.to_lowercase())));
+            dialog.terms = st.glossary.terms.clone();
+            dialog.terms_status = Some((
+                if added == 0 { "No new terms — the vocabulary already covers the document.".to_string() } else { format!("Collected {added} new term(s) with blank English.") },
+                true,
+            ));
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if ui
+            .button("Fill AI Drafts")
+            .on_hover_text("Ask the AI for an English draft for every term whose AI and Official columns are empty (up to 200 per click). Your Official column stays under your control — drafts are review evidence only.")
+            .clicked()
+            && let Some((msg, ok)) = fill_blank_drafts(app, st, ui.ctx().clone())
+        {
+            dialog.terms_status = Some((msg, ok));
+        }
+        ui.checkbox(&mut st.auto_fill_ai_drafts, "Auto")
+            .on_hover_text("On: after every collection run (generate, insert table, Excel import), blank terms are sent for an AI draft automatically.");
     });
     let needle = dialog.terms_filter.trim().to_lowercase();
     let mut remove: Option<usize> = None;
     egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
-        egui::Grid::new("pubgen_terminology_grid").num_columns(3).striped(true).show(ui, |ui| {
+        egui::Grid::new("pubgen_terminology_grid").num_columns(5).striped(true).show(ui, |ui| {
             ui.label(RichText::new("Indonesian").size(10.0).strong());
-            ui.label(RichText::new("English").size(10.0).strong());
+            ui.label(RichText::new("AI English").size(10.0).strong());
+            ui.label(RichText::new("Official English").size(10.0).strong());
+            ui.label(RichText::new("Seen").size(10.0).strong());
             ui.label("");
             ui.end_row();
-            for (idx, (id, en)) in dialog.terms.iter_mut().enumerate() {
-                if !needle.is_empty() && !id.to_lowercase().contains(&needle) && !en.to_lowercase().contains(&needle) {
+            for (idx, term) in dialog.terms.iter_mut().enumerate() {
+                let hay = format!("{} {} {}", term.id, term.ai, term.official).to_lowercase();
+                if !needle.is_empty() && !hay.contains(&needle) {
                     continue;
                 }
-                ui.add_sized([160.0, 22.0], egui::TextEdit::singleline(id)).accessible_name(format!("Term {} Indonesian", idx + 1));
-                ui.add_sized([160.0, 22.0], egui::TextEdit::singleline(en)).accessible_name(format!("Term {} English", idx + 1));
+                ui.add_sized([150.0, 22.0], egui::TextEdit::singleline(&mut term.id)).accessible_name(format!("Term {} Indonesian", idx + 1));
+                ui.add_sized([130.0, 22.0], egui::TextEdit::singleline(&mut term.ai)).accessible_name(format!("Term {} AI English", idx + 1));
+                ui.add_sized([150.0, 22.0], egui::TextEdit::singleline(&mut term.official))
+                    .accessible_name(format!("Term {} Official English", idx + 1));
+                ui.label(RichText::new(if term.count > 0 { term.count.to_string() } else { String::new() }).size(10.0).weak());
                 if ui.small_button("Remove").clicked() {
                     remove = Some(idx);
                 }
@@ -285,7 +322,7 @@ fn terminology_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSe
         #[cfg(not(target_arch = "wasm32"))]
         if ui
             .button("Import CSV…")
-            .on_hover_text("Load a two-column glossary sheet (Indonesian, English); the terms join the grid and Save writes them to the JSON.")
+            .on_hover_text("Load a two-column glossary sheet (Indonesian, English); the English becomes the official column, Save writes them to the JSON.")
             .clicked()
             && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("glossary"))
         {
@@ -300,7 +337,7 @@ fn terminology_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSe
                         let msg = if added + updated == 0 {
                             format!("The sheet's {count} term(s) already match the list.")
                         } else {
-                            format!("Imported {added} new term(s) and updated {updated} of {count} — Save to keep them.")
+                            format!("Imported {added} new term(s) and set {updated} official translation(s) of {count} — Save to keep them.")
                         };
                         dialog.terms_status = Some((msg, true));
                     }
@@ -308,23 +345,43 @@ fn terminology_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSe
                 Err(err) => dialog.terms_status = Some((format!("Could not read {path}: {err}"), false)),
             }
         }
-        if ui.button("Reset to bundled").clicked() {
-            dialog.terms = BpsGlossary::load("").prompt_pairs();
-            dialog.terms_status = Some(("Bundled terms restored — Save to keep a copy.".into(), true));
+        if ui
+            .button("Reset to bundled")
+            .on_hover_text("Go back to the bundled glossary: official English is refilled from the asset (AI drafts and collected terms are kept); clears the custom path saved in preferences.")
+            .clicked()
+        {
+            // Clearing the path is what makes the bundled terms win again: the preference
+            // outranks the asset whenever it is non-empty.
+            let _ = app.run("prefs.set", json!({"pubgenGlossaryPath": ""}));
+            let bundled = BpsGlossary::load("");
+            for t in &mut st.glossary.terms {
+                t.official.clear();
+            }
+            for (id, official) in bundled.prompt_pairs() {
+                st.glossary.set_official(&id, &official);
+            }
+            st.glossary_loaded = true;
+            dialog.terms = st.glossary.terms.clone();
+            dialog.terms_status =
+                Some((format!("Bundled terms restored ({} official term(s)); AI drafts and collected terms are kept.", bundled.terms.len()), true));
         }
         #[cfg(not(target_arch = "wasm32"))]
         if ui.button("Save…").clicked() {
-            let glossary = BpsGlossary::from_terms(&dialog.terms);
-            if let Some(path) = app.pick_save("bps_glossary.json") {
-                match glossary.save(std::path::Path::new(&path)) {
-                    Ok(()) => {
-                        let _ = app.run("prefs.set", json!({"pubgenGlossaryPath": path}));
-                        st.glossary = BpsGlossary::load(&path);
-                        st.glossary_loaded = true;
-                        dialog.terms = st.glossary.prompt_pairs();
-                        dialog.terms_status = Some((format!("Saved {} term(s) to {path}.", st.glossary.exact_mappings.len()), true));
+            // Content without an Indonesian term, or an empty list, never reaches the file.
+            match glossary_save_error(&dialog.terms) {
+                Some(err) => dialog.terms_status = Some((err, false)),
+                None => {
+                    st.glossary.terms = dialog.terms.clone();
+                    if let Some(path) = app.pick_save("bps_glossary.json") {
+                        match st.glossary.save(std::path::Path::new(&path)) {
+                            Ok(()) => {
+                                let _ = app.run("prefs.set", json!({"pubgenGlossaryPath": path}));
+                                st.glossary_loaded = true;
+                                dialog.terms_status = Some((format!("Saved {} term(s) to {path}.", st.glossary.terms.len()), true));
+                            }
+                            Err(err) => dialog.terms_status = Some((format!("Could not save: {err}"), false)),
+                        }
                     }
-                    Err(err) => dialog.terms_status = Some((format!("Could not save: {err}"), false)),
                 }
             }
         }
@@ -335,6 +392,43 @@ fn terminology_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSe
         let color = if *ok { Color32::from_rgb(120, 200, 120) } else { Color32::from_rgb(220, 80, 80) };
         ui.label(RichText::new(msg).size(10.0).color(color));
     }
+}
+
+/// The glossary terms sorted for the editor: most-seen first, then alphabetical.
+fn sorted_terms(g: &BpsGlossary) -> Vec<GlossaryTerm> {
+    let mut terms = g.terms.clone();
+    terms.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.id.to_lowercase().cmp(&b.id.to_lowercase())));
+    terms
+}
+
+/// Spawn the AI-draft job for the glossary's blank terms (AI and Official empty), up to
+/// 200 per call. Returns the status text to show and whether a job was actually started;
+/// `None` means a translation job is already running (the status lines already say so).
+pub fn fill_blank_drafts(app: &DesignApp, st: &mut PubgenState, ctx: egui::Context) -> Option<(String, bool)> {
+    if st.translate_job.as_ref().is_some_and(|j| !j.finished) {
+        return None;
+    }
+    let Some((provider, key, model)) = backend_from_prefs(app) else {
+        return Some(("Configure the AI provider first: click 'AI Translator' to set up your Groq key.".into(), false));
+    };
+    let blanks: Vec<String> = st
+        .glossary
+        .terms
+        .iter()
+        .filter(|t| t.official.trim().is_empty() && t.ai.trim().is_empty() && !t.id.trim().is_empty())
+        .map(|t| t.id.clone())
+        .collect();
+    if blanks.is_empty() {
+        return Some(("No blank terms — every term already has an AI draft or an official English.".into(), true));
+    }
+    let units: Vec<(String, String)> = blanks.iter().take(200).cloned().map(|id| (id.clone(), id)).collect();
+    let requested = units.len();
+    let remaining = blanks.len().saturating_sub(200);
+    let more = if remaining > 0 { format!(" ({remaining} more after this)") } else { String::new() };
+    let msg = format!("Requesting AI drafts for {requested} term(s){more}…");
+    st.translate_job = Some(TranslateJob::spawn_drafts(&provider, &key, &model, units, st.glossary.prompt_pairs(), ctx));
+    st.header_status = Some((msg.clone(), true));
+    Some((msg, true))
 }
 
 /// Render the modal, when open. Called from the panel's `show`.
@@ -409,6 +503,9 @@ pub struct TranslateJob {
     rx: Arc<std::sync::Mutex<std::sync::mpsc::Receiver<JobMsg>>>,
     #[cfg(not(target_arch = "wasm32"))]
     cancel: Arc<AtomicBool>,
+    /// Glossary-draft mode: the units are Indonesian terms and the results fill the
+    /// glossary's AI English column instead of the page-translation cache.
+    drafts: bool,
     pub done: usize,
     pub total: usize,
     pub finished: bool,
@@ -479,7 +576,23 @@ impl TranslateJob {
             // The worker could not start: surface it as a normal job failure.
             let _ = tx.send(JobMsg::Failed("could not start the translation thread".into(), Vec::new()));
         }
-        Self { rx: Arc::new(std::sync::Mutex::new(rx)), cancel, done: 0, total, finished: false }
+        Self { rx: Arc::new(std::sync::Mutex::new(rx)), cancel, drafts: false, done: 0, total, finished: false }
+    }
+
+    /// Draft mode: the units are glossary terms (Indonesian → English) and the results
+    /// fill the glossary's AI English column, not the page-translation cache.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn spawn_drafts(
+        provider: &str,
+        key: &str,
+        model: &str,
+        mut units: Vec<(String, String)>,
+        glossary: Vec<(String, String)>,
+        ctx: egui::Context,
+    ) -> Self {
+        let mut job = Self::spawn(provider, key, model, std::mem::take(&mut units), glossary, ctx);
+        job.drafts = true;
+        job
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -491,7 +604,7 @@ impl TranslateJob {
         _glossary: Vec<(String, String)>,
         _ctx: egui::Context,
     ) -> Self {
-        Self { done: 0, total: 0, finished: true }
+        Self { drafts: false, done: 0, total: 0, finished: true }
     }
 
     /// Drain progress messages; on Done, store the pairs into \`st.translations\` and
@@ -517,8 +630,19 @@ impl TranslateJob {
                         st.header_status = Some((msg, true));
                     }
                     JobMsg::Done(pairs) => {
-                        for (k, en) in pairs {
-                            st.translations.insert(k, en);
+                        if self.drafts {
+                            let filled = pairs.iter().filter(|(k, en)| st.glossary.set_ai(k, en)).count();
+                            let msg = format!("{filled} AI draft(s) filled from {} term(s) requested.", pairs.len());
+                            st.header_status = Some((msg.clone(), true));
+                            if let Some(d) = st.ai_dialog.as_mut() {
+                                d.terms = sorted_terms(&st.glossary);
+                                d.terms_status = Some((msg, true));
+                            }
+                        } else {
+                            for (k, en) in pairs {
+                                st.translations.insert(k.clone(), en.clone());
+                                st.glossary.set_ai(&k, &en);
+                            }
                         }
                         self.finished = true;
                         finished_ok = true;
@@ -527,8 +651,19 @@ impl TranslateJob {
                         // Keep whatever finished before the failure/cancel; the caller
                         // clears the slice signature so the next run translates only the
                         // rest.
-                        for (k, en) in partial {
-                            st.translations.insert(k, en);
+                        if self.drafts {
+                            for (k, en) in partial {
+                                st.glossary.set_ai(&k, &en);
+                            }
+                            if let Some(d) = st.ai_dialog.as_mut() {
+                                d.terms = sorted_terms(&st.glossary);
+                                d.terms_status = Some((format!("AI drafts stopped: {err} — click Fill AI Drafts again for the rest."), false));
+                            }
+                        } else {
+                            for (k, en) in partial {
+                                st.translations.insert(k.clone(), en.clone());
+                                st.glossary.set_ai(&k, &en);
+                            }
                         }
                         self.finished = true;
                         self.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -645,15 +780,46 @@ fn table_cells(st: &PubgenState, file_val: &str) -> Vec<String> {
 
 /// Official BPS terminology: the bundled `assets/pubgen/bps_glossary.json` or the user's
 /// override (`Prefs.pubgen_glossary_path`). Keys are lowercased at load so the whole-cell
-/// lookup stays case-insensitive, as the hardcoded map it replaces was.
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct BpsGlossary {
+/// One vocabulary entry: the Indonesian term, what the AI last translated it to, and the
+/// official English the publication must use. Only `official` is ever applied
+/// deterministically or put into the prompt; `ai` is review evidence, so curating a term
+/// never loses what the model wrote.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct GlossaryTerm {
+    /// The Indonesian term, in its first-seen casing; matched case-insensitively.
+    pub id: String,
+    /// The AI's draft translation, when one has been seen. Empty until a translation runs.
     #[serde(default)]
-    pub exact_mappings: HashMap<String, String>,
-    /// The terms as written in the file, sorted: the editor and the system prompt show the
-    /// official capitalization that `exact_mappings` (lowercased for lookup) loses.
-    #[serde(skip)]
-    pub terms: Vec<(String, String)>,
+    pub ai: String,
+    /// The official English. Empty means collected, awaiting curation — such terms are
+    /// never applied and never enter the prompt, so a draft cannot entrench itself.
+    #[serde(default)]
+    pub official: String,
+    /// How often the collector saw the term; the editor sorts by it.
+    #[serde(default)]
+    pub count: usize,
+}
+
+impl GlossaryTerm {
+    fn new(id: &str) -> Self {
+        Self { id: id.trim().to_string(), ai: String::new(), official: String::new(), count: 0 }
+    }
+
+    /// Case-insensitive term identity: the trimmed, lowercased comparison every caller
+    /// (grid edits, collector, corrections) shares.
+    pub(crate) fn matches(&self, id: &str) -> bool {
+        self.id.trim().to_lowercase() == id.trim().to_lowercase()
+    }
+}
+
+/// The official-terminology memory: the collected BPS vocabulary and its curated English.
+/// Loads from the user's file when set, else the bundled asset, else empty; a legacy
+/// `{"exact_mappings": …}` file still loads — its pairs seed the `official` column.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct BpsGlossary {
+    /// Bundled seed first, then collected terms in collection order.
+    #[serde(default)]
+    pub terms: Vec<GlossaryTerm>,
 }
 
 const BPS_GLOSSARY_FILE: &str = "bps_glossary.json";
@@ -686,47 +852,135 @@ impl BpsGlossary {
         vec![rel, from_manifest]
     }
 
+    /// Reads the three-column shape (`{"terms": …}`) or the legacy bundled shape
+    /// (`{"exact_mappings": …}`, whose pairs become `official` English).
     fn from_file(path: &std::path::Path) -> Option<Self> {
         let text = std::fs::read_to_string(path).ok()?;
-        let raw: Self = serde_json::from_str(&text).ok()?;
-        Some(raw.lowercased())
-    }
-
-    fn lowercased(self) -> Self {
-        let mut terms: Vec<(String, String)> = self.exact_mappings.iter().map(|(k, v)| (k.trim().to_string(), v.clone())).collect();
-        terms.sort();
-        Self { exact_mappings: self.exact_mappings.into_iter().map(|(k, v)| (k.trim().to_lowercase(), v)).collect(), terms }
+        let v: Value = serde_json::from_str(&text).ok()?;
+        if let Some(list) = v.get("terms").and_then(Value::as_array) {
+            let mut terms: Vec<GlossaryTerm> = Vec::with_capacity(list.len());
+            for t in list {
+                let id = t.get("id").and_then(Value::as_str).unwrap_or("").trim().to_string();
+                if id.is_empty() {
+                    continue;
+                }
+                let s = |k: &str| t.get(k).and_then(Value::as_str).unwrap_or("").trim().to_string();
+                terms.push(GlossaryTerm {
+                    id,
+                    ai: s("ai"),
+                    official: s("official"),
+                    count: t.get("count").and_then(Value::as_u64).unwrap_or(0) as usize,
+                });
+            }
+            return Some(Self { terms });
+        }
+        let mut terms: Vec<GlossaryTerm> = Vec::new();
+        if let Some(map) = v.get("exact_mappings").and_then(Value::as_object) {
+            for (id, en) in map {
+                let official = en.as_str().unwrap_or("").trim().to_string();
+                if !official.is_empty() {
+                    terms.push(GlossaryTerm { official, ..GlossaryTerm::new(id) });
+                }
+            }
+        }
+        terms.sort_by_key(|a| a.id.to_lowercase());
+        Some(Self { terms })
     }
 
     pub fn is_empty(&self) -> bool {
-        self.exact_mappings.is_empty()
+        self.terms.is_empty()
     }
 
-    /// The English term for a whole cell, case-insensitively.
+    fn find_mut(&mut self, id: &str) -> Option<&mut GlossaryTerm> {
+        self.terms.iter_mut().find(|t| t.matches(id))
+    }
+
+    /// The official English for a whole cell, case-insensitively; `None` while the term
+    /// has no official English yet (a collected or AI-draft-only term is never applied).
     pub fn lookup(&self, cell: &str) -> Option<&str> {
-        self.exact_mappings.get(&cell.trim().to_lowercase()).map(String::as_str)
+        self.terms.iter().find(|t| t.matches(cell)).filter(|t| !t.official.is_empty()).map(|t| t.official.as_str())
     }
 
-    /// Sorted `(term, english)` pairs: a stable system-prompt addition and the editor rows.
+    /// Sorted `(term, official)` pairs: a stable system-prompt addition. AI drafts and
+    /// untranslated collected terms stay out — the prompt carries official terms only.
     pub fn prompt_pairs(&self) -> Vec<(String, String)> {
-        if !self.terms.is_empty() {
-            return self.terms.clone();
-        }
-        let mut pairs: Vec<(String, String)> = self.exact_mappings.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let mut pairs: Vec<(String, String)> =
+            self.terms.iter().filter(|t| !t.official.is_empty()).map(|t| (t.id.clone(), t.official.clone())).collect();
         pairs.sort();
         pairs
     }
 
-    /// Build from editor rows (trimmed, case kept, empty rows dropped).
-    pub fn from_terms(terms: &[(String, String)]) -> Self {
-        let exact_mappings = terms
-            .iter()
-            .filter_map(|(id, en)| {
-                let (id, en) = (id.trim(), en.trim());
-                (!id.is_empty() && !en.is_empty()).then(|| (id.to_string(), en.to_string()))
-            })
-            .collect();
-        Self { exact_mappings, terms: Vec::new() }
+    /// Collect a term with a blank English: new terms append, seen ones only count up.
+    /// Returns true when the term is new to the vocabulary.
+    pub fn collect(&mut self, id: &str) -> bool {
+        let id = id.trim();
+        if id.is_empty() {
+            return false;
+        }
+        if let Some(t) = self.find_mut(id) {
+            t.count += 1;
+            return false;
+        }
+        self.terms.push(GlossaryTerm::new(id));
+        true
+    }
+
+    /// Record the AI's draft translation of a term; unknown terms are ignored (only the
+    /// collector adds vocabulary). Returns true when the draft changed.
+    pub fn set_ai(&mut self, id: &str, ai: &str) -> bool {
+        let ai = ai.trim();
+        if ai.is_empty() {
+            return false;
+        }
+        match self.find_mut(id) {
+            Some(t) if t.ai != ai => {
+                t.ai = ai.to_string();
+                true
+            }
+            Some(_) => false,
+            None => false,
+        }
+    }
+
+    /// Set the official English, creating the term when unseen. Returns true when the
+    /// official text changed.
+    pub fn set_official(&mut self, id: &str, official: &str) -> bool {
+        let official = official.trim();
+        if official.is_empty() {
+            return false;
+        }
+        match self.find_mut(id) {
+            Some(t) => {
+                if t.official != official {
+                    t.official = official.to_string();
+                    true
+                } else {
+                    false
+                }
+            }
+            None => {
+                let mut t = GlossaryTerm::new(id);
+                t.official = official.to_string();
+                self.terms.push(t);
+                true
+            }
+        }
+    }
+
+    /// Remove a term (case-insensitive); true when it existed.
+    pub fn remove(&mut self, id: &str) -> bool {
+        let before = self.terms.len();
+        self.terms.retain(|t| !t.matches(id));
+        self.terms.len() != before
+    }
+
+    /// Seed from `(Indonesian, official)` pairs — tests and the bundled reset path.
+    pub fn from_pairs(pairs: &[(String, String)]) -> Self {
+        let mut g = Self::default();
+        for (id, official) in pairs {
+            g.set_official(id, official);
+        }
+        g
     }
 
     /// Write the glossary JSON the loader reads back (`prefs.pubgen_glossary_path`).
@@ -801,28 +1055,45 @@ fn looks_like_glossary_header(id: &str, en: &str) -> bool {
     label(id) && label(en)
 }
 
-/// Merge imported sheet rows into the editor's list: the same Indonesian term (ignoring case
-/// and surrounding spaces) takes the imported English, new terms are appended. Returns
-/// `(added, updated)`.
-pub fn merge_terms(target: &mut Vec<(String, String)>, imported: Vec<(String, String)>) -> (usize, usize) {
+/// Merge imported sheet rows into the editor's list: the same Indonesian term (ignoring
+/// case and surrounding spaces) takes the imported English as its official, new terms are
+/// appended. Returns `(added, updated)`.
+pub fn merge_terms(target: &mut Vec<GlossaryTerm>, imported: Vec<(String, String)>) -> (usize, usize) {
     let mut added = 0;
     let mut updated = 0;
     for (id, en) in imported {
-        let key = id.trim().to_lowercase();
-        match target.iter_mut().find(|(k, _)| k.trim().to_lowercase() == key) {
+        match target.iter_mut().find(|t| t.matches(&id)) {
             Some(slot) => {
-                if slot.1 != en {
+                if slot.official != en {
                     updated += 1;
                 }
-                slot.1 = en;
+                slot.official = en;
             }
             None => {
-                target.push((id, en));
+                let mut t = GlossaryTerm::new(&id);
+                t.official = en;
+                target.push(t);
                 added += 1;
             }
         }
     }
     (added, updated)
+}
+
+/// Why the dialog's rows cannot be saved: content without an Indonesian term, or nothing
+/// to write at all. A term with no English yet is valid — it is a collected word awaiting
+/// translation or curation.
+pub fn glossary_save_error(terms: &[GlossaryTerm]) -> Option<String> {
+    for (idx, t) in terms.iter().enumerate() {
+        let (id, ai, official) = (t.id.trim(), t.ai.trim(), t.official.trim());
+        if id.is_empty() && ai.is_empty() && official.is_empty() {
+            continue; // a spare row the user has not filled in yet
+        }
+        if id.is_empty() {
+            return Some(format!("Row {}: add the Indonesian term, or remove the row.", idx + 1));
+        }
+    }
+    (!terms.iter().any(|t| !t.id.trim().is_empty())).then(|| "The glossary is empty — add at least one term before saving.".to_string())
 }
 
 /// One table, two lines per cell: \`id\u{2028}en\` for translatable cells with a
@@ -866,6 +1137,59 @@ pub fn pair_cells(matrix: &[Vec<String>], translations: &HashMap<String, String>
 /// The EN half for a source text: explicit \`existing\` always wins, else the AI map.
 pub fn en_text<'a>(st: &'a PubgenState, source: &str, existing: &'a str) -> &'a str {
     if !existing.is_empty() { existing } else { st.translations.get(source.trim()).map(String::as_str).unwrap_or("") }
+}
+
+/// Does `hay` (already lowercased) contain `needle` (a lowercased glossary key) between
+/// non-letters, so `kecamatan` fires in "menurut kecamatan" but not inside "kecamatanan".
+fn contains_whole_word(hay: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
+    for (start, _) in hay.match_indices(needle) {
+        let end = start + needle.len();
+        let before = hay[..start].chars().next_back().is_none_or(|c| !c.is_alphanumeric());
+        let after = hay[end..].chars().next().is_none_or(|c| !c.is_alphanumeric());
+        if before && after {
+            return true;
+        }
+    }
+    false
+}
+
+/// Enforce the glossary on the cached translations, so edited official terms reach the page
+/// without paying for a full re-translation. A source that *is* a term gets the official
+/// English outright; a longer source keeps its translation unless it contains a term whose
+/// official English is absent and the Indonesian term itself was not kept — those entries
+/// are dropped (and returned) so a re-translation runs exactly them through the
+/// glossary-aware prompt. Terms with no official English yet are never enforced.
+/// Returns (corrected, sources marked for re-translation).
+pub fn apply_glossary_corrections(glossary: &BpsGlossary, translations: &mut HashMap<String, String>) -> (usize, Vec<String>) {
+    let mut corrected = 0usize;
+    let mut recheck: Vec<String> = Vec::new();
+    for (source, en) in translations.iter_mut() {
+        if let Some(official) = glossary.lookup(source) {
+            if !en.eq_ignore_ascii_case(official) {
+                *en = official.to_string();
+                corrected += 1;
+            }
+            continue;
+        }
+        let low = source.trim().to_lowercase();
+        let en_low = en.to_lowercase();
+        let wrong = glossary.terms.iter().any(|t| {
+            !t.official.is_empty()
+                && contains_whole_word(&low, &t.id.to_lowercase())
+                && !contains_whole_word(&en_low, &t.id.to_lowercase())
+                && !contains_whole_word(&en_low, &t.official.to_lowercase())
+        });
+        if wrong {
+            recheck.push(source.clone());
+        }
+    }
+    for key in &recheck {
+        translations.remove(key);
+    }
+    (corrected, recheck)
 }
 
 /// Temp RTF with the translated paragraphs of an Indonesian source RTF (per run temp
@@ -933,6 +1257,27 @@ pub fn slice_signature(st: &PubgenState) -> String {
     };
     let slice = st.card1_records.get(start..end).unwrap_or(&[]);
     format!("ai|{start}..{end}|{slice:?}|{}|{}", st.cover_title.trim(), st.cover_title2.trim())
+}
+
+/// " · Groq: ~N requests left today" when the last Groq response reported its
+/// rate-limit header this session; empty string otherwise (offline provider, or
+/// a build without `ai-translate-online`).
+pub fn groq_quota_suffix() -> String {
+    match translate::remaining_requests() {
+        Some(n) => format!(" · Groq: ~{n} requests left today"),
+        None => String::new(),
+    }
+}
+
+/// Queue the usage popup after a Groq-backed AI operation completes: Groq's own
+/// rate-limit header (per key, server-computed), or an explicit "unavailable"
+/// line so the user always gets feedback that AI ran.
+pub(crate) fn push_groq_quota_popup(st: &mut PubgenState) {
+    let line = match translate::remaining_requests() {
+        Some(n) => format!("Groq AI: ~{n} requests left today"),
+        None => "Groq AI: rate-limit info unavailable this session".to_string(),
+    };
+    st.ai_quota_popup = Some(vec![line]);
 }
 
 /// Build the backend the panel should use right now from the persisted prefs.
@@ -1737,6 +2082,15 @@ mod tests {
     }
 
     #[test]
+    fn quota_popup_always_reports_something_after_a_groq_operation() {
+        let mut st = PubgenState::default();
+        push_groq_quota_popup(&mut st);
+        let lines = st.ai_quota_popup.expect("popup queued");
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].starts_with("Groq AI: "), "{lines:?}");
+    }
+
+    #[test]
     fn numeric_and_short_cells_are_never_sent_to_the_model() {
         let g = glossary();
         assert!(!translatable_cell("", &g));
@@ -1790,26 +2144,43 @@ mod tests {
     }
 
     #[test]
-    fn bundled_glossary_keeps_legacy_spellings_and_abbreviations() {
+    fn bundled_glossary_keeps_the_legacy_spellings_with_their_english() {
+        // The parity gate: every spelling the pre-glossary hardcoded map resolved must still
+        // resolve, to the same English it did then — not merely to something.
         let g = glossary();
-        for id in [
-            "jumlah",
-            "total",
-            "tahun",
-            "kabupaten",
-            "kecamatan",
-            "kec",
-            "provinsi",
-            "propinsi",
-            "keterangan",
-            "ket.",
-            "ket",
-            "catatan",
-            "sumber",
-            "no",
+        for (id, en) in [
+            ("jumlah", "Total"),
+            ("total", "Total"),
+            ("tahun", "Year"),
+            ("kabupaten", "Regency"),
+            ("kecamatan", "Subdistrict"),
+            ("kec", "Subdistrict"),
+            ("provinsi", "Province"),
+            ("propinsi", "Province"),
+            ("keterangan", "Note"),
+            ("ket.", "Note"),
+            ("ket", "Note"),
+            ("catatan", "Note"),
+            ("sumber", "Source"),
+            ("no", "No"),
         ] {
-            assert!(alias_en(id, &g).is_some(), "legacy spelling {id} must stay mapped");
+            assert_eq!(alias_en(id, &g), Some(en), "legacy spelling {id}");
         }
+    }
+
+    #[test]
+    fn saving_is_refused_for_a_termless_row_or_an_empty_list() {
+        let empty = Some("The glossary is empty — add at least one term before saving.".to_string());
+        let term = |id: &str, ai: &str, official: &str| GlossaryTerm { id: id.into(), ai: ai.into(), official: official.into(), count: 0 };
+        assert_eq!(glossary_save_error(&[term("Kecamatan", "", "Subdistrict")]), None);
+        assert_eq!(glossary_save_error(&[]), empty);
+        assert_eq!(glossary_save_error(&[term("", "", "")]), empty);
+        assert_eq!(glossary_save_error(&[term("", "", "Subdistrict")]), Some("Row 1: add the Indonesian term, or remove the row.".to_string()));
+        // A collected term with no English yet is a valid row: it awaits translation.
+        assert_eq!(glossary_save_error(&[term("Desa", "", "")]), None);
+        // A spare blank row among good ones is not an error.
+        let terms = vec![term("Desa", "", "Village"), term("", "", "")];
+        assert_eq!(glossary_save_error(&terms), None);
     }
 
     #[test]
@@ -1837,6 +2208,44 @@ mod tests {
     }
 
     #[test]
+    fn glossary_corrections_fix_whole_cells_and_flag_wrong_prose() {
+        let g = BpsGlossary::from_pairs(&[("kecamatan".to_string(), "Subdistrict".to_string()), ("jumlah".to_string(), "Total".to_string())]);
+        let mut t = HashMap::new();
+        // A whole-cell source is corrected outright: the AI or an older glossary wrote this.
+        t.insert("Kecamatan".to_string(), "District".to_string());
+        // Prose whose translation lost the official term is marked for re-translation.
+        t.insert("Jumlah penduduk menurut kecamatan".to_string(), "Total population by district".to_string());
+        // A kept Indonesian proper noun is left alone.
+        t.insert("Kecamatan Karawang Timur".to_string(), "Kecamatan Karawang Timur".to_string());
+        // Already-official text is untouched.
+        t.insert("Jumlah penduduk".to_string(), "Total population".to_string());
+        let (corrected, recheck) = apply_glossary_corrections(&g, &mut t);
+        assert_eq!((corrected, recheck.len()), (1, 1));
+        assert_eq!(t.get("Kecamatan").map(String::as_str), Some("Subdistrict"));
+        assert!(t.contains_key("Kecamatan Karawang Timur"), "a kept proper noun stays");
+        assert!(t.contains_key("Jumlah penduduk"), "already-official text stays");
+        assert!(!t.contains_key("Jumlah penduduk menurut kecamatan"), "wrong prose is dropped for a glossary-aware re-run");
+    }
+
+    #[test]
+    fn glossary_corrections_handle_multi_word_terms_and_agreeing_translations() {
+        let g = BpsGlossary::from_pairs(&[("luas wilayah".to_string(), "Total Area".to_string())]);
+        // The term fires as a whole phrase, the official English is missing: re-check.
+        let mut t = HashMap::new();
+        t.insert("Luas Wilayah (km\u{b2})".to_string(), "Region Size (km\u{b2})".to_string());
+        let (corrected, recheck) = apply_glossary_corrections(&g, &mut t);
+        assert_eq!((corrected, recheck.len()), (0, 1));
+        assert_eq!(recheck, vec!["Luas Wilayah (km\u{b2})".to_string()]);
+        assert!(!t.contains_key("Luas Wilayah (km\u{b2})"));
+        // Term present (case-insensitively) and the official English already there: no-op.
+        let mut t = HashMap::new();
+        t.insert("luas wilayah".to_string(), "Total Area".to_string());
+        let (corrected, recheck) = apply_glossary_corrections(&g, &mut t);
+        assert_eq!((corrected, recheck.len()), (0, 0));
+        assert_eq!(t.get("luas wilayah").map(String::as_str), Some("Total Area"));
+    }
+
+    #[test]
     fn malformed_or_missing_user_glossary_falls_back_to_the_bundled_terms() {
         let path = std::env::temp_dir().join(format!("dc-glossary-bad-{}.json", std::process::id()));
         std::fs::write(&path, "{ not json").expect("write");
@@ -1852,12 +2261,18 @@ mod tests {
     #[test]
     fn saved_glossary_round_trips_through_the_loader() {
         let path = std::env::temp_dir().join(format!("dc-glossary-saved-{}.json", std::process::id()));
-        let glossary = BpsGlossary::from_terms(&[("Kustom".to_string(), "Custom".to_string())]);
+        let mut glossary = BpsGlossary::from_pairs(&[("Kustom".to_string(), "Custom".to_string())]);
+        glossary.collect("Warungbambu");
+        glossary.set_ai("Warungbambu", "Warungbambu (AI draft)");
         glossary.save(&path).expect("save");
         let loaded = BpsGlossary::load(&path.to_string_lossy());
         let _ = std::fs::remove_file(&path);
         assert_eq!(alias_en("KUSTOM", &loaded), Some("Custom"));
-        assert_eq!(loaded.exact_mappings.len(), 1);
+        assert_eq!(loaded.terms.len(), 2);
+        let collected = loaded.terms.iter().find(|t| t.matches("Warungbambu")).expect("collected term kept");
+        assert_eq!(collected.ai, "Warungbambu (AI draft)", "the AI draft survives the round trip");
+        assert_eq!(collected.official, "", "an unofficial term is never applied");
+        assert_eq!(alias_en("Warungbambu", &loaded), None);
     }
 
     #[test]
@@ -1993,7 +2408,9 @@ mod tests {
 
     #[test]
     fn merge_terms_overrides_by_case_insensitive_key_and_appends_the_rest() {
-        let mut target = vec![("Jumlah".to_string(), "Total".to_string()), ("Desa".to_string(), "Village".to_string())];
+        let mut target = vec![GlossaryTerm::new("Jumlah"), GlossaryTerm::new("Desa")];
+        target[0].official = "Total".to_string();
+        target[1].official = "Village".to_string();
         let imported = vec![
             ("jumlah".to_string(), "Sum".to_string()),
             ("desa".to_string(), "Village".to_string()),
@@ -2002,13 +2419,15 @@ mod tests {
         let (added, updated) = merge_terms(&mut target, imported);
         assert_eq!((added, updated), (1, 1));
         assert_eq!(target.len(), 3);
-        assert_eq!(target[0].1, "Sum", "the imported English wins on the existing term");
-        assert_eq!(target[2], ("Wilayah".to_string(), "Territory".to_string()));
+        assert_eq!(target[0].official, "Sum", "the imported English wins on the existing term");
+        assert_eq!(target[2].id, "Wilayah");
+        assert_eq!(target[2].official, "Territory");
     }
 
     #[test]
     fn merge_terms_counts_nothing_when_the_sheet_matches() {
-        let mut target = vec![("Kecamatan".to_string(), "Subdistrict".to_string())];
+        let mut target = vec![GlossaryTerm::new("Kecamatan")];
+        target[0].official = "Subdistrict".to_string();
         let (added, updated) = merge_terms(&mut target, vec![("Kecamatan".to_string(), "Subdistrict".to_string())]);
         assert_eq!((added, updated), (0, 0));
         assert_eq!(target.len(), 1);
@@ -2023,8 +2442,9 @@ mod tests {
         let mut target = vec![];
         let (added, updated) = merge_terms(&mut target, imported);
         assert_eq!((added, updated), (23, 0));
+        let glossary = BpsGlossary { terms: target };
         let path = std::env::temp_dir().join(format!("dc-glossary-example-{}.json", std::process::id()));
-        BpsGlossary::from_terms(&target).save(&path).expect("save");
+        glossary.save(&path).expect("save");
         let g = BpsGlossary::load(&path.to_string_lossy());
         let _ = std::fs::remove_file(&path);
         assert_eq!(alias_en("Keterangan", &g), Some("Note"));

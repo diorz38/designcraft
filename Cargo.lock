@@ -1590,6 +1590,7 @@ version = "0.13.0-pubgen.0.7.8"
 dependencies = [
  "base64 0.22.1",
  "image",
+ "log",
  "serde_json",
  "thiserror 2.0.21",
  "ureq 2.12.1",

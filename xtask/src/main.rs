@@ -25,8 +25,8 @@ commands:
   wasm            cargo check --target wasm32-unknown-unknown for the wasm-safe crates (one call)
   test            workspace tests (cargo nextest when installed, else cargo test), then doctests
   i18n-report     list the interface strings each language shows in English (always passes)
-  ci              fmt --check, pdf-deps, clippy -D warnings, test, i18n-report, doctest, assets,
-                  layers, wasm (stops at first failure)
+  ci              fmt --check, pdf-deps, clippy -D warnings, test, pubgen clippy, i18n-report,
+                  doctest, assets, layers, wasm (stops at first failure)
   corpus [--download]
                   show where test corpora live; --download fetches PngSuite into corpus/pngsuite
   stats [--exact] count tests and lines per crate (--exact: ask the test harness via `-- --list`)
@@ -204,12 +204,14 @@ fn cmd_doctest() -> Result<(), String> {
     run(c, "cargo test --workspace --doc")
 }
 
-/// The Pubgen panel lives behind a cargo feature, so default builds never compile it: check it
-/// explicitly or a refactor of `panels/pubgen` can pass every gate and still not build.
+/// The Pubgen panel lives behind a cargo feature, so default builds never compile it: check *and
+/// lint* it explicitly. Compiling is not enough — a refactor of `panels/pubgen` can pass every gate
+/// and still not build — and the workspace clippy step above runs without the feature, so without
+/// this the whole panel escapes `-D warnings`.
 fn cmd_pubgen() -> Result<(), String> {
     let mut c = cargo();
-    c.args(["check", "-q", "-p", "designcraft-ui-egui", "--features", "pubgen"]);
-    run(c, "cargo check -p designcraft-ui-egui --features pubgen")
+    c.args(["clippy", "-q", "-p", "designcraft-ui-egui", "--features", "pubgen", "--all-targets", "--", "-D", "warnings"]);
+    run(c, "cargo clippy -p designcraft-ui-egui --features pubgen --all-targets -- -D warnings")
 }
 
 fn cmd_ci() -> Result<(), String> {
