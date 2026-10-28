@@ -135,6 +135,7 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
 
     let is_donut = matches!(spec.chart_type, ChartType::Donut);
     let is_hbar = matches!(spec.chart_type, ChartType::HorizontalBar);
+    let any_rotated = !is_hbar && !is_donut && categories.iter().any(|c| c.chars().count() > MAX_LABEL_CHARS);
     let left_reserve = if is_donut {
         0.0
     } else if is_hbar {
@@ -146,9 +147,12 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
         0.0
     } else if is_hbar {
         16.0
+    } else if any_rotated {
+        64.0
     } else {
-        AXIS_LABEL_H
+        AXIS_LABEL_H + 4.0
     };
+    let bottom_gap = if any_rotated { 16.0 } else { 4.0 };
 
     let legend_rows = if spec.show_legend {
         if is_donut {
@@ -166,7 +170,7 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
     let plot_x0 = margin.x0 + left_reserve;
     let plot_x1 = (margin.x1 - 12.0).max(plot_x0 + 10.0);
     let plot_y0 = margin.y0 + top_offset + 10.0;
-    let plot_y1 = (margin.y1 - bottom_axis_h - legend_h - 4.0).max(plot_y0 + 10.0);
+    let plot_y1 = (margin.y1 - bottom_axis_h - legend_h - bottom_gap).max(plot_y0 + 10.0);
     let plot_rect = [plot_x0, plot_y0, plot_x1, plot_y1];
 
     // Compute axis ceiling
@@ -242,7 +246,7 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
     if spec.show_legend {
         if is_donut {
             // For Donut charts, each slice represents a category!
-            let leg_y_start = margin.y1 - legend_h + 4.0;
+            let leg_y_start = (margin.y1 - legend_h + 4.0).max(plot_y1 + bottom_axis_h + bottom_gap);
             let total_cats = categories.len();
             let items_per_row = total_cats.clamp(1, 4);
             let col_w = (margin.x1 - margin.x0) / items_per_row as f64;
@@ -253,17 +257,13 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
                 let item_x = margin.x0 + col as f64 * col_w;
                 let item_y = leg_y_start + row as f64 * LEGEND_ROW_H;
 
-                let swatch_rect = [
-                    item_x,
-                    item_y + (LEGEND_ROW_H - LEGEND_SWATCH_H) / 2.0,
-                    item_x + LEGEND_SWATCH_W,
-                    item_y + (LEGEND_ROW_H + LEGEND_SWATCH_H) / 2.0,
-                ];
-                let label_rect = [item_x + LEGEND_SWATCH_W + 4.0, item_y, item_x + col_w - 4.0, item_y + LEGEND_ROW_H];
+                let swatch_y0 = item_y + (LEGEND_ROW_H - LEGEND_SWATCH_H) / 2.0;
+                let swatch_rect = [item_x, swatch_y0, item_x + LEGEND_SWATCH_W, swatch_y0 + LEGEND_SWATCH_H];
+                let label_rect = [item_x + LEGEND_SWATCH_W + 6.0, item_y, item_x + col_w - 4.0, item_y + LEGEND_ROW_H];
                 legend_items.push(LegendItem { swatch_rect, label_rect, label: cat_name.clone(), series_idx: cat_idx });
             }
         } else if !spec.series.is_empty() {
-            let leg_y_start = margin.y1 - legend_h + 4.0;
+            let leg_y_start = (margin.y1 - legend_h + 4.0).max(plot_y1 + bottom_axis_h + bottom_gap);
             let total_series = spec.series.len();
             let items_per_row = total_series.clamp(1, 3);
             let col_w = (margin.x1 - margin.x0) / items_per_row as f64;
@@ -274,13 +274,9 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
                 let item_x = margin.x0 + col as f64 * col_w;
                 let item_y = leg_y_start + row as f64 * LEGEND_ROW_H;
 
-                let swatch_rect = [
-                    item_x,
-                    item_y + (LEGEND_ROW_H - LEGEND_SWATCH_H) / 2.0,
-                    item_x + LEGEND_SWATCH_W,
-                    item_y + (LEGEND_ROW_H + LEGEND_SWATCH_H) / 2.0,
-                ];
-                let label_rect = [item_x + LEGEND_SWATCH_W + 4.0, item_y, item_x + col_w - 4.0, item_y + LEGEND_ROW_H];
+                let swatch_y0 = item_y + (LEGEND_ROW_H - LEGEND_SWATCH_H) / 2.0;
+                let swatch_rect = [item_x, swatch_y0, item_x + LEGEND_SWATCH_W, swatch_y0 + LEGEND_SWATCH_H];
+                let label_rect = [item_x + LEGEND_SWATCH_W + 6.0, item_y, item_x + col_w - 4.0, item_y + LEGEND_ROW_H];
                 let label = series.display_label(bilingual);
                 legend_items.push(LegendItem { swatch_rect, label_rect, label, series_idx: s_idx });
             }
@@ -851,5 +847,28 @@ mod tests {
         assert_eq!(layout.x_tick_labels.len(), 2);
         assert!(!layout.x_tick_labels[0].rotated);
         assert!(layout.x_tick_labels[1].rotated);
+    }
+
+    #[test]
+    fn rotated_labels_increase_clearance_to_legend() {
+        let spec = sample_spec(ChartType::BarClustered);
+        let categories = vec!["Short".into(), "A Very Long Category Name".into()];
+        let values = vec![vec![10.0, 20.0]];
+        let margin = sample_margin();
+
+        let layout = compute_layout(&spec, &categories, &values, margin, false);
+
+        assert!(!layout.legend_items.is_empty());
+        let first_leg = &layout.legend_items[0];
+        assert!(
+            first_leg.swatch_rect[1] >= layout.plot_rect[3] + 80.0,
+            "Legend item top ({}) must be at least 80pt below plot baseline ({}) for rotated labels",
+            first_leg.swatch_rect[1],
+            layout.plot_rect[3]
+        );
+
+        let swatch_cy = (first_leg.swatch_rect[1] + first_leg.swatch_rect[3]) / 2.0;
+        let label_cy = (first_leg.label_rect[1] + first_leg.label_rect[3]) / 2.0;
+        assert!((swatch_cy - label_cy).abs() < 1e-4, "Legend swatch center y ({swatch_cy}) must match label center y ({label_cy})");
     }
 }

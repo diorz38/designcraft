@@ -294,6 +294,14 @@ pub fn emit_chart(
         frame_ids.push(sfid);
 
         let lfid = emit_text(app, spread_idx, leg.label_rect, &leg.label, 8.0, false, "left", Some("#333333"))?;
+        let _ = app.session.edit(|doc, _| {
+            if let Some(it) = doc.item_mut(designcraft_doc::ItemId(lfid))
+                && let designcraft_doc::Content::Text(tf) = &mut it.content
+            {
+                tf.options.vertical_justification = designcraft_doc::VerticalJustification::Center;
+            }
+            Ok(Value::Null)
+        });
         if bilingual && leg.label.contains(" / ") {
             // Italicize the English portion of the legend label
             let slash_idx = leg.label.find(" / ").unwrap_or(0);
@@ -455,5 +463,19 @@ mod tests {
         let _ = emit_chart(&mut app, 0, &spec, &layout, &[], true).unwrap();
         let active = app.session.active().unwrap();
         assert!(!active.doc.spreads[0].items.is_empty());
+
+        let mut found_center_vj = false;
+        for it in &active.doc.spreads[0].items {
+            if let designcraft_doc::Content::Group { items } = &it.content {
+                for kid in items {
+                    if let designcraft_doc::Content::Text(tf) = &kid.content {
+                        if tf.options.vertical_justification == designcraft_doc::VerticalJustification::Center {
+                            found_center_vj = true;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(found_center_vj, "Legend text frame inside group must have VerticalJustification::Center");
     }
 }
