@@ -289,6 +289,7 @@ pub fn pubgen_menu(app: &mut DesignApp, ui: &mut egui::Ui) {
                     {
                         pubgen::with_state(ui.ctx(), |st| {
                             st.dialog_utils_open = true;
+                            st.show_table_range_popup = true;
                         });
                         ui.close();
                     }
@@ -308,13 +309,73 @@ pub fn pubgen_menu(app: &mut DesignApp, ui: &mut egui::Ui) {
                 ui.close();
             }
 
-            // 8. AI Translation Setup…
-            if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&lang, "AI Translation Setup…"))).clicked() {
-                pubgen::with_state(ui.ctx(), |st| {
-                    st.ai_dialog = Some(pubgen::ai::AiSetupDialog::open(app, st));
+            // 8. AI Translate submenu
+            crate::menus::menu_button(ui, crate::rtl::widget(ui, crate::i18n::tr(&lang, "AI Translate")), |ui| {
+                ui.with_layout(egui::Layout::top_down_justified(if rtl { egui::Align::Max } else { egui::Align::Min }), |ui| {
+                    ui.set_min_width(260.0);
+
+                    let backend_ready = pubgen::ai::backend_from_prefs(app).is_some();
+                    let is_bilingual = pubgen::with_state(ui.ctx(), |st| st.bilingual_output);
+                    let cur_page = app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app));
+                    let review_target = cur_page.and_then(|p| pubgen::ai::detect_page_target(app, p));
+                    let table_target = cur_page.and_then(|p| pubgen::ai::detect_table_page_target(app, p));
+                    let is_review = review_target.is_some();
+                    let is_table = table_target.is_some();
+                    let can_page_ai = has_doc && (is_review || is_table) && backend_ready && is_bilingual;
+
+                    // Submenu item 1: Translate Selected Page
+                    let page_label = if is_table {
+                        crate::i18n::tr(&lang, "Translate Table on this Page")
+                    } else if is_review {
+                        crate::i18n::tr(&lang, "Translate Review on this Page")
+                    } else {
+                        crate::i18n::tr(&lang, "Translate Selected Page")
+                    };
+                    if ui.add_enabled(can_page_ai, egui::Button::new(crate::rtl::widget(ui, page_label))).clicked() {
+                        pubgen::with_state(ui.ctx(), |st| {
+                            pubgen::ai::execute_translate_selected_page(app, st, ui.ctx().clone());
+                        });
+                        ui.close();
+                    }
+
+                    // Submenu item 2: Translate Table Pages…
+                    let total_pages = app.session.active().map(|s| s.doc.page_count()).unwrap_or(0);
+                    let can_batch_tables = has_doc && total_pages > 0;
+                    if ui
+                        .add_enabled(can_batch_tables, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(&lang, "Translate Table Pages…"))))
+                        .clicked()
+                    {
+                        pubgen::with_state(ui.ctx(), |st| {
+                            st.show_table_range_popup = true;
+                            if st.ai_table_range_to == 0 || st.ai_table_range_to > total_pages {
+                                st.ai_table_range_to = total_pages.max(1);
+                            }
+                        });
+                        ui.close();
+                    }
+
+                    // Submenu item 3: Fix Terms with Glossary
+                    let can_fix =
+                        pubgen::with_state(ui.ctx(), |st| (is_review || is_table) && !st.translations.is_empty() && !st.glossary.is_empty());
+                    if ui.add_enabled(can_fix, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(&lang, "Fix Terms with Glossary")))).clicked()
+                    {
+                        pubgen::with_state(ui.ctx(), |st| {
+                            pubgen::ai::execute_fix_terms(app, st);
+                        });
+                        ui.close();
+                    }
+
+                    ui.separator();
+
+                    // Submenu item 4: Setup…
+                    if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&lang, "Setup…"))).clicked() {
+                        pubgen::with_state(ui.ctx(), |st| {
+                            st.ai_dialog = Some(pubgen::ai::AiSetupDialog::open(app, st));
+                        });
+                        ui.close();
+                    }
                 });
-                ui.close();
-            }
+            });
 
             // 9. Publication Compiler (native only)
             #[cfg(not(target_arch = "wasm32"))]

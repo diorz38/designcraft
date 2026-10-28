@@ -2075,6 +2075,124 @@ pub fn apply_table_page_result(app: &mut DesignApp, st: &PubgenState, target: &T
     total_replaced
 }
 
+/// Translates the currently active/selected page in place using AI or cached translations.
+/// Automatically detects whether the page contains an RXX review chapter or an XX_XX data table.
+pub fn execute_translate_selected_page(app: &mut DesignApp, st: &mut PubgenState, ctx: egui::Context) {
+    let page_idx = app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app));
+    let Some(page_idx) = page_idx else {
+        st.header_status = Some(("No active page selected.".into(), false));
+        return;
+    };
+    let review_target = detect_page_target(app, page_idx);
+    let table_target = detect_table_page_target(app, page_idx);
+
+    if let Some(target) = table_target {
+        let mut units = collect_table_page_units(app, &target, &st.glossary);
+        units.retain(|(k, _)| !st.translations.contains_key(k));
+        if let Some((provider, key, model)) = backend_from_prefs(app) {
+            if !units.is_empty() {
+                st.ai_table_target = Some(target);
+                let terms = st.glossary.prompt_pairs();
+                st.translate_job = Some(TranslateJob::spawn(&provider, &key, &model, units, terms, ctx));
+                st.header_status = Some(("Translating table page with AI…".into(), true));
+            } else {
+                apply_table_page_result(app, st, &target);
+                st.header_status = Some(("Table page translated from cache.".into(), true));
+            }
+        } else if units.is_empty() {
+            apply_table_page_result(app, st, &target);
+            st.header_status = Some(("Table page translated from cache.".into(), true));
+        } else {
+            st.header_status = Some(("AI translation: no backend configured — open Setup to configure API key.".into(), false));
+        }
+    } else if let Some(target) = review_target {
+        let mut units = collect_page_units(app, &target);
+        units.retain(|(k, _)| !st.translations.contains_key(k));
+        if let Some((provider, key, model)) = backend_from_prefs(app) {
+            st.ai_page_target = Some(target.clone());
+            let terms = st.glossary.prompt_pairs();
+            st.translate_job = Some(TranslateJob::spawn(&provider, &key, &model, units, terms, ctx));
+            st.header_status = Some(("Translating review page with AI…".into(), true));
+        } else if units.is_empty() {
+            apply_page_result(app, st, &target);
+            st.header_status = Some(("Review page translated from cache.".into(), true));
+        } else {
+            st.header_status = Some(("AI translation: no backend configured — open Setup to configure API key.".into(), false));
+        }
+    } else {
+        st.header_status = Some(("Selected page is not a recognized Review or Table page.".into(), false));
+    }
+}
+
+/// Batch translates all detected table pages within the specified page range `[from..=to_inclusive]` (0-indexed).
+pub fn execute_translate_table_range(app: &mut DesignApp, st: &mut PubgenState, from: usize, to_inclusive: usize, ctx: egui::Context) {
+    let mut targets = Vec::new();
+    for p in from..=to_inclusive {
+        if let Some(t) = detect_table_page_target(app, p) {
+            targets.push(t);
+        }
+    }
+    if targets.is_empty() {
+        st.header_status = Some(("No table pages found in selected range.".into(), false));
+        return;
+    }
+    let mut all_units = Vec::new();
+    for t in &targets {
+        all_units.extend(collect_table_page_units(app, t, &st.glossary));
+    }
+    all_units.retain(|(k, _)| !st.translations.contains_key(k));
+    all_units.sort_by(|a, b| a.0.cmp(&b.0));
+    all_units.dedup_by(|a, b| a.0 == b.0);
+
+    if let Some((provider, key, model)) = backend_from_prefs(app) {
+        if !all_units.is_empty() {
+            st.ai_table_targets_batch = targets;
+            let terms = st.glossary.prompt_pairs();
+            st.translate_job = Some(TranslateJob::spawn(&provider, &key, &model, all_units, terms, ctx));
+            st.header_status = Some(("Translating table pages with AI…".into(), true));
+        } else {
+            let mut count = 0;
+            for t in &targets {
+                count += apply_table_page_result(app, st, t);
+            }
+            st.header_status = Some((format!("{} table item(s) across {} page(s) translated from cache.", count, targets.len()), true));
+        }
+    } else if all_units.is_empty() {
+        let mut count = 0;
+        for t in &targets {
+            count += apply_table_page_result(app, st, t);
+        }
+        st.header_status = Some((format!("{} table item(s) across {} page(s) translated from cache.", count, targets.len()), true));
+    } else {
+        st.header_status = Some(("AI translation: no backend configured — open Setup to configure API key.".into(), false));
+    }
+}
+
+/// Applies glossary terms to existing translations on the active review or table page.
+pub fn execute_fix_terms(app: &mut DesignApp, st: &mut PubgenState) {
+    let page_idx = app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app));
+    let Some(page_idx) = page_idx else {
+        return;
+    };
+    let review_target = detect_page_target(app, page_idx);
+    let table_target = detect_table_page_target(app, page_idx);
+    let (corrected, recheck) = apply_glossary_corrections(&st.glossary, &mut st.translations);
+    if let Some(target) = table_target.as_ref() {
+        apply_table_page_result(app, st, target);
+    } else if let Some(target) = review_target.as_ref() {
+        apply_page_result(app, st, target);
+    }
+    st.header_status = Some(if recheck.is_empty() {
+        if corrected == 0 {
+            ("The glossary already agrees with this page's translations.".into(), true)
+        } else {
+            (format!("Glossary applied: {corrected} term(s) corrected on the page."), true)
+        }
+    } else {
+        (format!("Glossary applied: {corrected} term(s) corrected; {} text(s) marked for re-translation.", recheck.len()), true)
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
