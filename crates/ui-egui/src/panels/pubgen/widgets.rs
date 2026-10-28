@@ -738,6 +738,8 @@ pub(crate) fn card2_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenSta
 
 #[allow(dead_code)]
 pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    let max_w = ui.available_width();
+    ui.set_max_width(max_w);
     // 1. Template Style with Hover Thumbnail Preview
     ui.horizontal(|ui| {
         ui.label(RichText::new("Style:").size(11.0).color(t.text));

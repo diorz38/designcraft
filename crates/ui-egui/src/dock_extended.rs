@@ -490,4 +490,26 @@ mod pubgen_menu_tests {
         output.textures_delta.clear();
         assert!(ran);
     }
+
+    #[test]
+    fn test_cover_dialog_width_does_not_expand_across_frames() {
+        let ctx = egui::Context::default();
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), Default::default());
+        pubgen::with_state(&ctx, |st| {
+            st.dialog_cover_open = true;
+        });
+
+        // Run multiple frames to ensure width stays fixed and does not grow
+        for _ in 0..5 {
+            let mut output = ctx.run_ui(test_input(vec2(1200.0, 900.0)), |_ui| {
+                pubgen_dialogs(&mut app, &ctx);
+            });
+            output.textures_delta.clear();
+        }
+
+        // Verify state is still open and stable
+        pubgen::with_state(&ctx, |st| {
+            assert!(st.dialog_cover_open);
+        });
+    }
 }

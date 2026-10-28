@@ -32,11 +32,20 @@ fn pubgen_dialog_modal(
         .open(&mut is_open)
         .collapsible(false)
         .resizable(false)
+        .min_width(default_width)
+        .max_width(default_width)
         .default_width(default_width)
         .pivot(Align2::CENTER_CENTER)
         .default_pos(ctx.content_rect().center())
         .show(ctx, |ui| {
-            egui::ScrollArea::vertical().max_height(scroll_h).auto_shrink([false, false]).show(ui, add_contents);
+            ui.set_width(default_width);
+            ui.set_max_width(default_width);
+            let content_w = default_width - 24.0;
+            egui::ScrollArea::vertical().max_width(default_width).max_height(scroll_h).auto_shrink([false, false]).show(ui, |ui| {
+                ui.set_width(content_w);
+                ui.set_max_width(content_w);
+                add_contents(ui);
+            });
 
             ui.separator();
             ui.horizontal(|ui| {
