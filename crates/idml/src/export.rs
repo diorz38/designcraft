@@ -34,9 +34,29 @@ pub(crate) use item::path_to_uri;
 
 const PKG_NS: &str = "http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging";
 const NO_PARA_ID: &str = "ParagraphStyle/$ID/[No paragraph style]";
-const TOC_STYLE_ID: &str = "TOCStyle/Table of Contents";
-const TOC_STYLE_NAME: &str = "Table of Contents";
+pub(crate) const TOC_STYLE_NAME: &str = "Table of Contents";
 const NO_CHAR_ID: &str = "CharacterStyle/$ID/[No character style]";
+
+pub(crate) fn toc_style_name(t: &designcraft_doc::Toc, tocs: &[designcraft_doc::Toc]) -> String {
+    let base = if t.title.is_empty() { TOC_STYLE_NAME } else { &t.title };
+    let matching_before = tocs
+        .iter()
+        .take_while(|other| other.story != t.story)
+        .filter(|other| {
+            let obase = if other.title.is_empty() { TOC_STYLE_NAME } else { &other.title };
+            obase == base
+        })
+        .count();
+    if matching_before == 0 {
+        base.to_string()
+    } else {
+        format!("{base} {}", matching_before + 1)
+    }
+}
+
+pub(crate) fn toc_style_id(t: &designcraft_doc::Toc, tocs: &[designcraft_doc::Toc]) -> String {
+    format!("TOCStyle/{}", escape_id(&toc_style_name(t, tocs)))
+}
 
 /// Export options.
 #[derive(Clone, Debug)]

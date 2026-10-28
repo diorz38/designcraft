@@ -304,48 +304,67 @@ impl<'r> Importer<'r> {
         self.footnote_options = o;
     }
 
-    /// The table of contents: the TOC style a story is generated from (`AppliedTOCStyle`), with
-    /// its entries. Styles the document doesn't have fall back to the generated TOC styles.
-    pub(super) fn toc_of(&self, top: &[El]) -> Option<designcraft_doc::Toc> {
+    /// The tables of contents: the TOC styles stories are generated from (`AppliedTOCStyle`), with
+    /// their entries. Styles the document doesn't have fall back to the generated TOC styles.
+    pub(super) fn tocs_of(&self, top: &[El]) -> Vec<designcraft_doc::Toc> {
         use designcraft_doc::{TocEntry, TocPageNumber};
-        let (ts, story) = top.iter().filter(|e| e.local() == "TOCStyle").find_map(|ts| {
-            let id = ts.get("Self")?;
-            let story = top.iter().find(|e| e.local() == "Story" && e.get("AppliedTOCStyle") == Some(id))?;
-            Some((ts, *self.story_ids.get(story.get("Self")?)?))
-        })?;
         let known = |r: Option<&str>| r.map(|r| self.para_style_ref(r)).filter(|n| self.styles.para(n).is_some());
         // Character styles the document has; [None] is stored as no style.
         let known_chars = |r: Option<&str>| {
             r.map(|r| self.char_style_ref(r)).filter(|n| n != designcraft_doc::NO_CHAR_STYLE && self.styles.char_style(n).is_some())
         };
-        let entries: Vec<TocEntry> = ts
-            .elements()
-            .filter(|e| e.local() == "TOCStyleEntry")
-            .filter_map(|e| {
-                let style = names::style_name_in(PARA_BUILTINS, e.get("Name")?);
-                if style.is_empty() || style.chars().count() > 256 {
-                    return None;
-                }
-                let level = e.get("Level").and_then(|l| l.trim().parse::<u8>().ok()).unwrap_or(1).clamp(1, 9);
-                let page_number = match e.get("PageNumberPosition") {
-                    Some("BeforeEntry") => TocPageNumber::Before,
-                    Some("NoPageNumber") => TocPageNumber::None,
-                    _ => TocPageNumber::After,
-                };
-                let separator = e.get("Separator").map(crate::names::toc_separator_in).filter(|s| s != "\t" && s.chars().count() <= 64);
-                let entry_style = known(e.get("FormatStyle")).filter(|n| *n != format!("TOC Level {level}"));
-                let page_number_style = known_chars(e.get("PageNumberStyle"));
-                let separator_style = known_chars(e.get("SeparatorStyle"));
-                let sort = e.get("Sort").is_some_and(|v| v.trim() == "true");
-                Some(TocEntry { style, level, entry_style, page_number, separator, page_number_style, separator_style, sort })
-            })
-            .take(64)
-            .collect();
-        if entries.is_empty() {
-            return None;
+        let mut tocs = Vec::new();
+        for ts in top.iter().filter(|e| e.local() == "TOCStyle") {
+            let Some(id) = ts.get("Self") else { continue };
+            let Some(story_el) = top.iter().find(|e| e.local() == "Story" && e.get("AppliedTOCStyle") == Some(id)) else { continue };
+            let Some(&story) = story_el.get("Self").and_then(|s| self.story_ids.get(s)) else { continue };
+
+            let entries: Vec<TocEntry> = ts
+                .elements()
+                .filter(|e| e.local() == "TOCStyleEntry")
+                .filter_map(|e| {
+                    let style = names::style_name_in(PARA_BUILTINS, e.get("Name")?);
+                    if style.is_empty() || style.chars().count() > 256 {
+                        return None;
+                    }
+                    let level = e.get("Level").and_then(|l| l.trim().parse::<u8>().ok()).unwrap_or(1).clamp(1, 9);
+                    let page_number = match e.get("PageNumberPosition") {
+                        Some("BeforeEntry") => TocPageNumber::Before,
+                        Some("NoPageNumber") => TocPageNumber::None,
+                        _ => TocPageNumber::After,
+                    };
+                    let separator = e.get("Separator").map(crate::names::toc_separator_in).filter(|s| s != "\t" && s.chars().count() <= 64);
+                    let entry_style = known(e.get("FormatStyle")).filter(|n| *n != format!("TOC Level {level}"));
+                    let page_number_style = known_chars(e.get("PageNumberStyle"));
+                    let separator_style = known_chars(e.get("SeparatorStyle"));
+                    let sort = e.get("Sort").is_some_and(|v| v.trim() == "true");
+                    Some(TocEntry {
+                        style,
+                        level,
+                        entry_style,
+                        page_number,
+                        separator,
+                        page_number_style,
+                        separator_style,
+                        sort,
+                        page_title: Vec::new(),
+                        chapter_number: false,
+                        pair_columns: false,
+                        pair_separator: None,
+                    })
+                })
+                .take(64)
+                .collect();
+            if entries.is_empty() {
+                continue;
+            }
+            let title: String = ts.get("Title").unwrap_or("").chars().filter(|c| !matches!(c, '\n' | '\r' | '\u{2029}')).take(1024).collect();
+            let title_style = known(ts.get("TitleStyle")).filter(|n| n != "TOC Title");
+            tocs.push(designcraft_doc::Toc { story, title, entries, page_numbers: true, title_style });
+            if tocs.len() >= designcraft_doc::MAX_TOCS {
+                break;
+            }
         }
-        let title: String = ts.get("Title").unwrap_or("").chars().filter(|c| !matches!(c, '\n' | '\r' | '\u{2029}')).take(1024).collect();
-        let title_style = known(ts.get("TitleStyle")).filter(|n| n != "TOC Title");
-        Some(designcraft_doc::Toc { story, title, entries, page_numbers: true, title_style })
+        tocs
     }
 }

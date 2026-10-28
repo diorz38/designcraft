@@ -1490,7 +1490,7 @@ fn toc_dialog_adds_a_style_and_ok_makes_the_table_of_contents() {
     click_dialog(&mut app, &ctx, screen, visible_label(&labels, screen, "OK").center());
     assert!(app.ui.dialog.is_none());
     let d = &app.session.doc().unwrap().doc;
-    let toc = d.toc.clone().unwrap();
+    let toc = d.tocs.last().cloned().unwrap();
     assert_eq!(toc.entries, vec![designcraft_doc::TocEntry::new("Headline", 1)]);
     let text = &d.story(toc.story).unwrap().text;
     assert!(text.starts_with("Contents\n") && text.contains("\nNotes on the Grid\t"), "{text}");
@@ -2733,7 +2733,7 @@ fn toc_dialog_keeps_the_character_styles_and_sorting_of_its_entries() {
     app.session.execute("layout.pages.insert", &json!({"count": 1})).unwrap();
     let entries = json!([{"style": "Head", "pageNumberStyle": "Number", "separatorStyle": "Dots", "sort": true}]);
     app.session.execute("toc.generate", &json!({"page": 2, "entries": entries})).unwrap();
-    let before = app.session.active().unwrap().doc.toc.clone().unwrap();
+    let before = app.session.active().unwrap().doc.tocs.last().cloned().unwrap();
     // The dialog shows the options, and OK (Replace Existing) writes them back unchanged.
     open_toc(&mut app);
     let d = app.ui.dialog.as_ref().unwrap();
@@ -2748,7 +2748,7 @@ fn toc_dialog_keeps_the_character_styles_and_sorting_of_its_entries() {
     );
     confirm(&mut app).expect("OK regenerates the table of contents");
     let st = app.session.active().unwrap();
-    assert_eq!(st.doc.toc.as_ref().unwrap().entries, before.entries);
+    assert_eq!(st.doc.tocs.last().unwrap().entries, before.entries);
     // [None] and unsorted are left out of the params.
     let mut d = Dialog::new(TOC, json!({"included": [{"style": "Head", "level": 1, "separator": "^t"}]}));
     d.fields.insert("replace".into(), json!(true));

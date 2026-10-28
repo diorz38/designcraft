@@ -207,7 +207,7 @@ struct Importer<'r> {
     modified: Option<i64>,
     /// Tab lists [`TabStop::sanitized_list`] had to repair (an import warning).
     repaired_tab_lists: usize,
-    toc: Option<designcraft_doc::Toc>,
+    tocs: Vec<designcraft_doc::Toc>,
 }
 
 impl<'r> Importer<'r> {
@@ -275,7 +275,7 @@ impl<'r> Importer<'r> {
             created: None,
             modified: None,
             repaired_tab_lists: 0,
-            toc: None,
+            tocs: Vec::new(),
         }
     }
 
@@ -463,7 +463,7 @@ impl<'r> Importer<'r> {
             let story = self.story(id, e);
             self.stories.insert(id, story);
         }
-        self.toc = self.toc_of(top);
+        self.tocs = self.tocs_of(top);
         // Topic cross-references (See / See also) become markers at the start of the first story
         // with text.
         if !self.index_xrefs.is_empty()
@@ -571,10 +571,11 @@ impl<'r> Importer<'r> {
             bookmarks: vec![],
             user_words: vec![],
             hyphenation_exceptions: vec![],
-            toc: self.toc.take(),
+            tocs: std::mem::take(&mut self.tocs),
             text_variables: self.text_vars.take().unwrap_or_else(designcraft_doc::vars::defaults),
             footnote_options: std::mem::take(&mut self.footnote_options),
             xref_formats: std::mem::take(&mut self.xref_formats),
+            header_footer: None,
             index: None,
             created: self.created.unwrap_or_else(designcraft_doc::vars::now),
             modified: self.modified.unwrap_or(0),

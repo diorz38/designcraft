@@ -163,10 +163,10 @@ impl<'a> Ex<'a> {
     // ---------- stories ----------
 
     pub(super) fn story_el(&mut self, s: &Story) -> El {
-        let toc = self.d.toc.as_ref().is_some_and(|t| t.story == s.id);
+        let applied_toc_style = self.d.tocs.iter().find(|t| t.story == s.id).map(|t| toc_style_id(t, &self.d.tocs));
         let mut el = El::new("Story")
             .attr("Self", uid(s.id.0))
-            .attr("AppliedTOCStyle", if toc { TOC_STYLE_ID } else { "n" })
+            .attr("AppliedTOCStyle", applied_toc_style.as_deref().unwrap_or("n"))
             .attr("TrackChanges", "false")
             .attr("StoryTitle", "$ID/");
         el.push(

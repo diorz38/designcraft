@@ -35,6 +35,8 @@ impl Dialog {
             "epubExport" => json!({"split": false, "mode": "style", "style": designcraft_doc::BASIC_PARAGRAPH}),
             "qrCode" => json!({"type": "url", "content": "https://", "color": "[Black]"}),
             "insertTable" => json!({"bodyRows": 4, "columns": 4, "headerRows": 0, "footerRows": 0}),
+            "tableOptions" => json!({"inTable": false, "headerRows": "0", "footerRows": "0", "repeatHeader": true, "repeatFooter": false}),
+            "headerFooter" => json!({}),
             "insertXref" => json!({"linkTo": "paragraph", "style": "", "target": "", "format": ""}),
             "findChange" => json!({"find": "", "change": "", "grep": false, "caseSensitive": false, "wholeWord": false, "scope": "document"}),
             "documentSetup" => json!({}),
@@ -112,7 +114,7 @@ impl Dialog {
         }
     }
     /// A measure in points ("6", "6 pt", "0p6", "2 mm").
-    fn pt(&self, k: &str) -> Option<f64> {
+    pub(crate) fn pt(&self, k: &str) -> Option<f64> {
         match self.fields.get(k) {
             Some(Value::Number(n)) => n.as_f64(),
             Some(Value::String(s)) => parse_measure(s, Unit::Points).ok(),
@@ -2205,6 +2207,8 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         "frameSize" => crate::i18n::tr(&app.ui.language, "Rectangle"),
         "goToPage" => crate::i18n::tr(&app.ui.language, "Go to Page"),
         "insertTable" => crate::i18n::tr(&app.ui.language, "Create Table"),
+        "tableOptions" => crate::i18n::tr(&app.ui.language, "Table Options"),
+        "headerFooter" => crate::i18n::tr(&app.ui.language, "Header/Footer"),
         "cellOptions" => crate::i18n::tr(&app.ui.language, "Cell Options"),
         "createGuides" => crate::i18n::tr(&app.ui.language, "Create Guides"),
         "marginsAndColumns" => crate::i18n::tr(&app.ui.language, "Margins and Columns"),
@@ -2303,7 +2307,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         // forms remain reachable at large UI scales, without shrinking their text.
         // Numbering & Section Options keeps OK and Cancel in a column beside the options, as
         // InDesign does; other dialogs have them in a footer.
-        let side_actions = d.id == "numberingSection";
+        let side_actions = matches!(d.id.as_str(), "numberingSection" | "headerFooter");
         let footer_height = if side_actions {
             0.0
         } else {
@@ -2334,7 +2338,12 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         }
         // A centred window only offers its body last frame's height: let this one grow to its
         // options' height (the screen still caps it).
-        let min_body = if side_actions { body_height.min(crate::section_options::BODY_H) } else { 1.0 };
+        let min_body = if side_actions {
+            let h = if d.id == "headerFooter" { crate::header_footer::BODY_H } else { crate::section_options::BODY_H };
+            body_height.min(h)
+        } else {
+            1.0
+        };
         egui::ScrollArea::both()
             .id_salt(("dialog_body", &d.id))
             .min_scrolled_width(1.0)
@@ -2978,6 +2987,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                             ui.end_row();
                         });
                     }
+                    "tableOptions" => table_options_dialog(app, ui, &mut d),
                     "cellOptions" => cell_options(app, ui, &mut d),
                     "createGuides" => create_guides_dialog(app, ui, &mut d),
                     "marginsAndColumns" => margins_and_columns_dialog(app, ui, &mut d),
@@ -2995,6 +3005,7 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                     }
                     "fileInfo" => file_info_dialog(app, ui, &mut d),
                     "numberingSection" => crate::section_options::body(app, ui, &mut d),
+                    "headerFooter" => crate::header_footer::body(app, ui, &mut d),
                     "pdfExport" => pdf_export(app, ui, &mut d),
                     "epubExport" => epub_export(app, ui, &mut d),
                     "alert" => {
@@ -3079,6 +3090,65 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
         Some(false) => cancel(app),
         None => {}
     }
+}
+
+/// Table ▸ Table Options… for the table under the insertion point.
+pub fn open_table_options(app: &mut DesignApp) -> Result<Value, String> {
+    let got = app.session.execute("table.get", &json!({})).ok();
+    let (in_table, header_rows, footer_rows, repeat_header, repeat_footer) = if let Some(t) = got {
+        let hr = t.get("headerRows").and_then(Value::as_u64).unwrap_or(0);
+        let fr = t.get("footerRows").and_then(Value::as_u64).unwrap_or(0);
+        let opts = t.get("options");
+        let rep_h = opts.and_then(|o| o.get("repeatHeader")).and_then(Value::as_bool).unwrap_or(true);
+        let rep_f = opts.and_then(|o| o.get("repeatFooter")).and_then(Value::as_bool).unwrap_or(false);
+        (true, hr, fr, rep_h, rep_f)
+    } else {
+        (false, 0, 0, true, false)
+    };
+
+    let fields = json!({
+        "inTable": in_table,
+        "headerRows": header_rows.to_string(),
+        "footerRows": footer_rows.to_string(),
+        "repeatHeader": repeat_header,
+        "repeatFooter": repeat_footer,
+    });
+    app.ui.dialog = Some(Dialog::new("tableOptions", fields));
+    Ok(Value::Null)
+}
+
+fn table_options_dialog(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
+    let lang = &app.ui.language;
+    if !d.b("inTable") {
+        ui.add_space(8.0);
+        crate::rtl::label(
+            ui,
+            egui::RichText::new(crate::i18n::tr(lang, "Place insertion point in a table to edit Table Options."))
+                .color(crate::theme::Tokens::get(ui.ctx()).text_dim),
+        );
+        ui.add_space(8.0);
+        return;
+    }
+
+    crate::rtl::label(ui, egui::RichText::new(crate::i18n::tr(lang, "Headers and Footers")).font(semibold(12.0)));
+    ui.add_space(6.0);
+    egui::Grid::new("tbl_opts_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+        crate::rtl::label(ui, crate::i18n::tr(lang, "Header Rows:"));
+        text_field(ui, d, "headerRows", 60.0);
+        ui.end_row();
+
+        crate::rtl::label(ui, "");
+        check(ui, d, "repeatHeader", crate::i18n::tr(lang, "Repeat Header Rows"));
+        ui.end_row();
+
+        crate::rtl::label(ui, crate::i18n::tr(lang, "Footer Rows:"));
+        text_field(ui, d, "footerRows", 60.0);
+        ui.end_row();
+
+        crate::rtl::label(ui, "");
+        check(ui, d, "repeatFooter", crate::i18n::tr(lang, "Repeat Footer Rows"));
+        ui.end_row();
+    });
 }
 
 /// Cell Options keys (`table.getCellStroke` names) and whether each belongs to the stroke.
@@ -3303,10 +3373,36 @@ pub fn confirm(app: &mut DesignApp) -> Result<Value, String> {
             json!({"rows": d.n("bodyRows").unwrap_or(4.0).max(1.0) as u64, "cols": d.n("columns").unwrap_or(4.0).max(1.0) as u64,
                 "headerRows": d.n("headerRows").unwrap_or(0.0).max(0.0) as u64, "footerRows": d.n("footerRows").unwrap_or(0.0).max(0.0) as u64}),
         ),
+        "tableOptions" => {
+            if !d.b("inTable") {
+                return Ok(Value::Null);
+            }
+            let hr = d.n("headerRows").unwrap_or(0.0).max(0.0) as u64;
+            let fr = d.n("footerRows").unwrap_or(0.0).max(0.0) as u64;
+            app.run(
+                "table.options",
+                json!({
+                    "headerRows": hr,
+                    "footerRows": fr,
+                    "repeatHeader": d.b("repeatHeader"),
+                    "repeatFooter": d.b("repeatFooter"),
+                }),
+            )
+        }
         "numberingSection" => {
             // On an error the dialog stays open to be corrected.
             let r = crate::section_options::confirm(app, &d);
             if let Err(e) = &r {
+                app.status(e.clone());
+                app.ui.dialog = Some(d);
+            }
+            r
+        }
+        "headerFooter" => {
+            let r = crate::header_footer::confirm(app, &d);
+            if let Err(e) = &r {
+                let mut d = d;
+                d.fields.insert("status".into(), json!(e));
                 app.status(e.clone());
                 app.ui.dialog = Some(d);
             }
@@ -6730,7 +6826,7 @@ pub fn open_toc(app: &mut DesignApp) {
     let d = &st.doc;
     let styles: Vec<&str> = d.styles.paragraph.iter().map(|p| p.name.as_str()).filter(|n| *n != designcraft_doc::NO_PARA_STYLE).collect();
     let char_styles: Vec<&str> = d.styles.character.iter().map(|c| c.name.as_str()).filter(|n| *n != designcraft_doc::NO_CHAR_STYLE).collect();
-    let toc = d.toc.as_ref().filter(|t| d.story(t.story).is_some());
+    let toc = d.tocs.iter().filter(|t| d.story(t.story).is_some()).last();
     let rows: Vec<TocRow> = toc
         .map(|t| {
             t.entries
