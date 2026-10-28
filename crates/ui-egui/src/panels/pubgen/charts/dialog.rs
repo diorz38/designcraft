@@ -191,7 +191,13 @@ impl ChartDialog {
             label_en: self.series_1_label_en.trim().to_string(),
         });
 
-        if self.chart_type != ChartType::Donut && self.series_2_enabled && !self.series_2_col.trim().is_empty() {
+        let max_series = match self.chart_type {
+            ChartType::Donut | ChartType::Gauge => 1,
+            ChartType::PopulationPyramid => 2,
+            _ => 3,
+        };
+
+        if max_series >= 2 && self.series_2_enabled && !self.series_2_col.trim().is_empty() {
             series.push(SeriesSpec {
                 col: self.series_2_col.trim().to_uppercase(),
                 label_id: self.series_2_label_id.trim().to_string(),
@@ -199,7 +205,7 @@ impl ChartDialog {
             });
         }
 
-        if self.chart_type != ChartType::Donut && self.series_3_enabled && !self.series_3_col.trim().is_empty() {
+        if max_series >= 3 && self.series_3_enabled && !self.series_3_col.trim().is_empty() {
             series.push(SeriesSpec {
                 col: self.series_3_col.trim().to_uppercase(),
                 label_id: self.series_3_label_id.trim().to_string(),
@@ -227,8 +233,11 @@ impl ChartDialog {
 
     /// Adjust series and row count to fit the active chart archetype's capacity.
     pub fn clamp_to_chart_type(&mut self) {
-        if self.chart_type == ChartType::Donut {
+        if self.chart_type == ChartType::Donut || self.chart_type == ChartType::Gauge {
             self.series_2_enabled = false;
+            self.series_3_enabled = false;
+        } else if self.chart_type == ChartType::PopulationPyramid {
+            self.series_2_enabled = true;
             self.series_3_enabled = false;
         }
     }
@@ -634,7 +643,8 @@ impl ChartDialog {
         // 9. Populate columns and series based on chart type capacity
         self.category_col = "A".into();
         let max_series = match self.chart_type {
-            ChartType::Donut => 1,
+            ChartType::Donut | ChartType::Gauge => 1,
+            ChartType::PopulationPyramid => 2,
             _ => 3,
         };
 
@@ -681,6 +691,17 @@ impl ChartDialog {
         // For Donut chart, cap row count to at most 6 categories for slice readability
         if self.chart_type == ChartType::Donut && (self.data_end_row.saturating_sub(self.data_start_row) + 1) > 6 {
             self.data_end_row = (self.data_start_row + 5).min(data_end_idx);
+        }
+
+        if self.chart_type == ChartType::PopulationPyramid {
+            if self.series_1_label_id.is_empty() || self.series_1_label_id.starts_with("Col ") {
+                self.series_1_label_id = "Laki-laki".into();
+                self.series_1_label_en = "Male".into();
+            }
+            if self.series_2_label_id.is_empty() || self.series_2_label_id.starts_with("Col ") {
+                self.series_2_label_id = "Perempuan".into();
+                self.series_2_label_en = "Female".into();
+            }
         }
 
         // 10. Infer ValueFormat
@@ -802,6 +823,8 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                         ChartType::Line => "Line Chart (Markers)",
                         ChartType::Area => "Area Chart (Filled)",
                         ChartType::Donut => "Donut / Ring Chart",
+                        ChartType::PopulationPyramid => "Population Pyramid (Piramida Penduduk)",
+                        ChartType::Gauge => "Gauge / Speedometer Chart",
                     };
                     craft_ui::ComboBox::from_id_salt("pubgen_chart_archetype").selected_text(cur_type_name).width(200.0).show_ui(ui, |ui| {
                         for (ct, name) in [
@@ -811,6 +834,8 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                             (ChartType::Line, "Line Chart (Markers)"),
                             (ChartType::Area, "Area Chart (Filled)"),
                             (ChartType::Donut, "Donut / Ring Chart"),
+                            (ChartType::PopulationPyramid, "Population Pyramid (Piramida Penduduk)"),
+                            (ChartType::Gauge, "Gauge / Speedometer Chart"),
                         ] {
                             if ui.selectable_label(dialog.chart_type == ct, name).clicked() {
                                 dialog.chart_type = ct;
@@ -855,8 +880,35 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                     ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_1_label_en));
                 });
 
-                // Series 2 & 3 (hidden for archetypes that only fit 1 data series, such as Donut)
-                if dialog.chart_type != ChartType::Donut {
+                // Series 2 & 3 (hidden or customized for specialized archetypes)
+                if dialog.chart_type == ChartType::Donut || dialog.chart_type == ChartType::Gauge {
+                    ui.label(
+                        RichText::new(crate::i18n::tr(&lang, "ℹ Donut and Gauge charts only fit 1 category and 1 data series."))
+                            .size(10.5)
+                            .color(t.text_dim),
+                    );
+                } else if dialog.chart_type == ChartType::PopulationPyramid {
+                    // Series 2 (Female)
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut dialog.series_2_enabled, "Series 2 (Female):");
+                        if dialog.series_2_enabled {
+                            ui.label(RichText::new("Col:").size(10.5).color(t.text_dim));
+                            ui.add_sized([30.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_col));
+                            ui.label(RichText::new("Label (ID):").size(10.5).color(t.text_dim));
+                            ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_id));
+                            ui.label(RichText::new("Label (EN):").size(10.5).color(t.text_dim));
+                            ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_en));
+                        }
+                    });
+                    ui.label(
+                        RichText::new(crate::i18n::tr(
+                            &lang,
+                            "ℹ Population pyramid fits 2 data series: Series 1 = Male (Laki-laki), Series 2 = Female (Perempuan).",
+                        ))
+                        .size(10.5)
+                        .color(t.text_dim),
+                    );
+                } else {
                     // Series 2
                     ui.horizontal(|ui| {
                         ui.checkbox(&mut dialog.series_2_enabled, "Series 2:");
@@ -882,10 +934,6 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                             ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_3_label_en));
                         }
                     });
-                } else {
-                    ui.label(
-                        RichText::new(crate::i18n::tr(&lang, "ℹ Donut chart only fits 1 category and 1 data series.")).size(10.5).color(t.text_dim),
-                    );
                 }
 
                 ui.separator();
@@ -1207,5 +1255,27 @@ mod tests {
         assert!(!tables.is_empty(), "find_available_tables should find the table");
         assert_eq!(tables[0].page_1_based, 1);
         assert!(tables[0].table_num.contains("01.01") || tables[0].label.contains("01.01"));
+    }
+
+    #[test]
+    fn test_chart_dialog_population_pyramid_and_gauge_capacity() {
+        let mut dlg = ChartDialog::default();
+        dlg.chart_type = ChartType::PopulationPyramid;
+        dlg.clamp_to_chart_type();
+        assert!(dlg.series_2_enabled, "Pyramid must enable Series 2 for Female");
+        assert!(!dlg.series_3_enabled, "Pyramid must disable Series 3");
+
+        let spec = dlg.build_spec();
+        assert_eq!(spec.chart_type, ChartType::PopulationPyramid);
+        assert_eq!(spec.series.len(), 2, "Pyramid spec must have exactly 2 series (Male & Female)");
+
+        dlg.chart_type = ChartType::Gauge;
+        dlg.clamp_to_chart_type();
+        assert!(!dlg.series_2_enabled, "Gauge must disable Series 2");
+        assert!(!dlg.series_3_enabled, "Gauge must disable Series 3");
+
+        let spec_gauge = dlg.build_spec();
+        assert_eq!(spec_gauge.chart_type, ChartType::Gauge);
+        assert_eq!(spec_gauge.series.len(), 1, "Gauge spec must have exactly 1 series");
     }
 }

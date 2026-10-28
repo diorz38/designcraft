@@ -50,6 +50,10 @@ pub enum ChartType {
     Area,
     /// Donut / ring chart for part-to-whole breakdowns.
     Donut,
+    /// Population pyramid: dual horizontal bars (Male on left, Female on right, Age groups in center).
+    PopulationPyramid,
+    /// Gauge / speedometer chart: radial arc and pointer for target/percentage metric.
+    Gauge,
 }
 
 impl ChartType {
@@ -62,6 +66,8 @@ impl ChartType {
             "line" | "garis" | "trend" => Some(Self::Line),
             "area" | "filled" | "arealine" => Some(Self::Area),
             "donut" | "doughnut" | "pie" | "donat" | "lingkaran" => Some(Self::Donut),
+            "populationpyramid" | "pyramid" | "piramidapenduduk" | "piramida" | "piramid" => Some(Self::PopulationPyramid),
+            "gauge" | "speedometer" | "dial" | "alatukur" => Some(Self::Gauge),
             _ => None,
         }
     }
@@ -579,6 +585,11 @@ mod tests {
         assert_eq!(ChartType::parse("donut"), Some(ChartType::Donut));
         assert_eq!(ChartType::parse("pie"), Some(ChartType::Donut));
         assert_eq!(ChartType::parse("donat"), Some(ChartType::Donut));
+        assert_eq!(ChartType::parse("population_pyramid"), Some(ChartType::PopulationPyramid));
+        assert_eq!(ChartType::parse("piramida_penduduk"), Some(ChartType::PopulationPyramid));
+        assert_eq!(ChartType::parse("pyramid"), Some(ChartType::PopulationPyramid));
+        assert_eq!(ChartType::parse("gauge"), Some(ChartType::Gauge));
+        assert_eq!(ChartType::parse("speedometer"), Some(ChartType::Gauge));
         assert_eq!(ChartType::parse("unknown_type"), None);
         assert_eq!(ChartType::parse(""), None);
     }

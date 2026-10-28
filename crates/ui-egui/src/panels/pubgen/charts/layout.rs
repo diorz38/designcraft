@@ -93,6 +93,35 @@ pub struct DonutSlice {
     pub sweep_degrees: f64,
 }
 
+/// Summary metrics box displayed at the bottom of a Population Pyramid.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PyramidSummary {
+    pub rect: [f64; 4],
+    pub total_male: f64,
+    pub total_female: f64,
+    pub total_combined: f64,
+    pub male_label: String,
+    pub female_label: String,
+    pub combined_label: String,
+}
+
+/// Complete geometry layout for a Gauge / Speedometer chart.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GaugeLayout {
+    pub track_points: Vec<(f64, f64)>,
+    pub value_points: Vec<(f64, f64)>,
+    pub needle_points: Vec<(f64, f64)>,
+    pub pivot_rect: [f64; 4],
+    pub readout_rect: [f64; 4],
+    pub readout_text: String,
+    pub subtitle_rect: [f64; 4],
+    pub subtitle_text: String,
+    pub min_rect: [f64; 4],
+    pub min_text: String,
+    pub max_rect: [f64; 4],
+    pub max_text: String,
+}
+
 /// Complete geometry layout for a vector chart.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChartLayout {
@@ -104,6 +133,10 @@ pub struct ChartLayout {
     pub line_segments: Vec<Vec<[f64; 4]>>,
     /// Slices for `Donut` chart.
     pub donut_slices: Vec<DonutSlice>,
+    /// Gauge layout data if archetype is `Gauge`.
+    pub gauge: Option<GaugeLayout>,
+    /// Summary cards if archetype is `PopulationPyramid`.
+    pub pyramid_summary: Option<PyramidSummary>,
     /// Reference grid lines.
     pub grid_lines: Vec<GridLine>,
     /// Category axis tick labels.
@@ -134,17 +167,21 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
     let top_offset = if title_h > 0.0 { title_h + 8.0 } else { 0.0 };
 
     let is_donut = matches!(spec.chart_type, ChartType::Donut);
+    let is_gauge = matches!(spec.chart_type, ChartType::Gauge);
+    let is_pyramid = matches!(spec.chart_type, ChartType::PopulationPyramid);
     let is_hbar = matches!(spec.chart_type, ChartType::HorizontalBar);
-    let any_rotated = !is_hbar && !is_donut && categories.iter().any(|c| c.chars().count() > MAX_LABEL_CHARS);
-    let left_reserve = if is_donut {
+    let any_rotated = !is_hbar && !is_donut && !is_gauge && !is_pyramid && categories.iter().any(|c| c.chars().count() > MAX_LABEL_CHARS);
+    let left_reserve = if is_donut || is_gauge || is_pyramid {
         0.0
     } else if is_hbar {
         HBAR_CATEGORY_W
     } else {
         AXIS_LABEL_W
     };
-    let bottom_axis_h = if is_donut {
+    let bottom_axis_h = if is_donut || is_gauge {
         0.0
+    } else if is_pyramid {
+        22.0
     } else if is_hbar {
         16.0
     } else if any_rotated {
@@ -154,10 +191,14 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
     };
     let bottom_gap = if any_rotated { 16.0 } else { 4.0 };
 
-    let use_category_legend = is_donut || spec.series.len() <= 1;
+    let use_category_legend = is_donut || (spec.series.len() <= 1 && !is_gauge && !is_pyramid);
 
-    let legend_rows = if spec.show_legend {
-        if use_category_legend && !categories.is_empty() {
+    let legend_rows = if is_gauge {
+        0
+    } else if spec.show_legend {
+        if is_pyramid {
+            1
+        } else if use_category_legend && !categories.is_empty() {
             categories.len().div_ceil(4)
         } else if !spec.series.is_empty() {
             spec.series.len().div_ceil(3)
@@ -198,6 +239,18 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
             }
             total
         }
+        ChartType::Gauge => series_values.first().and_then(|s| s.first()).copied().unwrap_or(0.0),
+        ChartType::PopulationPyramid => {
+            let mut max_v = 0.0f64;
+            for s in series_values.iter().take(2) {
+                for &v in s {
+                    if v > max_v {
+                        max_v = v;
+                    }
+                }
+            }
+            max_v
+        }
         _ => {
             let mut max_v = 0.0f64;
             for s in series_values {
@@ -211,7 +264,13 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
         }
     };
 
-    let ceiling = if let Some(override_max) = spec.max_value_override { override_max.max(raw_max).max(1.0) } else { compute_nice_ceiling(raw_max) };
+    let ceiling = if let Some(override_max) = spec.max_value_override {
+        override_max.max(raw_max).max(1.0)
+    } else if matches!(spec.chart_type, ChartType::Gauge) {
+        if matches!(spec.value_format, super::spec::ValueFormat::Percent) { 100.0 } else { compute_nice_ceiling(raw_max.max(1.0)) }
+    } else {
+        compute_nice_ceiling(raw_max)
+    };
 
     // Axes
     let axis_baseline = [plot_x0, plot_y1, plot_x1, plot_y1 + 1.0];
@@ -246,7 +305,22 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
     // Legend items
     let mut legend_items = Vec::new();
     if spec.show_legend {
-        if use_category_legend && !categories.is_empty() {
+        if is_pyramid {
+            let leg_y_start = (margin.y1 - legend_h + 4.0).max(plot_y1 + bottom_axis_h + bottom_gap);
+            let items_per_row = 2;
+            let col_w = (margin.x1 - margin.x0) / items_per_row as f64;
+            let male_label = spec.series.first().map(|s| s.display_label(bilingual)).unwrap_or_else(|| "Laki-laki (Male)".into());
+            let female_label = spec.series.get(1).map(|s| s.display_label(bilingual)).unwrap_or_else(|| "Perempuan (Female)".into());
+
+            for (s_idx, label) in [male_label, female_label].into_iter().enumerate() {
+                let item_x = margin.x0 + s_idx as f64 * col_w + (col_w - 140.0).max(0.0) / 2.0;
+                let item_y = leg_y_start;
+                let swatch_y0 = item_y + (LEGEND_ROW_H - LEGEND_SWATCH_H) / 2.0;
+                let swatch_rect = [item_x, swatch_y0, item_x + LEGEND_SWATCH_W, swatch_y0 + LEGEND_SWATCH_H];
+                let label_rect = [item_x + LEGEND_SWATCH_W + 6.0, item_y, item_x + 140.0, item_y + LEGEND_ROW_H];
+                legend_items.push(LegendItem { swatch_rect, label_rect, label, series_idx: s_idx });
+            }
+        } else if use_category_legend && !categories.is_empty() {
             // For Donut charts or any chart with only 1 series data, legend always takes category items
             let leg_y_start = (margin.y1 - legend_h + 4.0).max(plot_y1 + bottom_axis_h + bottom_gap);
             let total_cats = categories.len();
@@ -300,6 +374,10 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
             layout_line_and_area(spec, categories, series_values, plot_rect, ceiling, bilingual, grid_lines, legend_items, axis_baseline, axis_left)
         }
         ChartType::Donut => layout_donut(spec, categories, series_values, plot_rect, ceiling, bilingual, legend_items, axis_baseline, axis_left),
+        ChartType::PopulationPyramid => {
+            layout_population_pyramid(spec, categories, series_values, plot_rect, ceiling, bilingual, legend_items, axis_baseline, axis_left)
+        }
+        ChartType::Gauge => layout_gauge(spec, categories, series_values, plot_rect, ceiling, bilingual, legend_items, axis_baseline, axis_left),
     }
 }
 
@@ -390,6 +468,8 @@ fn layout_bar_clustered(
         line_markers: Vec::new(),
         line_segments: Vec::new(),
         donut_slices: Vec::new(),
+        gauge: None,
+        pyramid_summary: None,
         grid_lines,
         x_tick_labels,
         value_labels,
@@ -459,6 +539,8 @@ fn layout_bar_stacked(
         line_markers: Vec::new(),
         line_segments: Vec::new(),
         donut_slices: Vec::new(),
+        gauge: None,
+        pyramid_summary: None,
         grid_lines,
         x_tick_labels,
         value_labels,
@@ -531,6 +613,8 @@ fn layout_horizontal_bar(
         line_markers: Vec::new(),
         line_segments: Vec::new(),
         donut_slices: Vec::new(),
+        gauge: None,
+        pyramid_summary: None,
         grid_lines,
         x_tick_labels,
         value_labels,
@@ -608,10 +692,232 @@ fn layout_line_and_area(
         line_markers,
         line_segments,
         donut_slices: Vec::new(),
+        gauge: None,
+        pyramid_summary: None,
         grid_lines,
         x_tick_labels,
         value_labels,
         legend_items,
+        axis_baseline,
+        axis_left,
+        plot_rect,
+        ceiling,
+    }
+}
+
+fn layout_population_pyramid(
+    spec: &ChartSpec,
+    categories: &[String],
+    series_values: &[Vec<f64>],
+    plot_rect: [f64; 4],
+    ceiling: f64,
+    bilingual: bool,
+    legend_items: Vec<LegendItem>,
+    axis_baseline: [f64; 4],
+    axis_left: [f64; 4],
+) -> ChartLayout {
+    let mut bars = Vec::new();
+    let mut x_tick_labels = Vec::new();
+    let mut value_labels = Vec::new();
+    let mut grid_lines = Vec::new();
+
+    let cx = (plot_rect[0] + plot_rect[2]) / 2.0;
+    let center_col_w = 54.0f64;
+    let val_lbl_w = 42.0f64;
+    let center_left = cx - center_col_w / 2.0;
+    let center_right = cx + center_col_w / 2.0;
+
+    let max_bar_w = (center_left - (plot_rect[0] + val_lbl_w)).max(20.0);
+
+    // Reserve 48pt at bottom for the 3-column Summary Box (Total Male, Total Population, Total Female)
+    let summary_h = 44.0f64;
+    let summary_gap = 12.0f64;
+    let pyramid_bottom = plot_rect[3] - summary_h - summary_gap;
+
+    let cat_count = categories.len().max(1);
+    let row_h = (pyramid_bottom - plot_rect[1]) / cat_count as f64;
+    let bar_h = (row_h * 0.72).clamp(4.0, 15.0);
+
+    let male_vals = series_values.first().map(Vec::as_slice).unwrap_or(&[]);
+    let female_vals = series_values.get(1).map(Vec::as_slice).unwrap_or(&[]);
+
+    let mut total_male = 0.0f64;
+    let mut total_female = 0.0f64;
+
+    // Check if table starts with youngest age group (e.g. 0-4 or 00-04)
+    // In population pyramids, oldest (75+) sits at top, youngest at bottom.
+    let reverse_order = categories.first().is_some_and(|c| {
+        let t = c.trim();
+        t.starts_with('0') || t.starts_with("1-") || t.starts_with('<')
+    });
+
+    for r in 0..cat_count {
+        let c_idx = if reverse_order { cat_count - 1 - r } else { r };
+        let cat = categories.get(c_idx).cloned().unwrap_or_default();
+        let row_y = plot_rect[1] + r as f64 * row_h;
+        let y0 = row_y + (row_h - bar_h) / 2.0;
+        let y1 = y0 + bar_h;
+
+        // Faint horizontal reference line across the row
+        grid_lines.push(GridLine { rect: [plot_rect[0], row_y + row_h, plot_rect[2], row_y + row_h + 0.5], value: 0.0, label: String::new() });
+
+        // 1. Male bar (Left side extending from center_left towards left)
+        let v_m = male_vals.get(c_idx).copied().unwrap_or(0.0);
+        total_male += v_m;
+        let w_m = if ceiling > 0.0 { ((v_m / ceiling) * max_bar_w).max(0.0) } else { 0.0 };
+        let x0_m = center_left - w_m;
+        let x1_m = center_left;
+        let lbl_m = spec.value_format.format(v_m, bilingual);
+        bars.push(BarRect { rect: [x0_m, y0, x1_m, y1], value: v_m, series_idx: 0, category_idx: c_idx, label: lbl_m.clone() });
+        if spec.show_value_labels && v_m > 0.0 {
+            value_labels.push((0, [x0_m - val_lbl_w - 3.0, y0 - 1.0, x0_m - 3.0, y1 + 1.0], lbl_m));
+        }
+
+        // 2. Female bar (Right side extending from center_right towards right)
+        let v_f = female_vals.get(c_idx).copied().unwrap_or(0.0);
+        total_female += v_f;
+        let w_f = if ceiling > 0.0 { ((v_f / ceiling) * max_bar_w).max(0.0) } else { 0.0 };
+        let x0_f = center_right;
+        let x1_f = center_right + w_f;
+        let lbl_f = spec.value_format.format(v_f, bilingual);
+        bars.push(BarRect { rect: [x0_f, y0, x1_f, y1], value: v_f, series_idx: 1, category_idx: c_idx, label: lbl_f.clone() });
+        if spec.show_value_labels && v_f > 0.0 {
+            value_labels.push((1, [x1_f + 3.0, y0 - 1.0, x1_f + val_lbl_w + 3.0, y1 + 1.0], lbl_f));
+        }
+
+        // 3. Center Category Label (Age Group)
+        let cat_rect = [center_left + 1.0, y0 - 1.0, center_right - 1.0, y1 + 1.0];
+        x_tick_labels.push(XTickLabel { rect: cat_rect, text: cat, rotated: false });
+    }
+
+    // Summary Card at bottom
+    let total_combined = total_male + total_female;
+    let summary_rect = [plot_rect[0], pyramid_bottom + summary_gap, plot_rect[2], plot_rect[3]];
+    let male_label = if bilingual { "TOTAL LAKI-LAKI (MALE)" } else { "TOTAL LAKI-LAKI" }.to_string();
+    let female_label = if bilingual { "TOTAL PEREMPUAN (FEMALE)" } else { "TOTAL PEREMPUAN" }.to_string();
+    let combined_label = if bilingual { "TOTAL PENDUDUK (TOTAL POPULATION)" } else { "TOTAL PENDUDUK" }.to_string();
+
+    let pyramid_summary =
+        Some(PyramidSummary { rect: summary_rect, total_male, total_female, total_combined, male_label, female_label, combined_label });
+
+    ChartLayout {
+        bars,
+        line_markers: Vec::new(),
+        line_segments: Vec::new(),
+        donut_slices: Vec::new(),
+        gauge: None,
+        pyramid_summary,
+        grid_lines,
+        x_tick_labels,
+        value_labels,
+        legend_items,
+        axis_baseline,
+        axis_left,
+        plot_rect,
+        ceiling,
+    }
+}
+
+fn layout_gauge(
+    spec: &ChartSpec,
+    categories: &[String],
+    series_values: &[Vec<f64>],
+    plot_rect: [f64; 4],
+    ceiling: f64,
+    bilingual: bool,
+    _legend_items: Vec<LegendItem>,
+    axis_baseline: [f64; 4],
+    axis_left: [f64; 4],
+) -> ChartLayout {
+    let plot_w = plot_rect[2] - plot_rect[0];
+    let plot_h = plot_rect[3] - plot_rect[1];
+    let cx = (plot_rect[0] + plot_rect[2]) / 2.0;
+
+    let outer_r = (plot_w.min(plot_h * 1.6) / 2.0 * 0.76).clamp(50.0, 150.0);
+    let inner_r = outer_r * 0.70;
+    let cy = plot_rect[1] + outer_r + 20.0;
+
+    let val = series_values.first().and_then(|s| s.first()).copied().unwrap_or(0.0);
+    let max_val = if ceiling > 0.0 { ceiling } else { 100.0 };
+    let frac = (val / max_val).clamp(0.0, 1.0);
+
+    // 1. Background track: 180° semi-circle from 180° (pi) to 0° (0)
+    let track_steps = 48;
+    let mut track_points = Vec::with_capacity(track_steps * 2 + 2);
+    for s in 0..=track_steps {
+        let t = std::f64::consts::PI - (s as f64 / track_steps as f64) * std::f64::consts::PI;
+        track_points.push((cx + outer_r * t.cos(), cy - outer_r * t.sin()));
+    }
+    for s in (0..=track_steps).rev() {
+        let t = std::f64::consts::PI - (s as f64 / track_steps as f64) * std::f64::consts::PI;
+        track_points.push((cx + inner_r * t.cos(), cy - inner_r * t.sin()));
+    }
+
+    // 2. Value arc: sweeps clockwise from 180° to (180 - frac * 180)
+    let val_steps = ((frac * track_steps as f64).ceil() as usize).clamp(4, track_steps);
+    let mut value_points = Vec::with_capacity(val_steps * 2 + 2);
+    let end_angle = std::f64::consts::PI - frac * std::f64::consts::PI;
+    for s in 0..=val_steps {
+        let t = std::f64::consts::PI - (s as f64 / val_steps as f64) * (std::f64::consts::PI - end_angle);
+        value_points.push((cx + outer_r * t.cos(), cy - outer_r * t.sin()));
+    }
+    for s in (0..=val_steps).rev() {
+        let t = std::f64::consts::PI - (s as f64 / val_steps as f64) * (std::f64::consts::PI - end_angle);
+        value_points.push((cx + inner_r * t.cos(), cy - inner_r * t.sin()));
+    }
+
+    // 3. Needle pointer: triangular needle from center pivot pointing to value angle
+    let needle_len = outer_r * 0.88;
+    let needle_tip = (cx + needle_len * end_angle.cos(), cy - needle_len * end_angle.sin());
+    let perp_angle = end_angle + std::f64::consts::FRAC_PI_2;
+    let base_w = 4.0;
+    let needle_b1 = (cx + base_w * perp_angle.cos(), cy - base_w * perp_angle.sin());
+    let needle_b2 = (cx - base_w * perp_angle.cos(), cy + base_w * perp_angle.sin());
+    let needle_points = vec![needle_b1, needle_tip, needle_b2];
+
+    // 4. Pivot cap (circle radius 7pt)
+    let pivot_rect = [cx - 7.0, cy - 7.0, cx + 7.0, cy + 7.0];
+
+    // 5. Readout text
+    let readout_text = spec.value_format.format(val, bilingual);
+    let readout_rect = [cx - 60.0, cy + 10.0, cx + 60.0, cy + 32.0];
+
+    // 6. Subtitle text (Category name or Series label)
+    let subtitle_text = categories.first().cloned().unwrap_or_else(|| spec.series.first().map(|s| s.display_label(bilingual)).unwrap_or_default());
+    let subtitle_rect = [cx - 80.0, cy + 33.0, cx + 80.0, cy + 47.0];
+
+    // 7. Min / Max labels
+    let min_text = spec.value_format.format(0.0, bilingual);
+    let max_text = spec.value_format.format(max_val, bilingual);
+    let min_rect = [cx - outer_r - 20.0, cy + 4.0, cx - inner_r + 4.0, cy + 18.0];
+    let max_rect = [cx + inner_r - 4.0, cy + 4.0, cx + outer_r + 20.0, cy + 18.0];
+
+    let gauge = Some(GaugeLayout {
+        track_points,
+        value_points,
+        needle_points,
+        pivot_rect,
+        readout_rect,
+        readout_text,
+        subtitle_rect,
+        subtitle_text,
+        min_rect,
+        min_text,
+        max_rect,
+        max_text,
+    });
+
+    ChartLayout {
+        bars: Vec::new(),
+        line_markers: Vec::new(),
+        line_segments: Vec::new(),
+        donut_slices: Vec::new(),
+        gauge,
+        pyramid_summary: None,
+        grid_lines: Vec::new(),
+        x_tick_labels: Vec::new(),
+        value_labels: Vec::new(),
+        legend_items: Vec::new(),
         axis_baseline,
         axis_left,
         plot_rect,
@@ -684,6 +990,8 @@ fn layout_donut(
         line_markers: Vec::new(),
         line_segments: Vec::new(),
         donut_slices,
+        gauge: None,
+        pyramid_summary: None,
         grid_lines: Vec::new(),
         x_tick_labels: Vec::new(),
         value_labels: Vec::new(),
@@ -900,5 +1208,55 @@ mod tests {
         assert_eq!(layout.bars[0].series_idx, 0);
         assert_eq!(layout.bars[1].series_idx, 1);
         assert_eq!(layout.bars[2].series_idx, 2);
+    }
+
+    #[test]
+    fn population_pyramid_creates_left_and_right_bars_and_summary() {
+        let spec = sample_spec(ChartType::PopulationPyramid);
+        let categories = vec!["00-04".into(), "05-09".into(), "10-14".into()];
+        let values = vec![
+            vec![1000.0, 1500.0, 2000.0], // Male
+            vec![950.0, 1450.0, 1950.0],  // Female
+        ];
+        let margin = sample_margin();
+
+        let layout = compute_layout(&spec, &categories, &values, margin, false);
+
+        assert_eq!(layout.bars.len(), 6, "Must emit 3 male and 3 female bars");
+        let male_bars: Vec<_> = layout.bars.iter().filter(|b| b.series_idx == 0).collect();
+        let female_bars: Vec<_> = layout.bars.iter().filter(|b| b.series_idx == 1).collect();
+        assert_eq!(male_bars.len(), 3);
+        assert_eq!(female_bars.len(), 3);
+
+        // Male bars must be to the left of the center column, female bars to the right
+        for b in &male_bars {
+            assert!(b.rect[2] <= female_bars[0].rect[0]);
+        }
+
+        // Summary must compute total population accurately
+        assert!(layout.pyramid_summary.is_some());
+        let sum = layout.pyramid_summary.as_ref().unwrap();
+        assert_eq!(sum.total_male, 4500.0);
+        assert_eq!(sum.total_female, 4350.0);
+        assert_eq!(sum.total_combined, 8850.0);
+    }
+
+    #[test]
+    fn gauge_chart_creates_semicircular_geometry_and_needle() {
+        let mut spec = sample_spec(ChartType::Gauge);
+        spec.value_format = ValueFormat::Percent;
+        let categories = vec!["Pencapaian Target".into()];
+        let values = vec![vec![75.0]];
+        let margin = sample_margin();
+
+        let layout = compute_layout(&spec, &categories, &values, margin, false);
+
+        assert!(layout.gauge.is_some());
+        let g = layout.gauge.as_ref().unwrap();
+        assert!(!g.track_points.is_empty(), "Track points must form an arc");
+        assert!(!g.value_points.is_empty(), "Value points must form an arc");
+        assert_eq!(g.needle_points.len(), 3, "Needle must be a triangular polygon");
+        assert_eq!(g.readout_text, "75.0%");
+        assert_eq!(g.subtitle_text, "Pencapaian Target");
     }
 }

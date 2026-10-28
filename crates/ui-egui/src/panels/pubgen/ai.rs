@@ -581,6 +581,11 @@ impl TranslateJob {
         Self { rx: Arc::new(std::sync::Mutex::new(rx)), cancel, drafts: false, done: 0, total, finished: false }
     }
 
+    /// Whether this job was started in glossary-draft mode (filling AI suggestions into terms).
+    pub fn is_drafts(&self) -> bool {
+        self.drafts
+    }
+
     /// Draft mode: the units are glossary terms (Indonesian → English) and the results
     /// fill the glossary's AI English column, not the page-translation cache.
     #[cfg(not(target_arch = "wasm32"))]
@@ -2199,6 +2204,33 @@ mod tests {
 
     fn glossary() -> BpsGlossary {
         BpsGlossary::load("")
+    }
+
+    #[test]
+    fn translate_job_drafts_flag_prevents_unwanted_re_generation() {
+        let job_normal = TranslateJob {
+            #[cfg(not(target_arch = "wasm32"))]
+            rx: Arc::new(std::sync::Mutex::new(std::sync::mpsc::channel().1)),
+            #[cfg(not(target_arch = "wasm32"))]
+            cancel: Arc::new(AtomicBool::new(false)),
+            drafts: false,
+            done: 0,
+            total: 0,
+            finished: true,
+        };
+        assert!(!job_normal.is_drafts());
+
+        let job_drafts = TranslateJob {
+            #[cfg(not(target_arch = "wasm32"))]
+            rx: Arc::new(std::sync::Mutex::new(std::sync::mpsc::channel().1)),
+            #[cfg(not(target_arch = "wasm32"))]
+            cancel: Arc::new(AtomicBool::new(false)),
+            drafts: true,
+            done: 0,
+            total: 0,
+            finished: true,
+        };
+        assert!(job_drafts.is_drafts(), "job in drafts mode must return is_drafts = true");
     }
 
     #[test]

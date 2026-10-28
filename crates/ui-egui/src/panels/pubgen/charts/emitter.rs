@@ -13,7 +13,7 @@ use crate::DesignApp;
 
 use super::layout::{AXIS_LABEL_W, ChartLayout};
 use super::palette::series_color;
-use super::spec::ChartSpec;
+use super::spec::{ChartSpec, format_indonesian_number};
 
 /// Ensures a swatch exists in the document and returns its name.
 ///
@@ -224,16 +224,22 @@ pub fn emit_chart(
     }
 
     // 2. Axis baseline & left line (only for Cartesian coordinate charts)
-    if spec.chart_type != super::spec::ChartType::Donut {
+    if spec.chart_type != super::spec::ChartType::Donut && spec.chart_type != super::spec::ChartType::Gauge {
         let base_fid = emit_rect(app, spread_idx, layout.axis_baseline, "#333333", "[None]", 0.0)?;
         frame_ids.push(base_fid);
-        let left_fid = emit_rect(app, spread_idx, layout.axis_left, "#333333", "[None]", 0.0)?;
-        frame_ids.push(left_fid);
+        if spec.chart_type != super::spec::ChartType::PopulationPyramid {
+            let left_fid = emit_rect(app, spread_idx, layout.axis_left, "#333333", "[None]", 0.0)?;
+            frame_ids.push(left_fid);
+        }
     }
 
     // 3. Bars
     for bar in &layout.bars {
-        let color = series_color(palette, bar.series_idx);
+        let color = if spec.chart_type == super::spec::ChartType::PopulationPyramid && bar.series_idx == 1 {
+            if palette.len() > 1 { series_color(palette, 1) } else { "#ED1C6F" }
+        } else {
+            series_color(palette, bar.series_idx)
+        };
         let fid = emit_rect(app, spread_idx, bar.rect, color, "[None]", 0.0)?;
         frame_ids.push(fid);
     }
@@ -268,6 +274,121 @@ pub fn emit_chart(
         }
     }
 
+    // 5b. Gauge chart
+    if let Some(gauge) = &layout.gauge {
+        let primary_color = series_color(palette, 0);
+        let trk_fid = emit_polygon(app, spread_idx, &gauge.track_points, "#E5E7EB", "[None]", 0.0)?;
+        frame_ids.push(trk_fid);
+
+        let val_fid = emit_polygon(app, spread_idx, &gauge.value_points, primary_color, "[None]", 0.0)?;
+        frame_ids.push(val_fid);
+
+        let needle_fid = emit_polygon(app, spread_idx, &gauge.needle_points, "#1F2937", "[None]", 0.0)?;
+        frame_ids.push(needle_fid);
+
+        let pivot_fid = emit_rect(app, spread_idx, gauge.pivot_rect, "#111827", "#FFFFFF", 1.5)?;
+        frame_ids.push(pivot_fid);
+
+        let ro_fid = emit_text(app, spread_idx, gauge.readout_rect, &gauge.readout_text, 18.0, true, "center", Some(primary_color))?;
+        frame_ids.push(ro_fid);
+
+        if !gauge.subtitle_text.is_empty() {
+            let sub_fid = emit_text(app, spread_idx, gauge.subtitle_rect, &gauge.subtitle_text, 9.0, false, "center", Some("#4B5563"))?;
+            frame_ids.push(sub_fid);
+        }
+
+        let min_fid = emit_text(app, spread_idx, gauge.min_rect, &gauge.min_text, 7.5, false, "left", Some("#6B7280"))?;
+        let max_fid = emit_text(app, spread_idx, gauge.max_rect, &gauge.max_text, 7.5, false, "right", Some("#6B7280"))?;
+        frame_ids.push(min_fid);
+        frame_ids.push(max_fid);
+    }
+
+    // 5c. Population pyramid specific elements: headers and bottom summary box
+    if spec.chart_type == super::spec::ChartType::PopulationPyramid {
+        let cx = (layout.plot_rect[0] + layout.plot_rect[2]) / 2.0;
+        let center_col_w = 54.0f64;
+        let center_left = cx - center_col_w / 2.0;
+        let center_right = cx + center_col_w / 2.0;
+
+        let hdr_y0 = (layout.plot_rect[1] - 22.0).max(0.0);
+        let hdr_y1 = layout.plot_rect[1] - 4.0;
+
+        let male_hdr_rect = [layout.plot_rect[0], hdr_y0, center_left - 10.0, hdr_y1];
+        let center_hdr_rect = [center_left, hdr_y0, center_right, hdr_y1];
+        let female_hdr_rect = [center_right + 10.0, hdr_y0, layout.plot_rect[2], hdr_y1];
+
+        let male_label = spec.series.first().map(|s| s.display_label(bilingual)).unwrap_or_else(|| "LAKI-LAKI (MALE)".into()).to_uppercase();
+        let female_label = spec.series.get(1).map(|s| s.display_label(bilingual)).unwrap_or_else(|| "PEREMPUAN (FEMALE)".into()).to_uppercase();
+        let center_label = if bilingual { "KELOMPOK UMUR\n(AGE GROUPS)" } else { "KELOMPOK UMUR" };
+
+        let male_color = series_color(palette, 0);
+        let female_color = if palette.len() > 1 { series_color(palette, 1) } else { "#ED1C6F" };
+
+        if let Ok(fid) = emit_text(app, spread_idx, male_hdr_rect, &male_label, 8.5, true, "center", Some(male_color)) {
+            frame_ids.push(fid);
+        }
+        if let Ok(fid) = emit_text(app, spread_idx, center_hdr_rect, center_label, 7.0, true, "center", Some("#333333")) {
+            frame_ids.push(fid);
+        }
+        if let Ok(fid) = emit_text(app, spread_idx, female_hdr_rect, &female_label, 8.5, true, "center", Some(female_color)) {
+            frame_ids.push(fid);
+        }
+
+        // Axis label below baseline
+        let axis_title_rect = [cx - 100.0, layout.plot_rect[3] - 44.0 - 12.0 + 2.0, cx + 100.0, layout.plot_rect[3] - 44.0 - 12.0 + 14.0];
+        let axis_title = if bilingual { "JUMLAH PENDUDUK (POPULATION)" } else { "JUMLAH PENDUDUK" };
+        if let Ok(fid) = emit_text(app, spread_idx, axis_title_rect, axis_title, 7.5, true, "center", Some("#475569")) {
+            frame_ids.push(fid);
+        }
+
+        // Summary Card at bottom
+        if let Some(summary) = &layout.pyramid_summary {
+            let s_rect = summary.rect;
+            if let Ok(box_fid) = emit_rect(app, spread_idx, s_rect, "#F8FAFC", "#CBD5E1", 1.0) {
+                frame_ids.push(box_fid);
+            }
+
+            let col_w = (s_rect[2] - s_rect[0]) / 3.0;
+
+            // Dividers
+            let d1 = s_rect[0] + col_w;
+            let d2 = s_rect[0] + 2.0 * col_w;
+            if let Ok(dfid1) = emit_rect(app, spread_idx, [d1, s_rect[1] + 4.0, d1 + 0.5, s_rect[3] - 4.0], "#CBD5E1", "[None]", 0.0) {
+                frame_ids.push(dfid1);
+            }
+            if let Ok(dfid2) = emit_rect(app, spread_idx, [d2, s_rect[1] + 4.0, d2 + 0.5, s_rect[3] - 4.0], "#CBD5E1", "[None]", 0.0) {
+                frame_ids.push(dfid2);
+            }
+
+            // Col 1: Male
+            let c1_title = [s_rect[0] + 2.0, s_rect[1] + 3.0, s_rect[0] + col_w - 2.0, s_rect[1] + 13.0];
+            let c1_num = [s_rect[0] + 2.0, s_rect[1] + 13.0, s_rect[0] + col_w - 2.0, s_rect[1] + 30.0];
+            let c1_sub = [s_rect[0] + 2.0, s_rect[1] + 30.0, s_rect[0] + col_w - 2.0, s_rect[3] - 2.0];
+            let _ = emit_text(app, spread_idx, c1_title, &summary.male_label, 7.0, true, "center", Some(male_color)).map(|id| frame_ids.push(id));
+            let _ = emit_text(app, spread_idx, c1_num, &format_indonesian_number(summary.total_male), 12.0, true, "center", Some("#1E293B"))
+                .map(|id| frame_ids.push(id));
+            let _ = emit_text(app, spread_idx, c1_sub, "jiwa (people)", 6.5, false, "center", Some("#64748B")).map(|id| frame_ids.push(id));
+
+            // Col 2: Total Population
+            let c2_title = [d1 + 2.0, s_rect[1] + 3.0, d2 - 2.0, s_rect[1] + 13.0];
+            let c2_num = [d1 + 2.0, s_rect[1] + 13.0, d2 - 2.0, s_rect[1] + 30.0];
+            let c2_sub = [d1 + 2.0, s_rect[1] + 30.0, d2 - 2.0, s_rect[3] - 2.0];
+            let _ = emit_text(app, spread_idx, c2_title, &summary.combined_label, 7.0, true, "center", Some("#0F172A")).map(|id| frame_ids.push(id));
+            let _ = emit_text(app, spread_idx, c2_num, &format_indonesian_number(summary.total_combined), 13.0, true, "center", Some("#0F172A"))
+                .map(|id| frame_ids.push(id));
+            let _ = emit_text(app, spread_idx, c2_sub, "jiwa (people)", 6.5, false, "center", Some("#64748B")).map(|id| frame_ids.push(id));
+
+            // Col 3: Female
+            let c3_title = [d2 + 2.0, s_rect[1] + 3.0, s_rect[2] - 2.0, s_rect[1] + 13.0];
+            let c3_num = [d2 + 2.0, s_rect[1] + 13.0, s_rect[2] - 2.0, s_rect[1] + 30.0];
+            let c3_sub = [d2 + 2.0, s_rect[1] + 30.0, s_rect[2] - 2.0, s_rect[3] - 2.0];
+            let _ = emit_text(app, spread_idx, c3_title, &summary.female_label, 7.0, true, "center", Some(female_color)).map(|id| frame_ids.push(id));
+            let _ = emit_text(app, spread_idx, c3_num, &format_indonesian_number(summary.total_female), 12.0, true, "center", Some("#1E293B"))
+                .map(|id| frame_ids.push(id));
+            let _ = emit_text(app, spread_idx, c3_sub, "jiwa (people)", 6.5, false, "center", Some("#64748B")).map(|id| frame_ids.push(id));
+        }
+    }
+
     // 6. X-tick labels
     let is_hbar = matches!(spec.chart_type, super::spec::ChartType::HorizontalBar);
     for x_tick in &layout.x_tick_labels {
@@ -279,17 +400,29 @@ pub fn emit_chart(
         frame_ids.push(fid);
     }
 
-    // 7. Direct value labels (above bars / points)
+    // 7. Direct value labels
     for (s_idx, v_rect, text) in &layout.value_labels {
-        let color = series_color(palette, *s_idx);
-        if let Ok(fid) = emit_text(app, spread_idx, *v_rect, text, 7.5, true, "center", Some(color)) {
+        let (color, align) = if spec.chart_type == super::spec::ChartType::PopulationPyramid {
+            if *s_idx == 0 {
+                (series_color(palette, 0), "right")
+            } else {
+                (if palette.len() > 1 { series_color(palette, 1) } else { "#ED1C6F" }, "left")
+            }
+        } else {
+            (series_color(palette, *s_idx), "center")
+        };
+        if let Ok(fid) = emit_text(app, spread_idx, *v_rect, text, 7.5, true, align, Some(color)) {
             frame_ids.push(fid);
         }
     }
 
     // 8. Legend
     for leg in &layout.legend_items {
-        let color = series_color(palette, leg.series_idx);
+        let color = if spec.chart_type == super::spec::ChartType::PopulationPyramid && leg.series_idx == 1 {
+            if palette.len() > 1 { series_color(palette, 1) } else { "#ED1C6F" }
+        } else {
+            series_color(palette, leg.series_idx)
+        };
         let sfid = emit_rect(app, spread_idx, leg.swatch_rect, color, "[None]", 0.0)?;
         frame_ids.push(sfid);
 
@@ -477,5 +610,31 @@ mod tests {
             }
         }
         assert!(found_center_vj, "Legend text frame inside group must have VerticalJustification::Center");
+    }
+
+    #[test]
+    fn population_pyramid_emits_frames() {
+        let mut app = test_app();
+        let spec = sample_spec(ChartType::PopulationPyramid);
+        let categories = vec!["00-04".into(), "05-09".into()];
+        let values = vec![vec![500.0, 800.0], vec![480.0, 790.0]];
+
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
+
+        assert!(count > 10, "Population pyramid must emit bars, labels, and summary frames");
+    }
+
+    #[test]
+    fn gauge_chart_emits_frames() {
+        let mut app = test_app();
+        let spec = sample_spec(ChartType::Gauge);
+        let categories = vec!["Target".into()];
+        let values = vec![vec![60.0]];
+
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
+
+        assert!(count >= 7, "Gauge chart must emit track, value, needle, pivot, readout and subtitle");
     }
 }

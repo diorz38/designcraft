@@ -152,6 +152,9 @@ pub fn poll_active_jobs(app: &mut DesignApp, st: &mut PubgenState) {
                         Some((format!("{} table items across {} pages translated with AI.{}", count, targets.len(), ai::groq_quota_suffix()), true));
                     return;
                 }
+                if job.is_drafts() {
+                    return;
+                }
                 st.card1_status = Some(("AI translation ready — generating…".into(), true));
                 let res = if st.ai_pending_excel_path.is_empty() {
                     execute_generate_pages(app, st)
@@ -281,6 +284,10 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
                         format!("{} table item(s) across {} page(s) translated with AI.{}", count, targets.len(), ai::groq_quota_suffix()),
                         true,
                     ));
+                    ui.data_mut(|d| d.insert_temp(state_id, st));
+                    return;
+                }
+                if job.is_drafts() {
                     ui.data_mut(|d| d.insert_temp(state_id, st));
                     return;
                 }
