@@ -25,7 +25,7 @@ fn pubgen_dialog_modal(
 ) {
     let mut is_open = *open;
     let mut close_clicked = false;
-    let available_h = (ctx.content_rect().height() - 120.0).max(200.0);
+    let available_h = (ctx.content_rect().height() - 90.0).max(200.0);
     let scroll_h = max_height.min(available_h);
 
     egui::Window::new(RichText::new(title).size(15.0))
@@ -91,7 +91,7 @@ pub fn dialog_cover_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
     }
     let t = Tokens::get(ctx);
     let mut open = true;
-    pubgen_dialog_modal(ctx, crate::i18n::tr(&app.ui.language, "Publication Cover Generator"), &mut open, 540.0, 640.0, |ui| {
+    pubgen_dialog_modal(ctx, crate::i18n::tr(&app.ui.language, "Publication Cover Generator"), &mut open, 540.0, 880.0, |ui| {
         card_cover_body_ui(app, ui, st, &t);
     });
     st.dialog_cover_open = open;

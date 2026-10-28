@@ -84,15 +84,22 @@ fn clipped_submenu<'a, R>(
 /// The menu bar contents (inside the app bar; macOS uses the native menu instead).
 pub fn menu_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
     let lang = app.ui.language.clone();
+    let is_rtl = crate::i18n::is_rtl(&lang);
     let mut menus = menu_tree();
-    if crate::i18n::is_rtl(&lang) {
+    if is_rtl {
         menus.reverse();
     }
     for (menu, entries) in menus {
+        #[cfg(feature = "pubgen")]
+        if menu == "Help" && !is_rtl {
+            crate::dock::pubgen_menu(app, ui);
+        }
         menu_button(ui, crate::rtl::widget(ui, crate::i18n::tr(&lang, menu)), |ui| menu_column(app, ui, &[(menu, entries)]));
+        #[cfg(feature = "pubgen")]
+        if menu == "Help" && is_rtl {
+            crate::dock::pubgen_menu(app, ui);
+        }
     }
-    #[cfg(feature = "pubgen")]
-    crate::dock::pubgen_menu(app, ui);
 }
 
 /// One menu's rows, as the menu bar and the canvas context menus show them: runs of items, each

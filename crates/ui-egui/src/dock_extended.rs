@@ -512,4 +512,41 @@ mod pubgen_menu_tests {
             assert!(st.dialog_cover_open);
         });
     }
+
+    #[test]
+    fn test_menu_bar_renders_pubgen_before_help() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx, "en");
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), Default::default());
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 100.0));
+        let mut output = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
+                crate::menus::menu_bar(&mut app, ui);
+            });
+        });
+        output.textures_delta.clear();
+
+        fn collect_texts(shape: &egui::Shape, out: &mut Vec<String>) {
+            match shape {
+                egui::Shape::Text(t) => out.push(t.galley.job.text.clone()),
+                egui::Shape::Vec(shapes) => {
+                    for s in shapes {
+                        collect_texts(s, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let mut texts = Vec::new();
+        for clipped in &output.shapes {
+            collect_texts(&clipped.shape, &mut texts);
+        }
+
+        let pubgen_idx = texts.iter().position(|t| t == "Pubgen");
+        let help_idx = texts.iter().position(|t| t == "Help");
+        assert!(pubgen_idx.is_some(), "Pubgen menu must be present in menu bar. Got: {texts:?}");
+        assert!(help_idx.is_some(), "Help menu must be present in menu bar. Got: {texts:?}");
+        assert!(pubgen_idx.unwrap() < help_idx.unwrap(), "Pubgen must appear before Help");
+    }
 }
