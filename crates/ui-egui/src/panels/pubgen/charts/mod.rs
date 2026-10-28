@@ -42,8 +42,7 @@ pub mod spec;
 pub use dialog::ChartDialog;
 pub use emitter::emit_chart;
 pub use layout::{
-    AXIS_LABEL_H, AXIS_LABEL_W, BAR_GROUP_GAP, BAR_SERIES_GAP, BarRect, ChartLayout, DonutSlice, GridLine, LegendItem, XTickLabel,
-    compute_layout,
+    AXIS_LABEL_H, AXIS_LABEL_W, BAR_GROUP_GAP, BAR_SERIES_GAP, BarRect, ChartLayout, DonutSlice, GridLine, LegendItem, XTickLabel, compute_layout,
 };
 pub use palette::{BPS_CHART_PALETTE, series_color};
 pub use spec::{ChartSpec, ChartType, SeriesSpec, ValueFormat, extract_chart_data, parse_chart_spec};

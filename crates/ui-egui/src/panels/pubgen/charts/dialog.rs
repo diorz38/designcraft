@@ -3,12 +3,12 @@
 //! Provides interactive UI to create a new statistical vector chart or edit
 //! an existing chart directly on the active document spread.
 
-use egui::{RichText, Ui};
+use egui::RichText;
 use serde_json::json;
 
-use crate::DesignApp;
 use super::layout::compute_layout;
 use super::spec::{ChartSpec, ChartType, SeriesSpec, ValueFormat, extract_chart_data};
+use crate::DesignApp;
 use crate::dock::pubgen::excel::ExcelSheetData;
 use crate::dock::pubgen::state::PubgenState;
 use crate::theme::Tokens;
@@ -105,22 +105,18 @@ impl ChartDialog {
             // Check if any selected item or spread item is a chart
             if let Some(spread) = active.doc.spreads.get(cur_spread) {
                 // If user selected an item, check that first
-                let target_item = spread
-                    .items
-                    .iter()
-                    .find(|it| active.selection.items.contains(&it.id))
-                    .or_else(|| {
-                        // Otherwise, look for an item with a Grafik/Figure title
-                        spread.items.iter().find(|it| {
-                            if let designcraft_doc::Content::Text(tf) = &it.content
-                                && let Some(story) = active.doc.story(tf.story)
-                            {
-                                let t = story.text.trim();
-                                return t.starts_with("Grafik") || t.starts_with("Figure");
-                            }
-                            false
-                        })
-                    });
+                let target_item = spread.items.iter().find(|it| active.selection.items.contains(&it.id)).or_else(|| {
+                    // Otherwise, look for an item with a Grafik/Figure title
+                    spread.items.iter().find(|it| {
+                        if let designcraft_doc::Content::Text(tf) = &it.content
+                            && let Some(story) = active.doc.story(tf.story)
+                        {
+                            let t = story.text.trim();
+                            return t.starts_with("Grafik") || t.starts_with("Figure");
+                        }
+                        false
+                    })
+                });
 
                 if let Some(it) = target_item {
                     dlg.editing_item_id = Some(it.id.0);
@@ -158,18 +154,11 @@ impl ChartDialog {
             } else {
                 ','
             };
-            let row: Vec<String> = trimmed
-                .split(sep)
-                .map(|cell| cell.trim().trim_matches('"').trim().to_string())
-                .collect();
+            let row: Vec<String> = trimmed.split(sep).map(|cell| cell.trim().trim_matches('"').trim().to_string()).collect();
             grid.push(row);
         }
 
-        ExcelSheetData {
-            name: "ChartData".into(),
-            grid,
-            merges: Vec::new(),
-        }
+        ExcelSheetData { name: "ChartData".into(), grid, merges: Vec::new() }
     }
 
     /// Build the `ChartSpec` from the current dialog parameters.
@@ -220,8 +209,7 @@ impl ChartDialog {
         let sheet_data = self.parse_sheet_data();
         let spec = self.build_spec();
 
-        let (categories, series_values) = extract_chart_data(&sheet_data, &spec)
-            .map_err(|e| format!("Failed to extract chart data: {e}"))?;
+        let (categories, series_values) = extract_chart_data(&sheet_data, &spec).map_err(|e| format!("Failed to extract chart data: {e}"))?;
 
         let (margin, spread_count) = {
             let active = app.session.active().ok_or("No active document open")?;
@@ -231,12 +219,7 @@ impl ChartDialog {
             let page = spread.pages.first();
             let rect = if let Some(pg) = page {
                 let m = pg.margin_rect();
-                designcraft_geom::Rect {
-                    x0: m.x0,
-                    y0: m.y0 + 20.0,
-                    x1: m.x1,
-                    y1: m.y1 - 10.0,
-                }
+                designcraft_geom::Rect { x0: m.x0, y0: m.y0 + 20.0, x1: m.x1, y1: m.y1 - 10.0 }
             } else {
                 designcraft_geom::Rect { x0: 36.0, y0: 56.0, x1: 559.0, y1: 780.0 }
             };
@@ -258,11 +241,8 @@ impl ChartDialog {
         let count = super::emitter::emit_chart(app, target_sp, &spec, &layout, &[], bilingual)?;
 
         if !self.title_id.is_empty() {
-            let title_line = if bilingual && !self.title_en.is_empty() {
-                format!("{} / {}", self.title_id, self.title_en)
-            } else {
-                self.title_id.clone()
-            };
+            let title_line =
+                if bilingual && !self.title_en.is_empty() { format!("{} / {}", self.title_id, self.title_en) } else { self.title_id.clone() };
             let title_rect = [margin.x0, margin.y0 - 24.0, margin.x1, margin.y0 - 2.0];
             let _ = super::emitter::emit_text(app, target_sp, title_rect, &title_line, 10.0, true, "center", Some("#1A1A1A"));
         }
@@ -273,31 +253,35 @@ impl ChartDialog {
 }
 
 /// Render the Chart Options dialog window in egui.
-pub(crate) fn chart_dialog_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut PubgenState) {
     let Some(mut dialog) = st.chart_dialog.take() else {
         return;
     };
 
+    let t = Tokens::get(ctx);
     let mut open = true;
     let mut close = false;
     let mut apply = false;
 
     let lang = app.ui.language.clone();
     let is_editing = dialog.editing_item_id.is_some();
-    let window_title = if is_editing {
-        crate::i18n::tr(&lang, "Edit Vector Chart (Pubgen)")
-    } else {
-        crate::i18n::tr(&lang, "Add Vector Chart (Pubgen)")
-    };
+    let window_title =
+        if is_editing { crate::i18n::tr(&lang, "Edit Vector Chart (Pubgen)") } else { crate::i18n::tr(&lang, "Add Vector Chart (Pubgen)") };
 
-    egui::Window::new(RichText::new(window_title).strong().size(13.5).color(t.text_strong))
+    let available_h = (ctx.content_rect().height() - 90.0).max(200.0);
+    let scroll_h = 600.0f32.min(available_h);
+
+    egui::Window::new(RichText::new(window_title).size(15.0))
         .open(&mut open)
         .collapsible(false)
-        .resizable(true)
+        .resizable(false)
         .default_width(540.0)
-        .default_height(580.0)
-        .show(ui.ctx(), |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
+        .min_width(540.0)
+        .max_width(540.0)
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(ctx.content_rect().center())
+        .show(ctx, |ui| {
+            egui::ScrollArea::vertical().max_width(540.0).max_height(scroll_h).auto_shrink([false, true]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(6.0, 5.0);
 
                 // Section 1: Titles & Chart Type
@@ -312,23 +296,20 @@ pub(crate) fn chart_dialog_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
                         ChartType::Area => "Area Chart (Filled)",
                         ChartType::Donut => "Donut / Ring Chart",
                     };
-                    craft_ui::ComboBox::from_id_salt("pubgen_chart_archetype")
-                        .selected_text(cur_type_name)
-                        .width(200.0)
-                        .show_ui(ui, |ui| {
-                            for (ct, name) in [
-                                (ChartType::BarClustered, "Vertical Clustered Bar"),
-                                (ChartType::BarStacked, "Vertical Stacked Bar"),
-                                (ChartType::HorizontalBar, "Horizontal Bar (Ranked)"),
-                                (ChartType::Line, "Line Chart (Markers)"),
-                                (ChartType::Area, "Area Chart (Filled)"),
-                                (ChartType::Donut, "Donut / Ring Chart"),
-                            ] {
-                                if ui.selectable_label(dialog.chart_type == ct, name).clicked() {
-                                    dialog.chart_type = ct;
-                                }
+                    craft_ui::ComboBox::from_id_salt("pubgen_chart_archetype").selected_text(cur_type_name).width(200.0).show_ui(ui, |ui| {
+                        for (ct, name) in [
+                            (ChartType::BarClustered, "Vertical Clustered Bar"),
+                            (ChartType::BarStacked, "Vertical Stacked Bar"),
+                            (ChartType::HorizontalBar, "Horizontal Bar (Ranked)"),
+                            (ChartType::Line, "Line Chart (Markers)"),
+                            (ChartType::Area, "Area Chart (Filled)"),
+                            (ChartType::Donut, "Donut / Ring Chart"),
+                        ] {
+                            if ui.selectable_label(dialog.chart_type == ct, name).clicked() {
+                                dialog.chart_type = ct;
                             }
-                        });
+                        }
+                    });
                 });
 
                 ui.horizontal(|ui| {
@@ -403,20 +384,17 @@ pub(crate) fn chart_dialog_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
                         ValueFormat::Percent => "Percentage (%)",
                         ValueFormat::CurrencyIdr => "Currency IDR (Rp)",
                     };
-                    craft_ui::ComboBox::from_id_salt("pubgen_chart_fmt")
-                        .selected_text(fmt_str)
-                        .width(160.0)
-                        .show_ui(ui, |ui| {
-                            if ui.selectable_label(dialog.value_format == ValueFormat::Number, "Number (1.234,5)").clicked() {
-                                dialog.value_format = ValueFormat::Number;
-                            }
-                            if ui.selectable_label(dialog.value_format == ValueFormat::Percent, "Percentage (%)").clicked() {
-                                dialog.value_format = ValueFormat::Percent;
-                            }
-                            if ui.selectable_label(dialog.value_format == ValueFormat::CurrencyIdr, "Currency IDR (Rp)").clicked() {
-                                dialog.value_format = ValueFormat::CurrencyIdr;
-                            }
-                        });
+                    craft_ui::ComboBox::from_id_salt("pubgen_chart_fmt").selected_text(fmt_str).width(160.0).show_ui(ui, |ui| {
+                        if ui.selectable_label(dialog.value_format == ValueFormat::Number, "Number (1.234,5)").clicked() {
+                            dialog.value_format = ValueFormat::Number;
+                        }
+                        if ui.selectable_label(dialog.value_format == ValueFormat::Percent, "Percentage (%)").clicked() {
+                            dialog.value_format = ValueFormat::Percent;
+                        }
+                        if ui.selectable_label(dialog.value_format == ValueFormat::CurrencyIdr, "Currency IDR (Rp)").clicked() {
+                            dialog.value_format = ValueFormat::CurrencyIdr;
+                        }
+                    });
 
                     ui.add_space(8.0);
                     ui.label(RichText::new("Max Override:").size(10.5).color(t.text_dim));
@@ -441,12 +419,7 @@ pub(crate) fn chart_dialog_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
                     }
                 });
 
-                ui.add(
-                    egui::TextEdit::multiline(&mut dialog.raw_data)
-                        .code_editor()
-                        .desired_rows(6)
-                        .desired_width(f32::INFINITY)
-                );
+                ui.add(egui::TextEdit::multiline(&mut dialog.raw_data).code_editor().desired_rows(6).desired_width(f32::INFINITY));
 
                 if let Some(active) = app.session.active() {
                     let total_sp = active.doc.spreads.len();
@@ -562,4 +535,3 @@ mod tests {
         assert!(exists, "pubgen.chartDialog must be registered in UI_COMMANDS");
     }
 }
-

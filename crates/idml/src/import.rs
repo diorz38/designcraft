@@ -581,7 +581,6 @@ impl<'r> Importer<'r> {
             modified: self.modified.unwrap_or(0),
             next_id: self.next_id,
             font_scope: 0,
-            header_footer: None,
         };
         if let [x, y] = root.get("ZeroPoint").map(nums).unwrap_or_default()[..]
             && let Some(zp) = d.clamp_zero_point([x, y])

@@ -72,19 +72,11 @@ pub(crate) const PANEL_ID: &str = "pubgen_panel_state";
 
 /// Open the Vector Chart Options dialog window.
 pub fn open_chart_dialog(app: &mut DesignApp, edit: bool) -> Result<(), String> {
-    let state_id = egui::Id::unique(PANEL_ID);
-    let mut st = app
-        .egui_ctx
-        .as_ref()
-        .and_then(|ctx| ctx.data(|d| d.get_temp::<PubgenState>(state_id)))
-        .unwrap_or_else(|| PubgenState {
-            bilingual_output: true,
-            cover_include_inside_back: true,
-            ..Default::default()
+    if let Some(ctx) = app.egui_ctx.clone() {
+        let dlg = Box::new(charts::dialog::ChartDialog::new(app, edit));
+        with_state(&ctx, |st| {
+            st.chart_dialog = Some(dlg);
         });
-    st.chart_dialog = Some(Box::new(charts::dialog::ChartDialog::new(app, edit)));
-    if let Some(ctx) = &app.egui_ctx {
-        ctx.data_mut(|d| d.insert_temp(state_id, st));
         ctx.request_repaint();
     }
     Ok(())
@@ -357,7 +349,7 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
 
     ai::dialog_ui(app, &mut st, ui);
 
-    charts::dialog::chart_dialog_ui(app, ui, &mut st, &t);
+    charts::dialog::chart_dialog_ui(app, ui.ctx(), &mut st);
 
     pubgen_header_band(app, ui, &mut st, &t);
 

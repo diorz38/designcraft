@@ -1437,7 +1437,6 @@ pub(crate) fn manual_import_accordion_ui(app: &mut DesignApp, ui: &mut Ui, st: &
     });
 }
 
-
 pub(crate) fn card_chart_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     let lang = app.ui.language.clone();
     let has_doc = app.session.active().is_some();
@@ -1478,7 +1477,10 @@ pub(crate) fn card_chart_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
             st.chart_dialog = Some(Box::new(super::charts::dialog::ChartDialog::new(app, false)));
         }
 
-        let edit_btn = ui.add_enabled(has_doc && has_chart_on_spread, egui::Button::new(RichText::new(crate::i18n::tr(&lang, "✏️ Edit Current Chart…")).size(11.0)));
+        let edit_btn = ui.add_enabled(
+            has_doc && has_chart_on_spread,
+            egui::Button::new(RichText::new(crate::i18n::tr(&lang, "✏️ Edit Current Chart…")).size(11.0)),
+        );
         if edit_btn.clicked() {
             st.chart_dialog = Some(Box::new(super::charts::dialog::ChartDialog::new(app, true)));
         }

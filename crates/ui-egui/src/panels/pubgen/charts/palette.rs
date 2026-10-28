@@ -55,4 +55,3 @@ mod tests {
         assert_eq!(series_color(&[], idx), BPS_CHART_PALETTE[2]);
     }
 }
-

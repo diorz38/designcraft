@@ -209,6 +209,15 @@ pub fn pubgen_menu(app: &mut DesignApp, ui: &mut egui::Ui) {
                 ui.close();
             }
 
+            // 2. Statistical Vector Chart…
+            if ui.add_enabled(has_doc, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(&lang, "Statistical Vector Chart…")))).clicked() {
+                let dlg = Box::new(pubgen::charts::dialog::ChartDialog::new(app, false));
+                pubgen::with_state(ui.ctx(), |st| {
+                    st.chart_dialog = Some(dlg);
+                });
+                ui.close();
+            }
+
             // 2. Table of Contents…
             if ui.add_enabled(has_doc, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(&lang, "Table of Contents…")))).clicked() {
                 pubgen::with_state(ui.ctx(), |st| {
@@ -481,6 +490,7 @@ mod pubgen_menu_tests {
             st.dialog_hf_open = true;
             st.dialog_manual_open = true;
             st.dialog_utils_open = true;
+            st.chart_dialog = Some(Box::new(pubgen::charts::dialog::ChartDialog::new(&app, false)));
         });
         let mut ran = false;
         let mut output = ctx.run_ui(test_input(vec2(1200.0, 900.0)), |_ui| {

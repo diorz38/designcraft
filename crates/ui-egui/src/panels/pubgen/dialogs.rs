@@ -155,8 +155,17 @@ pub fn dialog_utils_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
 }
 
 /// Renders all active Pubgen popup dialogs and modal windows for the frame.
+/// Modal dialog for Statistical Vector Chart Options.
+pub fn dialog_chart_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut PubgenState) {
+    if st.chart_dialog.is_none() {
+        return;
+    }
+    charts::dialog::chart_dialog_ui(app, ctx, st);
+}
+
 pub fn show_all_dialogs(app: &mut DesignApp, ctx: &egui::Context, st: &mut PubgenState) {
     dialog_excel_ui(app, ctx, st);
+    dialog_chart_ui(app, ctx, st);
     dialog_toc_ui(app, ctx, st);
     dialog_cover_ui(app, ctx, st);
     dialog_hf_ui(app, ctx, st);

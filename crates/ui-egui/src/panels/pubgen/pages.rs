@@ -1590,27 +1590,14 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                 if let Ok(content) = std::fs::read_to_string(candidate) {
                     let delim = detect_delimiter(&content);
                     let grid = parse_csv_content_with_delim(&content, delim);
-                    let sheet_data = excel::ExcelSheetData {
-                        name: num_val.to_string(),
-                        grid,
-                        merges: Vec::new(),
-                    };
+                    let sheet_data = excel::ExcelSheetData { name: num_val.to_string(), grid, merges: Vec::new() };
                     if let Some(spec) = super::charts::spec::parse_chart_spec(&sheet_data) {
                         match super::charts::spec::extract_chart_data(&sheet_data, &spec) {
                             Ok((categories, series_values)) => {
-                                let chart_margin = designcraft_geom::Rect {
-                                    x0: margin.x0,
-                                    y0: margin.y0 + title_h + 8.0,
-                                    x1: margin.x1,
-                                    y1: margin.y1,
-                                };
-                                let layout = super::charts::layout::compute_layout(
-                                    &spec,
-                                    &categories,
-                                    &series_values,
-                                    chart_margin,
-                                    st.bilingual_output,
-                                );
+                                let chart_margin =
+                                    designcraft_geom::Rect { x0: margin.x0, y0: margin.y0 + title_h + 8.0, x1: margin.x1, y1: margin.y1 };
+                                let layout =
+                                    super::charts::layout::compute_layout(&spec, &categories, &series_values, chart_margin, st.bilingual_output);
                                 let palette = if !theme_val.is_empty() {
                                     vec![theme_val.to_string()]
                                 } else if let Some(ref th) = st.card2_theme_override {
@@ -4318,11 +4305,9 @@ Grafik,02.01,Grafik 02.01 Penduduk Menurut Desa,C02_01.csv\n";
         let img_path = dir.path().join("chart.png");
         // Minimal 1x1 png
         let png_bytes = [
-            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
-            0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
-            0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
-            0x42, 0x60, 0x82,
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+            0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01,
+            0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
         ];
         std::fs::write(&img_path, png_bytes).unwrap();
 
@@ -4394,9 +4379,7 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
         assert!(toc_res.is_ok(), "execute_add_toc should succeed: {toc_res:?}");
 
         let active = app.session.active().unwrap();
-        let has_chart_entry = active.doc.stories.values().any(|s| {
-            s.text.contains("Pertumbuhan Ekonomi") || s.text.contains("01.01")
-        });
+        let has_chart_entry = active.doc.stories.values().any(|s| s.text.contains("Pertumbuhan Ekonomi") || s.text.contains("01.01"));
         assert!(has_chart_entry, "List of Charts TOC should contain the vector chart entry");
     }
 
@@ -4410,11 +4393,7 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
             title_id: "Grafik Penduduk".into(),
             title_en: "Population Chart".into(),
             category_col: "A".into(),
-            series: vec![super::charts::spec::SeriesSpec {
-                col: "B".into(),
-                label_id: "Laki-laki".into(),
-                label_en: "Male".into(),
-            }],
+            series: vec![super::charts::spec::SeriesSpec { col: "B".into(), label_id: "Laki-laki".into(), label_en: "Male".into() }],
             data_start_row: 1,
             data_end_row: 2,
             value_format: super::charts::spec::ValueFormat::Number,
@@ -4447,11 +4426,7 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
             title_id: "Grafik".into(),
             title_en: "".into(),
             category_col: "A".into(),
-            series: vec![super::charts::spec::SeriesSpec {
-                col: "B".into(),
-                label_id: "Val".into(),
-                label_en: "".into(),
-            }],
+            series: vec![super::charts::spec::SeriesSpec { col: "B".into(), label_id: "Val".into(), label_en: "".into() }],
             data_start_row: 1,
             data_end_row: 2,
             value_format: super::charts::spec::ValueFormat::Number,
@@ -4477,9 +4452,7 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
                 all_items.extend(items.iter().cloned());
             }
         }
-        let rotated_frame = all_items.iter().any(|it| {
-            designcraft_geom::decompose::decompose(it.xf).rotation.abs() > 1.0
-        });
+        let rotated_frame = all_items.iter().any(|it| designcraft_geom::decompose::decompose(it.xf).rotation.abs() > 1.0);
         assert!(rotated_frame, "Rotated X-tick frame should have non-zero rotation transform");
     }
 

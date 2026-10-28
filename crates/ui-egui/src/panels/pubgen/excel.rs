@@ -1054,14 +1054,9 @@ pub fn extract_dotted_number(text: &str) -> Option<String> {
 /// Row 3 (optional): template;[template path or ID]
 pub fn parse_chart_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>)> {
     let (title_val, file_val) = if let Some(spec) = super::charts::spec::parse_chart_spec(sheet) {
-        let t = if !spec.title_id.is_empty() {
-            spec.title_id
-        } else {
-            sheet.grid.first().map(|r| extract_field_lenient(r, "title")).unwrap_or_default()
-        };
-        let f = sheet.grid.iter().find_map(|r| {
-            extract_field_for_keys(r, &["file", "file_path", "image", "gambar"])
-        }).unwrap_or_default();
+        let t =
+            if !spec.title_id.is_empty() { spec.title_id } else { sheet.grid.first().map(|r| extract_field_lenient(r, "title")).unwrap_or_default() };
+        let f = sheet.grid.iter().find_map(|r| extract_field_for_keys(r, &["file", "file_path", "image", "gambar"])).unwrap_or_default();
         (t, f)
     } else {
         let row1 = sheet.grid.first()?;
@@ -1657,17 +1652,13 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
                 let filename = format!("{safe_name}.csv");
                 let csv_content = raw_sheet_to_csv(sheet);
                 table_csvs.push((filename.clone(), csv_content));
-                if f_val.is_empty() {
-                    filename
-                } else {
-                    f_val
-                }
+                if f_val.is_empty() { filename } else { f_val }
             } else {
                 f_val
             };
 
-            let title_en_val = super::charts::spec::parse_chart_spec(sheet)
-                .and_then(|s| if !s.title_en.is_empty() { Some(s.title_en) } else { None });
+            let title_en_val =
+                super::charts::spec::parse_chart_spec(sheet).and_then(|s| if !s.title_en.is_empty() { Some(s.title_en) } else { None });
 
             entries.push(CatalogEntryItem {
                 entry_type: t_val,

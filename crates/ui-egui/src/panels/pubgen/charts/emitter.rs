@@ -29,21 +29,12 @@ pub fn ensure_swatch(app: &mut DesignApp, hex_or_name: &str) -> Result<String, S
     {
         return Ok(name.to_string());
     }
-    let res = app
-        .run("swatch.create", json!({"name": name, "color": name}))
-        .map_err(|e| format!("swatch.create `{name}` failed: {e}"))?;
+    let res = app.run("swatch.create", json!({"name": name, "color": name})).map_err(|e| format!("swatch.create `{name}` failed: {e}"))?;
     Ok(res.get("name").and_then(Value::as_str).unwrap_or(name).to_string())
 }
 
 /// Emits a single rectangle frame onto the given spread.
-pub fn emit_rect(
-    app: &mut DesignApp,
-    spread_idx: usize,
-    rect: [f64; 4],
-    fill: &str,
-    stroke: &str,
-    stroke_weight: f64,
-) -> Result<u64, String> {
+pub fn emit_rect(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], fill: &str, stroke: &str, stroke_weight: f64) -> Result<u64, String> {
     let res = app
         .run(
             "frame.create",
@@ -57,10 +48,7 @@ pub fn emit_rect(
         )
         .map_err(|e| format!("frame.create rect failed: {e}"))?;
 
-    let fid = res
-        .get("id")
-        .and_then(Value::as_u64)
-        .ok_or_else(|| "frame.create returned no id".to_string())?;
+    let fid = res.get("id").and_then(Value::as_u64).ok_or_else(|| "frame.create returned no id".to_string())?;
 
     if fill != "[None]" {
         let fill_swatch = ensure_swatch(app, fill)?;
@@ -104,17 +92,10 @@ pub fn emit_text(
         )
         .map_err(|e| format!("frame.create text failed: {e}"))?;
 
-    let fid = res
-        .get("id")
-        .and_then(Value::as_u64)
-        .ok_or_else(|| "frame.create returned no id".to_string())?;
+    let fid = res.get("id").and_then(Value::as_u64).ok_or_else(|| "frame.create returned no id".to_string())?;
     let sid = res.get("story").and_then(Value::as_u64);
 
-    let swatch_name = if let Some(c) = color {
-        ensure_swatch(app, c)?
-    } else {
-        "[Black]".to_string()
-    };
+    let swatch_name = if let Some(c) = color { ensure_swatch(app, c)? } else { "[Black]".to_string() };
 
     if let Some(story_id) = sid {
         let _ = app.session.edit(|doc, _| {
@@ -166,12 +147,7 @@ pub fn emit_chart(
         let tick_rect = if is_vertical_grid {
             [gl.rect[0] - 24.0, gl.rect[3] + 2.0, gl.rect[0] + 24.0, gl.rect[3] + 14.0]
         } else {
-            [
-                (gl.rect[0] - AXIS_LABEL_W - 4.0).max(0.0),
-                gl.rect[1] - 6.0,
-                gl.rect[0] - 4.0,
-                gl.rect[1] + 6.0,
-            ]
+            [(gl.rect[0] - AXIS_LABEL_W - 4.0).max(0.0), gl.rect[1] - 6.0, gl.rect[0] - 4.0, gl.rect[1] + 6.0]
         };
         let align = if is_vertical_grid { "center" } else { "right" };
         if let Ok(tfid) = emit_text(app, spread_idx, tick_rect, &gl.label, 7.5, false, align, Some("#666666")) {
@@ -259,20 +235,20 @@ pub fn emit_chart(
                 && let designcraft_doc::Content::Text(tf) = &it.content
             {
                 let sid = tf.story;
-                        let _ = app.session.edit(|doc, _| {
-                            if let Some(story) = doc.story_mut(sid) {
-                                let mut offset = 0;
-                                for r in &mut story.chars {
-                                    let run_end = offset + r.len;
-                                    offset = run_end;
-                                    if run_end > b_start {
-                                        r.format.over.font_style = Some("Italic".into());
-                                    }
-                                }
+                let _ = app.session.edit(|doc, _| {
+                    if let Some(story) = doc.story_mut(sid) {
+                        let mut offset = 0;
+                        for r in &mut story.chars {
+                            let run_end = offset + r.len;
+                            offset = run_end;
+                            if run_end > b_start {
+                                r.format.over.font_style = Some("Italic".into());
                             }
-                            Ok(Value::Null)
-                        });
+                        }
                     }
+                    Ok(Value::Null)
+                });
+            }
         }
         frame_ids.push(lfid);
     }
@@ -287,10 +263,10 @@ pub fn emit_chart(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::Services;
     use super::super::layout::compute_layout;
     use super::super::spec::{ChartSpec, ChartType, SeriesSpec, ValueFormat};
+    use super::*;
+    use crate::Services;
     use designcraft_geom::Rect;
 
     fn test_app() -> DesignApp {
@@ -306,16 +282,8 @@ mod tests {
             title_en: "Chart Title".into(),
             category_col: "A".into(),
             series: vec![
-                SeriesSpec {
-                    col: "B".into(),
-                    label_id: "Pria".into(),
-                    label_en: "Male".into(),
-                },
-                SeriesSpec {
-                    col: "C".into(),
-                    label_id: "Wanita".into(),
-                    label_en: "Female".into(),
-                },
+                SeriesSpec { col: "B".into(), label_id: "Pria".into(), label_en: "Male".into() },
+                SeriesSpec { col: "C".into(), label_id: "Wanita".into(), label_en: "Female".into() },
             ],
             data_start_row: 1,
             data_end_row: 3,
@@ -328,12 +296,7 @@ mod tests {
     }
 
     fn sample_margin() -> Rect {
-        Rect {
-            x0: 36.0,
-            y0: 36.0,
-            x1: 550.0,
-            y1: 750.0,
-        }
+        Rect { x0: 36.0, y0: 36.0, x1: 550.0, y1: 750.0 }
     }
 
     #[test]
@@ -406,10 +369,7 @@ mod tests {
 
         let active = app.session.active().unwrap();
         // Spreads contain a Group item containing the child frames
-        let has_group = active.doc.spreads[0]
-            .items
-            .iter()
-            .any(|it| matches!(it.content, designcraft_doc::Content::Group { .. }));
+        let has_group = active.doc.spreads[0].items.iter().any(|it| matches!(it.content, designcraft_doc::Content::Group { .. }));
         assert!(has_group, "Emitted chart should be wrapped in an object.group");
     }
 

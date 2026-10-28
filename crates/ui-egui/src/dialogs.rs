@@ -2989,7 +2989,6 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                     }
                     "tableOptions" => table_options_dialog(app, ui, &mut d),
                     "cellOptions" => cell_options(app, ui, &mut d),
-                    "headerFooter" => crate::header_footer::body(app, ui, &mut d),
                     "createGuides" => create_guides_dialog(app, ui, &mut d),
                     "marginsAndColumns" => margins_and_columns_dialog(app, ui, &mut d),
                     "textFrameOptions" => {
@@ -7516,61 +7515,3 @@ fn find_font(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
 
 #[cfg(test)]
 mod tests;
-
-pub fn open_table_options(app: &mut DesignApp) -> Result<Value, String> {
-    let got = app.session.execute("table.get", &json!({})).ok();
-    let (in_table, header_rows, footer_rows, repeat_header, repeat_footer) = if let Some(t) = got {
-        let hr = t.get("headerRows").and_then(Value::as_u64).unwrap_or(0);
-        let fr = t.get("footerRows").and_then(Value::as_u64).unwrap_or(0);
-        let opts = t.get("options");
-        let rep_h = opts.and_then(|o| o.get("repeatHeader")).and_then(Value::as_bool).unwrap_or(true);
-        let rep_f = opts.and_then(|o| o.get("repeatFooter")).and_then(Value::as_bool).unwrap_or(false);
-        (true, hr, fr, rep_h, rep_f)
-    } else {
-        (false, 0, 0, true, false)
-    };
-
-    let fields = json!({
-        "inTable": in_table,
-        "headerRows": header_rows.to_string(),
-        "footerRows": footer_rows.to_string(),
-        "repeatHeader": repeat_header,
-        "repeatFooter": repeat_footer,
-    });
-    app.ui.dialog = Some(Dialog::new("tableOptions", fields));
-    Ok(Value::Null)
-}
-
-fn table_options_dialog(app: &mut DesignApp, ui: &mut egui::Ui, d: &mut Dialog) {
-    let lang = &app.ui.language;
-    if !d.b("inTable") {
-        ui.add_space(8.0);
-        crate::rtl::label(
-            ui,
-            egui::RichText::new(crate::i18n::tr(lang, "Place insertion point in a table to edit Table Options."))
-                .color(crate::theme::Tokens::get(ui.ctx()).text_dim),
-        );
-        ui.add_space(8.0);
-        return;
-    }
-
-    crate::rtl::label(ui, egui::RichText::new(crate::i18n::tr(lang, "Headers and Footers")).font(semibold(12.0)));
-    ui.add_space(6.0);
-    egui::Grid::new("tbl_opts_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-        crate::rtl::label(ui, crate::i18n::tr(lang, "Header Rows:"));
-        text_field(ui, d, "headerRows", 60.0);
-        ui.end_row();
-
-        crate::rtl::label(ui, "");
-        check(ui, d, "repeatHeader", crate::i18n::tr(lang, "Repeat Header Rows"));
-        ui.end_row();
-
-        crate::rtl::label(ui, crate::i18n::tr(lang, "Footer Rows:"));
-        text_field(ui, d, "footerRows", 60.0);
-        ui.end_row();
-
-        crate::rtl::label(ui, "");
-        check(ui, d, "repeatFooter", crate::i18n::tr(lang, "Repeat Footer Rows"));
-        ui.end_row();
-    });
-}

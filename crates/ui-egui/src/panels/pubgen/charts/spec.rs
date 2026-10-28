@@ -163,11 +163,8 @@ pub fn parse_cell_number(s: &str) -> Option<f64> {
     }
 
     // Handle parenthesised negatives: (1.234) -> -1234
-    let (negative, clean) = if clean.starts_with('(') && clean.ends_with(')') && clean.len() > 2 {
-        (true, clean[1..clean.len() - 1].trim())
-    } else {
-        (false, clean)
-    };
+    let (negative, clean) =
+        if clean.starts_with('(') && clean.ends_with(')') && clean.len() > 2 { (true, clean[1..clean.len() - 1].trim()) } else { (false, clean) };
 
     let clean = clean.replace('−', "-");
 
@@ -385,13 +382,9 @@ pub fn parse_chart_spec(sheet: &ExcelSheetData) -> Option<ChartSpec> {
 ///
 /// Returns `Err(String)` when no data rows could be parsed (the caller surfaces this as a
 /// generation warning and falls back to raster).
-pub fn extract_chart_data(
-    sheet: &ExcelSheetData,
-    spec: &ChartSpec,
-) -> Result<(Vec<String>, Vec<Vec<f64>>), String> {
+pub fn extract_chart_data(sheet: &ExcelSheetData, spec: &ChartSpec) -> Result<(Vec<String>, Vec<Vec<f64>>), String> {
     // Convert column letters to 0-based indices.
-    let cat_col_idx = col_letter_to_index(&spec.category_col)
-        .ok_or_else(|| format!("invalid category_col '{}'", spec.category_col))?;
+    let cat_col_idx = col_letter_to_index(&spec.category_col).ok_or_else(|| format!("invalid category_col '{}'", spec.category_col))?;
 
     let series_col_indices: Vec<usize> = spec
         .series
@@ -404,11 +397,7 @@ pub fn extract_chart_data(
     let end_idx = spec.data_end_row.saturating_sub(1);
 
     if start_idx >= sheet.grid.len() {
-        return Err(format!(
-            "data_start_row {} exceeds sheet row count {}",
-            spec.data_start_row,
-            sheet.grid.len()
-        ));
+        return Err(format!("data_start_row {} exceeds sheet row count {}", spec.data_start_row, sheet.grid.len()));
     }
 
     let mut categories: Vec<String> = Vec::new();
@@ -451,10 +440,7 @@ pub fn extract_chart_data(
     }
 
     if categories.is_empty() {
-        return Err(format!(
-            "no data rows found in sheet '{}' between rows {} and {}",
-            sheet.name, spec.data_start_row, spec.data_end_row
-        ));
+        return Err(format!("no data rows found in sheet '{}' between rows {} and {}", sheet.name, spec.data_start_row, spec.data_end_row));
     }
 
     Ok((categories, series_values))
@@ -498,10 +484,8 @@ fn collect_kv(sheet: &ExcelSheetData) -> Vec<(String, String)> {
 
 /// Look up the first value matching any of `keys` (case-insensitive, ignoring `_`, `-`, ` `).
 fn lookup(kv: &[(String, String)], keys: &[&str]) -> Option<String> {
-    let normalised_keys: Vec<String> = keys
-        .iter()
-        .map(|k| k.chars().filter(|c| !matches!(c, '_' | '-' | ' ')).collect::<String>().to_lowercase())
-        .collect();
+    let normalised_keys: Vec<String> =
+        keys.iter().map(|k| k.chars().filter(|c| !matches!(c, '_' | '-' | ' ')).collect::<String>().to_lowercase()).collect();
 
     kv.iter().find_map(|(k, v)| {
         let kn: String = k.chars().filter(|c| !matches!(c, '_' | '-' | ' ')).collect();
@@ -559,11 +543,7 @@ mod tests {
 
     // Helper: build an ExcelSheetData from a list of rows (each row is a list of &str).
     fn sheet(name: &str, rows: &[&[&str]]) -> ExcelSheetData {
-        ExcelSheetData {
-            name: name.to_string(),
-            grid: rows.iter().map(|row| row.iter().map(|s| s.to_string()).collect()).collect(),
-            merges: vec![],
-        }
+        ExcelSheetData { name: name.to_string(), grid: rows.iter().map(|row| row.iter().map(|s| s.to_string()).collect()).collect(), merges: vec![] }
     }
 
     // -----------------------------------------------------------------------
@@ -649,15 +629,18 @@ mod tests {
     // -----------------------------------------------------------------------
 
     fn minimal_bar_sheet() -> ExcelSheetData {
-        sheet("C02_01", &[
-            &["chart_type", "bar_clustered"],
-            &["title", "Grafik 02.01 Penduduk Menurut Desa, 2026"],
-            &["category_col", "A"],
-            &["series_1_col", "B"],
-            &["series_1_label", "Laki-laki"],
-            &["data_start_row", "7"],
-            &["data_end_row", "20"],
-        ])
+        sheet(
+            "C02_01",
+            &[
+                &["chart_type", "bar_clustered"],
+                &["title", "Grafik 02.01 Penduduk Menurut Desa, 2026"],
+                &["category_col", "A"],
+                &["series_1_col", "B"],
+                &["series_1_label", "Laki-laki"],
+                &["data_start_row", "7"],
+                &["data_end_row", "20"],
+            ],
+        )
     }
 
     #[test]
@@ -681,19 +664,22 @@ mod tests {
 
     #[test]
     fn two_series_spec_parses_both() {
-        let s = sheet("C03_01", &[
-            &["chart_type", "bar_clustered"],
-            &["title", "Grafik 03.01 Penduduk"],
-            &["category_col", "A"],
-            &["series_1_col", "B"],
-            &["series_1_label", "Laki-laki"],
-            &["series_1_label_en", "Male"],
-            &["series_2_col", "C"],
-            &["series_2_label", "Perempuan"],
-            &["series_2_label_en", "Female"],
-            &["data_start_row", "5"],
-            &["data_end_row", "15"],
-        ]);
+        let s = sheet(
+            "C03_01",
+            &[
+                &["chart_type", "bar_clustered"],
+                &["title", "Grafik 03.01 Penduduk"],
+                &["category_col", "A"],
+                &["series_1_col", "B"],
+                &["series_1_label", "Laki-laki"],
+                &["series_1_label_en", "Male"],
+                &["series_2_col", "C"],
+                &["series_2_label", "Perempuan"],
+                &["series_2_label_en", "Female"],
+                &["data_start_row", "5"],
+                &["data_end_row", "15"],
+            ],
+        );
         let spec = parse_chart_spec(&s).expect("should parse");
         assert_eq!(spec.series.len(), 2);
         assert_eq!(spec.series[0].label_en, "Male");
@@ -703,21 +689,24 @@ mod tests {
 
     #[test]
     fn optional_fields_are_parsed() {
-        let s = sheet("C01_01", &[
-            &["chart_type", "donut"],
-            &["title", "Grafik 01.01 Luas Wilayah"],
-            &["title_en", "Chart 01.01 Area"],
-            &["category_col", "A"],
-            &["series_1_col", "B"],
-            &["series_1_label", "Ha"],
-            &["data_start_row", "3"],
-            &["data_end_row", "10"],
-            &["value_format", "percent"],
-            &["show_value_labels", "false"],
-            &["show_legend", "true"],
-            &["show_grid", "no"],
-            &["max_value", "100.0"],
-        ]);
+        let s = sheet(
+            "C01_01",
+            &[
+                &["chart_type", "donut"],
+                &["title", "Grafik 01.01 Luas Wilayah"],
+                &["title_en", "Chart 01.01 Area"],
+                &["category_col", "A"],
+                &["series_1_col", "B"],
+                &["series_1_label", "Ha"],
+                &["data_start_row", "3"],
+                &["data_end_row", "10"],
+                &["value_format", "percent"],
+                &["show_value_labels", "false"],
+                &["show_legend", "true"],
+                &["show_grid", "no"],
+                &["max_value", "100.0"],
+            ],
+        );
         let spec = parse_chart_spec(&s).expect("should parse");
         assert_eq!(spec.chart_type, ChartType::Donut);
         assert_eq!(spec.title_en, "Chart 01.01 Area");
@@ -731,15 +720,18 @@ mod tests {
     #[test]
     fn inline_semicolon_syntax_is_parsed() {
         // Sheets may use "key;value" in a single cell instead of two cells.
-        let s = sheet("C04_01", &[
-            &["chart_type;line"],
-            &["title;Grafik 04.01 Trend"],
-            &["category_col;A"],
-            &["series_1_col;B"],
-            &["series_1_label;Nilai"],
-            &["data_start_row;2"],
-            &["data_end_row;8"],
-        ]);
+        let s = sheet(
+            "C04_01",
+            &[
+                &["chart_type;line"],
+                &["title;Grafik 04.01 Trend"],
+                &["category_col;A"],
+                &["series_1_col;B"],
+                &["series_1_label;Nilai"],
+                &["data_start_row;2"],
+                &["data_end_row;8"],
+            ],
+        );
         let spec = parse_chart_spec(&s).expect("should parse inline syntax");
         assert_eq!(spec.chart_type, ChartType::Line);
     }
@@ -751,80 +743,92 @@ mod tests {
     #[test]
     fn missing_chart_type_returns_none() {
         // A plain raster-image CXX sheet — no chart_type row.
-        let s = sheet("C05_01", &[
-            &["title", "Grafik 05.01 Panjang Jalan"],
-            &["file", "grafik_jalan.png"],
-        ]);
+        let s = sheet("C05_01", &[&["title", "Grafik 05.01 Panjang Jalan"], &["file", "grafik_jalan.png"]]);
         assert!(parse_chart_spec(&s).is_none(), "no chart_type → None (raster fallback)");
     }
 
     #[test]
     fn unrecognised_chart_type_returns_none() {
-        let s = sheet("C06_01", &[
-            &["chart_type", "radar_chart"],       // not supported
-            &["title", "Grafik 06.01 Radar"],
-            &["category_col", "A"],
-            &["series_1_col", "B"],
-            &["series_1_label", "Nilai"],
-            &["data_start_row", "2"],
-            &["data_end_row", "10"],
-        ]);
+        let s = sheet(
+            "C06_01",
+            &[
+                &["chart_type", "radar_chart"], // not supported
+                &["title", "Grafik 06.01 Radar"],
+                &["category_col", "A"],
+                &["series_1_col", "B"],
+                &["series_1_label", "Nilai"],
+                &["data_start_row", "2"],
+                &["data_end_row", "10"],
+            ],
+        );
         assert!(parse_chart_spec(&s).is_none());
     }
 
     #[test]
     fn missing_category_col_returns_none() {
-        let s = sheet("C07_01", &[
-            &["chart_type", "bar"],
-            &["title", "Grafik 07.01"],
-            // category_col missing
-            &["series_1_col", "B"],
-            &["series_1_label", "Nilai"],
-            &["data_start_row", "2"],
-            &["data_end_row", "5"],
-        ]);
+        let s = sheet(
+            "C07_01",
+            &[
+                &["chart_type", "bar"],
+                &["title", "Grafik 07.01"],
+                // category_col missing
+                &["series_1_col", "B"],
+                &["series_1_label", "Nilai"],
+                &["data_start_row", "2"],
+                &["data_end_row", "5"],
+            ],
+        );
         assert!(parse_chart_spec(&s).is_none(), "missing category_col → None");
     }
 
     #[test]
     fn missing_series_col_returns_none() {
-        let s = sheet("C08_01", &[
-            &["chart_type", "bar"],
-            &["title", "Grafik 08.01"],
-            &["category_col", "A"],
-            // series_1_col missing
-            &["series_1_label", "Nilai"],
-            &["data_start_row", "2"],
-            &["data_end_row", "5"],
-        ]);
+        let s = sheet(
+            "C08_01",
+            &[
+                &["chart_type", "bar"],
+                &["title", "Grafik 08.01"],
+                &["category_col", "A"],
+                // series_1_col missing
+                &["series_1_label", "Nilai"],
+                &["data_start_row", "2"],
+                &["data_end_row", "5"],
+            ],
+        );
         assert!(parse_chart_spec(&s).is_none(), "missing series_1_col → None");
     }
 
     #[test]
     fn missing_data_start_row_returns_none() {
-        let s = sheet("C09_01", &[
-            &["chart_type", "bar"],
-            &["title", "Grafik 09.01"],
-            &["category_col", "A"],
-            &["series_1_col", "B"],
-            &["series_1_label", "Nilai"],
-            // data_start_row missing
-            &["data_end_row", "10"],
-        ]);
+        let s = sheet(
+            "C09_01",
+            &[
+                &["chart_type", "bar"],
+                &["title", "Grafik 09.01"],
+                &["category_col", "A"],
+                &["series_1_col", "B"],
+                &["series_1_label", "Nilai"],
+                // data_start_row missing
+                &["data_end_row", "10"],
+            ],
+        );
         assert!(parse_chart_spec(&s).is_none(), "missing data_start_row → None");
     }
 
     #[test]
     fn data_end_before_start_returns_none() {
-        let s = sheet("C10_01", &[
-            &["chart_type", "bar"],
-            &["title", "Grafik 10.01"],
-            &["category_col", "A"],
-            &["series_1_col", "B"],
-            &["series_1_label", "Nilai"],
-            &["data_start_row", "20"],
-            &["data_end_row", "5"],   // end < start
-        ]);
+        let s = sheet(
+            "C10_01",
+            &[
+                &["chart_type", "bar"],
+                &["title", "Grafik 10.01"],
+                &["category_col", "A"],
+                &["series_1_col", "B"],
+                &["series_1_label", "Nilai"],
+                &["data_start_row", "20"],
+                &["data_end_row", "5"], // end < start
+            ],
+        );
         assert!(parse_chart_spec(&s).is_none(), "data_end < data_start → None");
     }
 
@@ -846,7 +850,7 @@ mod tests {
             vec!["Desa Karang Mukti".into(), "1.234".into(), "1.190".into()],
             vec!["Desa Cikampek".into(), "987".into(), "1.034".into()],
             vec!["Desa Telukjambe".into(), "2.100".into(), "2.050".into()],
-            vec!["".into(), "".into(), "".into()],  // empty row — should be skipped
+            vec!["".into(), "".into(), "".into()], // empty row — should be skipped
         ];
         // Add label / row spec rows at end (they'll be ignored by extract).
         rows.push(vec!["series_1_label".into(), "Laki-laki".into()]);
@@ -885,18 +889,21 @@ mod tests {
 
     #[test]
     fn data_extraction_handles_english_number_format() {
-        let s = sheet("C11_01", &[
-            &["chart_type", "line"],
-            &["title", "Grafik 11.01"],
-            &["category_col", "A"],
-            &["series_1_col", "B"],
-            &["series_1_label", "Value"],
-            &["data_start_row", "8"],
-            &["data_end_row", "10"],
-            &["2021", "1,500"],   // English comma-thousands
-            &["2022", "2,300.5"],
-            &["2023", "3,100"],
-        ]);
+        let s = sheet(
+            "C11_01",
+            &[
+                &["chart_type", "line"],
+                &["title", "Grafik 11.01"],
+                &["category_col", "A"],
+                &["series_1_col", "B"],
+                &["series_1_label", "Value"],
+                &["data_start_row", "8"],
+                &["data_end_row", "10"],
+                &["2021", "1,500"], // English comma-thousands
+                &["2022", "2,300.5"],
+                &["2023", "3,100"],
+            ],
+        );
         let spec = parse_chart_spec(&s).expect("should parse");
         let (cats, vals) = extract_chart_data(&s, &spec).expect("should extract");
         assert_eq!(cats, vec!["2021", "2022", "2023"]);
@@ -906,15 +913,18 @@ mod tests {
 
     #[test]
     fn data_extraction_returns_err_when_no_valid_rows() {
-        let s = sheet("C12_01", &[
-            &["chart_type", "bar"],
-            &["title", "Grafik 12.01"],
-            &["category_col", "A"],
-            &["series_1_col", "B"],
-            &["series_1_label", "Nilai"],
-            &["data_start_row", "100"],  // beyond sheet length
-            &["data_end_row", "110"],
-        ]);
+        let s = sheet(
+            "C12_01",
+            &[
+                &["chart_type", "bar"],
+                &["title", "Grafik 12.01"],
+                &["category_col", "A"],
+                &["series_1_col", "B"],
+                &["series_1_label", "Nilai"],
+                &["data_start_row", "100"], // beyond sheet length
+                &["data_end_row", "110"],
+            ],
+        );
         let spec = parse_chart_spec(&s).expect("should parse");
         let result = extract_chart_data(&s, &spec);
         assert!(result.is_err(), "data_start beyond sheet → Err");
@@ -946,4 +956,3 @@ mod tests {
         assert_eq!(f.format(1500000.0, true), "IDR 1,500,000");
     }
 }
-

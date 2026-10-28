@@ -123,13 +123,7 @@ pub struct ChartLayout {
 }
 
 /// Computes the complete pixel-precise layout for a chart.
-pub fn compute_layout(
-    spec: &ChartSpec,
-    categories: &[String],
-    series_values: &[Vec<f64>],
-    margin: Rect,
-    bilingual: bool,
-) -> ChartLayout {
+pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[Vec<f64>], margin: Rect, bilingual: bool) -> ChartLayout {
     let title_h = if bilingual && !spec.title_en.is_empty() {
         56.0
     } else if !spec.title_id.is_empty() {
@@ -143,16 +137,8 @@ pub fn compute_layout(
     let left_reserve = if is_hbar { HBAR_CATEGORY_W } else { AXIS_LABEL_W };
     let bottom_axis_h = if is_hbar { 16.0 } else { AXIS_LABEL_H };
 
-    let legend_rows = if spec.show_legend && !spec.series.is_empty() {
-        spec.series.len().div_ceil(3)
-    } else {
-        0
-    };
-    let legend_h = if legend_rows > 0 {
-        legend_rows as f64 * LEGEND_ROW_H + 6.0
-    } else {
-        0.0
-    };
+    let legend_rows = if spec.show_legend && !spec.series.is_empty() { spec.series.len().div_ceil(3) } else { 0 };
+    let legend_h = if legend_rows > 0 { legend_rows as f64 * LEGEND_ROW_H + 6.0 } else { 0.0 };
 
     let plot_x0 = margin.x0 + left_reserve;
     let plot_x1 = (margin.x1 - 12.0).max(plot_x0 + 10.0);
@@ -196,11 +182,7 @@ pub fn compute_layout(
         }
     };
 
-    let ceiling = if let Some(override_max) = spec.max_value_override {
-        override_max.max(raw_max).max(1.0)
-    } else {
-        compute_nice_ceiling(raw_max)
-    };
+    let ceiling = if let Some(override_max) = spec.max_value_override { override_max.max(raw_max).max(1.0) } else { compute_nice_ceiling(raw_max) };
 
     // Axes
     let axis_baseline = [plot_x0, plot_y1, plot_x1, plot_y1 + 1.0];
@@ -217,11 +199,7 @@ pub fn compute_layout(
                 let x = plot_x0 + frac * plot_w;
                 let val = frac * ceiling;
                 let label = spec.value_format.format(val, bilingual);
-                grid_lines.push(GridLine {
-                    rect: [x, plot_y0, x + 0.5, plot_y1],
-                    value: val,
-                    label,
-                });
+                grid_lines.push(GridLine { rect: [x, plot_y0, x + 0.5, plot_y1], value: val, label });
             }
         } else {
             // Horizontal grid lines for standard charts
@@ -231,11 +209,7 @@ pub fn compute_layout(
                 let y = plot_y1 - frac * plot_h;
                 let val = frac * ceiling;
                 let label = spec.value_format.format(val, bilingual);
-                grid_lines.push(GridLine {
-                    rect: [plot_x0, y, plot_x1, y + 0.5],
-                    value: val,
-                    label,
-                });
+                grid_lines.push(GridLine { rect: [plot_x0, y, plot_x1, y + 0.5], value: val, label });
             }
         }
     }
@@ -254,25 +228,11 @@ pub fn compute_layout(
             let item_x = margin.x0 + col as f64 * col_w;
             let item_y = leg_y_start + row as f64 * LEGEND_ROW_H;
 
-            let swatch_rect = [
-                item_x,
-                item_y + (LEGEND_ROW_H - LEGEND_SWATCH_H) / 2.0,
-                item_x + LEGEND_SWATCH_W,
-                item_y + (LEGEND_ROW_H + LEGEND_SWATCH_H) / 2.0,
-            ];
-            let label_rect = [
-                item_x + LEGEND_SWATCH_W + 4.0,
-                item_y,
-                item_x + col_w - 4.0,
-                item_y + LEGEND_ROW_H,
-            ];
+            let swatch_rect =
+                [item_x, item_y + (LEGEND_ROW_H - LEGEND_SWATCH_H) / 2.0, item_x + LEGEND_SWATCH_W, item_y + (LEGEND_ROW_H + LEGEND_SWATCH_H) / 2.0];
+            let label_rect = [item_x + LEGEND_SWATCH_W + 4.0, item_y, item_x + col_w - 4.0, item_y + LEGEND_ROW_H];
             let label = series.display_label(bilingual);
-            legend_items.push(LegendItem {
-                swatch_rect,
-                label_rect,
-                label,
-                series_idx: s_idx,
-            });
+            legend_items.push(LegendItem { swatch_rect, label_rect, label, series_idx: s_idx });
         }
     }
 
@@ -290,9 +250,7 @@ pub fn compute_layout(
         ChartType::Line | ChartType::Area => {
             layout_line_and_area(spec, categories, series_values, plot_rect, ceiling, bilingual, grid_lines, legend_items, axis_baseline, axis_left)
         }
-        ChartType::Donut => {
-            layout_donut(spec, categories, series_values, plot_rect, ceiling, bilingual, legend_items, axis_baseline, axis_left)
-        }
+        ChartType::Donut => layout_donut(spec, categories, series_values, plot_rect, ceiling, bilingual, legend_items, axis_baseline, axis_left),
     }
 }
 
@@ -350,11 +308,7 @@ fn layout_bar_clustered(
 
         for (s_idx, s_vals) in series_values.iter().enumerate() {
             let val = s_vals.get(c_idx).copied().unwrap_or(0.0);
-            let bar_h = if ceiling > 0.0 {
-                ((val / ceiling) * plot_h).max(0.0)
-            } else {
-                0.0
-            };
+            let bar_h = if ceiling > 0.0 { ((val / ceiling) * plot_h).max(0.0) } else { 0.0 };
 
             let x0 = group_x0 + s_idx as f64 * (bar_w + series_gap);
             let x1 = x0 + bar_w;
@@ -362,13 +316,7 @@ fn layout_bar_clustered(
             let y1 = plot_rect[3];
 
             let label_str = spec.value_format.format(val, bilingual);
-            bars.push(BarRect {
-                rect: [x0, y0, x1, y1],
-                value: val,
-                series_idx: s_idx,
-                category_idx: c_idx,
-                label: label_str.clone(),
-            });
+            bars.push(BarRect { rect: [x0, y0, x1, y1], value: val, series_idx: s_idx, category_idx: c_idx, label: label_str.clone() });
 
             if spec.show_value_labels && val > 0.0 {
                 let lbl_w = bar_w.max(28.0);
@@ -383,17 +331,8 @@ fn layout_bar_clustered(
         let center_x = group_x0 + content_w / 2.0;
         let rotated = cat.chars().count() > MAX_LABEL_CHARS;
         let lbl_w = group_w.max(40.0);
-        let lbl_rect = [
-            center_x - lbl_w / 2.0,
-            plot_rect[3] + 4.0,
-            center_x + lbl_w / 2.0,
-            plot_rect[3] + AXIS_LABEL_H,
-        ];
-        x_tick_labels.push(XTickLabel {
-            rect: lbl_rect,
-            text: cat.clone(),
-            rotated,
-        });
+        let lbl_rect = [center_x - lbl_w / 2.0, plot_rect[3] + 4.0, center_x + lbl_w / 2.0, plot_rect[3] + AXIS_LABEL_H];
+        x_tick_labels.push(XTickLabel { rect: lbl_rect, text: cat.clone(), rotated });
     }
 
     ChartLayout {
@@ -442,24 +381,14 @@ fn layout_bar_stacked(
 
         for (s_idx, s_vals) in series_values.iter().enumerate() {
             let val = s_vals.get(c_idx).copied().unwrap_or(0.0);
-            let bar_h = if ceiling > 0.0 {
-                ((val / ceiling) * plot_h).max(0.0)
-            } else {
-                0.0
-            };
+            let bar_h = if ceiling > 0.0 { ((val / ceiling) * plot_h).max(0.0) } else { 0.0 };
 
             let y1 = cur_y;
             let y0 = (cur_y - bar_h).max(plot_rect[1]);
             cur_y = y0;
 
             let label_str = spec.value_format.format(val, bilingual);
-            bars.push(BarRect {
-                rect: [x0, y0, x1, y1],
-                value: val,
-                series_idx: s_idx,
-                category_idx: c_idx,
-                label: label_str.clone(),
-            });
+            bars.push(BarRect { rect: [x0, y0, x1, y1], value: val, series_idx: s_idx, category_idx: c_idx, label: label_str.clone() });
 
             if spec.show_value_labels && bar_h > 12.0 {
                 let lbl_y = (y0 + y1) / 2.0 - 5.0;
@@ -470,17 +399,8 @@ fn layout_bar_stacked(
         let center_x = x0 + bar_w / 2.0;
         let rotated = cat.chars().count() > MAX_LABEL_CHARS;
         let lbl_w = group_w.max(40.0);
-        let lbl_rect = [
-            center_x - lbl_w / 2.0,
-            plot_rect[3] + 4.0,
-            center_x + lbl_w / 2.0,
-            plot_rect[3] + AXIS_LABEL_H,
-        ];
-        x_tick_labels.push(XTickLabel {
-            rect: lbl_rect,
-            text: cat.clone(),
-            rotated,
-        });
+        let lbl_rect = [center_x - lbl_w / 2.0, plot_rect[3] + 4.0, center_x + lbl_w / 2.0, plot_rect[3] + AXIS_LABEL_H];
+        x_tick_labels.push(XTickLabel { rect: lbl_rect, text: cat.clone(), rotated });
     }
 
     ChartLayout {
@@ -532,11 +452,7 @@ fn layout_horizontal_bar(
 
         for (s_idx, s_vals) in series_values.iter().enumerate() {
             let val = s_vals.get(c_idx).copied().unwrap_or(0.0);
-            let bar_w = if ceiling > 0.0 {
-                ((val / ceiling) * plot_w).max(0.0)
-            } else {
-                0.0
-            };
+            let bar_w = if ceiling > 0.0 { ((val / ceiling) * plot_w).max(0.0) } else { 0.0 };
 
             let x0 = plot_rect[0];
             let x1 = (x0 + bar_w).min(plot_rect[2]);
@@ -544,13 +460,7 @@ fn layout_horizontal_bar(
             let y1 = y0 + bar_h;
 
             let label_str = spec.value_format.format(val, bilingual);
-            bars.push(BarRect {
-                rect: [x0, y0, x1, y1],
-                value: val,
-                series_idx: s_idx,
-                category_idx: c_idx,
-                label: label_str.clone(),
-            });
+            bars.push(BarRect { rect: [x0, y0, x1, y1], value: val, series_idx: s_idx, category_idx: c_idx, label: label_str.clone() });
 
             if spec.show_value_labels && val > 0.0 {
                 let lbl_x = x1 + 4.0;
@@ -560,17 +470,8 @@ fn layout_horizontal_bar(
 
         // Category label on left axis
         let center_y = slot_y0 + content_h / 2.0;
-        let lbl_rect = [
-            plot_rect[0] - HBAR_CATEGORY_W,
-            center_y - 6.0,
-            plot_rect[0] - 4.0,
-            center_y + 6.0,
-        ];
-        x_tick_labels.push(XTickLabel {
-            rect: lbl_rect,
-            text: cat.clone(),
-            rotated: false,
-        });
+        let lbl_rect = [plot_rect[0] - HBAR_CATEGORY_W, center_y - 6.0, plot_rect[0] - 4.0, center_y + 6.0];
+        x_tick_labels.push(XTickLabel { rect: lbl_rect, text: cat.clone(), rotated: false });
     }
 
     ChartLayout {
@@ -609,11 +510,7 @@ fn layout_line_and_area(
     let plot_w = plot_rect[2] - plot_rect[0];
     let plot_h = plot_rect[3] - plot_rect[1];
     let cat_count = categories.len().max(1);
-    let step_x = if cat_count > 1 {
-        plot_w / (cat_count - 1) as f64
-    } else {
-        plot_w / 2.0
-    };
+    let step_x = if cat_count > 1 { plot_w / (cat_count - 1) as f64 } else { plot_w / 2.0 };
 
     for (s_idx, s_vals) in series_values.iter().enumerate() {
         let mut markers = Vec::new();
@@ -621,16 +518,8 @@ fn layout_line_and_area(
         let mut prev_pt: Option<(f64, f64)> = None;
 
         for (c_idx, &val) in s_vals.iter().enumerate().take(cat_count) {
-            let cx = if cat_count > 1 {
-                plot_rect[0] + c_idx as f64 * step_x
-            } else {
-                plot_rect[0] + plot_w / 2.0
-            };
-            let cy = if ceiling > 0.0 {
-                plot_rect[3] - (val / ceiling) * plot_h
-            } else {
-                plot_rect[3]
-            };
+            let cx = if cat_count > 1 { plot_rect[0] + c_idx as f64 * step_x } else { plot_rect[0] + plot_w / 2.0 };
+            let cy = if ceiling > 0.0 { plot_rect[3] - (val / ceiling) * plot_h } else { plot_rect[3] };
 
             // 4x4 pt square marker
             markers.push([cx - 2.0, cy - 2.0, cx + 2.0, cy + 2.0]);
@@ -655,24 +544,11 @@ fn layout_line_and_area(
     }
 
     for (c_idx, cat) in categories.iter().enumerate() {
-        let cx = if cat_count > 1 {
-            plot_rect[0] + c_idx as f64 * step_x
-        } else {
-            plot_rect[0] + plot_w / 2.0
-        };
+        let cx = if cat_count > 1 { plot_rect[0] + c_idx as f64 * step_x } else { plot_rect[0] + plot_w / 2.0 };
         let rotated = cat.chars().count() > MAX_LABEL_CHARS;
         let lbl_w = 40.0;
-        let lbl_rect = [
-            cx - lbl_w / 2.0,
-            plot_rect[3] + 4.0,
-            cx + lbl_w / 2.0,
-            plot_rect[3] + AXIS_LABEL_H,
-        ];
-        x_tick_labels.push(XTickLabel {
-            rect: lbl_rect,
-            text: cat.clone(),
-            rotated,
-        });
+        let lbl_rect = [cx - lbl_w / 2.0, plot_rect[3] + 4.0, cx + lbl_w / 2.0, plot_rect[3] + AXIS_LABEL_H];
+        x_tick_labels.push(XTickLabel { rect: lbl_rect, text: cat.clone(), rotated });
     }
 
     ChartLayout {
@@ -731,12 +607,7 @@ fn layout_donut(
             let rx = cx + mid_r * rad.cos();
             let ry = cy + mid_r * rad.sin();
             let half_thickness = (outer_r - inner_r) / 2.0;
-            slice_rects.push([
-                rx - 2.0,
-                ry - half_thickness,
-                rx + 2.0,
-                ry + half_thickness,
-            ]);
+            slice_rects.push([rx - 2.0, ry - half_thickness, rx + 2.0, ry + half_thickness]);
         }
 
         // Callout label positioned outside the slice arc
@@ -746,14 +617,7 @@ fn layout_donut(
         let ly = cy + callout_r * mid_angle.sin();
         let label_rect = [lx - 30.0, ly - 8.0, lx + 30.0, ly + 8.0];
 
-        donut_slices.push(DonutSlice {
-            rects: slice_rects,
-            label_rect,
-            label: cat,
-            value_label: val_lbl,
-            series_idx: idx,
-            sweep_degrees: sweep,
-        });
+        donut_slices.push(DonutSlice { rects: slice_rects, label_rect, label: cat, value_label: val_lbl, series_idx: idx, sweep_degrees: sweep });
 
         cur_angle += sweep;
     }
@@ -776,8 +640,8 @@ fn layout_donut(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::spec::{SeriesSpec, ValueFormat};
+    use super::*;
 
     fn sample_spec(chart_type: ChartType) -> ChartSpec {
         ChartSpec {
@@ -786,16 +650,8 @@ mod tests {
             title_en: "Sample Chart EN".into(),
             category_col: "A".into(),
             series: vec![
-                SeriesSpec {
-                    col: "B".into(),
-                    label_id: "Series A".into(),
-                    label_en: "Series A EN".into(),
-                },
-                SeriesSpec {
-                    col: "C".into(),
-                    label_id: "Series B".into(),
-                    label_en: "Series B EN".into(),
-                },
+                SeriesSpec { col: "B".into(), label_id: "Series A".into(), label_en: "Series A EN".into() },
+                SeriesSpec { col: "C".into(), label_id: "Series B".into(), label_en: "Series B EN".into() },
             ],
             data_start_row: 1,
             data_end_row: 3,
@@ -808,12 +664,7 @@ mod tests {
     }
 
     fn sample_margin() -> Rect {
-        Rect {
-            x0: 36.0,
-            y0: 36.0,
-            x1: 500.0,
-            y1: 700.0,
-        }
+        Rect { x0: 36.0, y0: 36.0, x1: 500.0, y1: 700.0 }
     }
 
     #[test]
