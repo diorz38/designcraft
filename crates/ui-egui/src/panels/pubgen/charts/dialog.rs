@@ -230,9 +230,6 @@ impl ChartDialog {
         if self.chart_type == ChartType::Donut {
             self.series_2_enabled = false;
             self.series_3_enabled = false;
-            if self.data_end_row.saturating_sub(self.data_start_row) >= 6 {
-                self.data_end_row = self.data_start_row + 5;
-            }
         }
     }
 

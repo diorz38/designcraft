@@ -33,6 +33,74 @@ pub fn ensure_swatch(app: &mut DesignApp, hex_or_name: &str) -> Result<String, S
     Ok(res.get("name").and_then(Value::as_str).unwrap_or(name).to_string())
 }
 
+/// Emits a closed polygon frame onto the given spread with exact coordinates.
+pub fn emit_polygon(
+    app: &mut DesignApp,
+    spread_idx: usize,
+    points: &[(f64, f64)],
+    fill: &str,
+    stroke: &str,
+    stroke_weight: f64,
+) -> Result<u64, String> {
+    if points.len() < 3 {
+        return Err("Polygon must have at least 3 points".into());
+    }
+    let mut x0 = f64::INFINITY;
+    let mut y0 = f64::INFINITY;
+    let mut x1 = f64::NEG_INFINITY;
+    let mut y1 = f64::NEG_INFINITY;
+    for &(x, y) in points {
+        x0 = x0.min(x);
+        y0 = y0.min(y);
+        x1 = x1.max(x);
+        y1 = y1.max(y);
+    }
+    let rect = [x0, y0, x1.max(x0 + 0.5), y1.max(y0 + 0.5)];
+
+    let res = app
+        .run(
+            "frame.create",
+            json!({
+                "spread": spread_idx,
+                "rect": rect,
+                "content": "unassigned",
+                "shape": "polygon",
+                "caret": false,
+            }),
+        )
+        .map_err(|e| format!("frame.create polygon failed: {e}"))?;
+
+    let fid = res.get("id").and_then(Value::as_u64).ok_or_else(|| "frame.create returned no id".to_string())?;
+
+    let kurbo_pts: Vec<designcraft_geom::Point> = points.iter().map(|&(x, y)| designcraft_geom::Point::new(x, y)).collect();
+    let poly_path = designcraft_geom::PathData::single(designcraft_geom::SubPath::polyline(&kurbo_pts, true));
+
+    let _ = app.session.edit(|doc, _| {
+        if let Some(it) = doc.item_mut(designcraft_doc::ItemId(fid)) {
+            it.path = poly_path;
+            it.shape = designcraft_doc::Shape::Polygon;
+        }
+        Ok(Value::Null)
+    });
+
+    if fill != "[None]" {
+        let fill_swatch = ensure_swatch(app, fill)?;
+        let _ = app.run("object.fill", json!({"ids": [fid], "swatch": fill_swatch}));
+    } else {
+        let _ = app.run("object.fill", json!({"ids": [fid], "swatch": "[None]"}));
+    }
+
+    if stroke != "[None]" {
+        let stroke_swatch = ensure_swatch(app, stroke)?;
+        let _ = app.run("object.stroke", json!({"ids": [fid], "swatch": stroke_swatch}));
+        let _ = app.run("object.strokeWeight", json!({"ids": [fid], "weight": stroke_weight}));
+    } else {
+        let _ = app.run("object.stroke", json!({"ids": [fid], "swatch": "[None]"}));
+    }
+
+    Ok(fid)
+}
+
 /// Emits a single rectangle frame onto the given spread.
 pub fn emit_rect(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], fill: &str, stroke: &str, stroke_weight: f64) -> Result<u64, String> {
     let res = app
@@ -155,11 +223,13 @@ pub fn emit_chart(
         }
     }
 
-    // 2. Axis baseline & left line
-    let base_fid = emit_rect(app, spread_idx, layout.axis_baseline, "#333333", "[None]", 0.0)?;
-    frame_ids.push(base_fid);
-    let left_fid = emit_rect(app, spread_idx, layout.axis_left, "#333333", "[None]", 0.0)?;
-    frame_ids.push(left_fid);
+    // 2. Axis baseline & left line (only for Cartesian coordinate charts)
+    if spec.chart_type != super::spec::ChartType::Donut {
+        let base_fid = emit_rect(app, spread_idx, layout.axis_baseline, "#333333", "[None]", 0.0)?;
+        frame_ids.push(base_fid);
+        let left_fid = emit_rect(app, spread_idx, layout.axis_left, "#333333", "[None]", 0.0)?;
+        frame_ids.push(left_fid);
+    }
 
     // 3. Bars
     for bar in &layout.bars {
@@ -187,10 +257,9 @@ pub fn emit_chart(
     // 5. Donut slices
     for slice in &layout.donut_slices {
         let color = series_color(palette, slice.series_idx);
-        for &arc_rect in &slice.rects {
-            let fid = emit_rect(app, spread_idx, arc_rect, color, "[None]", 0.0)?;
-            frame_ids.push(fid);
-        }
+        let fid = emit_polygon(app, spread_idx, &slice.points, color, "#FFFFFF", 1.5)?;
+        frame_ids.push(fid);
+
         if !slice.value_label.is_empty() {
             let lbl_text = format!("{}\n{}", slice.label, slice.value_label);
             if let Ok(tfid) = emit_text(app, spread_idx, slice.label_rect, &lbl_text, 8.0, true, "center", Some("#333333")) {

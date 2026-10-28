@@ -79,8 +79,8 @@ pub struct LegendItem {
 /// An arc/wedge segment of a donut chart.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DonutSlice {
-    /// Radial rectangle approximations for the slice arc.
-    pub rects: Vec<[f64; 4]>,
+    /// Polygon points [x, y] tracing the annular wedge (outer arc, then inner arc in reverse, closed).
+    pub points: Vec<(f64, f64)>,
     /// Frame for the slice label (category / percentage).
     pub label_rect: [f64; 4],
     /// Category / slice label.
@@ -133,11 +133,34 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
     };
     let top_offset = if title_h > 0.0 { title_h + 8.0 } else { 0.0 };
 
+    let is_donut = matches!(spec.chart_type, ChartType::Donut);
     let is_hbar = matches!(spec.chart_type, ChartType::HorizontalBar);
-    let left_reserve = if is_hbar { HBAR_CATEGORY_W } else { AXIS_LABEL_W };
-    let bottom_axis_h = if is_hbar { 16.0 } else { AXIS_LABEL_H };
+    let left_reserve = if is_donut {
+        0.0
+    } else if is_hbar {
+        HBAR_CATEGORY_W
+    } else {
+        AXIS_LABEL_W
+    };
+    let bottom_axis_h = if is_donut {
+        0.0
+    } else if is_hbar {
+        16.0
+    } else {
+        AXIS_LABEL_H
+    };
 
-    let legend_rows = if spec.show_legend && !spec.series.is_empty() { spec.series.len().div_ceil(3) } else { 0 };
+    let legend_rows = if spec.show_legend {
+        if is_donut {
+            categories.len().div_ceil(4)
+        } else if !spec.series.is_empty() {
+            spec.series.len().div_ceil(3)
+        } else {
+            0
+        }
+    } else {
+        0
+    };
     let legend_h = if legend_rows > 0 { legend_rows as f64 * LEGEND_ROW_H + 6.0 } else { 0.0 };
 
     let plot_x0 = margin.x0 + left_reserve;
@@ -216,23 +239,51 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
 
     // Legend items
     let mut legend_items = Vec::new();
-    if spec.show_legend && !spec.series.is_empty() {
-        let leg_y_start = margin.y1 - legend_h + 4.0;
-        let total_series = spec.series.len();
-        let items_per_row = total_series.clamp(1, 3);
-        let col_w = (margin.x1 - margin.x0) / items_per_row as f64;
+    if spec.show_legend {
+        if is_donut {
+            // For Donut charts, each slice represents a category!
+            let leg_y_start = margin.y1 - legend_h + 4.0;
+            let total_cats = categories.len();
+            let items_per_row = total_cats.clamp(1, 4);
+            let col_w = (margin.x1 - margin.x0) / items_per_row as f64;
 
-        for (s_idx, series) in spec.series.iter().enumerate() {
-            let row = s_idx / items_per_row;
-            let col = s_idx % items_per_row;
-            let item_x = margin.x0 + col as f64 * col_w;
-            let item_y = leg_y_start + row as f64 * LEGEND_ROW_H;
+            for (cat_idx, cat_name) in categories.iter().enumerate() {
+                let row = cat_idx / items_per_row;
+                let col = cat_idx % items_per_row;
+                let item_x = margin.x0 + col as f64 * col_w;
+                let item_y = leg_y_start + row as f64 * LEGEND_ROW_H;
 
-            let swatch_rect =
-                [item_x, item_y + (LEGEND_ROW_H - LEGEND_SWATCH_H) / 2.0, item_x + LEGEND_SWATCH_W, item_y + (LEGEND_ROW_H + LEGEND_SWATCH_H) / 2.0];
-            let label_rect = [item_x + LEGEND_SWATCH_W + 4.0, item_y, item_x + col_w - 4.0, item_y + LEGEND_ROW_H];
-            let label = series.display_label(bilingual);
-            legend_items.push(LegendItem { swatch_rect, label_rect, label, series_idx: s_idx });
+                let swatch_rect = [
+                    item_x,
+                    item_y + (LEGEND_ROW_H - LEGEND_SWATCH_H) / 2.0,
+                    item_x + LEGEND_SWATCH_W,
+                    item_y + (LEGEND_ROW_H + LEGEND_SWATCH_H) / 2.0,
+                ];
+                let label_rect = [item_x + LEGEND_SWATCH_W + 4.0, item_y, item_x + col_w - 4.0, item_y + LEGEND_ROW_H];
+                legend_items.push(LegendItem { swatch_rect, label_rect, label: cat_name.clone(), series_idx: cat_idx });
+            }
+        } else if !spec.series.is_empty() {
+            let leg_y_start = margin.y1 - legend_h + 4.0;
+            let total_series = spec.series.len();
+            let items_per_row = total_series.clamp(1, 3);
+            let col_w = (margin.x1 - margin.x0) / items_per_row as f64;
+
+            for (s_idx, series) in spec.series.iter().enumerate() {
+                let row = s_idx / items_per_row;
+                let col = s_idx % items_per_row;
+                let item_x = margin.x0 + col as f64 * col_w;
+                let item_y = leg_y_start + row as f64 * LEGEND_ROW_H;
+
+                let swatch_rect = [
+                    item_x,
+                    item_y + (LEGEND_ROW_H - LEGEND_SWATCH_H) / 2.0,
+                    item_x + LEGEND_SWATCH_W,
+                    item_y + (LEGEND_ROW_H + LEGEND_SWATCH_H) / 2.0,
+                ];
+                let label_rect = [item_x + LEGEND_SWATCH_W + 4.0, item_y, item_x + col_w - 4.0, item_y + LEGEND_ROW_H];
+                let label = series.display_label(bilingual);
+                legend_items.push(LegendItem { swatch_rect, label_rect, label, series_idx: s_idx });
+            }
         }
     }
 
@@ -579,16 +630,17 @@ fn layout_donut(
     axis_left: [f64; 4],
 ) -> ChartLayout {
     let mut donut_slices = Vec::new();
-    let total = ceiling.max(1.0);
+    let s_vals = series_values.first().map(Vec::as_slice).unwrap_or(&[]);
+    let sum_vals: f64 = s_vals.iter().copied().sum();
+    let total = if sum_vals > 0.0 { sum_vals } else { 1.0 };
 
     let plot_w = plot_rect[2] - plot_rect[0];
     let plot_h = plot_rect[3] - plot_rect[1];
     let cx = (plot_rect[0] + plot_rect[2]) / 2.0;
     let cy = (plot_rect[1] + plot_rect[3]) / 2.0;
-    let outer_r = (plot_w.min(plot_h) / 2.0 * 0.85).max(10.0);
-    let inner_r = outer_r * 0.55;
+    let outer_r = (plot_w.min(plot_h) / 2.0 * 0.70).max(20.0);
+    let inner_r = outer_r * 0.52;
 
-    let s_vals = series_values.first().map(Vec::as_slice).unwrap_or(&[]);
     let mut cur_angle = 0.0f64;
 
     for (idx, &val) in s_vals.iter().enumerate() {
@@ -597,27 +649,31 @@ fn layout_donut(
         let pct = if total > 0.0 { (val / total) * 100.0 } else { 0.0 };
         let val_lbl = format!("{:.1}%", pct);
 
-        // Approximate arc via 1-degree or 2-degree step radial rects
-        let steps = (sweep.round() as usize).max(1);
-        let mut slice_rects = Vec::with_capacity(steps);
-        for step in 0..steps {
-            let theta_deg = cur_angle + (step as f64) * (sweep / steps as f64);
-            let rad = theta_deg.to_radians();
-            let mid_r = (inner_r + outer_r) / 2.0;
-            let rx = cx + mid_r * rad.cos();
-            let ry = cy + mid_r * rad.sin();
-            let half_thickness = (outer_r - inner_r) / 2.0;
-            slice_rects.push([rx - 2.0, ry - half_thickness, rx + 2.0, ry + half_thickness]);
+        // Generate curved annular sector polygon points starting from 12 o'clock (-90 degrees)
+        let a0 = (cur_angle - 90.0).to_radians();
+        let a1 = (cur_angle + sweep - 90.0).to_radians();
+        let steps = (sweep.ceil() as usize / 3).clamp(8, 64);
+
+        let mut points = Vec::with_capacity(steps * 2 + 2);
+        // Outer arc (forward)
+        for step in 0..=steps {
+            let t = a0 + (step as f64 / steps as f64) * (a1 - a0);
+            points.push((cx + outer_r * t.cos(), cy + outer_r * t.sin()));
+        }
+        // Inner arc (reverse)
+        for step in (0..=steps).rev() {
+            let t = a0 + (step as f64 / steps as f64) * (a1 - a0);
+            points.push((cx + inner_r * t.cos(), cy + inner_r * t.sin()));
         }
 
         // Callout label positioned outside the slice arc
-        let mid_angle = (cur_angle + sweep / 2.0).to_radians();
-        let callout_r = outer_r + 14.0;
+        let mid_angle = (cur_angle + sweep / 2.0 - 90.0).to_radians();
+        let callout_r = outer_r + 20.0;
         let lx = cx + callout_r * mid_angle.cos();
         let ly = cy + callout_r * mid_angle.sin();
-        let label_rect = [lx - 30.0, ly - 8.0, lx + 30.0, ly + 8.0];
+        let label_rect = [lx - 35.0, ly - 9.0, lx + 35.0, ly + 9.0];
 
-        donut_slices.push(DonutSlice { rects: slice_rects, label_rect, label: cat, value_label: val_lbl, series_idx: idx, sweep_degrees: sweep });
+        donut_slices.push(DonutSlice { points, label_rect, label: cat, value_label: val_lbl, series_idx: idx, sweep_degrees: sweep });
 
         cur_angle += sweep;
     }
