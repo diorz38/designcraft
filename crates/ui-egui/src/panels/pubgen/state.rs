@@ -429,6 +429,11 @@ pub struct PubgenState {
     /// Pending batch cover items awaiting quota confirmation.
     #[serde(skip)]
     pub cover_batch_pending: Option<Vec<ai_cover_job::CoverBatchItem>>,
+    /// Popup shown after an AI operation completes (Groq translation or Cloudflare
+    /// cover generation): one line per usage signal, e.g. "Cloudflare AI: ~N covers
+    /// left today". Set by the job-completion poll; cleared when the user closes it.
+    #[serde(skip)]
+    pub ai_quota_popup: Option<Vec<String>>,
     /// Batch of covers parsed from Excel COVER sheet (when multiple publications/covers exist)
     #[serde(skip)]
     pub excel_batch_covers: Vec<super::excel::ExcelCoverData>,
@@ -601,6 +606,7 @@ impl Default for PubgenState {
             cover_job: None,
             cover_quota_covers: None,
             cover_batch_pending: None,
+            ai_quota_popup: None,
             excel_batch_covers: Vec::new(),
             excel_auto_generate: true,
             excel_had_cover: false,

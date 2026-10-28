@@ -1236,6 +1236,37 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
     }
 }
 
+/// Modal popup after an AI operation completes (Groq translation or Cloudflare AI
+/// cover generation), reporting the remaining usage quota. Centered, on top of
+/// everything; closed by the OK button, the backdrop, or Escape.
+pub(crate) fn ai_quota_popup_ui(st: &mut PubgenState, ui: &mut Ui, t: &Tokens) {
+    if st.ai_quota_popup.is_none() {
+        return;
+    }
+    let mut close = false;
+    let modal = egui::Modal::new(egui::Id::unique("pubgen_ai_quota_popup")).show(ui.ctx(), |ui| {
+        ui.set_width(340.0);
+        ui.vertical(|ui| {
+            ui.label(RichText::new("AI usage update").size(13.0).color(t.text).strong());
+            ui.add_space(3.0);
+            if let Some(lines) = &st.ai_quota_popup {
+                for line in lines {
+                    ui.label(RichText::new(line).size(11.0).color(t.text));
+                }
+            }
+        });
+        ui.add_space(8.0);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("OK").clicked() {
+                close = true;
+            }
+        });
+    });
+    if close || modal.should_close() {
+        st.ai_quota_popup = None;
+    }
+}
+
 pub(crate) fn card_toc_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     section(ui, crate::i18n::tr(&app.ui.language, "2. Table of Contents"), true);
 
@@ -1382,4 +1413,63 @@ pub(crate) fn manual_import_accordion_ui(app: &mut DesignApp, ui: &mut Ui, st: &
     .show(ui, |ui| {
         card_header_footer_body_ui(app, ui, st, t);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+
+    use super::*;
+
+    fn popup_harness(st: PubgenState) -> Harness<'static, PubgenState> {
+        let mut h = Harness::builder().with_size(egui::vec2(800.0, 600.0)).build_ui_state(
+            |ui, st: &mut PubgenState| {
+                let t = crate::theme::Tokens::get(ui.ctx());
+                ai_quota_popup_ui(st, ui, &t);
+            },
+            st,
+        );
+        h.run_steps(4);
+        h
+    }
+
+    /// The usage popup renders its title, every queued line and the OK button, and
+    /// OK closes it.
+    #[test]
+    fn the_ai_quota_popup_renders_and_closes_on_ok() {
+        let st = PubgenState {
+            ai_quota_popup: Some(vec![
+                "Cloudflare AI: ~103 covers left today".into(),
+                "Groq AI: ~990 requests left today".into(),
+                "AI cover generation cancelled".into(),
+            ]),
+            ..Default::default()
+        };
+        let mut h = popup_harness(st);
+        for want in
+            ["AI usage update", "Cloudflare AI: ~103 covers left today", "Groq AI: ~990 requests left today", "AI cover generation cancelled", "OK"]
+        {
+            let _ = h.get_by_label(want);
+        }
+        h.get_by_label("OK").click();
+        h.run_steps(2);
+        assert!(h.state().ai_quota_popup.is_none(), "OK closed the popup");
+    }
+
+    /// Escape (or the backdrop, via `should_close`) also closes the popup.
+    #[test]
+    fn the_ai_quota_popup_closes_on_escape() {
+        let st = PubgenState { ai_quota_popup: Some(vec!["Cloudflare AI: ~103 covers left today".into()]), ..Default::default() };
+        let mut h = popup_harness(st);
+        h.input_mut().events.push(egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.run_steps(2);
+        assert!(h.state().ai_quota_popup.is_none(), "Escape closed the popup");
+    }
 }

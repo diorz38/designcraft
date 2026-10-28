@@ -1269,6 +1269,17 @@ pub fn groq_quota_suffix() -> String {
     }
 }
 
+/// Queue the usage popup after a Groq-backed AI operation completes: Groq's own
+/// rate-limit header (per key, server-computed), or an explicit "unavailable"
+/// line so the user always gets feedback that AI ran.
+pub(crate) fn push_groq_quota_popup(st: &mut PubgenState) {
+    let line = match translate::remaining_requests() {
+        Some(n) => format!("Groq AI: ~{n} requests left today"),
+        None => "Groq AI: rate-limit info unavailable this session".to_string(),
+    };
+    st.ai_quota_popup = Some(vec![line]);
+}
+
 /// Build the backend the panel should use right now from the persisted prefs.
 pub fn backend_from_prefs(app: &DesignApp) -> Option<(String, String, String)> {
     let prefs = &app.session.prefs;
@@ -2068,6 +2079,15 @@ mod tests {
 
     fn glossary() -> BpsGlossary {
         BpsGlossary::load("")
+    }
+
+    #[test]
+    fn quota_popup_always_reports_something_after_a_groq_operation() {
+        let mut st = PubgenState::default();
+        push_groq_quota_popup(&mut st);
+        let lines = st.ai_quota_popup.expect("popup queued");
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].starts_with("Groq AI: "), "{lines:?}");
     }
 
     #[test]

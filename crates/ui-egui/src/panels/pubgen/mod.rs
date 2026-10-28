@@ -107,6 +107,8 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
         let ok = job.poll(&mut st);
         if job.finished {
             st.translate_job = None;
+            // Popup: report how much of the Groq quota this AI operation left.
+            ai::push_groq_quota_popup(&mut st);
             // Mirror Groq's remaining-request count into the shared Supabase tracker,
             // keyed by a fingerprint of this user's key so different accounts are
             // tracked separately (best effort, off the UI thread).
@@ -185,6 +187,10 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
         if job.finished {
             st.cover_quota_covers = job.remaining_covers();
             st.cover_job = None;
+            // Popup: report how much of the shared Cloudflare free quota this run
+            // left (and the stop reason when the job failed, e.g. HTTP 429).
+            let error = if ok { None } else { st.cover_status.as_ref().map(|(m, _)| m.as_str()) };
+            st.ai_quota_popup = Some(job.quota_popup_lines(error));
             if ok && let Some(bg_path) = job.completed_path.take() {
                 let path_str = bg_path.to_string_lossy().to_string();
                 let res = covers::apply_ai_cover_result(app, &st, &path_str);
@@ -199,6 +205,8 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
             st.cover_job = Some(job);
         }
     }
+    ai_quota_popup_ui(&mut st, ui, &t);
+
     ai::dialog_ui(app, &mut st, ui);
 
     pubgen_header_band(app, ui, &mut st, &t);

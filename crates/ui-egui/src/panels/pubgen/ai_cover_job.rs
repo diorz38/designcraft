@@ -422,6 +422,20 @@ impl CoverJob {
         }
     }
 
+    /// Popup lines for a finished cover job: the shared counter's remaining covers,
+    /// or an explicit fallback when nothing was reported — plus the failure reason
+    /// when the job stopped (e.g. HTTP 429 daily quota). Never empty.
+    pub(crate) fn quota_popup_lines(&self, error: Option<&str>) -> Vec<String> {
+        let mut lines = vec![match self.remaining_covers() {
+            Some(n) => format!("Cloudflare AI: ~{n} covers left today"),
+            None => "Cloudflare AI: usage counter unavailable this session (Supabase not configured or offline)".to_string(),
+        }];
+        if let Some(err) = error {
+            lines.push(err.to_string());
+        }
+        lines
+    }
+
     /// Drain progress messages; on Done, record the output path. Returns true when finished successfully.
     pub fn poll(&mut self, st: &mut PubgenState) -> bool {
         #[cfg(target_arch = "wasm32")]
@@ -606,6 +620,33 @@ mod tests {
         assert!(!ok);
         assert!(status_msg.contains("cancelled"));
         assert!(!out_file.exists(), "Cancelled job should not produce output file");
+    }
+
+    #[test]
+    fn quota_popup_lines_reports_the_shared_counter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out_file = tmp.path().join("cover.png");
+        let fake_provider = Box::new(FakeImageGenProvider(|_req, _cancel| Err(imagegen::ImageGenError::Unavailable)));
+        let req = imagegen::GenRequest::new("p", "", imagegen::Aspect::Iso, 18);
+        let ctx = egui::Context::default();
+        let job = CoverJob::spawn_with_provider(fake_provider, req, out_file, ctx);
+        let start = std::time::Instant::now();
+        while !job.finished && start.elapsed().as_secs() < 3 {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        // Nothing reported (provider failed before any generation): explicit
+        // fallback line, plus the stop reason when one is given.
+        let lines = job.quota_popup_lines(Some("Daily Cloudflare free quota reached; resets 00:00 UTC"));
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(lines[0].contains("usage counter unavailable"), "{lines:?}");
+        assert!(lines[1].contains("quota"), "{lines:?}");
+        assert_eq!(job.quota_popup_lines(None).len(), 1);
+
+        // A reported counter becomes "~N covers left today" (neurons / 96).
+        *job.cover_remaining.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(960.0);
+        let lines = job.quota_popup_lines(None);
+        assert_eq!(lines, vec!["Cloudflare AI: ~10 covers left today".to_string()], "{lines:?}");
     }
 
     #[test]
