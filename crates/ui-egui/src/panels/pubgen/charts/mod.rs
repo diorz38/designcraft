@@ -33,12 +33,12 @@
 //! | `show_legend`    | `true`              | optional            |
 //! | `show_grid`      | `true`              | optional            |
 
+pub mod emitter;
 pub mod layout;
 pub mod palette;
 pub mod spec;
-// Phase 3:
-// pub mod emitter;
 
+pub use emitter::emit_chart;
 pub use layout::{
     AXIS_LABEL_H, AXIS_LABEL_W, BAR_GROUP_GAP, BAR_SERIES_GAP, BarRect, ChartLayout, DonutSlice, GridLine, LegendItem, XTickLabel,
     compute_layout,
