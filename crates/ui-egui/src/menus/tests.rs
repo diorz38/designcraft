@@ -79,6 +79,10 @@ fn walk(items: &[Item], out: &mut Vec<(String, String, Value)>) {
 fn oversized_edit_menu_scrolls_to_preferences() {
     let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
     let ctx = egui::Context::default();
+    // PubGen's menu bar replaces DesignCraft's by default (see `menus::pubgen_bar`): this test is
+    // about DesignCraft's Edit menu.
+    #[cfg(feature = "pubgen")]
+    crate::menus::pubgen_bar::set_pubgen_menus_on(&ctx, false);
     let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(700.0, 260.0));
     let mut tick = 0;
     let mut frame = |app: &mut DesignApp, events: Vec<egui::Event>| {

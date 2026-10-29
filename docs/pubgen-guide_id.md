@@ -1,12 +1,12 @@
 # Pubgen: Generator Publikasi Otomatis — Panduan Lengkap Pengguna
 
-> **Selamat datang di Pubgen!** Panduan ini disusun khusus untuk penyusun publikasi, staf statistik, desainer tata letak, dan pengelola dokumen kelembagaan (seperti BPS dan instansi pemerintah/swasta). Seluruh fitur, opsi, dan alur kerja di dalam panel **Pubgen** dijelaskan secara rinci dengan bahasa yang mudah dipahami oleh pengguna umum.
+> **Selamat datang di Pubgen!** Panduan ini disusun khusus untuk penyusun publikasi, staf statistik, desainer tata letak, dan pengelola dokumen kelembagaan (seperti BPS dan instansi pemerintah/swasta). Seluruh fitur, opsi, dan alur kerja di menu **Pubgen** dijelaskan secara rinci dengan bahasa yang mudah dipahami oleh pengguna umum.
 
 ---
 
 ## Daftar Isi
 1. [Apa itu Pubgen?](#1-apa-itu-pubgen)
-2. [Menemukan Panel Pubgen di DesignCraft](#2-menemukan-panel-pubgen-di-designcraft)
+2. [Menemukan Pubgen di DesignCraft](#2-menemukan-pubgen-di-designcraft)
 3. [Bagian 1: Publication Cover (Pembuat Halaman Sampul Otomatis)](#3-bagian-1-publication-cover-pembuat-halaman-sampul-otomatis)
    - [Ikhtisar & Posisi Halaman](#ikhtisar--posisi-halaman)
    - [13 Gaya Sampul Eksekutif](#13-gaya-sampul-eksekutif)
@@ -31,7 +31,7 @@
    - [Gaya Garis Tabel (Booktabs Horizontal, Navy, Grid)](#gaya-garis-tabel)
    - [Mode Penempatan Tabel (At Page, New Frame, At Cursor)](#mode-penempatan-tabel)
    - [Berkas Excel Multi-Sheet & Ekspor Arsip ZIP](#berkas-excel-multi-sheet--ekspor-arsip-zip)
-6. [Bagian 4: Quick Actions & Alat Bantu Editorial](#6-bagian-4-quick-actions--alat-bantu-editorial)
+6. [Bagian 4: Utilitas Halaman & Tata Letak](#6-bagian-4-utilitas-halaman--tata-letak)
    - [Sakelar Halaman Tunggal vs Halaman Ganda (Facing Pages)](#sakelar-halaman-tunggal-vs-halaman-ganda-facing-pages)
    - [Menambah Halaman Kosong (Add Blank Page)](#menambah-halaman-kosong-add-blank-page)
    - [Daftar Isi Otomatis (Add TOC / Rebuild TOC)](#daftar-isi-otomatis-add-toc--rebuild-toc)
@@ -60,22 +60,41 @@ Pubgen mengotomatiskan seluruh alur kerja tersebut:
 
 ---
 
-## 2. Menemukan Panel Pubgen di DesignCraft
+## 2. Menemukan Pubgen di DesignCraft
 
-Di layar utama DesignCraft, perhatikan panel bilah sisi kanan (**Right Dock**):
+Pubgen berada di **bilah menu** DesignCraft. Bila Pubgen terpasang, bilah menu menampilkan empat menu:
 
-![Fiture Pubgen](images/thumb01.png)
+```
++--------------------------------------------------------------------------+
+|  File    Publication    PubGen Tools    Help                             |
++--------------------------------------------------------------------------+
+```
 
-Klik tab **Pubgen**. Anda akan melihat 4 kartu menu utama:
-1. **Publication Cover** (Sampul Publikasi)
-2. **Page from CSV** (Halaman dari CSV / Excel)
-3. **Table from CSV** (Tabel dari CSV / Excel)
-4. **Quick Actions** (Aksi Cepat & Alat Bantu Editorial)
+| Menu | Isinya |
+|---|---|
+| **File** | Menu File bawaan DesignCraft (New, Open, Save, Export, …). |
+| **Publication** | Alur pembuatan publikasi: Master Excel Import & Generate…, Publication Compile Wizard…, Statistical Vector Chart…, Table of Contents…, Publication Cover…, Header & Footer Setup… — lalu **About PubGen…** dan tombol pengalih bilah menu. |
+| **PubGen Tools** | **Manual Ingest & Tables** (Page from CSV…, Table from CSV…), **Page & Layout Utilities** (Set Standard BPS Margins, Page Margins & Renumbering Options…), tanda centang **Dual Language Mode**, dan submenu **AI Translate**. |
+| **Help** | Menu Help bawaan DesignCraft. |
 
-Anda dapat mengklik tanda panah `▼` di sebelah setiap judul kartu untuk membuka atau menutup menu tersebut.
+Dengan begitu, publikasi lengkap hanya berjarak tiga kunjungan menu:
+
+1. **Publication ▸ Master Excel Import & Generate…** — membaca naskah Excel/CSV dan membangun halamannya.
+2. **Publication ▸ Publication Cover…** — membuat sampul.
+3. **Publication ▸ Table of Contents…** — menyisipkan atau memperbarui Daftar Isi.
+
+Tindakan editorial lainnya (sebaran satu sisi, halaman kosong, halaman RTF dan gambar, penomoran ulang halaman) dibuka dari **PubGen Tools ▸ Page & Layout Utilities…**, sedangkan jalur manual dari **PubGen Tools ▸ Manual Ingest & Tables**.
+
+### Beralih ke menu DesignCraft
+Seluruh tindakan Pubgen juga tersedia di kumpulan menu lengkap DesignCraft, di dalam menu **Pubgen** yang terletak tepat sebelum **Help**. Untuk mengakses sisa fitur DesignCraft — Edit, Layout, Type, Object, View, Window — alihkan bilah menunya:
+
+- **Publication ▸ Show DesignCraft Menus**, atau
+- tombol yang sama di kaki dialog **Publication ▸ About PubGen…**.
+
+Bilah menu kini menampilkan menu lengkap DesignCraft dengan Pubgen disisipkan sebelum Help. Pilih **Pubgen ▸ Show PubGen Menus** untuk kembali. Pengaturan ini berlaku per sesi: aplikasi yang baru dibuka selalu mulai dalam mode Pubgen.
 
 ### Tombol Mode Dwi Bahasa (`Single Lang` / `Dual Lang`)
-Di bilah tajuk atas panel Pubgen, Anda dapat beralih antara **Single Lang** (default satu bahasa) dan **Dual Lang** (dwi bahasa):
+Baris **Dual Language Mode** pada menu **PubGen Tools** mencentang atau melepas keluaran dwi bahasa (tanpa centang = Single Lang, default):
 - **Single Lang**: Pembuatan publikasi satu bahasa (monolingual) standar seperti sebelumnya.
 - **Dual Lang**: Menghasilkan publikasi dwi bahasa Indonesia-Inggris sesuai standar publikasi BPS:
   - **Sampul Depan**: Menautkan judul bahasa Inggris ke bingkai `#slot:text:title_en` bila templat menyediakannya, dan bila tidak ke baris judul kedua (`title#2`).
@@ -307,7 +326,7 @@ Setiap gaya AI dapat dipadukan dengan 6 palet pilihan:
 
 #### Konfigurasi Cloudflare Workers AI & Kredensial
 Sampul AI Base ditenagai oleh **Cloudflare Workers AI** menggunakan model Stable Diffusion XL (SDXL):
-1. Klik tombol **AI Setup…** di atas kartu Cover (atau di samping tombol Translate).
+1. Klik tombol **AI Setup…** di dialog Cover (atau di samping tombol Translate).
 2. Masukkan **Cloudflare Account ID** dan **Cloudflare API Token** Anda.
 3. **Cakupan Token (Scope)**: Buat token di dasbor Cloudflare dengan hak akses khusus `Workers AI: Edit` saja. Jangan gunakan hak akses administrator menyeluruh.
 4. Klik **Verify**: Pubgen melakukan uji coba kecil (1 langkah) untuk memverifikasi kredensial tanpa memboroskan kuota. Token disimpan secara lokal di preferensi pengguna Anda, tidak pernah disisipkan ke dalam dokumen, dan tidak pernah diunggah ke repositori.
@@ -518,11 +537,9 @@ Jika Anda membuka berkas Excel yang memiliki banyak lembar (*multi-sheet* `.xlsx
 
 ---
 
-## 6. Bagian 4: Quick Actions & Alat Bantu Editorial
+## 6. Bagian 4: Utilitas Halaman & Tata Letak
 
-Bagian **Quick Actions** menyediakan berbagai tombol pintas untuk mempercepat perapian naskah buku:
-
-![Fiture Pubgen:Quick Actions](images/thumb06.png)
+Dialog **PubGen Tools ▸ Page & Layout Utilities…** menyediakan berbagai tombol pintas untuk mempercepat perapian naskah buku:
 
 
 ### Sakelar Halaman Tunggal vs Halaman Ganda (Facing Pages)
@@ -635,26 +652,25 @@ Berikut alur kerja praktis menyusun publikasi statistik dari nol hingga selesai:
 1. **Membuat Dokumen Baru**:
    - Tekan tombol pintas `Ctrl+N` (Menu `File` ▸ `New Document`). Pilih ukuran `A4`, centang *Facing Pages*.
 2. **Membuat Sampul Depan**:
-   - Buka panel **Pubgen** di bilah kanan.
-   - Buka menu **Publication Cover**.
+   - Buka **Publication ▸ Publication Cover…**.
    - Pilih gaya **`⬡ Hexagon`** (atau arahkan kursor ke pil gaya untuk melihat pratinjau).
    - Isi judul: `KARAWANG TIMUR` dan tahun: `2026`.
    - Klik **Generate Cover Page**. Sampul langsung jadi di Halaman 1!
 3. **Membuat Halaman Judul Bab**:
-   - Buka menu **Page from CSV**.
+   - Buka **PubGen Tools ▸ Manual Ingest & Tables ▸ Page from CSV…**.
    - Klik **Browse...** lalu pilih berkas contoh `samples/KBDA2026_chapters.csv`.
    - Pilih preset: `1 Row · 3 Columns`.
    - Klik **Generate Pages**. Sebanyak 28 halaman judul bab otomatis terbentuk!
 4. **Memasukkan Tabel Data**:
    - Pindah ke Halaman 2 dokumen.
-   - Buka menu **Table from CSV**.
+   - Buka **PubGen Tools ▸ Manual Ingest & Tables ▸ Table from CSV…**.
    - Klik **Browse...** lalu pilih berkas `samples/kbda_2005.csv`.
    - Pilih gaya: `Horizontal Rules (Booktabs)`. Penempatan: `At page (below title)`.
    - Centang opsi `[x] Condition rules (Jumlah, Tahun, Kab, Kec...)`.
    - Klik **Insert Table**. Tabel statistik langsung terpasang rapi di bawah judul!
 5. **Membuat Daftar Isi**:
-   - Di menu **Quick Actions**, klik **Add Blank Page**.
-   - Pada bagian Table of Contents, pilih TOC style: `TOC Table` (kolom Judul otomatis terisi `Daftar Table`), pilih
+   - Di **PubGen Tools ▸ Page & Layout Utilities…**, klik **Add Blank Page**.
+   - Buka **Publication ▸ Table of Contents…**, lalu pilih TOC style: `TOC Table` (kolom Judul otomatis terisi `Daftar Table`), pilih
      Layout: `TablePage`.
    - Klik **Add TOC**. Daftar isi langsung tercipta lengkap dengan nomor halamannya! Untuk daftar grafik, pindah ke
      halaman berikutnya lalu pilih TOC style: `TOC Chart` dan klik **Add TOC** lagi.
@@ -667,7 +683,7 @@ Berikut alur kerja praktis menyusun publikasi statistik dari nol hingga selesai:
 
 Ingin menyesuaikan sampul dengan identitas visual daerah Anda?
 
-1. Pada kartu **Publication Cover**:
+1. Pada dialog **Publication Cover**:
    - Pilih gaya sampul, misalnya **`❖ Medallion`** atau **`⬡ Hexagon`**.
 2. **Menyesuaikan Warna**:
    - Masukkan kode warna resmi daerah Anda, misalnya:
@@ -691,7 +707,7 @@ Jika Anda memiliki tabel dengan kelompok kolom bersusun (misalnya: Jumlah Pendud
 1. Pada lembar kerja Excel, beri nama kepala kolom menggunakan tanda hubung ganda (`--`):
    | Kecamatan | Usia 0-14--Laki-Laki | Usia 0-14--Perempuan | Usia 15-64--Laki-Laki | Usia 15-64--Perempuan | Total |
 2. Simpan lembar kerja tersebut sebagai berkas `.xlsx` atau `.csv`.
-3. Di DesignCraft, buka kartu **Table from CSV / Excel**:
+3. Di DesignCraft, buka dialog **Table from CSV / Excel**:
    - Klik **Browse...** lalu pilih berkas Anda.
    - Centang `[x] First row is header`.
    - Centang `[x] Add column numbers (1), (2)...`.

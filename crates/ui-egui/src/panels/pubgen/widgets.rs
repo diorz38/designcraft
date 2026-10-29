@@ -124,6 +124,13 @@ pub(crate) fn about_pubgen_dialog(app: &mut DesignApp, ctx: &egui::Context, open
                 ui.add_space(16.0);
                 ui.separator();
                 ui.horizontal(|ui| {
+                    // PubGen replaces DesignCraft's menu bar by default; give the full one back here
+                    // too, so the About window is always a way back.
+                    let pubgen_on = crate::menus::pubgen_bar::pubgen_menus_on(ui.ctx());
+                    let toggle = if pubgen_on { "Show DesignCraft Menus" } else { "Show PubGen Menus" };
+                    if ui.button(toggle).clicked() {
+                        crate::menus::pubgen_bar::set_pubgen_menus_on(ui.ctx(), !pubgen_on);
+                    }
                     if ui.button("Close").clicked() {
                         close_clicked = true;
                     }

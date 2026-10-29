@@ -83,6 +83,11 @@ fn clipped_submenu<'a, R>(
 
 /// The menu bar contents (inside the app bar; macOS uses the native menu instead).
 pub fn menu_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
+    // PubGen (fork): its own menu bar replaces DesignCraft's while it is on (see `pubgen_bar`).
+    #[cfg(feature = "pubgen")]
+    if super::pubgen_bar::menu_bar(app, ui) {
+        return;
+    }
     let lang = app.ui.language.clone();
     let is_rtl = crate::i18n::is_rtl(&lang);
     let mut menus = menu_tree();

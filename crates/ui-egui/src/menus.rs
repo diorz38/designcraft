@@ -9,6 +9,8 @@ mod context;
 mod export;
 mod invoke;
 mod keys;
+#[cfg(feature = "pubgen")]
+pub mod pubgen_bar;
 mod quick_apply;
 mod run;
 mod state;

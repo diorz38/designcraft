@@ -1,13 +1,13 @@
 # Pubgen: The Publication Generator — Comprehensive User Guide
 
-> **Welcome to Pubgen!** This guide is written for publication editors, layout designers, statisticians, and institutional authors. It explains every single feature, setting, and button in the **Pubgen** panel in clear, non-technical language.
+> **Welcome to Pubgen!** This guide is written for publication editors, layout designers, statisticians, and institutional authors. It explains every single feature, setting, and button in the **Pubgen** menus in clear, non-technical language.
 
 ---
 
 ## Table of Contents
 1. [What is Pubgen?](#1-what-is-pubgen)
-2. [Finding the Pubgen Panel in DesignCraft](#2-finding-the-pubgen-panel-in-designcraft)
-3. [Card 1: Publication Cover (Cover Page Generator)](#3-card-1-publication-cover-cover-page-generator)
+2. [Finding Pubgen in DesignCraft](#2-finding-pubgen-in-designcraft)
+3. [Publication Cover (Cover Page Generator)](#3-publication-cover-cover-page-generator)
    - [Overview & Position](#overview--position)
    - [The 13 Executive Cover Styles](#the-13-executive-cover-styles)
    - [Hover Thumbnail Previews](#hover-thumbnail-previews)
@@ -15,14 +15,14 @@
    - [Metadata & Content Fields](#metadata--content-fields)
    - [Custom Image & Logo Pickers](#custom-image--logo-pickers)
    - [Generating the Cover](#generating-the-cover)
-4. [Card 2: Page from CSV / Excel (Batch Page & Chapter Synthesizer)](#4-card-2-page-from-csv--excel-batch-page--chapter-synthesizer)
+4. [Page from CSV / Excel (Batch Page & Chapter Synthesizer)](#4-page-from-csv--excel-batch-page--chapter-synthesizer)
    - [How It Works](#how-it-works)
    - [Input Files (CSV & Excel)](#input-files-csv--excel)
    - [Column Mapping (Type, Number, Title)](#column-mapping-type-number-title)
    - [Layout Presets](#layout-presets)
    - [Record Scope & Placement](#record-scope--placement)
    - [Auto-Inserting Tables from 'file' Column](#auto-inserting-tables-from-file-column)
-5. [Card 3: Table from CSV / Excel (Statistical Table Builder)](#5-card-3-table-from-csv--excel-statistical-table-builder)
+5. [Table from CSV / Excel (Statistical Table Builder)](#5-table-from-csv--excel-statistical-table-builder)
    - [How It Works](#how-it-works-1)
    - [Header Options & Multi-Level Stacked Headers](#header-options--multi-level-stacked-headers)
    - [Column Numbering Row: (1), (2), (3)...](#column-numbering-row-1-2-3)
@@ -31,7 +31,7 @@
    - [Table Styles (Horizontal Rules, Grid, Striped)](#table-styles)
    - [Placement Modes (At Page, New Frame, At Cursor)](#placement-modes)
    - [Multi-Sheet Excel Workbooks & ZIP Export](#multi-sheet-excel-workbooks--zip-export)
-6. [Card 4: Quick Actions & Editorial Utilities](#6-card-4-quick-actions--editorial-utilities)
+6. [Page & Layout Utilities & Editorial Tools](#6-page--layout-utilities--editorial-tools)
    - [Single-Sided vs. Double-Sided Spreads Toggle](#single-sided-vs-double-sided-spreads-toggle)
    - [Add Blank Page](#add-blank-page)
    - [Automated Table of Contents (Add TOC / Rebuild TOC)](#automated-table-of-contents-add-toc--rebuild-toc)
@@ -60,33 +60,41 @@ Pubgen turns this into a fast, automated workflow:
 
 ---
 
-## 2. Finding the Pubgen Panel in DesignCraft
+## 2. Finding Pubgen in DesignCraft
 
-When you open DesignCraft, look at the **Right Dock Panel**:
+Pubgen lives in DesignCraft's **menu bar**. With Pubgen installed, the bar shows four menus:
 
 ```
-+-------------------------------------------------------+
-|  [Properties]   [Pages]   [Layers]   [Pubgen]         |
-+-------------------------------------------------------+
-|                                                       |
-|  ▼ Page from CSV / Excel                              |
-|  ▼ Table from CSV / Excel                             |
-|  ▼ Publication Cover                                  |
-|  ▼ Quick Actions                                      |
-|                                                       |
-+-------------------------------------------------------+
++--------------------------------------------------------------------------+
+|  File    Publication    PubGen Tools    Help                             |
++--------------------------------------------------------------------------+
 ```
 
-Click the **Pubgen** tab. You will see four collapsible cards:
-1. **Page from CSV**
-2. **Table from CSV**
-3. **Publication Cover**
-4. **Quick Actions**
+| Menu | What it holds |
+|---|---|
+| **File** | DesignCraft's own File menu (New, Open, Save, Export, …). |
+| **Publication** | The generation pipeline: Master Excel Import & Generate…, Publication Compile Wizard…, Statistical Vector Chart…, Table of Contents…, Publication Cover…, Header & Footer Setup… — then **About PubGen…** and the menu-bar switch. |
+| **PubGen Tools** | **Manual Ingest & Tables** (Page from CSV…, Table from CSV…), **Page & Layout Utilities** (Set Standard BPS Margins, Page Margins & Renumbering Options…), the **Dual Language Mode** checkmark, and the **AI Translate** submenu. |
+| **Help** | DesignCraft's own Help menu. |
 
-You can click the triangle arrow `▼` next to any section header to expand or collapse it.
+So a complete publication is three menu visits away:
+
+1. **Publication ▸ Master Excel Import & Generate…** — read your Excel/CSV manuscript and build the pages.
+2. **Publication ▸ Publication Cover…** — synthesize the cover.
+3. **Publication ▸ Table of Contents…** — insert or rebuild the ToC.
+
+The remaining editorial actions (single-sided spreads, blank pages, RTF and image pages, page renumbering) open from **PubGen Tools ▸ Page & Layout Utilities…**, and the manual routes from **PubGen Tools ▸ Manual Ingest & Tables**.
+
+### Switching back to DesignCraft's menus
+Pubgen's actions also exist in DesignCraft's full menu set, under a **Pubgen** menu that sits just before **Help**. To reach the rest of DesignCraft — Edit, Layout, Type, Object, View, Window — switch the bar:
+
+- **Publication ▸ Show DesignCraft Menus**, or
+- the same button in the footer of **Publication ▸ About PubGen…**.
+
+The bar now shows DesignCraft's full menus with Pubgen appended before Help. Choose **Pubgen ▸ Show PubGen Menus** to switch back. The setting is per session: a fresh start opens in Pubgen mode.
 
 ### Bilingual Publication Toggle (`Single Lang` / `Dual Lang`)
-At the top header band of the Pubgen panel, you can toggle between **Single Lang** (default) and **Dual Lang**:
+The **Dual Language Mode** row in the **PubGen Tools** menu ticks or unticks bilingual output (unticked = Single Lang, the default):
 - **Single Lang**: Standard monolingual generation matching legacy publications.
 - **Dual Lang**: Generates bilingual Indonesian-English content adhering to BPS statistical standards:
   - **Covers**: Binds the English title into the dedicated `#slot:text:title_en` frame where a cover provides one, and otherwise into the second headline line (`title#2`).
@@ -108,7 +116,7 @@ Two honest lines from the dialog: **catalog text is sent to Groq's cloud**, and 
 
 ---
 
-## 3. Card 1: Publication Cover (Cover Page Generator)
+## 3. Publication Cover (Cover Page Generator)
 
 The **Publication Cover** section allows you to synthesize a complete, professional publication cover with a single click.
 
@@ -340,7 +348,7 @@ Each AI preset can be combined with one of six tailored palettes:
 
 #### Cloudflare Workers AI Setup & Credentials
 AI Base covers are powered by **Cloudflare Workers AI** running the Stable Diffusion XL (SDXL) model:
-1. Click **AI Setup…** above the Cover card (or next to the Translate button).
+1. Click **AI Setup…** in the Publication Cover dialog (or next to the Translate button).
 2. Enter your **Cloudflare Account ID** and **Cloudflare API Token**.
 3. **Token Scoping**: Create the token in your Cloudflare dashboard with the `Workers AI: Edit` permission only. Never grant account-wide administrator privileges.
 4. Click **Verify**: Pubgen performs a tiny 1-step test generation to confirm your credentials without wasting quota. The token is stored locally in your private user preferences and is never embedded into documents or committed to Git.
@@ -410,7 +418,7 @@ In less than 100 milliseconds, Pubgen will:
 
 ---
 
-## 4. Card 2: Page from CSV / Excel (Batch Page & Chapter Synthesizer)
+## 4. Page from CSV / Excel (Batch Page & Chapter Synthesizer)
 
 If you have a table of contents or catalog of tables in Excel or CSV, this tool will generate dozens or hundreds of formatted publication pages automatically.
 
@@ -481,7 +489,7 @@ table CSV — only the catalog entry. Other `A##` sheet names stay ordinary shee
 
 ---
 
-## 5. Card 3: Table from CSV / Excel (Statistical Table Builder)
+## 5. Table from CSV / Excel (Statistical Table Builder)
 
 Statistical publications require immaculate tables with clear lines, proper alignment, and total row formatting. Pubgen generates native, editable DesignCraft tables directly from your data.
 
@@ -589,13 +597,13 @@ If you open a multi-sheet Excel file (`.xlsx`):
 
 ---
 
-## 6. Card 4: Quick Actions & Editorial Utilities
+## 6. Page & Layout Utilities & Editorial Tools
 
-The **Quick Actions** section contains essential shortcuts for publication assembly.
+The **PubGen Tools ▸ Page & Layout Utilities…** dialog holds the essential shortcuts for publication assembly.
 
 ```
 +-------------------------------------------------------------------+
-| Quick Actions                                                     |
+| Page Margins & Renumbering Options                                |
 | Mode: Double-sided · Selected: Page 1                             |
 |                                                                   |
 | [ Single-sided / Double-sided Toggle ]                            |
@@ -732,7 +740,7 @@ Books typically have two numbering sections:
 2. Under **Page Renumbering**, select **Style: Roman (i, ii, iii...)**, Start #: `1`. Click **Restart page #**.
 3. Navigate to Page 1 of your main chapters.
 4. Select **Style: Arabic (1, 2, 3...)**, Start #: `1`. Click **Restart page #**.
-5. Click **Rebuild TOC** in the Table of Contents card: all page references automatically update to show Roman numerals for front matter and Arabic numbers for body pages!
+5. Click **Rebuild TOC** in **Publication ▸ Table of Contents…**: all page references automatically update to show Roman numerals for front matter and Arabic numbers for body pages!
 
 ---
 
@@ -745,26 +753,25 @@ Follow this workflow to create a complete statistical booklet from zero:
 1. **New Document**:
    - Press `Ctrl+N` (File > New Document). Choose `A4`, Facing Pages checked.
 2. **Generate Cover Page**:
-   - Open the **Pubgen** panel.
-   - Expand **Publication Cover**.
+   - Open **Publication ▸ Publication Cover…**.
    - Choose style **`⬡ Hexagon`** (or hover over the pills to preview).
    - Enter your Title: `KARAWANG TIMUR` and Year: `2026`.
    - Click **Generate Cover Page**. Your cover is created on Page 1!
 3. **Generate Content Pages**:
-   - Expand **Page from CSV**.
+   - Open **PubGen Tools ▸ Manual Ingest & Tables ▸ Page from CSV…**.
    - Click **Browse...** and select `samples/KBDA2026_chapters.csv`.
    - Preset: `1 Row · 3 Columns`.
    - Click **Generate Pages**. 28 formatted pages are appended to your document!
 4. **Insert Statistical Tables**:
    - Go to Page 2 in the document.
-   - Expand **Table from CSV**.
+   - Open **PubGen Tools ▸ Manual Ingest & Tables ▸ Table from CSV…**.
    - Click **Browse...** and select `samples/kbda_2005.csv`.
    - Style: `Horizontal Rules (Booktabs)`. Placement: `At page (below title)`.
    - Check `[x] Condition rules (Jumlah, Tahun, Kab, Kec...)`.
    - Click **Insert Table**. The table appears directly beneath the page header!
 5. **Add Table of Contents**:
-   - In **Quick Actions**, click **Add Blank Page**.
-   - Under Table of Contents, set Title: `DAFTAR TABEL`, Layout: `TablePage`.
+   - In **PubGen Tools ▸ Page & Layout Utilities…**, click **Add Blank Page**.
+   - Open **Publication ▸ Table of Contents…**, then set Title: `DAFTAR TABEL`, Layout: `TablePage`.
    - Click **Add TOC**. Your Table of Contents is generated with leader dots!
 6. **Export**:
    - Go to `File` > `Export` > `PDF (Print)`. Your publication is ready for print or digital distribution!
