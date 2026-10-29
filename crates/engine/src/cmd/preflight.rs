@@ -179,7 +179,9 @@ pub fn check(s: &Session, min_ppi: f64) -> Vec<Issue> {
                     format!("Overset text: {n} characters")
                 },
                 item: location.map(|(item, _)| item.0).or(last.map(|i| i.0)),
-                page: location.and_then(|(_, page)| page),
+                // The overset location walk only resolves doc-page frames; a frame on a parent
+                // page or the pasteboard still needs a page for click-to-jump.
+                page: location.and_then(|(_, page)| page).or_else(|| last.and_then(|f| d.page_of_item(f))),
             });
         }
         // Native table cells: a number the geometry cannot show is a wrong publication.

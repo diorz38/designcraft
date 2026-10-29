@@ -377,6 +377,9 @@ pub struct PubgenState {
     /// The last `preflight.pubgen` result behind the Audit Publication dialog.
     #[serde(skip)]
     pub audit_issues: Option<Vec<audit::AuditIssue>>,
+    /// The document revision the last audit ran on; a different revision re-runs it silently.
+    #[serde(skip)]
+    pub audit_revision: u64,
     /// Effective ppi for the generic raster-resolution rule inside the audit.
     #[serde(default)]
     pub audit_min_ppi: f64,
@@ -679,6 +682,7 @@ impl Default for PubgenState {
             show_about_dialog: false,
             audit_open: false,
             audit_issues: None,
+            audit_revision: 0,
             audit_min_ppi: 150.0,
             dialog_excel_open: false,
             dialog_toc_open: false,

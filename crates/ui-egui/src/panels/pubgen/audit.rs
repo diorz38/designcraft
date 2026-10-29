@@ -22,6 +22,7 @@ pub struct AuditIssue {
 
 /// Run the audit and keep its issues for the dialog.
 pub(crate) fn run_audit(app: &mut DesignApp, st: &mut PubgenState) {
+    st.audit_revision = app.session.active().map(|d| d.revision).unwrap_or(0);
     let r = app.run("preflight.pubgen", json!({"minPpi": st.audit_min_ppi}));
     st.audit_issues = match r {
         Ok(v) => Some(parse_issues(&v)),
@@ -36,13 +37,25 @@ fn parse_issues(v: &Value) -> Vec<AuditIssue> {
     serde_json::from_value(v.get("issues").cloned().unwrap_or(Value::Null)).unwrap_or_default()
 }
 
+/// Click-to-remediate: select the offending item and jump to its page.
+fn open_issue(app: &mut DesignApp, issue: &AuditIssue) {
+    if let Some(id) = issue.item {
+        let _ = app.run("selection.set", json!({"ids": [id]}));
+    }
+    if let Some(p) = issue.page {
+        crate::canvas::go_to_page(app, p);
+    }
+}
+
 /// The Audit Publication window, shown while `st.audit_open`.
 pub(crate) fn audit_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut PubgenState) {
     if !st.audit_open {
         return;
     }
-    // Opened from the menu: the menu handler can only set flags, so run here on first paint.
-    if st.audit_issues.is_none() {
+    // Opened from the menu (the handler only sets flags) or the document changed since the last
+    // run: refresh, so every row's item and page name objects that still exist.
+    let revision = app.session.active().map(|d| d.revision).unwrap_or(0);
+    if st.audit_issues.is_none() || revision != st.audit_revision {
         run_audit(app, st);
     }
     let mut open = st.audit_open;
@@ -88,12 +101,7 @@ pub(crate) fn audit_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut
                     crate::rtl::label(ui, RichText::new(format!("   page {pg}")).size(10.0).color(t.text_dim));
                 }
                 if resp.clicked() {
-                    if let Some(id) = issue.item {
-                        let _ = app.run("selection.set", json!({"ids": [id]}));
-                    }
-                    if let Some(p) = issue.page {
-                        crate::canvas::go_to_page(app, p);
-                    }
+                    open_issue(app, issue);
                 }
             }
         });
@@ -120,5 +128,50 @@ mod tests {
         assert_eq!(issues[0].item, Some(17));
         assert_eq!(issues[0].page, Some(2));
         assert_eq!(issues[1].item, None);
+    }
+
+    /// Clicking the overset row selects the offending frame and jumps to its page — through the
+    /// real UI, from the Publication menu to the checklist row.
+    #[test]
+    fn clicking_the_overset_row_selects_the_frame_and_jumps_to_its_page() {
+        use egui_kittest::{Harness, kittest::Queryable};
+
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"pages": 2})).unwrap();
+        // 64×14 of frame: the sentence cannot fit, exactly like the engine's overset regression.
+        let id = app
+            .run(
+                "frame.create",
+                json!({"spread": 1, "rect": [40, 40, 104, 54], "content": "text", "text": "This text will not fit in such a tiny frame at all."}),
+            )
+            .unwrap()["id"]
+            .as_u64()
+            .unwrap();
+        let mut h = Harness::builder().with_size(egui::vec2(1440.0, 900.0)).with_accessibility_check(false).build_ui_state(
+            |ui, app: &mut DesignApp| {
+                // The menu handler can only set this flag; the dialog itself runs the audit.
+                crate::theme::install_fonts(ui.ctx(), "en");
+                crate::dock::pubgen::with_state(ui.ctx(), |st| {
+                    st.audit_open = true;
+                });
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
+        let before = h.state().view().unwrap().origin;
+        // Hover first, then press and release in separate passes: a same-pass pair is one raw
+        // input, and the window only senses the press when it has seen the pointer hover.
+        let row = h.get_by_label_contains("Overset text");
+        let pos = row.rect().center();
+        h.hover_at(pos);
+        h.step();
+        h.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+        h.step();
+        h.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+        h.run_steps(2);
+        assert_eq!(h.state().session.doc().unwrap().selection.items.first().map(|i| i.0), Some(id));
+        assert_ne!(h.state().view().unwrap().origin, before, "the canvas jumped to the overset frame's page");
     }
 }

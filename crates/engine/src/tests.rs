@@ -497,6 +497,10 @@ fn preflight_reports_overset_and_missing_fonts() {
     let kinds: Vec<&str> = r["issues"].as_array().unwrap().iter().map(|i| i["kind"].as_str().unwrap()).collect();
     assert!(kinds.contains(&"overset") && kinds.contains(&"missingFont"), "{kinds:?}");
     assert_eq!(r["errors"], 2);
+    // Click-to-remediate needs the item and the page for every overset row.
+    let ov = r["issues"].as_array().unwrap().iter().find(|i| i["kind"] == "overset").unwrap();
+    assert!(ov["item"].is_u64(), "overset must name its frame: {ov}");
+    assert!(ov["page"].is_u64(), "overset must name its page: {ov}");
 }
 
 #[test]
