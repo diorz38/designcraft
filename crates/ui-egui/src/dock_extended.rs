@@ -58,6 +58,9 @@ pub const ICON_PANELS: &[(&str, &str, &str)] = &[
 /// Panels that only float, outside the docking layout (they open from a menu).
 pub const FLOATING_PANELS: &[(&str, &str)] = &[("tabs", "Tabs")];
 
+/// The dock panels the Pubgen fork adds: known to the dock, absent upstream.
+pub const PUBGEN_PANELS: &[(&str, &str, &str)] = &[("pubgen", "PubGen", "panel-properties")];
+
 /// The English name of panel `id`.
 pub fn panel_label(id: &str) -> &'static str {
     DOCK_TABS.iter().chain(ICON_PANELS).map(|p| (p.0, p.1)).chain(FLOATING_PANELS.iter().copied()).find(|p| p.0 == id).map_or("Panel", |p| p.1)

@@ -2020,6 +2020,7 @@ fn searched_ui_commands_run_without_parameters_and_keep_preferences() {
         "app.glyphsPanel",
         "app.tablePanel",
         "window.collapseToIcons",
+        "window.pubgenPanel",
     ];
     let arrangement = ["docking", "dockingHidden", "floating"];
     let mut failed = Vec::new();

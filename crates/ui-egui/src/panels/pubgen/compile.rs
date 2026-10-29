@@ -657,6 +657,19 @@ impl CompileJob {
         self.cancelled.store(true, Ordering::Relaxed);
     }
 
+    /// A job that merely claims to run: the menu bar's ● marker tests only need the flag.
+    #[cfg(test)]
+    pub(crate) fn fake_running() -> Self {
+        Self::new(CompilePlan {
+            manifest: ProjectManifest::default(),
+            manifest_path: std::path::PathBuf::new(),
+            output_document: std::path::PathBuf::new(),
+            output_pdf: None,
+            chapters: Vec::new(),
+            warnings: Vec::new(),
+        })
+    }
+
     pub(crate) fn progress(&self) -> (usize, usize) {
         (self.next.min(self.steps.len()), self.steps.len())
     }
@@ -2537,8 +2550,8 @@ mod tests {
     fn the_compile_command_is_registered_with_its_parameters() {
         let entry = crate::menus::UI_COMMANDS.iter().find(|c| c.0 == "pubgen.compileProject");
         let (_, label, shortcut, params) = entry.unwrap();
-        assert_eq!(*label, "Compile Publication…");
-        assert!(shortcut.is_none());
+        assert_eq!(*label, "Compile Publication");
+        assert_eq!(*shortcut, Some("Ctrl+Shift+B"));
         for key in ["path", "sync", "pdf"] {
             assert!(params.contains(key), "params doc names `{key}`: {params}");
         }

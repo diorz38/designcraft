@@ -2,7 +2,7 @@
 
 - **Document:** `docs/plans/2026-10-30-pubgen-menu-bar-ux-mini-plan.md`
 - **Date:** 2026-10-30
-- **Status:** Draft — not started. Implements the P0/P1 findings of [`docs/reviews/pubgen-menu-accessibility-audit.md`](../reviews/pubgen-menu-accessibility-audit.md) (Part 2, §2.5–2.7). Revised 2026-10-30: drop the "…" suffix in Publication, relabel Vector Chart, add the **Shortcut** menu.
+- **Status:** Done — implemented on `pubgen-0.8.X`, one commit per phase: `ed83a718` (0), `d1ce1c37` (1), `bf76c2fa` (2), `2bb51025` (3), `df5beb08` (4), `79c02d52` (5), `4b3d78c9` (6). Deviations from this draft: the ToC chord is **Ctrl+Alt+T** (F7 belongs to the Layers panel), `tableOfContents` moved to a UI command, the Window menu gains a flat **PubGen Panel** row (the fork's only dock panel; no "PubGen Panels" submenu), and the disabled hint reads "Open a document first". Wasm checked after Phase 6. Pre-existing local failures outside this plan's scope: `chrome::tests` (×4, window-geometry), `dock::pubgen::ai` glossary tests (×5, bundled-glossary data). Revised 2026-10-30: drop the "…" suffix in Publication, relabel Vector Chart, add the **Shortcut** menu.
 - **Branch:** `feature/pubgen-menu-ux` (proposed, off `standalone` / `pubgen-0.8.X`)
 - **Target:** `crates/ui-egui/src/menus/pubgen_bar.rs`, `crates/ui-egui/src/menus/` (bar, ui_commands, keys), `crates/ui-egui/src/panels/pubgen/state.rs`, `crates/ui-egui/src/dock_extended.rs`, `docs/`
 
@@ -89,15 +89,15 @@ commands a PubGen operator reaches for most, without digging through Edit/Layout
 *data*, not new logic: each row is an existing engine/UI command id rendered through the same
 `Item::Cmd` machinery as Phase 3 (so chords, gates and i18n come free).
 
-Initial contents (verified first-party ids; trim/extend freely, max 8 rows):
+Initial contents — as shipped (`pubgen_bar.rs::shortcut_menu`), all `UI_COMMANDS`/engine ids:
 
 | Item | Command | Why |
 | :--- | :--- | :--- |
-| Export PDF… | `file.exportPdf` | The terminal action of every publication |
+| Export PDF… | `app.exportPdf` | The terminal action of every publication |
 | Preflight Document | `preflight.run` | QC before export; complements Audit Publication |
-| Package… | `file.package` | Hand-off to print (`links.copyTo` for links-only) |
-| Place Image… | `file.place` | One-off images outside the Excel pipeline |
-| New Sample Document | `file.newSample` | Training / demo layouts without Master Excel |
+| Package… | `app.packageDialog` | Hand-off to print |
+| Place… | `app.placeDialog` | One-off images outside the Excel pipeline |
+| Sample Document | `file.newSample` | Training / demo layouts without Master Excel |
 
 Rules: every row must exist in the command table or `UI_COMMANDS` (no new commands — verify with
 `designcraft-cli commands`), disabled rows keep their `enabled` gate and the Phase-4 disabled

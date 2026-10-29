@@ -51,12 +51,16 @@ pub(crate) fn cancel_gesture(ctx: &egui::Context) {
     craft_ui::docking::cancel_drag::<String>(ctx, area_id());
 }
 
+/// Every registered dock panel, upstream's plus the fork's.
+fn all_panels() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> {
+    let base = crate::dock::DOCK_TABS.iter().chain(crate::dock::ICON_PANELS);
+    #[cfg(feature = "pubgen")]
+    let base = base.chain(crate::dock::PUBGEN_PANELS.iter());
+    base
+}
+
 fn normalize(raw: &str) -> Option<&'static str> {
-    crate::dock::DOCK_TABS
-        .iter()
-        .chain(crate::dock::ICON_PANELS)
-        .find(|(id, label, _)| id.eq_ignore_ascii_case(raw.trim()) || label.eq_ignore_ascii_case(raw.trim()))
-        .map(|(id, _, _)| *id)
+    all_panels().find(|(id, label, _)| id.eq_ignore_ascii_case(raw.trim()) || label.eq_ignore_ascii_case(raw.trim())).map(|(id, _, _)| *id)
 }
 
 /// The panel that holds the document area. It never moves, floats, closes or takes tabs.
@@ -140,9 +144,7 @@ fn icon_column(icon_groups: Option<&[Vec<String>]>, placed: &mut Placed) -> Opti
         Some(groups) => (groups.iter().filter_map(|g| placed.group(g, 0)).collect(), NAMED_ICON_WIDTH),
         None => {
             let mut groups: Vec<Group<String>> = ICON_GROUPS.iter().filter_map(|g| placed.group(g, 0)).collect();
-            groups.extend(
-                crate::dock::DOCK_TABS.iter().chain(crate::dock::ICON_PANELS).filter_map(|p| placed.take(p.0)).map(|id| Group::new(vec![id], 0)),
-            );
+            groups.extend(all_panels().filter_map(|p| placed.take(p.0)).map(|id| Group::new(vec![id], 0)));
             (groups, ICON_WIDTH)
         }
     };
@@ -518,6 +520,11 @@ pub(crate) fn command(app: &mut DesignApp, id: &str, params: &Value) -> Option<R
         }
         let id = if showing(app, "table") { "window.panel.close" } else { "window.panel.activate" };
         return Some(shared_command(app, id, &json!({"panel": "table"})));
+    }
+    #[cfg(feature = "pubgen")]
+    if id == "window.pubgenPanel" {
+        let id = if showing(app, "pubgen") { "window.panel.close" } else { "window.panel.activate" };
+        return Some(shared_command(app, id, &json!({"panel": "pubgen"})));
     }
     if id == "window.collapseToIcons" {
         return Some(set_iconic(app, true));

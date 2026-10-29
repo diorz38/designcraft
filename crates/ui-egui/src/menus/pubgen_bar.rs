@@ -102,17 +102,10 @@ fn popup(ui: &mut egui::Ui, rtl: bool, min_width: f32, contents: impl FnOnce(&mu
     });
 }
 
-/// A menu row: label, enabled, hover note, clicked.
+/// A menu row: label, enabled, clicked. A disabled row says why (the audit's P1-5).
 fn item(ui: &mut egui::Ui, lang: &str, label: &str, enabled: bool) -> bool {
-    item_note(ui, lang, label, enabled, "")
-}
-
-/// A menu row with a hover note (e.g. the numbers a short label left out).
-fn item_note(ui: &mut egui::Ui, lang: &str, label: &str, enabled: bool, note: &str) -> bool {
-    let mut resp = ui.add_enabled(enabled, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(lang, label))));
-    if !note.is_empty() {
-        resp = resp.on_hover_text(note);
-    }
+    let resp = ui.add_enabled(enabled, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(lang, label))));
+    let resp = if !enabled { resp.on_hover_text(crate::i18n::tr(lang, "Open a document first")) } else { resp };
     resp.clicked()
 }
 
@@ -121,104 +114,63 @@ fn submenu(ui: &mut egui::Ui, lang: &str, rtl: bool, label: &str, min_width: f32
     crate::menus::menu_button(ui, crate::rtl::widget(ui, crate::i18n::tr(lang, label)), |ui| popup(ui, rtl, min_width, contents));
 }
 
-/// The generation pipeline: Master Excel, the compiler, charts, ToC, cover and headers.
-fn pipeline(app: &mut DesignApp, ui: &mut egui::Ui, lang: &str) {
-    let has_doc = app.session.active().is_some();
-
-    if item(ui, lang, "Generate from Excel", has_doc) {
-        crate::dock::pubgen::with_state(ui.ctx(), |st| {
-            st.dialog_excel_open = true;
-        });
-        ui.close();
-    }
-
-    if item(ui, lang, "Vector Chart", has_doc) {
-        let dlg = Box::new(crate::dock::pubgen::charts::dialog::ChartDialog::new(app, false));
-        crate::dock::pubgen::with_state(ui.ctx(), |st| {
-            st.chart_dialog = Some(dlg);
-        });
-        ui.close();
-    }
-
-    if item(ui, lang, "Table of Contents", has_doc) {
-        crate::dock::pubgen::with_state(ui.ctx(), |st| {
-            st.dialog_toc_open = true;
-        });
-        ui.close();
-    }
-
-    if item(ui, lang, "Publication Cover", has_doc) {
-        crate::dock::pubgen::with_state(ui.ctx(), |st| {
-            st.dialog_cover_open = true;
-        });
-        ui.close();
-    }
-
-    if item(ui, lang, "Header & Footer Setup", has_doc) {
-        crate::dock::pubgen::with_state(ui.ctx(), |st| {
-            st.dialog_hf_open = true;
-        });
-        ui.close();
-    }
-
-    // Last pipeline step: the QA audit over the finished layout (Pillar 3).
-    if item(ui, lang, "Audit Publication", has_doc) {
-        crate::dock::pubgen::with_state(ui.ctx(), |st| {
-            st.audit_open = true;
-            st.audit_issues = None; // the dialog runs `preflight.pubgen` on first paint
-        });
-        ui.close();
-    }
+/// The generation pipeline: Excel generate, compile, charts, ToC, cover, headers and the audit —
+/// rows come from `UI_COMMANDS`, so labels, gates and chords are the upstream menu machinery's.
+/// A row whose background job runs (compile, AI cover) carries a ● marker (the audit's P1-6).
+fn pipeline(app: &mut DesignApp, ui: &mut egui::Ui) {
+    let (compiling, covering) = crate::dock::pubgen::with_state(ui.ctx(), |st| (st.compile_job.is_some(), st.cover_job.is_some()));
+    let items: Vec<crate::menus::Item> = [
+        "pubgen.generateFromExcel",
+        "pubgen.compileProject",
+        "pubgen.vectorChart",
+        "pubgen.tableOfContents",
+        "pubgen.publicationCover",
+        "pubgen.headerFooter",
+        "pubgen.audit",
+    ]
+    .iter()
+    .map(|id| {
+        let mut it = super::cmd_item(id, serde_json::Value::Null);
+        if let crate::menus::Item::Cmd { label, id, .. } = &mut it {
+            let running = match id.as_str() {
+                "pubgen.compileProject" => compiling,
+                "pubgen.publicationCover" => covering,
+                _ => false,
+            };
+            if running {
+                *label = format!("●  {label}");
+            }
+        }
+        it
+    })
+    .collect();
+    super::bar::menu_column(app, ui, &[("Publication", items)]);
 }
 
 /// Manual content: CSV ingest, layout utilities, the dual-language switch and AI translation.
 fn content(app: &mut DesignApp, ui: &mut egui::Ui, lang: &str, rtl: bool) {
     let has_doc = app.session.active().is_some();
 
-    submenu(ui, lang, rtl, "Manual Ingest & Tables", 220.0, |ui| {
-        if item(ui, lang, "Page from CSV…", has_doc) {
-            crate::dock::pubgen::with_state(ui.ctx(), |st| {
-                st.dialog_manual_open = true;
-                st.dialog_manual_tab = 0;
-            });
-            ui.close();
-        }
-        if item(ui, lang, "Table from CSV…", has_doc) {
-            crate::dock::pubgen::with_state(ui.ctx(), |st| {
-                st.dialog_manual_open = true;
-                st.dialog_manual_tab = 1;
-            });
-            ui.close();
-        }
-    });
+    submenu_items(app, ui, lang, "Manual Ingest & Tables", &["pubgen.pageFromCsv", "pubgen.tableFromCsv"]);
 
-    submenu(ui, lang, rtl, "Page & Layout Utilities", 280.0, |ui| {
-        if item_note(ui, lang, "Standard BPS Margins", has_doc, "Margins 20 / 20 / 19 / 15 mm (top, bottom, inside, outside).\nUndo with Ctrl+Z.") {
-            let _ = crate::dock::pubgen::execute_set_page_margins(app);
-            ui.close();
-        }
-        ui.separator();
-        if item(ui, lang, "Page Margins & Renumbering Options…", has_doc) {
-            crate::dock::pubgen::with_state(ui.ctx(), |st| {
-                st.dialog_utils_open = true;
-            });
-            ui.close();
-        }
-    });
+    submenu_items(app, ui, lang, "Page & Layout Utilities", &["pubgen.bpsMargins", "pubgen.marginsDialog"]);
 
     ui.separator();
 
-    let is_bilingual = crate::dock::pubgen::with_state(ui.ctx(), |st| st.bilingual_output);
-    let check_mark = if is_bilingual { "✓ " } else { "   " };
-    let bi_label = format!("{}{}", check_mark, crate::i18n::tr(lang, "Dual Language Mode (Bilingual ID / EN)"));
-    if ui.button(crate::rtl::widget(ui, bi_label)).clicked() {
-        crate::dock::pubgen::with_state(ui.ctx(), |st| {
-            st.bilingual_output = !st.bilingual_output;
-        });
-        ui.close();
-    }
+    // The dual-language toggle rides the upstream row machinery: its checkmark comes from
+    // `menus::state::checked`, its chord (Ctrl+Shift+L) from the keymap (P1-3).
+    let dual = [super::cmd_item("pubgen.dualLanguage", serde_json::Value::Null)];
+    super::tree::menu_items(app, ui, &dual, "Publication Tools");
 
     submenu(ui, lang, rtl, "AI Translate", 260.0, |ui| ai_translate(app, ui, lang, has_doc));
+}
+
+/// A submenu whose rows are `UI_COMMANDS` ids: upstream rendering (gates, chords, checkmarks).
+fn submenu_items(app: &mut DesignApp, ui: &mut egui::Ui, lang: &str, label: &str, ids: &[&str]) {
+    let items: Vec<crate::menus::Item> = ids.iter().map(|id| super::cmd_item(id, serde_json::Value::Null)).collect();
+    crate::menus::menu_button(ui, crate::rtl::widget(ui, crate::i18n::tr(lang, label)), |ui| {
+        super::bar::menu_column(app, ui, &[(label, items)]);
+    });
 }
 
 /// Submenu of AI translation actions for the current page.
@@ -298,7 +250,7 @@ pub fn pubgen_menu(app: &mut DesignApp, ui: &mut egui::Ui) {
     let rtl = crate::i18n::is_rtl(&lang);
     crate::menus::menu_button(ui, crate::rtl::widget(ui, "Pubgen"), |ui| {
         popup(ui, rtl, 260.0, |ui| {
-            pipeline(app, ui, &lang);
+            pipeline(app, ui);
             ui.separator();
             content(app, ui, &lang, rtl);
             ui.separator();
@@ -312,7 +264,7 @@ fn publication_menu(app: &mut DesignApp, ui: &mut egui::Ui) {
     let lang = app.ui.language.clone();
     let rtl = crate::i18n::is_rtl(&lang);
     crate::menus::menu_button(ui, crate::rtl::widget(ui, crate::i18n::tr(&lang, "Publication")), |ui| {
-        popup(ui, rtl, 260.0, |ui| pipeline(app, ui, &lang));
+        popup(ui, rtl, 260.0, |ui| pipeline(app, ui));
     });
 }
 
@@ -436,8 +388,7 @@ mod tests {
     fn publication_rows(app: &mut DesignApp, ctx: &egui::Context) -> Vec<String> {
         let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), ..Default::default() };
         let mut output = ctx.run_ui(input, |ui| {
-            let lang = app.ui.language.clone();
-            pipeline(app, ui, &lang);
+            pipeline(app, ui);
         });
         output.textures_delta.clear();
         collect_texts(&output.shapes)
@@ -470,5 +421,45 @@ mod tests {
         let texts = collect_texts(&output.shapes);
         assert!(texts.iter().any(|t| t.contains("About PubGen")), "{texts:?}");
         assert!(texts.iter().any(|t| t.contains("DesignCraft Menus") || t.contains("PubGen Menus")), "{texts:?}");
+    }
+
+    /// The dual-language toggle is an upstream `Item::Cmd` row: its checkmark comes from
+    /// `menus::state::checked`, not a hand-drawn prefix (the audit's P1-3).
+    #[test]
+    fn the_dual_language_toggle_draws_an_upstream_checkmark() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx, "en");
+        let mut app = app();
+        app.egui_ctx = Some(ctx.clone());
+        let content = |app: &mut DesignApp| {
+            let lang = app.ui.language.clone();
+            let input =
+                egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), ..Default::default() };
+            let mut output = ctx.run_ui(input, |ui| content(app, ui, &lang, false));
+            output.textures_delta.clear();
+            collect_texts(&output.shapes)
+        };
+        assert!(content(&mut app).iter().any(|t| t.contains("✓") && t.contains("Dual Language Mode")), "bilingual by default, checked");
+        crate::dock::pubgen::with_state(&ctx, |st| {
+            st.bilingual_output = false;
+        });
+        assert!(content(&mut app).iter().any(|t| t.contains("Dual Language Mode") && !t.contains("✓")), "single after the toggle, unchecked");
+    }
+
+    /// A row whose background job runs carries a ● marker (the audit's P1-6).
+    #[test]
+    fn a_running_job_marks_its_publication_row() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx, "en");
+        let mut app = app();
+        app.egui_ctx = Some(ctx.clone());
+        assert!(!publication_rows(&mut app, &ctx).iter().any(|t| t.starts_with('●')), "idle: no dot");
+        crate::dock::pubgen::with_state(&ctx, |st| {
+            st.compile_job = Some(Box::new(crate::dock::pubgen::compile::CompileJob::fake_running()));
+        });
+        let rows = publication_rows(&mut app, &ctx);
+        let marked: Vec<_> = rows.iter().filter(|t| t.starts_with('●')).collect();
+        assert_eq!(marked.len(), 1, "exactly the compiling row: {rows:?}");
+        assert!(marked[0].contains("Compile Publication"), "{marked:?}");
     }
 }
