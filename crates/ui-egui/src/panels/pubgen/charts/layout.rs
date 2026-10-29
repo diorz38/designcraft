@@ -235,7 +235,13 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
     } else {
         AXIS_LABEL_H + 4.0
     };
-    let bottom_gap = if is_pyramid { 0.0 } else if any_rotated { 16.0 } else { 4.0 };
+    let bottom_gap = if is_pyramid {
+        0.0
+    } else if any_rotated {
+        16.0
+    } else {
+        4.0
+    };
 
     let use_category_legend = is_donut || (spec.series.len() <= 1 && !is_gauge && !is_pyramid);
 
@@ -844,11 +850,7 @@ fn layout_population_pyramid(
 
         // Subtle horizontal grid line every 2 age groups (10-year cohort markers)
         if r % 2 == 1 {
-            grid_lines.push(GridLine {
-                rect: [plot_rect[0], row_y + row_h, plot_rect[2], row_y + row_h + 0.5],
-                value: 0.0,
-                label: String::new(),
-            });
+            grid_lines.push(GridLine { rect: [plot_rect[0], row_y + row_h, plot_rect[2], row_y + row_h + 0.5], value: 0.0, label: String::new() });
         }
 
         // 1. Male bar (Left side extending from center_left towards left)
@@ -1112,20 +1114,15 @@ fn layout_donut(
     }
 }
 
-
-fn compute_map_layout(
-    spec: &ChartSpec,
-    categories: &[String],
-    series_values: &[Vec<f64>],
-    plot_rect: [f64; 4],
-    bilingual: bool,
-) -> ChartLayout {
+fn compute_map_layout(spec: &ChartSpec, categories: &[String], series_values: &[Vec<f64>], plot_rect: [f64; 4], bilingual: bool) -> ChartLayout {
     let geo_map = if let Some(path) = &spec.geojson_path {
-        super::stock_maps::load_chart_geo_map(path).unwrap_or_else(|_| super::stock_maps::load_chart_geo_map("PANGKALAN").unwrap_or_else(|_| super::geojson::GeoMap {
-            name: "Fallback".into(),
-            bbox: [0.0, 0.0, 1.0, 1.0],
-            features: Vec::new(),
-        }))
+        super::stock_maps::load_chart_geo_map(path).unwrap_or_else(|_| {
+            super::stock_maps::load_chart_geo_map("PANGKALAN").unwrap_or_else(|_| super::geojson::GeoMap {
+                name: "Fallback".into(),
+                bbox: [0.0, 0.0, 1.0, 1.0],
+                features: Vec::new(),
+            })
+        })
     } else {
         super::stock_maps::load_chart_geo_map("PANGKALAN").unwrap_or_else(|_| super::geojson::GeoMap {
             name: "Fallback".into(),
@@ -1157,24 +1154,11 @@ fn compute_map_layout(
 
     let (map_rect, legend_rect) = if spec.show_legend {
         (
-            designcraft_geom::Rect {
-                x0: plot_rect[0],
-                y0: plot_rect[1],
-                x1: plot_rect[2],
-                y1: (plot_rect[3] - 32.0).max(plot_rect[1] + 20.0),
-            },
+            designcraft_geom::Rect { x0: plot_rect[0], y0: plot_rect[1], x1: plot_rect[2], y1: (plot_rect[3] - 32.0).max(plot_rect[1] + 20.0) },
             Some([plot_rect[0], plot_rect[3] - 28.0, plot_rect[2], plot_rect[3]]),
         )
     } else {
-        (
-            designcraft_geom::Rect {
-                x0: plot_rect[0],
-                y0: plot_rect[1],
-                x1: plot_rect[2],
-                y1: plot_rect[3],
-            },
-            None,
-        )
+        (designcraft_geom::Rect { x0: plot_rect[0], y0: plot_rect[1], x1: plot_rect[2], y1: plot_rect[3] }, None)
     };
 
     let projected = geo_map.project_features(map_rect);
@@ -1190,10 +1174,8 @@ fn compute_map_layout(
         let norm_name = feat_name.trim().to_uppercase();
 
         let val_opt = val_map.get(&norm_name).copied();
-        let (min_hex, max_hex) = super::palette::MAP_COLOR_PRESETS
-            .get(spec.map_palette_idx)
-            .map(|(_, min_c, max_c)| (*min_c, *max_c))
-            .unwrap_or(("#E1F5FE", "#0072BC"));
+        let (min_hex, max_hex) =
+            super::palette::MAP_COLOR_PRESETS.get(spec.map_palette_idx).map(|(_, min_c, max_c)| (*min_c, *max_c)).unwrap_or(("#E1F5FE", "#0072BC"));
 
         let (val, fill_color) = if let Some(v) = val_opt {
             let t = ((v - min_val) / (max_val - min_val)).clamp(0.0, 1.0);
@@ -1203,11 +1185,7 @@ fn compute_map_layout(
             (0.0, "#F1F5F9".to_string())
         };
 
-        let value_str = if val_opt.is_some() {
-            spec.value_format.format(val, bilingual)
-        } else {
-            String::new()
-        };
+        let value_str = if val_opt.is_some() { spec.value_format.format(val, bilingual) } else { String::new() };
 
         map_regions.push(MapRegionLayout {
             polygons: pf.polygons,
@@ -1245,12 +1223,7 @@ fn compute_map_layout(
             let lbl_rect = [sx0 - 4.0, swatch_y + swatch_h + 2.0, sx0 + swatch_w + 4.0, swatch_y + swatch_h + 12.0];
             let label = spec.value_format.format(val, bilingual);
 
-            map_legend.push(MapLegendEntry {
-                swatch_rect: s_rect,
-                color,
-                label,
-                label_rect: lbl_rect,
-            });
+            map_legend.push(MapLegendEntry { swatch_rect: s_rect, color, label, label_rect: lbl_rect });
         }
     }
 

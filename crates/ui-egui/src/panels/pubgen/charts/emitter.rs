@@ -102,14 +102,7 @@ pub fn emit_polygon(
 }
 
 /// Emits an ellipse / circle frame onto the given spread.
-pub fn emit_ellipse(
-    app: &mut DesignApp,
-    spread_idx: usize,
-    rect: [f64; 4],
-    fill: &str,
-    stroke: &str,
-    stroke_weight: f64,
-) -> Result<u64, String> {
+pub fn emit_ellipse(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], fill: &str, stroke: &str, stroke_weight: f64) -> Result<u64, String> {
     let res = app
         .run(
             "frame.create",
@@ -144,12 +137,7 @@ pub fn emit_ellipse(
 }
 
 /// Emits a stylized male person pictogram (head ellipse + torso/legs polygon).
-pub fn emit_male_pictogram(
-    app: &mut DesignApp,
-    spread_idx: usize,
-    rect: [f64; 4],
-    color: &str,
-) -> Result<Vec<u64>, String> {
+pub fn emit_male_pictogram(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], color: &str) -> Result<Vec<u64>, String> {
     let mut ids = Vec::new();
     let [x0, y0, x1, y1] = rect;
     let w = (x1 - x0).max(4.0);
@@ -189,12 +177,7 @@ pub fn emit_male_pictogram(
 }
 
 /// Emits a stylized female person pictogram (head ellipse + dress/legs polygon).
-pub fn emit_female_pictogram(
-    app: &mut DesignApp,
-    spread_idx: usize,
-    rect: [f64; 4],
-    color: &str,
-) -> Result<Vec<u64>, String> {
+pub fn emit_female_pictogram(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], color: &str) -> Result<Vec<u64>, String> {
     let mut ids = Vec::new();
     let [x0, y0, x1, y1] = rect;
     let w = (x1 - x0).max(4.0);
@@ -238,12 +221,7 @@ pub fn emit_female_pictogram(
 }
 
 /// Emits a stylized population group pictogram (center person flanked by two persons).
-pub fn emit_group_pictogram(
-    app: &mut DesignApp,
-    spread_idx: usize,
-    rect: [f64; 4],
-    color: &str,
-) -> Result<Vec<u64>, String> {
+pub fn emit_group_pictogram(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], color: &str) -> Result<Vec<u64>, String> {
     let mut ids = Vec::new();
     let [x0, y0, x1, y1] = rect;
     let w = (x1 - x0).max(6.0);
@@ -399,7 +377,10 @@ pub fn emit_chart(
     }
 
     // 2. Axis baseline & left line (only for Cartesian coordinate charts)
-    if spec.chart_type != super::spec::ChartType::Donut && spec.chart_type != super::spec::ChartType::Gauge && spec.chart_type != super::spec::ChartType::Map {
+    if spec.chart_type != super::spec::ChartType::Donut
+        && spec.chart_type != super::spec::ChartType::Gauge
+        && spec.chart_type != super::spec::ChartType::Map
+    {
         let base_fid = emit_rect(app, spread_idx, layout.axis_baseline, "#333333", "[None]", 0.0)?;
         frame_ids.push(base_fid);
         if spec.chart_type != super::spec::ChartType::PopulationPyramid && spec.chart_type != super::spec::ChartType::Map {
@@ -509,7 +490,9 @@ pub fn emit_chart(
         // Male Header + Icon
         let icon_h = 18.0f64;
         let icon_w = 8.0f64;
-        if let Ok(ids) = emit_male_pictogram(app, spread_idx, [center_left - 24.0, hdr_y0 + 4.0, center_left - 24.0 + icon_w, hdr_y0 + 4.0 + icon_h], male_color) {
+        if let Ok(ids) =
+            emit_male_pictogram(app, spread_idx, [center_left - 24.0, hdr_y0 + 4.0, center_left - 24.0 + icon_w, hdr_y0 + 4.0 + icon_h], male_color)
+        {
             frame_ids.extend(ids);
         }
         if let Ok(fid) = emit_text(app, spread_idx, male_hdr_rect, &male_label, 8.5, true, "center", Some(male_color)) {
@@ -522,7 +505,12 @@ pub fn emit_chart(
         }
 
         // Female Header + Icon
-        if let Ok(ids) = emit_female_pictogram(app, spread_idx, [center_right + 16.0, hdr_y0 + 4.0, center_right + 16.0 + icon_w, hdr_y0 + 4.0 + icon_h], female_color) {
+        if let Ok(ids) = emit_female_pictogram(
+            app,
+            spread_idx,
+            [center_right + 16.0, hdr_y0 + 4.0, center_right + 16.0 + icon_w, hdr_y0 + 4.0 + icon_h],
+            female_color,
+        ) {
             frame_ids.extend(ids);
         }
         if let Ok(fid) = emit_text(app, spread_idx, female_hdr_rect, &female_label, 8.5, true, "center", Some(female_color)) {
@@ -532,7 +520,9 @@ pub fn emit_chart(
         if let Some(summary) = &layout.pyramid_summary {
             // Baseline at axis_y
             let axis_y = summary.axis_y;
-            if let Ok(base_fid) = emit_rect(app, spread_idx, [layout.plot_rect[0], axis_y, layout.plot_rect[2], axis_y + 1.0], "#64748B", "[None]", 0.0) {
+            if let Ok(base_fid) =
+                emit_rect(app, spread_idx, [layout.plot_rect[0], axis_y, layout.plot_rect[2], axis_y + 1.0], "#64748B", "[None]", 0.0)
+            {
                 frame_ids.push(base_fid);
             }
 
@@ -547,7 +537,8 @@ pub fn emit_chart(
 
                 // Left tick (Male): from center_left towards left
                 let x_left = summary.center_left - (1.0 - frac) * max_w;
-                let _ = emit_rect(app, spread_idx, [x_left - 0.5, axis_y, x_left + 0.5, axis_y + 3.0], "#64748B", "[None]", 0.0).map(|id| frame_ids.push(id));
+                let _ = emit_rect(app, spread_idx, [x_left - 0.5, axis_y, x_left + 0.5, axis_y + 3.0], "#64748B", "[None]", 0.0)
+                    .map(|id| frame_ids.push(id));
                 let lbl_rect_left = [x_left - 20.0, axis_y + 3.0, x_left + 20.0, axis_y + 13.0];
                 let _ = emit_text(app, spread_idx, lbl_rect_left, &val_str, 7.5, false, "center", Some("#333333")).map(|id| frame_ids.push(id));
 
@@ -555,7 +546,8 @@ pub fn emit_chart(
                 let val_right = frac * ceiling;
                 let val_str_r = spec.value_format.format(val_right, bilingual);
                 let x_right = summary.center_right + frac * max_w;
-                let _ = emit_rect(app, spread_idx, [x_right - 0.5, axis_y, x_right + 0.5, axis_y + 3.0], "#64748B", "[None]", 0.0).map(|id| frame_ids.push(id));
+                let _ = emit_rect(app, spread_idx, [x_right - 0.5, axis_y, x_right + 0.5, axis_y + 3.0], "#64748B", "[None]", 0.0)
+                    .map(|id| frame_ids.push(id));
                 let lbl_rect_right = [x_right - 20.0, axis_y + 3.0, x_right + 20.0, axis_y + 13.0];
                 let _ = emit_text(app, spread_idx, lbl_rect_right, &val_str_r, 7.5, false, "center", Some("#333333")).map(|id| frame_ids.push(id));
             }
@@ -591,7 +583,9 @@ pub fn emit_chart(
             let icon_w = 9.0f64;
             let icon_h = 24.0f64;
             let icon_y = s_rect[1] + (s_rect[3] - s_rect[1] - icon_h) / 2.0;
-            if let Ok(ids) = emit_male_pictogram(app, spread_idx, [s_rect[0] + icon_pad, icon_y, s_rect[0] + icon_pad + icon_w, icon_y + icon_h], male_color) {
+            if let Ok(ids) =
+                emit_male_pictogram(app, spread_idx, [s_rect[0] + icon_pad, icon_y, s_rect[0] + icon_pad + icon_w, icon_y + icon_h], male_color)
+            {
                 frame_ids.extend(ids);
             }
 
@@ -601,7 +595,8 @@ pub fn emit_chart(
             let c1_num = [text_x0, s_rect[1] + 15.0, text_x1, s_rect[1] + 33.0];
             let c1_sub = [text_x0, s_rect[1] + 33.0, text_x1, s_rect[3] - 3.0];
             let _ = emit_text(app, spread_idx, c1_title, &summary.male_label, 6.0, true, "left", Some(male_color)).map(|id| frame_ids.push(id));
-            let _ = emit_text(app, spread_idx, c1_num, &format_indonesian_number(summary.total_male), 13.0, true, "left", Some("#0F172A")).map(|id| frame_ids.push(id));
+            let _ = emit_text(app, spread_idx, c1_num, &format_indonesian_number(summary.total_male), 13.0, true, "left", Some("#0F172A"))
+                .map(|id| frame_ids.push(id));
             let _ = emit_text(app, spread_idx, c1_sub, "jiwa (people)", 6.5, false, "left", Some("#64748B")).map(|id| frame_ids.push(id));
 
             // Col 2: Total Population (Family/Group Icon on left, texts on right)
@@ -620,7 +615,8 @@ pub fn emit_chart(
             let c2_num = [c2_text_x0, s_rect[1] + 15.0, c2_text_x1, s_rect[1] + 33.0];
             let c2_sub = [c2_text_x0, s_rect[1] + 33.0, c2_text_x1, s_rect[3] - 3.0];
             let _ = emit_text(app, spread_idx, c2_title, &summary.combined_label, 6.0, true, "left", Some("#0F172A")).map(|id| frame_ids.push(id));
-            let _ = emit_text(app, spread_idx, c2_num, &format_indonesian_number(summary.total_combined), 14.0, true, "left", Some("#0F172A")).map(|id| frame_ids.push(id));
+            let _ = emit_text(app, spread_idx, c2_num, &format_indonesian_number(summary.total_combined), 14.0, true, "left", Some("#0F172A"))
+                .map(|id| frame_ids.push(id));
             let _ = emit_text(app, spread_idx, c2_sub, "jiwa (people)", 6.5, false, "left", Some("#64748B")).map(|id| frame_ids.push(id));
 
             // Col 3: Female (Icon on left, texts on right)
@@ -638,7 +634,8 @@ pub fn emit_chart(
             let c3_num = [c3_text_x0, s_rect[1] + 15.0, c3_text_x1, s_rect[1] + 33.0];
             let c3_sub = [c3_text_x0, s_rect[1] + 33.0, c3_text_x1, s_rect[3] - 3.0];
             let _ = emit_text(app, spread_idx, c3_title, &summary.female_label, 6.0, true, "left", Some(female_color)).map(|id| frame_ids.push(id));
-            let _ = emit_text(app, spread_idx, c3_num, &format_indonesian_number(summary.total_female), 13.0, true, "left", Some("#0F172A")).map(|id| frame_ids.push(id));
+            let _ = emit_text(app, spread_idx, c3_num, &format_indonesian_number(summary.total_female), 13.0, true, "left", Some("#0F172A"))
+                .map(|id| frame_ids.push(id));
             let _ = emit_text(app, spread_idx, c3_sub, "jiwa (people)", 6.5, false, "left", Some("#64748B")).map(|id| frame_ids.push(id));
         }
     }
@@ -654,11 +651,7 @@ pub fn emit_chart(
             }
 
             if (spec.show_value_labels || spec.chart_type == super::spec::ChartType::Map) && !region.name.is_empty() {
-                let text = if !region.value_str.is_empty() {
-                    format!("{}\n{}", region.name, region.value_str)
-                } else {
-                    region.name.clone()
-                };
+                let text = if !region.value_str.is_empty() { format!("{}\n{}", region.name, region.value_str) } else { region.name.clone() };
                 let text_color = if let Some((r, g, b)) = super::palette::parse_hex_rgb(&region.color) {
                     let lum = 0.299 * (r as f64) + 0.587 * (g as f64) + 0.114 * (b as f64);
                     if lum < 140.0 { "#FFFFFF" } else { "#1E293B" }
@@ -712,51 +705,51 @@ pub fn emit_chart(
 
     // 8. Legend (Skipped for PopulationPyramid which has dedicated headers and summary card)
     if spec.chart_type != super::spec::ChartType::PopulationPyramid {
-    for leg in &layout.legend_items {
-        let color = if spec.chart_type == super::spec::ChartType::PopulationPyramid && leg.series_idx == 1 {
-            if palette.len() > 1 { series_color(palette, 1) } else { "#ED1C6F" }
-        } else {
-            series_color(palette, leg.series_idx)
-        };
-        let sfid = emit_rect(app, spread_idx, leg.swatch_rect, color, "[None]", 0.0)?;
-        frame_ids.push(sfid);
+        for leg in &layout.legend_items {
+            let color = if spec.chart_type == super::spec::ChartType::PopulationPyramid && leg.series_idx == 1 {
+                if palette.len() > 1 { series_color(palette, 1) } else { "#ED1C6F" }
+            } else {
+                series_color(palette, leg.series_idx)
+            };
+            let sfid = emit_rect(app, spread_idx, leg.swatch_rect, color, "[None]", 0.0)?;
+            frame_ids.push(sfid);
 
-        let lfid = emit_text(app, spread_idx, leg.label_rect, &leg.label, 8.0, false, "left", Some("#333333"))?;
-        let _ = app.session.edit(|doc, _| {
-            if let Some(it) = doc.item_mut(designcraft_doc::ItemId(lfid))
-                && let designcraft_doc::Content::Text(tf) = &mut it.content
-            {
-                tf.options.vertical_justification = designcraft_doc::VerticalJustification::Center;
-            }
-            Ok(Value::Null)
-        });
-        if bilingual && leg.label.contains(" / ") {
-            // Italicize the English portion of the legend label
-            let slash_idx = leg.label.find(" / ").unwrap_or(0);
-            let b_start = slash_idx + 3;
-            let _b_end = leg.label.len();
-            if let Some(active) = app.session.active()
-                && let Some(it) = active.doc.spreads[spread_idx].items.iter().find(|i| i.id.0 == lfid)
-                && let designcraft_doc::Content::Text(tf) = &it.content
-            {
-                let sid = tf.story;
-                let _ = app.session.edit(|doc, _| {
-                    if let Some(story) = doc.story_mut(sid) {
-                        let mut offset = 0;
-                        for r in &mut story.chars {
-                            let run_end = offset + r.len;
-                            offset = run_end;
-                            if run_end > b_start {
-                                r.format.over.font_style = Some("Italic".into());
+            let lfid = emit_text(app, spread_idx, leg.label_rect, &leg.label, 8.0, false, "left", Some("#333333"))?;
+            let _ = app.session.edit(|doc, _| {
+                if let Some(it) = doc.item_mut(designcraft_doc::ItemId(lfid))
+                    && let designcraft_doc::Content::Text(tf) = &mut it.content
+                {
+                    tf.options.vertical_justification = designcraft_doc::VerticalJustification::Center;
+                }
+                Ok(Value::Null)
+            });
+            if bilingual && leg.label.contains(" / ") {
+                // Italicize the English portion of the legend label
+                let slash_idx = leg.label.find(" / ").unwrap_or(0);
+                let b_start = slash_idx + 3;
+                let _b_end = leg.label.len();
+                if let Some(active) = app.session.active()
+                    && let Some(it) = active.doc.spreads[spread_idx].items.iter().find(|i| i.id.0 == lfid)
+                    && let designcraft_doc::Content::Text(tf) = &it.content
+                {
+                    let sid = tf.story;
+                    let _ = app.session.edit(|doc, _| {
+                        if let Some(story) = doc.story_mut(sid) {
+                            let mut offset = 0;
+                            for r in &mut story.chars {
+                                let run_end = offset + r.len;
+                                offset = run_end;
+                                if run_end > b_start {
+                                    r.format.over.font_style = Some("Italic".into());
+                                }
                             }
                         }
-                    }
-                    Ok(Value::Null)
-                });
+                        Ok(Value::Null)
+                    });
+                }
             }
+            frame_ids.push(lfid);
         }
-        frame_ids.push(lfid);
-    }
     }
 
     // 9. Group all emitted frames

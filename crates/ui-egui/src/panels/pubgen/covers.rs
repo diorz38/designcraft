@@ -1232,30 +1232,15 @@ pub fn apply_cover_map_overlay(app: &mut DesignApp, st: &PubgenState) -> Result<
     let target_rect = match st.cover_map_style {
         0 => {
             // Watermark / Background silhouette: large coverage
-            designcraft_geom::Rect {
-                x0: pw * 0.06,
-                y0: ph * 0.34,
-                x1: pw * 0.82,
-                y1: ph * 0.90,
-            }
+            designcraft_geom::Rect { x0: pw * 0.06, y0: ph * 0.34, x1: pw * 0.82, y1: ph * 0.90 }
         }
         1 => {
             // Accent Hero: prominent size in lower-center / right
-            designcraft_geom::Rect {
-                x0: pw * 0.06,
-                y0: ph * 0.34,
-                x1: pw * 0.82,
-                y1: ph * 0.90,
-            }
+            designcraft_geom::Rect { x0: pw * 0.06, y0: ph * 0.34, x1: pw * 0.82, y1: ph * 0.90 }
         }
         _ => {
             // Outlines:
-            designcraft_geom::Rect {
-                x0: pw * 0.06,
-                y0: ph * 0.34,
-                x1: pw * 0.82,
-                y1: ph * 0.90,
-            }
+            designcraft_geom::Rect { x0: pw * 0.06, y0: ph * 0.34, x1: pw * 0.82, y1: ph * 0.90 }
         }
     };
 
@@ -1273,27 +1258,15 @@ pub fn apply_cover_map_overlay(app: &mut DesignApp, st: &PubgenState) -> Result<
         let (fill, stroke, stroke_weight) = match st.cover_map_style {
             0 => {
                 // Watermark / Silhouette:
-                if is_hi {
-                    (accent, primary, 1.25)
-                } else {
-                    ("#F1F5F9", "#CBD5E1", 0.5)
-                }
+                if is_hi { (accent, primary, 1.25) } else { ("#F1F5F9", "#CBD5E1", 0.5) }
             }
             1 => {
                 // Accent Hero:
-                if is_hi {
-                    (accent, dark, 1.5)
-                } else {
-                    (primary, "#FFFFFF", 0.75)
-                }
+                if is_hi { (accent, dark, 1.5) } else { (primary, "#FFFFFF", 0.75) }
             }
             _ => {
                 // Outlines only:
-                if is_hi {
-                    ("[None]", accent, 1.75)
-                } else {
-                    ("[None]", "#94A3B8", 0.75)
-                }
+                if is_hi { ("[None]", accent, 1.75) } else { ("[None]", "#94A3B8", 0.75) }
             }
         };
 
@@ -1305,9 +1278,7 @@ pub fn apply_cover_map_overlay(app: &mut DesignApp, st: &PubgenState) -> Result<
     }
 
     let group_id = if emitted_ids.len() > 1 {
-        app.run("object.group", serde_json::json!({"ids": emitted_ids}))
-            .ok()
-            .and_then(|v| v.get("id").and_then(serde_json::Value::as_u64))
+        app.run("object.group", serde_json::json!({"ids": emitted_ids})).ok().and_then(|v| v.get("id").and_then(serde_json::Value::as_u64))
     } else {
         None
     };
@@ -1323,12 +1294,8 @@ pub fn apply_cover_map_overlay(app: &mut DesignApp, st: &PubgenState) -> Result<
     };
 
     let _ = app.session.edit(|doc, _| {
-        let non_empty_stories: std::collections::HashSet<_> = doc
-            .stories
-            .iter()
-            .filter(|(_, s)| !s.text.trim().is_empty())
-            .map(|(&id, _)| id)
-            .collect();
+        let non_empty_stories: std::collections::HashSet<_> =
+            doc.stories.iter().filter(|(_, s)| !s.text.trim().is_empty()).map(|(&id, _)| id).collect();
 
         if let Some(sp) = doc.spreads.first_mut() {
             let sp = std::sync::Arc::make_mut(sp);
@@ -1363,11 +1330,7 @@ pub fn apply_cover_map_overlay(app: &mut DesignApp, st: &PubgenState) -> Result<
                         || it.label.contains("logo")
                         || it.name.contains("logo")
                 });
-                if let Some((idx, _)) = after_photo {
-                    idx
-                } else {
-                    (photo_idx + 1).min(non_map_items.len())
-                }
+                if let Some((idx, _)) = after_photo { idx } else { (photo_idx + 1).min(non_map_items.len()) }
             } else {
                 non_map_items
                     .iter()
@@ -2654,7 +2617,7 @@ pub(crate) mod tests {
         // Must emit polygon items on spread 0
         println!("sp0 items count: {}", sp0.items.len());
         assert!(!sp0.items.is_empty(), "Expected map item/group to be emitted on cover spread");
-     }
+    }
 
     #[test]
     fn test_cover_map_overlay_z_order_behind_textboxes_and_larger_bounds() {
@@ -2664,11 +2627,7 @@ pub(crate) mod tests {
         let (pw, ph) = get_cover_page_dimensions(&app);
 
         // 1. Create a background rectangle
-        app.run(
-            "frame.create",
-            json!({"spread": 0, "rect": [0.0, 0.0, pw, ph], "content": "unassigned", "shape": "rectangle"}),
-        )
-        .unwrap();
+        app.run("frame.create", json!({"spread": 0, "rect": [0.0, 0.0, pw, ph], "content": "unassigned", "shape": "rectangle"})).unwrap();
 
         // 2. Create a photo frame (landscape)
         let _ = app.run(
@@ -2745,34 +2704,19 @@ pub(crate) mod tests {
             .expect("Map item/group must be present on spread 0");
 
         // Find the indices of photo and textboxes
-        let photo_idx = sp0
-            .items
-            .iter()
-            .position(|it| it.label.contains("landscape") || it.name.contains("landscape"))
-            .expect("Photo frame must be present");
+        let photo_idx =
+            sp0.items.iter().position(|it| it.label.contains("landscape") || it.name.contains("landscape")).expect("Photo frame must be present");
 
-        let text_indices: Vec<usize> = sp0
-            .items
-            .iter()
-            .enumerate()
-            .filter(|(_, it)| it.is_text_frame())
-            .map(|(i, _)| i)
-            .collect();
+        let text_indices: Vec<usize> = sp0.items.iter().enumerate().filter(|(_, it)| it.is_text_frame()).map(|(i, _)| i).collect();
 
         assert!(!text_indices.is_empty(), "Text frames must be present");
 
         // The map must be in front of the photo frame:
-        assert!(
-            map_idx > photo_idx,
-            "Map (index {map_idx}) must be in front of photo frame (index {photo_idx})"
-        );
+        assert!(map_idx > photo_idx, "Map (index {map_idx}) must be in front of photo frame (index {photo_idx})");
 
         // The map must be behind ALL textboxes:
         for &t_idx in &text_indices {
-            assert!(
-                map_idx < t_idx,
-                "Map (index {map_idx}) must be behind textbox (index {t_idx})"
-            );
+            assert!(map_idx < t_idx, "Map (index {map_idx}) must be behind textbox (index {t_idx})");
         }
     }
 }

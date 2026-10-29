@@ -41,11 +41,7 @@ impl GeoFeature {
 
     /// Returns `true` if `highlight` property is 1 (integer, float, or string `"1"`).
     pub fn is_highlighted(&self) -> bool {
-        let val = self
-            .properties
-            .get("highlight")
-            .or_else(|| self.properties.get("HIGHLIGHT"))
-            .or_else(|| self.properties.get("Highlight"));
+        let val = self.properties.get("highlight").or_else(|| self.properties.get("HIGHLIGHT")).or_else(|| self.properties.get("Highlight"));
 
         match val {
             Some(Value::Number(n)) => n.as_i64() == Some(1) || (n.as_f64().unwrap_or(0.0) - 1.0).abs() < 1e-6,
@@ -91,11 +87,7 @@ impl GeoMap {
         };
 
         for feat_val in raw_features {
-            let props = feat_val
-                .get("properties")
-                .and_then(Value::as_object)
-                .cloned()
-                .unwrap_or_default();
+            let props = feat_val.get("properties").and_then(Value::as_object).cloned().unwrap_or_default();
 
             let geom = match feat_val.get("geometry") {
                 Some(g) if !g.is_null() => g,
@@ -145,10 +137,7 @@ impl GeoMap {
             }
 
             if !polygons.is_empty() {
-                features.push(GeoFeature {
-                    properties: props,
-                    polygons,
-                });
+                features.push(GeoFeature { properties: props, polygons });
             }
         }
 
@@ -156,11 +145,7 @@ impl GeoMap {
             return Err("GeoJSON contains no valid polygon features".to_string());
         }
 
-        let name = root
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or("Map")
-            .to_string();
+        let name = root.get("name").and_then(Value::as_str).unwrap_or("Map").to_string();
 
         let bbox = [
             if min_lon.is_finite() { min_lon } else { 0.0 },
@@ -169,11 +154,7 @@ impl GeoMap {
             if max_lat.is_finite() { max_lat } else { 1.0 },
         ];
 
-        Ok(GeoMap {
-            name,
-            bbox,
-            features,
-        })
+        Ok(GeoMap { name, bbox, features })
     }
 
     /// Project all polygons of all features into pixel coordinates fitting inside `target_rect`.
@@ -243,11 +224,7 @@ impl GeoMap {
                     (off_x + draw_w * 0.5, off_y + draw_h * 0.5)
                 };
 
-                ProjectedFeature {
-                    feature_idx: idx,
-                    polygons: projected_polygons,
-                    centroid,
-                }
+                ProjectedFeature { feature_idx: idx, polygons: projected_polygons, centroid }
             })
             .collect()
     }
@@ -265,13 +242,7 @@ pub struct ProjectedFeature {
 }
 
 /// Helper to parse a single ring of `[lon, lat]` points and update bounding box.
-fn parse_ring(
-    ring: &Value,
-    min_lon: &mut f64,
-    min_lat: &mut f64,
-    max_lon: &mut f64,
-    max_lat: &mut f64,
-) -> Option<Vec<(f64, f64)>> {
+fn parse_ring(ring: &Value, min_lon: &mut f64, min_lat: &mut f64, max_lon: &mut f64, max_lat: &mut f64) -> Option<Vec<(f64, f64)>> {
     let pts_arr = ring.as_array()?;
     let mut out = Vec::with_capacity(pts_arr.len());
 
@@ -291,11 +262,7 @@ fn parse_ring(
         out.push((lon, lat));
     }
 
-    if out.len() >= 3 {
-        Some(out)
-    } else {
-        None
-    }
+    if out.len() >= 3 { Some(out) } else { None }
 }
 
 #[cfg(test)]
@@ -364,12 +331,7 @@ mod tests {
     #[test]
     fn test_project_features_to_rect() {
         let map = GeoMap::from_json_str(SAMPLE_GEOJSON).expect("should parse");
-        let target = Rect {
-            x0: 50.0,
-            y0: 100.0,
-            x1: 450.0,
-            y1: 500.0,
-        };
+        let target = Rect { x0: 50.0, y0: 100.0, x1: 450.0, y1: 500.0 };
 
         let projected = map.project_features(target);
         assert_eq!(projected.len(), 2);
@@ -389,29 +351,16 @@ mod tests {
 
     #[test]
     fn test_highlight_parsing_variations() {
-        let feat_num = GeoFeature {
-            properties: serde_json::json!({"highlight": 1}).as_object().unwrap().clone(),
-            polygons: vec![],
-        };
+        let feat_num = GeoFeature { properties: serde_json::json!({"highlight": 1}).as_object().unwrap().clone(), polygons: vec![] };
         assert!(feat_num.is_highlighted());
 
-        let feat_str = GeoFeature {
-            properties: serde_json::json!({"highlight": "1"}).as_object().unwrap().clone(),
-            polygons: vec![],
-        };
+        let feat_str = GeoFeature { properties: serde_json::json!({"highlight": "1"}).as_object().unwrap().clone(), polygons: vec![] };
         assert!(feat_str.is_highlighted());
 
-        let feat_null = GeoFeature {
-            properties: serde_json::json!({"highlight": null}).as_object().unwrap().clone(),
-            polygons: vec![],
-        };
+        let feat_null = GeoFeature { properties: serde_json::json!({"highlight": null}).as_object().unwrap().clone(), polygons: vec![] };
         assert!(!feat_null.is_highlighted());
 
-        let feat_missing = GeoFeature {
-            properties: serde_json::Map::new(),
-            polygons: vec![],
-        };
+        let feat_missing = GeoFeature { properties: serde_json::Map::new(), polygons: vec![] };
         assert!(!feat_missing.is_highlighted());
     }
 }
-

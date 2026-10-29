@@ -32,10 +32,7 @@ pub struct StockMapEntry {
 /// Candidate paths to the `assets/pubgen/maps` directory on disk (for external/custom maps).
 pub fn maps_dir_candidates() -> Vec<PathBuf> {
     let rel = Path::new("assets").join("pubgen").join("maps");
-    let from_manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join(&rel);
+    let from_manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join(&rel);
 
     let mut candidates = vec![rel.clone(), from_manifest];
     if let Ok(exe) = std::env::current_exe()
@@ -65,11 +62,7 @@ fn to_title_case(s: &str) -> String {
 pub fn list_stock_map_charts() -> Vec<StockMapEntry> {
     let mut out: Vec<StockMapEntry> = EMBEDDED_CHART_MAPS
         .iter()
-        .map(|m| StockMapEntry {
-            id: m.id.to_string(),
-            display_name: m.display_name.to_string(),
-            path: PathBuf::from(m.filename),
-        })
+        .map(|m| StockMapEntry { id: m.id.to_string(), display_name: m.display_name.to_string(), path: PathBuf::from(m.filename) })
         .collect();
 
     // Augment with any additional custom maps found in assets/pubgen/maps on disk
@@ -81,20 +74,12 @@ pub fn list_stock_map_charts() -> Vec<StockMapEntry> {
                     continue;
                 }
 
-                let fname = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("")
-                    .to_string();
+                let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
 
                 if let Some(prefix) = fname.strip_suffix("_DESA.geojson").or_else(|| fname.strip_suffix("_desa.geojson")) {
                     let id = prefix.to_uppercase();
                     if !out.iter().any(|e| e.id == id) {
-                        out.push(StockMapEntry {
-                            id,
-                            display_name: format!("{} (Desa)", to_title_case(prefix)),
-                            path,
-                        });
+                        out.push(StockMapEntry { id, display_name: format!("{} (Desa)", to_title_case(prefix)), path });
                     }
                 }
             }
@@ -110,11 +95,7 @@ pub fn list_stock_map_charts() -> Vec<StockMapEntry> {
 pub fn list_stock_cover_maps() -> Vec<StockMapEntry> {
     let mut out: Vec<StockMapEntry> = EMBEDDED_COVER_MAPS
         .iter()
-        .map(|m| StockMapEntry {
-            id: m.id.to_string(),
-            display_name: m.display_name.to_string(),
-            path: PathBuf::from(m.filename),
-        })
+        .map(|m| StockMapEntry { id: m.id.to_string(), display_name: m.display_name.to_string(), path: PathBuf::from(m.filename) })
         .collect();
 
     // Augment with any additional custom maps found in assets/pubgen/maps on disk
@@ -126,28 +107,14 @@ pub fn list_stock_cover_maps() -> Vec<StockMapEntry> {
                     continue;
                 }
 
-                let fname = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("")
-                    .to_string();
+                let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
 
-                if (fname.ends_with(".geojson") || fname.ends_with(".GEOJSON"))
-                    && !fname.to_lowercase().ends_with("_desa.geojson")
-                {
-                    let stem = path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or(&fname)
-                        .to_string();
+                if (fname.ends_with(".geojson") || fname.ends_with(".GEOJSON")) && !fname.to_lowercase().ends_with("_desa.geojson") {
+                    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or(&fname).to_string();
 
                     let id = stem.to_uppercase();
                     if !out.iter().any(|e| e.id == id) {
-                        out.push(StockMapEntry {
-                            id,
-                            display_name: format!("{} (Kecamatan)", to_title_case(&stem)),
-                            path,
-                        });
+                        out.push(StockMapEntry { id, display_name: format!("{} (Kecamatan)", to_title_case(&stem)), path });
                     }
                 }
             }
@@ -169,8 +136,7 @@ pub fn load_chart_geo_map(path_or_id: &str) -> Result<GeoMap, String> {
     // 1. Direct path on disk (custom user upload / absolute or relative path)
     let direct_path = Path::new(trimmed);
     if direct_path.is_file() {
-        let text = std::fs::read_to_string(direct_path)
-            .map_err(|e| format!("Failed to read GeoJSON file at '{}': {e}", direct_path.display()))?;
+        let text = std::fs::read_to_string(direct_path).map_err(|e| format!("Failed to read GeoJSON file at '{}': {e}", direct_path.display()))?;
         return GeoMap::from_json_str(&text);
     }
 
@@ -195,14 +161,12 @@ pub fn load_chart_geo_map(path_or_id: &str) -> Result<GeoMap, String> {
     if let Some(dir) = find_maps_dir() {
         let candidate = dir.join(format!("{upper_norm}_DESA.geojson"));
         if candidate.is_file() {
-            let text = std::fs::read_to_string(&candidate)
-                .map_err(|e| format!("Failed to read stock chart map '{}': {e}", candidate.display()))?;
+            let text = std::fs::read_to_string(&candidate).map_err(|e| format!("Failed to read stock chart map '{}': {e}", candidate.display()))?;
             return GeoMap::from_json_str(&text);
         }
         let cand_plain = dir.join(format!("{upper_no_suffix}_DESA.geojson"));
         if cand_plain.is_file() {
-            let text = std::fs::read_to_string(&cand_plain)
-                .map_err(|e| format!("Failed to read stock chart map '{}': {e}", cand_plain.display()))?;
+            let text = std::fs::read_to_string(&cand_plain).map_err(|e| format!("Failed to read stock chart map '{}': {e}", cand_plain.display()))?;
             return GeoMap::from_json_str(&text);
         }
     }
@@ -221,8 +185,7 @@ pub fn load_cover_geo_map(path_or_id: &str) -> Result<GeoMap, String> {
     // 1. Direct path on disk (custom user upload / absolute or relative path)
     let direct_path = Path::new(trimmed);
     if direct_path.is_file() {
-        let text = std::fs::read_to_string(direct_path)
-            .map_err(|e| format!("Failed to read GeoJSON file at '{}': {e}", direct_path.display()))?;
+        let text = std::fs::read_to_string(direct_path).map_err(|e| format!("Failed to read GeoJSON file at '{}': {e}", direct_path.display()))?;
         return GeoMap::from_json_str(&text);
     }
 
@@ -247,14 +210,12 @@ pub fn load_cover_geo_map(path_or_id: &str) -> Result<GeoMap, String> {
     if let Some(dir) = find_maps_dir() {
         let candidate = dir.join(format!("{upper_norm}.geojson"));
         if candidate.is_file() {
-            let text = std::fs::read_to_string(&candidate)
-                .map_err(|e| format!("Failed to read stock cover map '{}': {e}", candidate.display()))?;
+            let text = std::fs::read_to_string(&candidate).map_err(|e| format!("Failed to read stock cover map '{}': {e}", candidate.display()))?;
             return GeoMap::from_json_str(&text);
         }
         let cand_plain = dir.join(format!("{upper_clean}.geojson"));
         if cand_plain.is_file() {
-            let text = std::fs::read_to_string(&cand_plain)
-                .map_err(|e| format!("Failed to read stock cover map '{}': {e}", cand_plain.display()))?;
+            let text = std::fs::read_to_string(&cand_plain).map_err(|e| format!("Failed to read stock cover map '{}': {e}", cand_plain.display()))?;
             return GeoMap::from_json_str(&text);
         }
     }
@@ -301,9 +262,6 @@ mod tests {
         assert!(cover_res.is_ok(), "Expected embedded PANGKALAN cover map to load: {cover_res:?}");
         let cover_map = cover_res.unwrap();
         assert!(!cover_map.features.is_empty(), "Expected features in PANGKALAN cover map");
-        assert!(
-            cover_map.features.iter().any(|f| f.is_highlighted()),
-            "Expected highlighted feature in cover map"
-        );
+        assert!(cover_map.features.iter().any(|f| f.is_highlighted()), "Expected highlighted feature in cover map");
     }
 }

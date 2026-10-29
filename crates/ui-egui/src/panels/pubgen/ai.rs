@@ -468,6 +468,8 @@ pub fn dialog_ui(app: &mut DesignApp, st: &mut PubgenState, ui: &mut egui::Ui) {
                     closed_by_x = true;
                 }
             });
+            // Keep the live in-memory glossary updated with dialog edits immediately
+            st.glossary.terms = dialog.terms.clone();
             return;
         }
 
@@ -1740,8 +1742,21 @@ pub fn translate_note_item(
     let content_trimmed = content.trim();
     let content_en = if content_trimmed == "-" || content_trimmed.is_empty() {
         content.to_string()
+    } else if let Some(official) = glossary.lookup(content_trimmed) {
+        official.to_string()
+    } else if let Some(ai_tr) = map.get(content_trimmed) {
+        ai_tr.clone()
+    } else if content_trimmed.contains('/') {
+        let parts: Vec<String> = content_trimmed
+            .split('/')
+            .map(|p| {
+                let pt = p.trim();
+                glossary.lookup(pt).map(|s| s.to_string()).or_else(|| map.get(pt).cloned()).unwrap_or_else(|| pt.to_string())
+            })
+            .collect();
+        parts.join("/")
     } else {
-        map.get(content_trimmed).cloned().unwrap_or_else(|| content.to_string())
+        content.to_string()
     };
 
     (label_en, colon_en, content_en)
@@ -2517,6 +2532,21 @@ mod tests {
         assert_eq!(en_l2, "Source");
         assert_eq!(en_c2, ":");
         assert_eq!(en_cnt2, "Statistics of Karawang Regency Office/Relevant Agency");
+
+        // Verify that glossary lookup overrides fallback map translation for note content
+        let mut custom_g = glossary();
+        custom_g.terms.push(GlossaryTerm {
+            id: "BPS Kabupaten Karawang".into(),
+            ai: String::new(),
+            official: "Central Statistics Agency Of Karawang Regency".into(),
+            count: 1,
+        });
+        let mut ai_map = HashMap::new();
+        ai_map.insert("BPS Kabupaten Karawang".into(), "BPS Karawang Regency".into());
+        let (en_l3, en_c3, en_cnt3) = translate_note_item("Sumber", ":", "BPS Kabupaten Karawang", &ai_map, &custom_g);
+        assert_eq!(en_l3, "Source");
+        assert_eq!(en_c3, ":");
+        assert_eq!(en_cnt3, "Central Statistics Agency Of Karawang Regency");
     }
 
     #[test]

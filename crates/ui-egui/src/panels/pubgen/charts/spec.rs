@@ -519,10 +519,12 @@ pub fn parse_map_data_csv(content: &str) -> Result<MapCsvData, String> {
         let val_raw = if col_val < row.len() {
             row[col_val].trim()
         } else {
-            row.iter().find_map(|cell| {
-                let c = cell.trim();
-                if parse_cell_number(c).is_some() { Some(c) } else { None }
-            }).unwrap_or("")
+            row.iter()
+                .find_map(|cell| {
+                    let c = cell.trim();
+                    if parse_cell_number(c).is_some() { Some(c) } else { None }
+                })
+                .unwrap_or("")
         };
 
         if !cat.is_empty() {
@@ -537,12 +539,7 @@ pub fn parse_map_data_csv(content: &str) -> Result<MapCsvData, String> {
         return Err("No valid village / value rows found in map CSV".into());
     }
 
-    Ok(MapCsvData {
-        title,
-        title_en,
-        categories,
-        values,
-    })
+    Ok(MapCsvData { title, title_en, categories, values })
 }
 
 // ---------------------------------------------------------------------------

@@ -974,14 +974,7 @@ pub fn parse_map_sheet(sheet: &ExcelSheetData) -> Option<MapSheetInfo> {
     let map_name_or_path = map_val?;
     let data_csv_path = data_val.unwrap_or_default();
 
-    Some(MapSheetInfo {
-        map_name_or_path,
-        data_csv_path,
-        theme: theme_val,
-        template: template_val,
-        title: title_val,
-        title_en: title_en_val,
-    })
+    Some(MapSheetInfo { map_name_or_path, data_csv_path, theme: theme_val, template: template_val, title: title_val, title_en: title_en_val })
 }
 
 /// Check if a sheet is a publication-note sheet (named `A02`, `A01..A99`, `A_01..A_99`, `KETERANGAN`, etc.)
@@ -1799,10 +1792,7 @@ pub fn convert_excel_to_csv_data_with_dir(sheets: &[ExcelSheetData], base_stem: 
 
             if (title_val.is_empty() || title_en_val.is_none()) && !map_info.data_csv_path.is_empty() {
                 let norm_csv_path = map_info.data_csv_path.replace('\\', "/");
-                let mut candidates = vec![
-                    std::path::PathBuf::from(&norm_csv_path),
-                    std::path::Path::new(".").join(&norm_csv_path),
-                ];
+                let mut candidates = vec![std::path::PathBuf::from(&norm_csv_path), std::path::Path::new(".").join(&norm_csv_path)];
                 if let Some(parent) = base_dir {
                     candidates.insert(0, parent.join(&norm_csv_path));
                 }
@@ -2584,10 +2574,7 @@ mod tests {
 
         let sheet = ExcelSheetData {
             name: "M03_02".into(),
-            grid: vec![
-                vec!["map".into(), "CILAMAYA WETAN".into()],
-                vec!["data".into(), "maps\\contoh.csv".into()],
-            ],
+            grid: vec![vec!["map".into(), "CILAMAYA WETAN".into()], vec!["data".into(), "maps\\contoh.csv".into()]],
             merges: Vec::new(),
         };
 
@@ -2607,10 +2594,7 @@ mod tests {
 
         let m_sheet = ExcelSheetData {
             name: "M03_02".into(),
-            grid: vec![
-                vec!["map".into(), "CILAMAYA WETAN".into()],
-                vec!["data".into(), "maps/contoh.csv".into()],
-            ],
+            grid: vec![vec!["map".into(), "CILAMAYA WETAN".into()], vec!["data".into(), "maps/contoh.csv".into()]],
             merges: Vec::new(),
         };
 
@@ -2623,7 +2607,11 @@ mod tests {
         assert!(lines[1].contains("Grafik"), "Entry type should be Grafik: {}", lines[1]);
         assert!(lines[1].contains("03.02"), "Number should be 03.02: {}", lines[1]);
         assert!(lines[1].contains("Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025"), "Title should be from CSV: {}", lines[1]);
-        assert!(lines[1].contains("Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025"), "Title_en should be from CSV: {}", lines[1]);
+        assert!(
+            lines[1].contains("Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025"),
+            "Title_en should be from CSV: {}",
+            lines[1]
+        );
     }
 
     #[test]
@@ -4258,9 +4246,7 @@ pub(crate) mod flow_tests {
         // Configure mock download to save to a destination path
         let save_dest = temp_dir.join("downloaded.zip");
         let dest_clone = save_dest.clone();
-        app.services.download = Some(Box::new(move |_name, bytes| {
-            std::fs::write(&dest_clone, bytes).map_err(|e| e.to_string())
-        }));
+        app.services.download = Some(Box::new(move |_name, bytes| std::fs::write(&dest_clone, bytes).map_err(|e| e.to_string())));
 
         let res = execute_download_csv_zip(&mut app, &mut st);
         assert!(res.is_ok(), "execute_download_csv_zip should succeed: {res:?}");

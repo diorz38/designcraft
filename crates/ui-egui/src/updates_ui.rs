@@ -9,12 +9,8 @@ use craft_update::updater::{Action, Status, Updater};
 
 /// The app entry for update checks — points at this fork's releases.
 #[cfg(not(target_arch = "wasm32"))]
-const THIS_APP: craft_update::app::App = craft_update::app::App::new(
-    "designcraft",
-    "DesignCraft",
-    "Page layout and publishing",
-    "diorz38/designcraft-pubgen",
-);
+const THIS_APP: craft_update::app::App =
+    craft_update::app::App::new("designcraft", "DesignCraft", "Page layout and publishing", "diorz38/designcraft-pubgen");
 
 /// Builds a [`craft_update::updater::CheckSource`] that includes pre-releases.
 ///
@@ -24,17 +20,13 @@ const THIS_APP: craft_update::app::App = craft_update::app::App::new(
 /// passes `true` to `parse_github_release_list`.
 #[cfg(not(target_arch = "wasm32"))]
 fn make_check_source() -> craft_update::updater::CheckSource {
+    use craft_update::{Http, http::Fetched, is_newer, parse_github_release_list, parse_version};
     use std::sync::Arc;
-    use craft_update::{Http, http::Fetched, parse_github_release_list, parse_version, is_newer};
 
     let version = env!("CARGO_PKG_VERSION").to_owned();
     Arc::new(move || {
-        let http = Http::new(&format!("{}/Update", THIS_APP.name))
-            .map_err(|e| format!("could not create HTTP client: {e}"))?;
-        let url = format!(
-            "https://api.github.com/repos/{}/releases?per_page=30",
-            THIS_APP.repo,
-        );
+        let http = Http::new(&format!("{}/Update", THIS_APP.name)).map_err(|e| format!("could not create HTTP client: {e}"))?;
+        let url = format!("https://api.github.com/repos/{}/releases?per_page=30", THIS_APP.repo,);
         match http.get_api(&url, None)? {
             Fetched::Body { text, .. } => {
                 // allow_prerelease = true so versions like `0.13.0-pubgen.0.7.9` are found.
@@ -69,8 +61,7 @@ impl Default for Runtime {
     fn default() -> Self {
         Self {
             #[cfg(not(target_arch = "wasm32"))]
-            updater: Updater::new(&THIS_APP, env!("CARGO_PKG_VERSION"))
-                .with_source(make_check_source()),
+            updater: Updater::new(&THIS_APP, env!("CARGO_PKG_VERSION")).with_source(make_check_source()),
             #[cfg(not(target_arch = "wasm32"))]
             startup_check: false,
             #[cfg(not(target_arch = "wasm32"))]

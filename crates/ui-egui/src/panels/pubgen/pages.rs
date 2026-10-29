@@ -1594,7 +1594,8 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                 ""
             };
 
-            let has_dual_title_en = !eff_title_en_val.is_empty() && (!title_val.contains(" / ") || !title_en_val.is_empty() || detected_map_title_en.is_some());
+            let has_dual_title_en =
+                !eff_title_en_val.is_empty() && (!title_val.contains(" / ") || !title_en_val.is_empty() || detected_map_title_en.is_some());
             let title_h = if has_dual_title_en { 60.0 } else { 48.0 };
 
             if has_dual_title_en {
@@ -1702,7 +1703,11 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                                     let map_spec = super::charts::spec::ChartSpec {
                                         chart_type: super::charts::spec::ChartType::Map,
                                         title_id: if !parsed_data.title.is_empty() { parsed_data.title.clone() } else { eff_id_title.to_string() },
-                                        title_en: if !parsed_data.title_en.is_empty() { parsed_data.title_en.clone() } else { eff_title_en_val.to_string() },
+                                        title_en: if !parsed_data.title_en.is_empty() {
+                                            parsed_data.title_en.clone()
+                                        } else {
+                                            eff_title_en_val.to_string()
+                                        },
                                         category_col: "A".into(),
                                         series: vec![super::charts::spec::SeriesSpec {
                                             col: "B".into(),
@@ -1719,12 +1724,8 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                                         geojson_path: Some(map_info.map_name_or_path.clone()),
                                         map_palette_idx: pal_idx,
                                     };
-                                    let chart_margin = designcraft_geom::Rect {
-                                        x0: margin.x0,
-                                        y0: margin.y0 + title_h + 8.0,
-                                        x1: margin.x1,
-                                        y1: margin.y1,
-                                    };
+                                    let chart_margin =
+                                        designcraft_geom::Rect { x0: margin.x0, y0: margin.y0 + title_h + 8.0, x1: margin.x1, y1: margin.y1 };
                                     let layout = super::charts::layout::compute_layout(
                                         &map_spec,
                                         &parsed_data.categories,
@@ -4687,7 +4688,7 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
                 "03.02".into(),
                 "Grafik 03.02 Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025".into(),
                 "M03_02.csv".into(),
-                "".into(), // template
+                "".into(),                                                                            // template
                 "Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025".into(), // title_en
             ]],
             card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into(), "title_en".into()],

@@ -301,10 +301,7 @@ impl ChartDialog {
             ','
         };
 
-        let headers: Vec<String> = first_line
-            .split(sep)
-            .map(|c| c.trim().trim_matches('"').trim().to_lowercase())
-            .collect();
+        let headers: Vec<String> = first_line.split(sep).map(|c| c.trim().trim_matches('"').trim().to_lowercase()).collect();
 
         for (idx, h) in headers.iter().enumerate() {
             let col_letter = super::spec::index_to_col_letter(idx);
@@ -317,10 +314,7 @@ impl ChartDialog {
 
         let lines: Vec<&str> = self.raw_data.lines().filter(|l| !l.trim().is_empty()).collect();
         if lines.len() >= 2 {
-            let row1_cells: Vec<String> = lines[1]
-                .split(sep)
-                .map(|c| c.trim().trim_matches('"').trim().to_string())
-                .collect();
+            let row1_cells: Vec<String> = lines[1].split(sep).map(|c| c.trim().trim_matches('"').trim().to_string()).collect();
 
             if let Some(t_idx) = headers.iter().position(|h| h == "title" || h == "judul") {
                 if let Some(t_val) = row1_cells.get(t_idx) {
@@ -416,10 +410,7 @@ impl ChartDialog {
                     Some(self.map_custom_path.clone())
                 } else {
                     let stock_maps = super::stock_maps::list_stock_map_charts();
-                    stock_maps
-                        .get(self.map_stock_idx)
-                        .map(|m| m.path.to_string_lossy().to_string())
-                        .or_else(|| Some("PANGKALAN".to_string()))
+                    stock_maps.get(self.map_stock_idx).map(|m| m.path.to_string_lossy().to_string()).or_else(|| Some("PANGKALAN".to_string()))
                 }
             } else {
                 None
@@ -521,34 +512,17 @@ impl ChartDialog {
 
         if !self.title_id.is_empty() {
             let (line1, line2) = split_grafik_title(&self.title_id);
-            let id_formatted = if !line2.is_empty() {
-                format!("{line1}\n{line2}")
-            } else {
-                line1.clone()
-            };
+            let id_formatted = if !line2.is_empty() { format!("{line1}\n{line2}") } else { line1.clone() };
 
             let en_trimmed = self.title_en.trim();
             let is_bilingual_title = bilingual && !en_trimmed.is_empty();
 
-            let title_text = if is_bilingual_title {
-                format!("{id_formatted}\n{en_trimmed}")
-            } else {
-                id_formatted.clone()
-            };
+            let title_text = if is_bilingual_title { format!("{id_formatted}\n{en_trimmed}") } else { id_formatted.clone() };
 
             let title_h = if is_bilingual_title { 56.0 } else { 44.0 };
             let title_rect = [margin.x0, margin.y0, margin.x1, margin.y0 + title_h];
 
-            let title_fid = super::emitter::emit_text(
-                app,
-                target_sp,
-                title_rect,
-                &title_text,
-                11.0,
-                true,
-                "center",
-                Some("#1A1A1A"),
-            )?;
+            let title_fid = super::emitter::emit_text(app, target_sp, title_rect, &title_text, 11.0, true, "center", Some("#1A1A1A"))?;
 
             // Format character runs:
             // Line 1 & Line 2: Bold 11pt
@@ -563,59 +537,59 @@ impl ChartDialog {
                     None
                 };
 
-                if let Some(sid) = story_id && let Some(story) = doc.story_mut(sid) {
-                        for p in &mut story.paras {
-                            p.para.align = Some(designcraft_doc::Align::Center);
-                        }
-                        let id_len = id_formatted.len();
-                        if is_bilingual_title {
-                            let en_len = en_trimmed.len();
-                            story.chars = vec![
-                                designcraft_doc::CharRun {
-                                    len: id_len + 1, // include newline
-                                    format: designcraft_doc::CharFormat {
-                                        over: designcraft_doc::CharAttrs {
-                                            font_family: Some("Arial".into()),
-                                            size: Some(11.0),
-                                            font_style: Some("Bold".into()),
-                                            fill: Some("[Black]".into()),
-                                            ..Default::default()
-                                        },
-                                        ..Default::default()
-                                    },
-                                },
-                                designcraft_doc::CharRun {
-                                    len: en_len,
-                                    format: designcraft_doc::CharFormat {
-                                        over: designcraft_doc::CharAttrs {
-                                            font_family: Some("Arial".into()),
-                                            size: Some(10.0),
-                                            font_style: Some("Italic".into()),
-                                            fill: Some("[Black]".into()),
-                                            ..Default::default()
-                                        },
-                                        ..Default::default()
-                                    },
-                                },
-                            ];
-                        } else {
-                            story.chars = vec![
-                                designcraft_doc::CharRun {
-                                    len: id_len,
-                                    format: designcraft_doc::CharFormat {
-                                        over: designcraft_doc::CharAttrs {
-                                            font_family: Some("Arial".into()),
-                                            size: Some(11.0),
-                                            font_style: Some("Bold".into()),
-                                            fill: Some("[Black]".into()),
-                                            ..Default::default()
-                                        },
-                                        ..Default::default()
-                                    },
-                                },
-                            ];
-                        }
+                if let Some(sid) = story_id
+                    && let Some(story) = doc.story_mut(sid)
+                {
+                    for p in &mut story.paras {
+                        p.para.align = Some(designcraft_doc::Align::Center);
                     }
+                    let id_len = id_formatted.len();
+                    if is_bilingual_title {
+                        let en_len = en_trimmed.len();
+                        story.chars = vec![
+                            designcraft_doc::CharRun {
+                                len: id_len + 1, // include newline
+                                format: designcraft_doc::CharFormat {
+                                    over: designcraft_doc::CharAttrs {
+                                        font_family: Some("Arial".into()),
+                                        size: Some(11.0),
+                                        font_style: Some("Bold".into()),
+                                        fill: Some("[Black]".into()),
+                                        ..Default::default()
+                                    },
+                                    ..Default::default()
+                                },
+                            },
+                            designcraft_doc::CharRun {
+                                len: en_len,
+                                format: designcraft_doc::CharFormat {
+                                    over: designcraft_doc::CharAttrs {
+                                        font_family: Some("Arial".into()),
+                                        size: Some(10.0),
+                                        font_style: Some("Italic".into()),
+                                        fill: Some("[Black]".into()),
+                                        ..Default::default()
+                                    },
+                                    ..Default::default()
+                                },
+                            },
+                        ];
+                    } else {
+                        story.chars = vec![designcraft_doc::CharRun {
+                            len: id_len,
+                            format: designcraft_doc::CharFormat {
+                                over: designcraft_doc::CharAttrs {
+                                    font_family: Some("Arial".into()),
+                                    size: Some(11.0),
+                                    font_style: Some("Bold".into()),
+                                    fill: Some("[Black]".into()),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            },
+                        }];
+                    }
+                }
                 Ok(serde_json::Value::Null)
             });
         }
@@ -797,11 +771,8 @@ impl ChartDialog {
         // Format Title (ID):
         // [line#1] Grafik XX.XX
         // [line#2] Judul Sumber Data (table)
-        self.title_id = if !recognized_id.is_empty() {
-            format!("Grafik {}\n{}", recognized_num, recognized_id)
-        } else {
-            format!("Grafik {}", recognized_num)
-        };
+        self.title_id =
+            if !recognized_id.is_empty() { format!("Grafik {}\n{}", recognized_num, recognized_id) } else { format!("Grafik {}", recognized_num) };
 
         // Format Title (EN):
         // Figure XX.XX English Title
@@ -1068,392 +1039,375 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
     let scroll_h = 600.0f32.min(available_h);
 
     crate::dock::pubgen::dialogs::dialog_window(ctx, window_title, crate::i18n::is_rtl(&lang), false, &mut open, 540.0, |ui| {
-            egui::ScrollArea::vertical().max_width(540.0).max_height(scroll_h).auto_shrink([false, true]).show(ui, |ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(6.0, 5.0);
+        egui::ScrollArea::vertical().max_width(540.0).max_height(scroll_h).auto_shrink([false, true]).show(ui, |ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(6.0, 5.0);
 
-                // Section 0: Import from Table Page (Smart Auto-fill)
-                ui.group(|ui| {
-                    let available_tables = dialog.find_available_tables(app, Some(st));
+            // Section 0: Import from Table Page (Smart Auto-fill)
+            ui.group(|ui| {
+                let available_tables = dialog.find_available_tables(app, Some(st));
 
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("📊").size(13.0));
-                        ui.label(RichText::new(crate::i18n::tr(&lang, "Import from Table:")).strong().size(11.5).color(t.text_strong));
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("📊").size(13.0));
+                    ui.label(RichText::new(crate::i18n::tr(&lang, "Import from Table:")).strong().size(11.5).color(t.text_strong));
 
-                        if !available_tables.is_empty() {
-                            let cur_idx = available_tables.iter().position(|t| t.page_1_based == dialog.import_page).unwrap_or(0);
-                            let cur_label = available_tables.get(cur_idx).map(|t| t.label.as_str()).unwrap_or("Select Table");
-                            let combo_w = (ui.available_width() - 110.0).clamp(160.0, 310.0);
+                    if !available_tables.is_empty() {
+                        let cur_idx = available_tables.iter().position(|t| t.page_1_based == dialog.import_page).unwrap_or(0);
+                        let cur_label = available_tables.get(cur_idx).map(|t| t.label.as_str()).unwrap_or("Select Table");
+                        let combo_w = (ui.available_width() - 110.0).clamp(160.0, 310.0);
 
-                            let mut selected_new = None;
-                            craft_ui::ComboBox::from_id_salt("pubgen_chart_table_selector").selected_text(cur_label).width(combo_w).show_ui(
-                                ui,
-                                |ui| {
-                                    for tbl in &available_tables {
-                                        let is_sel = tbl.page_1_based == dialog.import_page;
-                                        if ui.selectable_label(is_sel, &tbl.label).clicked() {
-                                            selected_new = Some(tbl.page_1_based);
-                                        }
-                                    }
-                                },
-                            );
-
-                            if let Some(pg) = selected_new {
-                                dialog.import_page = pg;
-                                if let Err(e) = dialog.import_from_table_page(app, pg) {
-                                    dialog.status = Some((e, false));
+                        let mut selected_new = None;
+                        craft_ui::ComboBox::from_id_salt("pubgen_chart_table_selector").selected_text(cur_label).width(combo_w).show_ui(ui, |ui| {
+                            for tbl in &available_tables {
+                                let is_sel = tbl.page_1_based == dialog.import_page;
+                                if ui.selectable_label(is_sel, &tbl.label).clicked() {
+                                    selected_new = Some(tbl.page_1_based);
                                 }
                             }
-                        } else {
-                            let max_pages = app.session.active().map(|s| s.doc.page_count()).unwrap_or(1).max(1);
-                            ui.label(RichText::new(crate::i18n::tr(&lang, "Page:")).size(11.0).color(t.text));
-                            ui.add(egui::DragValue::new(&mut dialog.import_page).range(1..=max_pages));
-                        }
-
-                        if ui.button(RichText::new(crate::i18n::tr(&lang, "📥 Auto-fill")).strong()).clicked()
-                            && let Err(e) = dialog.import_from_table_page(app, dialog.import_page)
-                        {
-                            dialog.status = Some((e, false));
-                        }
-                    });
-
-                    if !is_editing {
-                        let sel_label = app.session.page_label(dialog.selected_page);
-                        let tbl_label = format!("{}", dialog.import_page);
-                        let is_last_or_back_cover = {
-                            let active = app.session.active();
-                            let total = active.as_ref().map(|a| a.doc.page_count()).unwrap_or(1);
-                            let bp = active.as_ref().and_then(|a| crate::dock::pubgen::covers::find_back_cover_page(&a.doc));
-                            dialog.selected_page >= total.saturating_sub(1) || bp == Some(dialog.selected_page)
-                        };
-
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new("📄").size(12.0));
-                            ui.label(RichText::new(crate::i18n::tr(&lang, "Insert Location:")).strong().size(11.0).color(t.text_strong));
-
-                            let opt_selected = if is_last_or_back_cover {
-                                format!("New Page before Last Page / Back Cover (p. {})", sel_label)
-                            } else {
-                                format!("New Page after Selected Page (p. {})", sel_label)
-                            };
-                            let opt_table = format!("New Page after Source Table (p. {})", tbl_label);
-                            let opt_current = format!("On Selected Page (p. {})", sel_label);
-
-                            let current_text = match dialog.placement {
-                                ChartPlacement::SelectedPage => &opt_selected,
-                                ChartPlacement::AfterTable => &opt_table,
-                                ChartPlacement::CurrentPage => &opt_current,
-                            };
-
-                            let combo_w = (ui.available_width() - 10.0).clamp(200.0, 360.0);
-                            craft_ui::ComboBox::from_id_salt("pubgen_chart_placement")
-                                .selected_text(current_text)
-                                .width(combo_w)
-                                .show_ui(ui, |ui| {
-                                    if ui.selectable_label(dialog.placement == ChartPlacement::SelectedPage, &opt_selected).clicked() {
-                                        dialog.placement = ChartPlacement::SelectedPage;
-                                        dialog.insert_on_new_page = true;
-                                    }
-                                    if ui.selectable_label(dialog.placement == ChartPlacement::AfterTable, &opt_table).clicked() {
-                                        dialog.placement = ChartPlacement::AfterTable;
-                                        dialog.insert_on_new_page = true;
-                                    }
-                                    if ui.selectable_label(dialog.placement == ChartPlacement::CurrentPage, &opt_current).clicked() {
-                                        dialog.placement = ChartPlacement::CurrentPage;
-                                        dialog.insert_on_new_page = false;
-                                    }
-                                });
                         });
-                    }
-                });
 
-                ui.add_space(2.0);
-
-                // Section 1: Titles & Chart Type
-                ui.label(RichText::new(crate::i18n::tr(&lang, "Chart Type & Titles")).strong().size(11.5).color(t.text_strong));
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(crate::i18n::tr(&lang, "Archetype:")).size(11.0).color(t.text));
-                    let cur_type_name = match dialog.chart_type {
-                        ChartType::BarClustered => "Vertical Clustered Bar",
-                        ChartType::BarStacked => "Vertical Stacked Bar",
-                        ChartType::HorizontalBar => "Horizontal Bar (Ranked)",
-                        ChartType::Line => "Line Chart (Markers)",
-                        ChartType::Area => "Area Chart (Filled)",
-                        ChartType::Donut => "Donut / Ring Chart",
-                        ChartType::PopulationPyramid => "Population Pyramid (Piramida Penduduk)",
-                        ChartType::Gauge => "Gauge / Speedometer Chart",
-                        ChartType::Map => "Map / Choropleth (Peta Tematik)",
-                    };
-                    craft_ui::ComboBox::from_id_salt("pubgen_chart_archetype").selected_text(cur_type_name).width(200.0).show_ui(ui, |ui| {
-                        for (ct, name) in [
-                            (ChartType::BarClustered, "Vertical Clustered Bar"),
-                            (ChartType::BarStacked, "Vertical Stacked Bar"),
-                            (ChartType::HorizontalBar, "Horizontal Bar (Ranked)"),
-                            (ChartType::Line, "Line Chart (Markers)"),
-                            (ChartType::Area, "Area Chart (Filled)"),
-                            (ChartType::Donut, "Donut / Ring Chart"),
-                            (ChartType::PopulationPyramid, "Population Pyramid (Piramida Penduduk)"),
-                            (ChartType::Gauge, "Gauge / Speedometer Chart"),
-                            (ChartType::Map, "Map / Choropleth (Peta Tematik)"),
-                        ] {
-                            if ui.selectable_label(dialog.chart_type == ct, name).clicked() {
-                                dialog.chart_type = ct;
-                                dialog.clamp_to_chart_type();
+                        if let Some(pg) = selected_new {
+                            dialog.import_page = pg;
+                            if let Err(e) = dialog.import_from_table_page(app, pg) {
+                                dialog.status = Some((e, false));
                             }
                         }
-                    });
-                });
-
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(crate::i18n::tr(&lang, "Title (ID):")).size(11.0).color(t.text));
-                    ui.add_sized([ui.available_width() - 8.0, 42.0], egui::TextEdit::multiline(&mut dialog.title_id).desired_rows(2));
-                });
-
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(crate::i18n::tr(&lang, "Title (EN):")).size(11.0).color(t.text));
-                    ui.add_sized([ui.available_width() - 8.0, 22.0], egui::TextEdit::singleline(&mut dialog.title_en));
-                });
-
-                ui.separator();
-
-                // Section 2: Data Range & Columns
-                ui.label(RichText::new(crate::i18n::tr(&lang, "Data Columns & Rows")).strong().size(11.5).color(t.text_strong));
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(crate::i18n::tr(&lang, "Category Col:")).size(11.0).color(t.text));
-                    ui.add_sized([40.0, 22.0], egui::TextEdit::singleline(&mut dialog.category_col));
-
-                    ui.add_space(10.0);
-                    ui.label(RichText::new(crate::i18n::tr(&lang, "Rows:")).size(11.0).color(t.text));
-                    ui.add(egui::DragValue::new(&mut dialog.data_start_row).range(1..=1000).prefix("Start: "));
-                    ui.add(egui::DragValue::new(&mut dialog.data_end_row).range(1..=1000).prefix("End: "));
-                });
-
-                // Series 1
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Series 1:").strong().size(11.0).color(t.text));
-                    ui.label(RichText::new("Col:").size(10.5).color(t.text_dim));
-                    ui.add_sized([30.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_1_col));
-                    ui.label(RichText::new("Label (ID):").size(10.5).color(t.text_dim));
-                    ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_1_label_id));
-                    ui.label(RichText::new("Label (EN):").size(10.5).color(t.text_dim));
-                    ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_1_label_en));
-                });
-
-                // Series 2 & 3 (hidden or customized for specialized archetypes)
-                if dialog.chart_type == ChartType::Donut || dialog.chart_type == ChartType::Gauge {
-                    ui.label(
-                        RichText::new(crate::i18n::tr(&lang, "ℹ Donut and Gauge charts only fit 1 category and 1 data series."))
-                            .size(10.5)
-                            .color(t.text_dim),
-                    );
-                } else if dialog.chart_type == ChartType::Map {
-                    ui.label(
-                        RichText::new(crate::i18n::tr(
-                            &lang,
-                            "ℹ Map charts visualize 1 data series (value column) mapped to geographic regions (nmdesa).",
-                        ))
-                        .size(10.5)
-                        .color(t.text_dim),
-                    );
-
-                    let stock_maps = super::stock_maps::list_stock_map_charts();
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(crate::i18n::tr(&lang, "Stock Map:")).size(11.0).color(t.text));
-                        let cur_map_label = if dialog.map_stock_idx == 999 {
-                            "Custom GeoJSON...".to_string()
-                        } else if let Some(m) = stock_maps.get(dialog.map_stock_idx) {
-                            m.display_name.clone()
-                        } else {
-                            stock_maps.first().map(|m| m.display_name.clone()).unwrap_or_else(|| "Pangkalan (Desa)".to_string())
-                        };
-
-                        craft_ui::ComboBox::from_id_salt("pubgen_chart_map_stock")
-                            .selected_text(cur_map_label)
-                            .width(220.0)
-                            .show_ui(ui, |ui| {
-                                for (idx, m) in stock_maps.iter().enumerate() {
-                                    ui.selectable_value(&mut dialog.map_stock_idx, idx, &m.display_name);
-                                }
-                                ui.separator();
-                                ui.selectable_value(&mut dialog.map_stock_idx, 999, "Custom GeoJSON...");
-                            });
-                    });
-
-                    if dialog.map_stock_idx == 999 {
-                        ui.horizontal(|ui| {
-                            let w = (ui.available_width() - 80.0).max(120.0);
-                            ui.add_sized([w, 20.0], egui::TextEdit::singleline(&mut dialog.map_custom_path).hint_text("Path to .geojson file"));
-                        });
-                    }
-
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(crate::i18n::tr(&lang, "Color Theme:")).size(11.0).color(t.text));
-                        let cur_pal_name = super::palette::MAP_COLOR_PRESETS
-                            .get(dialog.map_palette_idx)
-                            .map(|(n, _, _)| *n)
-                            .unwrap_or("BPS Blue (Default)");
-                        craft_ui::ComboBox::from_id_salt("pubgen_chart_map_palette")
-                            .selected_text(cur_pal_name)
-                            .width(180.0)
-                            .show_ui(ui, |ui| {
-                                for (idx, (pname, _, _)) in super::palette::MAP_COLOR_PRESETS.iter().enumerate() {
-                                    ui.selectable_value(&mut dialog.map_palette_idx, idx, *pname);
-                                }
-                            });
-                    });
-
-                    if ui.button("Load Sample Village CSV (Pangkalan)").clicked() {
-                        dialog.raw_data = DEFAULT_VILLAGE_SAMPLE_CSV.to_string();
-                        dialog.category_col = "A".into();
-                        dialog.series_1_col = "D".into();
-                        dialog.series_1_label_id = "Nilai Indeks".into();
-                        dialog.series_1_label_en = "Index Value".into();
-                        dialog.data_start_row = 2;
-                        dialog.data_end_row = 9;
-                        dialog.title_id = "Grafik 01.01 Indeks Pembangunan Desa, 2026".into();
-                        dialog.title_en = "Chart 01.01 Village Development Index, 2026".into();
-                    }
-                } else if dialog.chart_type == ChartType::PopulationPyramid {
-                    // Series 2 (Female)
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut dialog.series_2_enabled, "Series 2 (Female):");
-                        if dialog.series_2_enabled {
-                            ui.label(RichText::new("Col:").size(10.5).color(t.text_dim));
-                            ui.add_sized([30.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_col));
-                            ui.label(RichText::new("Label (ID):").size(10.5).color(t.text_dim));
-                            ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_id));
-                            ui.label(RichText::new("Label (EN):").size(10.5).color(t.text_dim));
-                            ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_en));
-                        }
-                    });
-                    ui.label(
-                        RichText::new(crate::i18n::tr(
-                            &lang,
-                            "ℹ Population pyramid fits 2 data series: Series 1 = Male (Laki-laki), Series 2 = Female (Perempuan).",
-                        ))
-                        .size(10.5)
-                        .color(t.text_dim),
-                    );
-                } else {
-                    // Series 2
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut dialog.series_2_enabled, "Series 2:");
-                        if dialog.series_2_enabled {
-                            ui.label(RichText::new("Col:").size(10.5).color(t.text_dim));
-                            ui.add_sized([30.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_col));
-                            ui.label(RichText::new("Label (ID):").size(10.5).color(t.text_dim));
-                            ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_id));
-                            ui.label(RichText::new("Label (EN):").size(10.5).color(t.text_dim));
-                            ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_en));
-                        }
-                    });
-
-                    // Series 3
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut dialog.series_3_enabled, "Series 3:");
-                        if dialog.series_3_enabled {
-                            ui.label(RichText::new("Col:").size(10.5).color(t.text_dim));
-                            ui.add_sized([30.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_3_col));
-                            ui.label(RichText::new("Label (ID):").size(10.5).color(t.text_dim));
-                            ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_3_label_id));
-                            ui.label(RichText::new("Label (EN):").size(10.5).color(t.text_dim));
-                            ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_3_label_en));
-                        }
-                    });
-                }
-
-                ui.separator();
-
-                // Section 3: Value Formatting & Appearance Options
-                ui.label(RichText::new(crate::i18n::tr(&lang, "Formatting & Display Options")).strong().size(11.5).color(t.text_strong));
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(crate::i18n::tr(&lang, "Value Format:")).size(11.0).color(t.text));
-                    let fmt_str = match dialog.value_format {
-                        ValueFormat::Number => "Number (1.234,5)",
-                        ValueFormat::Percent => "Percentage (%)",
-                        ValueFormat::CurrencyIdr => "Currency IDR (Rp)",
-                    };
-                    craft_ui::ComboBox::from_id_salt("pubgen_chart_fmt").selected_text(fmt_str).width(160.0).show_ui(ui, |ui| {
-                        if ui.selectable_label(dialog.value_format == ValueFormat::Number, "Number (1.234,5)").clicked() {
-                            dialog.value_format = ValueFormat::Number;
-                        }
-                        if ui.selectable_label(dialog.value_format == ValueFormat::Percent, "Percentage (%)").clicked() {
-                            dialog.value_format = ValueFormat::Percent;
-                        }
-                        if ui.selectable_label(dialog.value_format == ValueFormat::CurrencyIdr, "Currency IDR (Rp)").clicked() {
-                            dialog.value_format = ValueFormat::CurrencyIdr;
-                        }
-                    });
-
-                    ui.add_space(8.0);
-                    ui.label(RichText::new("Max Override:").size(10.5).color(t.text_dim));
-                    ui.add_sized([50.0, 20.0], egui::TextEdit::singleline(&mut dialog.max_value_override).hint_text("Auto"));
-                });
-
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut dialog.show_value_labels, crate::i18n::tr(&lang, "Show Value Labels"));
-                    ui.checkbox(&mut dialog.show_legend, crate::i18n::tr(&lang, "Show Legend"));
-                    ui.checkbox(&mut dialog.show_grid, crate::i18n::tr(&lang, "Show Gridlines"));
-                });
-
-                ui.separator();
-
-                // Section 4: Tabular Data Editor / Preview
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(crate::i18n::tr(&lang, "Data Table (CSV / TSV):")).strong().size(11.5).color(t.text_strong));
-                    if ui.small_button(crate::i18n::tr(&lang, "Reset Sample Data")).clicked() {
-                        if dialog.chart_type == ChartType::Map {
-                            dialog.raw_data = DEFAULT_VILLAGE_SAMPLE_CSV.to_string();
-                            dialog.auto_detect_columns();
-                        } else {
-                            dialog.raw_data = DEFAULT_SAMPLE_CSV.to_string();
-                            dialog.data_start_row = 2;
-                            dialog.data_end_row = 6;
-                        }
-                    }
-                    if ui.small_button(crate::i18n::tr(&lang, "Auto-Detect Columns")).clicked() {
-                        dialog.auto_detect_columns();
-                    }
-                });
-
-                ui.add(egui::TextEdit::multiline(&mut dialog.raw_data).code_editor().desired_rows(6).desired_width(f32::INFINITY));
-
-                if let Some(active) = app.session.active() {
-                    let total_sp = active.doc.spreads.len();
-                    if total_sp > 1 {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new(crate::i18n::tr(&lang, "Target Spread:")).size(11.0).color(t.text));
-                            ui.add(egui::DragValue::new(&mut dialog.target_spread).range(0..=total_sp.saturating_sub(1)));
-                        });
-                    }
-                }
-
-                // Section 5: Status Banner
-                if let Some((ref msg, is_success)) = dialog.status {
-                    let col = if is_success { egui::Color32::from_rgb(46, 125, 50) } else { egui::Color32::from_rgb(211, 47, 47) };
-                    ui.label(RichText::new(msg).size(11.0).color(col));
-                }
-
-                ui.add_space(8.0);
-
-                // Footer Buttons
-                ui.horizontal(|ui| {
-                    let btn_label = if is_editing {
-                        crate::i18n::tr(&lang, "💾 Update Vector Chart")
                     } else {
-                        crate::i18n::tr(&lang, "➕ Insert Vector Chart")
-                    };
-
-                    let insert_btn = ui.add(egui::Button::new(RichText::new(btn_label).strong().color(egui::Color32::WHITE)).fill(t.accent));
-                    if insert_btn.clicked() {
-                        apply = true;
+                        let max_pages = app.session.active().map(|s| s.doc.page_count()).unwrap_or(1).max(1);
+                        ui.label(RichText::new(crate::i18n::tr(&lang, "Page:")).size(11.0).color(t.text));
+                        ui.add(egui::DragValue::new(&mut dialog.import_page).range(1..=max_pages));
                     }
 
-                    if ui.button(crate::i18n::tr(&lang, "Close")).clicked() {
-                        close = true;
+                    if ui.button(RichText::new(crate::i18n::tr(&lang, "📥 Auto-fill")).strong()).clicked()
+                        && let Err(e) = dialog.import_from_table_page(app, dialog.import_page)
+                    {
+                        dialog.status = Some((e, false));
+                    }
+                });
+
+                if !is_editing {
+                    let sel_label = app.session.page_label(dialog.selected_page);
+                    let tbl_label = format!("{}", dialog.import_page);
+                    let is_last_or_back_cover = {
+                        let active = app.session.active();
+                        let total = active.as_ref().map(|a| a.doc.page_count()).unwrap_or(1);
+                        let bp = active.as_ref().and_then(|a| crate::dock::pubgen::covers::find_back_cover_page(&a.doc));
+                        dialog.selected_page >= total.saturating_sub(1) || bp == Some(dialog.selected_page)
+                    };
+
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("📄").size(12.0));
+                        ui.label(RichText::new(crate::i18n::tr(&lang, "Insert Location:")).strong().size(11.0).color(t.text_strong));
+
+                        let opt_selected = if is_last_or_back_cover {
+                            format!("New Page before Last Page / Back Cover (p. {})", sel_label)
+                        } else {
+                            format!("New Page after Selected Page (p. {})", sel_label)
+                        };
+                        let opt_table = format!("New Page after Source Table (p. {})", tbl_label);
+                        let opt_current = format!("On Selected Page (p. {})", sel_label);
+
+                        let current_text = match dialog.placement {
+                            ChartPlacement::SelectedPage => &opt_selected,
+                            ChartPlacement::AfterTable => &opt_table,
+                            ChartPlacement::CurrentPage => &opt_current,
+                        };
+
+                        let combo_w = (ui.available_width() - 10.0).clamp(200.0, 360.0);
+                        craft_ui::ComboBox::from_id_salt("pubgen_chart_placement").selected_text(current_text).width(combo_w).show_ui(ui, |ui| {
+                            if ui.selectable_label(dialog.placement == ChartPlacement::SelectedPage, &opt_selected).clicked() {
+                                dialog.placement = ChartPlacement::SelectedPage;
+                                dialog.insert_on_new_page = true;
+                            }
+                            if ui.selectable_label(dialog.placement == ChartPlacement::AfterTable, &opt_table).clicked() {
+                                dialog.placement = ChartPlacement::AfterTable;
+                                dialog.insert_on_new_page = true;
+                            }
+                            if ui.selectable_label(dialog.placement == ChartPlacement::CurrentPage, &opt_current).clicked() {
+                                dialog.placement = ChartPlacement::CurrentPage;
+                                dialog.insert_on_new_page = false;
+                            }
+                        });
+                    });
+                }
+            });
+
+            ui.add_space(2.0);
+
+            // Section 1: Titles & Chart Type
+            ui.label(RichText::new(crate::i18n::tr(&lang, "Chart Type & Titles")).strong().size(11.5).color(t.text_strong));
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(crate::i18n::tr(&lang, "Archetype:")).size(11.0).color(t.text));
+                let cur_type_name = match dialog.chart_type {
+                    ChartType::BarClustered => "Vertical Clustered Bar",
+                    ChartType::BarStacked => "Vertical Stacked Bar",
+                    ChartType::HorizontalBar => "Horizontal Bar (Ranked)",
+                    ChartType::Line => "Line Chart (Markers)",
+                    ChartType::Area => "Area Chart (Filled)",
+                    ChartType::Donut => "Donut / Ring Chart",
+                    ChartType::PopulationPyramid => "Population Pyramid (Piramida Penduduk)",
+                    ChartType::Gauge => "Gauge / Speedometer Chart",
+                    ChartType::Map => "Map / Choropleth (Peta Tematik)",
+                };
+                craft_ui::ComboBox::from_id_salt("pubgen_chart_archetype").selected_text(cur_type_name).width(200.0).show_ui(ui, |ui| {
+                    for (ct, name) in [
+                        (ChartType::BarClustered, "Vertical Clustered Bar"),
+                        (ChartType::BarStacked, "Vertical Stacked Bar"),
+                        (ChartType::HorizontalBar, "Horizontal Bar (Ranked)"),
+                        (ChartType::Line, "Line Chart (Markers)"),
+                        (ChartType::Area, "Area Chart (Filled)"),
+                        (ChartType::Donut, "Donut / Ring Chart"),
+                        (ChartType::PopulationPyramid, "Population Pyramid (Piramida Penduduk)"),
+                        (ChartType::Gauge, "Gauge / Speedometer Chart"),
+                        (ChartType::Map, "Map / Choropleth (Peta Tematik)"),
+                    ] {
+                        if ui.selectable_label(dialog.chart_type == ct, name).clicked() {
+                            dialog.chart_type = ct;
+                            dialog.clamp_to_chart_type();
+                        }
                     }
                 });
             });
+
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(crate::i18n::tr(&lang, "Title (ID):")).size(11.0).color(t.text));
+                ui.add_sized([ui.available_width() - 8.0, 42.0], egui::TextEdit::multiline(&mut dialog.title_id).desired_rows(2));
+            });
+
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(crate::i18n::tr(&lang, "Title (EN):")).size(11.0).color(t.text));
+                ui.add_sized([ui.available_width() - 8.0, 22.0], egui::TextEdit::singleline(&mut dialog.title_en));
+            });
+
+            ui.separator();
+
+            // Section 2: Data Range & Columns
+            ui.label(RichText::new(crate::i18n::tr(&lang, "Data Columns & Rows")).strong().size(11.5).color(t.text_strong));
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(crate::i18n::tr(&lang, "Category Col:")).size(11.0).color(t.text));
+                ui.add_sized([40.0, 22.0], egui::TextEdit::singleline(&mut dialog.category_col));
+
+                ui.add_space(10.0);
+                ui.label(RichText::new(crate::i18n::tr(&lang, "Rows:")).size(11.0).color(t.text));
+                ui.add(egui::DragValue::new(&mut dialog.data_start_row).range(1..=1000).prefix("Start: "));
+                ui.add(egui::DragValue::new(&mut dialog.data_end_row).range(1..=1000).prefix("End: "));
+            });
+
+            // Series 1
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Series 1:").strong().size(11.0).color(t.text));
+                ui.label(RichText::new("Col:").size(10.5).color(t.text_dim));
+                ui.add_sized([30.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_1_col));
+                ui.label(RichText::new("Label (ID):").size(10.5).color(t.text_dim));
+                ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_1_label_id));
+                ui.label(RichText::new("Label (EN):").size(10.5).color(t.text_dim));
+                ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_1_label_en));
+            });
+
+            // Series 2 & 3 (hidden or customized for specialized archetypes)
+            if dialog.chart_type == ChartType::Donut || dialog.chart_type == ChartType::Gauge {
+                ui.label(
+                    RichText::new(crate::i18n::tr(&lang, "ℹ Donut and Gauge charts only fit 1 category and 1 data series."))
+                        .size(10.5)
+                        .color(t.text_dim),
+                );
+            } else if dialog.chart_type == ChartType::Map {
+                ui.label(
+                    RichText::new(crate::i18n::tr(
+                        &lang,
+                        "ℹ Map charts visualize 1 data series (value column) mapped to geographic regions (nmdesa).",
+                    ))
+                    .size(10.5)
+                    .color(t.text_dim),
+                );
+
+                let stock_maps = super::stock_maps::list_stock_map_charts();
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(crate::i18n::tr(&lang, "Stock Map:")).size(11.0).color(t.text));
+                    let cur_map_label = if dialog.map_stock_idx == 999 {
+                        "Custom GeoJSON...".to_string()
+                    } else if let Some(m) = stock_maps.get(dialog.map_stock_idx) {
+                        m.display_name.clone()
+                    } else {
+                        stock_maps.first().map(|m| m.display_name.clone()).unwrap_or_else(|| "Pangkalan (Desa)".to_string())
+                    };
+
+                    craft_ui::ComboBox::from_id_salt("pubgen_chart_map_stock").selected_text(cur_map_label).width(220.0).show_ui(ui, |ui| {
+                        for (idx, m) in stock_maps.iter().enumerate() {
+                            ui.selectable_value(&mut dialog.map_stock_idx, idx, &m.display_name);
+                        }
+                        ui.separator();
+                        ui.selectable_value(&mut dialog.map_stock_idx, 999, "Custom GeoJSON...");
+                    });
+                });
+
+                if dialog.map_stock_idx == 999 {
+                    ui.horizontal(|ui| {
+                        let w = (ui.available_width() - 80.0).max(120.0);
+                        ui.add_sized([w, 20.0], egui::TextEdit::singleline(&mut dialog.map_custom_path).hint_text("Path to .geojson file"));
+                    });
+                }
+
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(crate::i18n::tr(&lang, "Color Theme:")).size(11.0).color(t.text));
+                    let cur_pal_name =
+                        super::palette::MAP_COLOR_PRESETS.get(dialog.map_palette_idx).map(|(n, _, _)| *n).unwrap_or("BPS Blue (Default)");
+                    craft_ui::ComboBox::from_id_salt("pubgen_chart_map_palette").selected_text(cur_pal_name).width(180.0).show_ui(ui, |ui| {
+                        for (idx, (pname, _, _)) in super::palette::MAP_COLOR_PRESETS.iter().enumerate() {
+                            ui.selectable_value(&mut dialog.map_palette_idx, idx, *pname);
+                        }
+                    });
+                });
+
+                if ui.button("Load Sample Village CSV (Pangkalan)").clicked() {
+                    dialog.raw_data = DEFAULT_VILLAGE_SAMPLE_CSV.to_string();
+                    dialog.category_col = "A".into();
+                    dialog.series_1_col = "D".into();
+                    dialog.series_1_label_id = "Nilai Indeks".into();
+                    dialog.series_1_label_en = "Index Value".into();
+                    dialog.data_start_row = 2;
+                    dialog.data_end_row = 9;
+                    dialog.title_id = "Grafik 01.01 Indeks Pembangunan Desa, 2026".into();
+                    dialog.title_en = "Chart 01.01 Village Development Index, 2026".into();
+                }
+            } else if dialog.chart_type == ChartType::PopulationPyramid {
+                // Series 2 (Female)
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut dialog.series_2_enabled, "Series 2 (Female):");
+                    if dialog.series_2_enabled {
+                        ui.label(RichText::new("Col:").size(10.5).color(t.text_dim));
+                        ui.add_sized([30.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_col));
+                        ui.label(RichText::new("Label (ID):").size(10.5).color(t.text_dim));
+                        ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_id));
+                        ui.label(RichText::new("Label (EN):").size(10.5).color(t.text_dim));
+                        ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_en));
+                    }
+                });
+                ui.label(
+                    RichText::new(crate::i18n::tr(
+                        &lang,
+                        "ℹ Population pyramid fits 2 data series: Series 1 = Male (Laki-laki), Series 2 = Female (Perempuan).",
+                    ))
+                    .size(10.5)
+                    .color(t.text_dim),
+                );
+            } else {
+                // Series 2
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut dialog.series_2_enabled, "Series 2:");
+                    if dialog.series_2_enabled {
+                        ui.label(RichText::new("Col:").size(10.5).color(t.text_dim));
+                        ui.add_sized([30.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_col));
+                        ui.label(RichText::new("Label (ID):").size(10.5).color(t.text_dim));
+                        ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_id));
+                        ui.label(RichText::new("Label (EN):").size(10.5).color(t.text_dim));
+                        ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_en));
+                    }
+                });
+
+                // Series 3
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut dialog.series_3_enabled, "Series 3:");
+                    if dialog.series_3_enabled {
+                        ui.label(RichText::new("Col:").size(10.5).color(t.text_dim));
+                        ui.add_sized([30.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_3_col));
+                        ui.label(RichText::new("Label (ID):").size(10.5).color(t.text_dim));
+                        ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_3_label_id));
+                        ui.label(RichText::new("Label (EN):").size(10.5).color(t.text_dim));
+                        ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_3_label_en));
+                    }
+                });
+            }
+
+            ui.separator();
+
+            // Section 3: Value Formatting & Appearance Options
+            ui.label(RichText::new(crate::i18n::tr(&lang, "Formatting & Display Options")).strong().size(11.5).color(t.text_strong));
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(crate::i18n::tr(&lang, "Value Format:")).size(11.0).color(t.text));
+                let fmt_str = match dialog.value_format {
+                    ValueFormat::Number => "Number (1.234,5)",
+                    ValueFormat::Percent => "Percentage (%)",
+                    ValueFormat::CurrencyIdr => "Currency IDR (Rp)",
+                };
+                craft_ui::ComboBox::from_id_salt("pubgen_chart_fmt").selected_text(fmt_str).width(160.0).show_ui(ui, |ui| {
+                    if ui.selectable_label(dialog.value_format == ValueFormat::Number, "Number (1.234,5)").clicked() {
+                        dialog.value_format = ValueFormat::Number;
+                    }
+                    if ui.selectable_label(dialog.value_format == ValueFormat::Percent, "Percentage (%)").clicked() {
+                        dialog.value_format = ValueFormat::Percent;
+                    }
+                    if ui.selectable_label(dialog.value_format == ValueFormat::CurrencyIdr, "Currency IDR (Rp)").clicked() {
+                        dialog.value_format = ValueFormat::CurrencyIdr;
+                    }
+                });
+
+                ui.add_space(8.0);
+                ui.label(RichText::new("Max Override:").size(10.5).color(t.text_dim));
+                ui.add_sized([50.0, 20.0], egui::TextEdit::singleline(&mut dialog.max_value_override).hint_text("Auto"));
+            });
+
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut dialog.show_value_labels, crate::i18n::tr(&lang, "Show Value Labels"));
+                ui.checkbox(&mut dialog.show_legend, crate::i18n::tr(&lang, "Show Legend"));
+                ui.checkbox(&mut dialog.show_grid, crate::i18n::tr(&lang, "Show Gridlines"));
+            });
+
+            ui.separator();
+
+            // Section 4: Tabular Data Editor / Preview
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(crate::i18n::tr(&lang, "Data Table (CSV / TSV):")).strong().size(11.5).color(t.text_strong));
+                if ui.small_button(crate::i18n::tr(&lang, "Reset Sample Data")).clicked() {
+                    if dialog.chart_type == ChartType::Map {
+                        dialog.raw_data = DEFAULT_VILLAGE_SAMPLE_CSV.to_string();
+                        dialog.auto_detect_columns();
+                    } else {
+                        dialog.raw_data = DEFAULT_SAMPLE_CSV.to_string();
+                        dialog.data_start_row = 2;
+                        dialog.data_end_row = 6;
+                    }
+                }
+                if ui.small_button(crate::i18n::tr(&lang, "Auto-Detect Columns")).clicked() {
+                    dialog.auto_detect_columns();
+                }
+            });
+
+            ui.add(egui::TextEdit::multiline(&mut dialog.raw_data).code_editor().desired_rows(6).desired_width(f32::INFINITY));
+
+            if let Some(active) = app.session.active() {
+                let total_sp = active.doc.spreads.len();
+                if total_sp > 1 {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(crate::i18n::tr(&lang, "Target Spread:")).size(11.0).color(t.text));
+                        ui.add(egui::DragValue::new(&mut dialog.target_spread).range(0..=total_sp.saturating_sub(1)));
+                    });
+                }
+            }
+
+            // Section 5: Status Banner
+            if let Some((ref msg, is_success)) = dialog.status {
+                let col = if is_success { egui::Color32::from_rgb(46, 125, 50) } else { egui::Color32::from_rgb(211, 47, 47) };
+                ui.label(RichText::new(msg).size(11.0).color(col));
+            }
+
+            ui.add_space(8.0);
+
+            // Footer Buttons
+            ui.horizontal(|ui| {
+                let btn_label =
+                    if is_editing { crate::i18n::tr(&lang, "💾 Update Vector Chart") } else { crate::i18n::tr(&lang, "➕ Insert Vector Chart") };
+
+                let insert_btn = ui.add(egui::Button::new(RichText::new(btn_label).strong().color(egui::Color32::WHITE)).fill(t.accent));
+                if insert_btn.clicked() {
+                    apply = true;
+                }
+
+                if ui.button(crate::i18n::tr(&lang, "Close")).clicked() {
+                    close = true;
+                }
+            });
         });
+    });
 
     if apply {
         if let Err(err) = dialog.apply_chart(app, st.bilingual_output) {
@@ -1479,7 +1433,7 @@ mod tests {
         dlg.auto_detect_columns();
 
         assert_eq!(dlg.category_col, "A"); // nmdesa
-        assert_eq!(dlg.series_1_col, "D");  // value
+        assert_eq!(dlg.series_1_col, "D"); // value
         assert_eq!(dlg.title_id, "Grafik 01.01 Indeks Pembangunan");
         assert_eq!(dlg.title_en, "Chart 01.01 Development Index");
         assert_eq!(dlg.data_start_row, 2);
@@ -1564,7 +1518,6 @@ mod tests {
         let res = dlg.apply_chart(&mut app, true);
         assert!(res.is_ok(), "apply_chart with semicolon failed: {:?}", res);
     }
-
 
     #[test]
     fn test_chart_dialog_editing_replaces_existing_chart() {

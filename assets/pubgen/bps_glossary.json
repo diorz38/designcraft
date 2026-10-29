@@ -1,27 +1,208 @@
 {
-  "exact_mappings": {
-    "Kecamatan": "Subdistrict",
-    "Kabupaten": "Regency",
-    "Desa": "Village",
-    "Kelurahan": "Urban Village",
-    "Luas Wilayah": "Total Area",
-    "Kepadatan Penduduk": "Population Density",
-    "Jenis Kelamin": "Sex",
-    "Laki-laki": "Male",
-    "Perempuan": "Female",
-    "PDRB": "GRDP",
-    "Laju Pertumbuhan": "Growth Rate",
-    "Tahun": "Year",
-    "Sumber": "Source",
-    "Catatan": "Note",
-    "Keterangan": "Note",
-    "jumlah": "Total",
-    "total": "Total",
-    "provinsi": "Province",
-    "propinsi": "Province",
-    "ket.": "Note",
-    "ket": "Note",
-    "kec": "Subdistrict",
-    "no": "No"
-  }
+  "terms": [
+    {
+      "id": "Kelurahan",
+      "ai": "",
+      "official": "Urban Village",
+      "count": 7
+    },
+    {
+      "id": "Desa",
+      "ai": "",
+      "official": "Village",
+      "count": 6
+    },
+    {
+      "id": "Karawang Timur",
+      "ai": "East Karawang",
+      "official": "",
+      "count": 5
+    },
+    {
+      "id": "Kabupaten",
+      "ai": "",
+      "official": "Regency",
+      "count": 4
+    },
+    {
+      "id": "Kecamatan",
+      "ai": "",
+      "official": "Subdistrict",
+      "count": 4
+    },
+    {
+      "id": "BPS",
+      "ai": "",
+      "official": "Statistics Indonesia",
+      "count": 3
+    },
+    {
+      "id": "Kabupaten Karawang",
+      "ai": "",
+      "official": "Karawang Regency",
+      "count": 3
+    },
+    {
+      "id": "Kecamatan Karawang Barat",
+      "ai": "",
+      "official": "West Karawang District",
+      "count": 3
+    },
+    {
+      "id": "tabel bps",
+      "ai": "",
+      "official": "Table from BPS",
+      "count": 3
+    },
+    {
+      "id": "Badan Pusat Statistik",
+      "ai": "",
+      "official": "Statistics Indonesia",
+      "count": 2
+    },
+    {
+      "id": "desa/kelurahan",
+      "ai": "Village/Urban Village",
+      "official": "",
+      "count": 2
+    },
+    {
+      "id": "Kantor Bupati Karawang",
+      "ai": "Karawang Regency Regent's Office",
+      "official": "",
+      "count": 2
+    },
+    {
+      "id": "Kantor DPRD Karawang",
+      "ai": "Karawang Regency Regional People's Representative Council Office",
+      "official": "",
+      "count": 2
+    },
+    {
+      "id": "kilometer",
+      "ai": "kilometers",
+      "official": "",
+      "count": 1
+    },
+    {
+      "id": "kilometer persegi",
+      "ai": "square kilometers",
+      "official": "",
+      "count": 1
+    },
+    {
+      "id": "Perempuan",
+      "ai": "Female",
+      "official": "",
+      "count": 1
+    },
+    {
+      "id": "persen",
+      "ai": "percent",
+      "official": "",
+      "count": 1
+    },
+    {
+      "id": "pusat kabupaten",
+      "ai": "regency center",
+      "official": "",
+      "count": 1
+    },
+    {
+      "id": "Badan Pusat Statistk  Kabupaten Karawang",
+      "ai": "one of the narrowest areas",
+      "official": "Cetral Statistics Agency of Karawang Region",
+      "count": 1
+    },
+    {
+      "id": "Badan Pusat Statistik Kabupaten Karawang",
+      "ai": "",
+      "official": "Central Statistics Agency Of Karawang Regency",
+      "count": 0
+    },
+    {
+      "id": "BPS Kabupaten Karawang",
+      "ai": "",
+      "official": "Central Statistics Agency Of Karawang Regency",
+      "count": 0
+    },
+    {
+      "id": "Catatan",
+      "ai": "",
+      "official": "Note",
+      "count": 0
+    },
+    {
+      "id": "jumlah",
+      "ai": "",
+      "official": "Total",
+      "count": 0
+    },
+    {
+      "id": "kec",
+      "ai": "",
+      "official": "Subdistrict",
+      "count": 0
+    },
+    {
+      "id": "Kec Karawang Timur",
+      "ai": "",
+      "official": "East Karawang District",
+      "count": 0
+    },
+    {
+      "id": "Kec. Karawang Timur",
+      "ai": "",
+      "official": "East Karawang District",
+      "count": 0
+    },
+    {
+      "id": "kementerian terkait",
+      "ai": "relevant ministries",
+      "official": "",
+      "count": 0
+    },
+    {
+      "id": "ket",
+      "ai": "",
+      "official": "Note",
+      "count": 0
+    },
+    {
+      "id": "ket.",
+      "ai": "",
+      "official": "Note",
+      "count": 0
+    },
+    {
+      "id": "Keterangan",
+      "ai": "",
+      "official": "Note",
+      "count": 0
+    },
+    {
+      "id": "Laki-laki",
+      "ai": "",
+      "official": "Male",
+      "count": 0
+    },
+    {
+      "id": "PDRB",
+      "ai": "",
+      "official": "GRDP",
+      "count": 0
+    },
+    {
+      "id": "provinsi",
+      "ai": "",
+      "official": "Province",
+      "count": 0
+    },
+    {
+      "id": "Sumber",
+      "ai": "",
+      "official": "Source",
+      "count": 0
+    }
+  ]
 }
