@@ -30,23 +30,30 @@ pub fn menu_bar(app: &mut DesignApp, ui: &mut egui::Ui) -> bool {
         return false;
     }
     let rtl = crate::i18n::is_rtl(&app.ui.language);
+    // The host tree stays intact (the audit's §1: never hide the host's navigation); the three
+    // Pubgen menus join it, with Help kept last like every desktop app.
     let tree = crate::menus::menu_tree();
-    let file = tree.iter().find(|(name, _)| *name == "File");
-    // 0 File · 1 Publication · 2 PubGen Tools · 3 Help, mirrored right to left.
-    let slots: [usize; 4] = if rtl { [3, 2, 1, 0] } else { [0, 1, 2, 3] };
-    for slot in slots {
-        match slot {
-            0 => {
-                if let Some((name, entries)) = file {
-                    designcraft_menu(app, ui, name, entries);
-                }
-            }
-            1 => publication_menu(app, ui),
-            2 => content_menu(app, ui),
-            _ => help_menu(app, ui),
+    let mut top: Vec<Top> = tree.iter().filter(|(name, _)| *name != "Help").map(|(name, entries)| Top::Host(name, entries)).collect();
+    top.extend([Top::Publication, Top::Tools, Top::Shortcut, Top::Help]);
+    for entry in if rtl { top.into_iter().rev().collect::<Vec<_>>() } else { top } {
+        match entry {
+            Top::Host(name, entries) => designcraft_menu(app, ui, name, entries),
+            Top::Publication => publication_menu(app, ui),
+            Top::Tools => content_menu(app, ui),
+            Top::Shortcut => shortcut_menu(app, ui),
+            Top::Help => help_menu(app, ui),
         }
     }
     true
+}
+
+/// One top-level menu of the PubGen bar, in draw order.
+enum Top<'a> {
+    Host(&'a str, &'a [crate::menus::Item]),
+    Publication,
+    Tools,
+    Shortcut,
+    Help,
 }
 
 /// DesignCraft's Help rows, then About PubGen… and the menu-bar toggle — the single home for both.
@@ -59,6 +66,20 @@ fn help_menu(app: &mut DesignApp, ui: &mut egui::Ui) {
         super::bar::menu_column(app, ui, &[(name, entries.to_vec())]);
         ui.separator();
         popup(ui, rtl, 240.0, |ui| about(ui, &lang));
+    });
+}
+
+/// Curated quick access to the original DesignCraft actions a publication operator reaches for
+/// most (the plan's §4.8) — existing commands only, so chords, gates and i18n come free.
+fn shortcut_menu(app: &mut DesignApp, ui: &mut egui::Ui) {
+    let items: Vec<crate::menus::Item> =
+        [("app.exportPdf", "{}"), ("preflight.run", "{}"), ("app.packageDialog", "{}"), ("app.placeDialog", "{}"), ("file.newSample", "{}")]
+            .iter()
+            .map(|(id, params)| super::cmd_item(id, serde_json::from_str(params).unwrap_or_default()))
+            .collect();
+    let lang = app.ui.language.clone();
+    crate::menus::menu_button(ui, crate::rtl::widget(ui, crate::i18n::tr(&lang, "Shortcut")), |ui| {
+        super::bar::menu_column(app, ui, &[("Shortcut", items)]);
     });
 }
 
@@ -348,16 +369,18 @@ mod tests {
     }
 
     #[test]
-    fn pubgen_bar_shows_file_publication_content_and_help_only() {
+    fn pubgen_bar_keeps_the_host_menus_and_adds_the_pubgen_ones() {
         let ctx = egui::Context::default();
         crate::theme::install_fonts(&ctx, "en");
         let mut app = app();
-        let texts = frame(&ctx, &mut app, egui::vec2(1600.0, 200.0), Vec::new());
-        for top in ["File", "Publication", "PubGen Tools", "Help"] {
-            assert!(texts.iter().any(|t| t == top), "missing {top} in {texts:?}");
+        let texts = frame(&ctx, &mut app, egui::vec2(1920.0, 200.0), Vec::new());
+        let order = ["File", "Edit", "Layout", "Type", "Object", "Table", "View", "Window", "Publication", "PubGen Tools", "Shortcut", "Help"];
+        let positions: Vec<Option<usize>> = order.iter().map(|m| texts.iter().position(|t| t == m)).collect();
+        for (i, top) in order.iter().enumerate() {
+            assert!(positions[i].is_some(), "missing {top} in {texts:?}");
         }
-        for designcraft in ["Edit", "Layout", "Type", "Object", "View", "Window"] {
-            assert!(!texts.iter().any(|t| t == designcraft), "{designcraft} must be hidden: {texts:?}");
+        for (i, pair) in order.windows(2).enumerate() {
+            assert!(positions[i] < positions[i + 1], "{} must come before {}: {:?}", pair[0], pair[1], positions);
         }
     }
 
@@ -379,9 +402,10 @@ mod tests {
         assert!(pubgen < texts.iter().position(|t| t == "Help").expect("Help"));
 
         set_pubgen_menus_on(&ctx, true);
-        let texts = frame(&ctx, &mut app, egui::vec2(1600.0, 200.0), Vec::new());
+        let texts = frame(&ctx, &mut app, egui::vec2(1920.0, 200.0), Vec::new());
         assert!(texts.iter().any(|t| t == "Publication"), "PubGen's menus are back: {texts:?}");
-        assert!(!texts.iter().any(|t| t == "Edit"), "DesignCraft's Edit menu is hidden again: {texts:?}");
+        assert!(texts.iter().any(|t| t == "Edit"), "the host menus stay: {texts:?}");
+        assert!(!texts.iter().any(|t| t == "Pubgen"), "the fallback Pubgen menu hides while its own bar shows: {texts:?}");
     }
 
     #[test]
