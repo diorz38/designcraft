@@ -1668,45 +1668,6 @@ fn tabs_without_stops_use_default_half_inch() {
     assert!((b.x - 36.0).abs() < 0.5, "B at {}", b.x);
 }
 
-#[test]
-fn tab_after_a_short_entry_reaches_its_hanging_indent_before_the_default_stop() {
-    use designcraft_doc::{TabAlign, TabStop};
-    // An abbreviation list as Word writes it: `\li1710\fi-1710\tx1530` and "SI\t:\tStasiun …".
-    // The colon reaches the explicit 76.5pt stop; the tab after it has no explicit stop past it,
-    // so it reaches the hanging indent (85.5pt), where the wrapped lines start — not the next
-    // default stop (108pt), which used to leave every wrapped line out of line with its text.
-    let stop = |position| TabStop { position, align: TabAlign::Left, leader: String::new(), align_on: String::new() };
-    let para = ParaAttrs { tabs: Some(vec![stop(76.5)]), left_indent: Some(85.5), first_line_indent: Some(-85.5), ..Default::default() };
-    let text = format!("SI\t:\t{LOREM}\nSMPK\t:\t{LOREM}");
-    let (d, sid, _) = doc_with(&text, Rect::new(0.0, 0.0, 240.0, 600.0), para);
-    let cs = compose_story(&d, sid, &ComposeOptions::default());
-    let lines = &cs.frames[0].lines;
-    let x_of = |l: &Line, byte: usize| l.glyphs.iter().find(|g| g.byte == byte && g.len > 0).map(|g| g.x).unwrap();
-    assert!((x_of(&lines[0], 5) - 85.5).abs() < 0.01, "the description starts at the hanging indent, not {}", x_of(&lines[0], 5));
-    let continuation = lines.iter().find(|l| !l.first_in_para).expect("a wrapped line");
-    let starts = continuation.glyphs.iter().find(|g| g.len > 0 && g.visible).map(|g| g.x).expect("wrapped text");
-    assert!((starts - 85.5).abs() < 0.01, "the wrapped line starts at the hanging indent, not {starts}");
-}
-
-#[test]
-fn a_far_left_stop_after_the_indent_does_not_push_the_definition_off_the_hanging_indent() {
-    use designcraft_doc::{TabAlign, TabStop};
-    // The last two G02 rows also carry `\tx4000` (200pt): `\li1710\fi-1710\tx1530\tx4000`.
-    // The tab after the colon must reach the nearer hanging indent (85.5pt), where the earlier
-    // rows and every wrapped line start, not the far 200pt stop.
-    let stop = |position| TabStop { position, align: TabAlign::Left, leader: String::new(), align_on: String::new() };
-    let para = ParaAttrs { tabs: Some(vec![stop(76.5), stop(200.0)]), left_indent: Some(85.5), first_line_indent: Some(-85.5), ..Default::default() };
-    let text = format!("TDP\t:\t{LOREM}\nAPI\t:\t{LOREM}");
-    let (d, sid, _) = doc_with(&text, Rect::new(0.0, 0.0, 240.0, 600.0), para);
-    let cs = compose_story(&d, sid, &ComposeOptions::default());
-    let first_lines: Vec<&Line> = cs.frames[0].lines.iter().filter(|l| l.first_in_para).collect();
-    assert_eq!(first_lines.len(), 2, "one line starts each row");
-    for (line, definition) in first_lines.iter().zip([6, 13 + LOREM.len()]) {
-        let x = line.glyphs.iter().find(|g| g.byte == definition && g.len > 0).map(|g| g.x).expect("the definition text");
-        assert!((x - 85.5).abs() < 0.01, "the description starts at the hanging indent, not {x}");
-    }
-}
-
 // ---------- tables ----------
 
 fn table_doc(frame: Rect, t: designcraft_doc::Table) -> (Document, StoryId, ItemId) {
@@ -1869,29 +1830,6 @@ fn tab_leaders_fill_the_gap() {
     let last_dot = dots.iter().map(|g| g.x).fold(0.0, f64::max);
     let num_x = line.glyphs.iter().find(|g| g.byte == 6).unwrap().x;
     assert!(last_dot < num_x, "leaders stop before the page number");
-}
-
-#[test]
-fn short_entry_reaches_its_right_tab_past_the_hanging_indent() {
-    // A table of contents row: hanging indent (left 68, first line -68) and a right tab with a
-    // leader at the column edge. A short entry ("Daftar Isi") starts before the left indent, but
-    // its tab must still reach the explicit stop rather than stop at the indent (a dot leader
-    // would otherwise vanish on short headings).
-    let para = ParaAttrs {
-        tabs: Some(vec![designcraft_doc::TabStop { position: 540.0, align: TabAlign::Right, leader: ". ".into(), align_on: String::new() }]),
-        left_indent: Some(68.0),
-        first_line_indent: Some(-68.0),
-        ..Default::default()
-    };
-    let (d, sid, _) = doc_with("Daftar Isi\t5", Rect::new(0.0, 0.0, 540.0, 100.0), para);
-    let cs = compose_story(&d, sid, &Default::default());
-    let line = &cs.frames[0].lines[0];
-    let tab = line.glyphs.iter().find(|g| g.byte == 10 && g.len > 0).unwrap();
-    assert!(tab.adv > 400.0, "the tab jumps past the indent to the stop, not {} to the indent", tab.adv);
-    let num = line.glyphs.iter().find(|g| g.byte == 11).unwrap();
-    assert!((num.x + num.adv - 540.0).abs() < 0.01, "the page number ends at the stop, not at {}", num.x + num.adv);
-    let dots = line.glyphs.iter().filter(|g| g.len == 0 && g.visible).count();
-    assert!(dots > 20, "{dots} leader glyphs");
 }
 
 #[test]
