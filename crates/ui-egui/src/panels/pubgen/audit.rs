@@ -10,6 +10,33 @@ use super::state::PubgenState;
 use crate::DesignApp;
 use crate::theme::Tokens;
 
+/// The distribution profile: which rules the audit applies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AuditProfile {
+    /// Online PDF / digital product: a 150 ppi floor, no spine or bleed guards.
+    #[default]
+    Digital,
+    /// Press printing: a 300 ppi floor plus the spine and bleed guards.
+    Print,
+}
+
+impl AuditProfile {
+    pub fn param(self) -> &'static str {
+        match self {
+            Self::Print => "print",
+            Self::Digital => "digital",
+        }
+    }
+
+    pub fn default_min_ppi(self) -> f64 {
+        match self {
+            Self::Print => 300.0,
+            Self::Digital => 150.0,
+        }
+    }
+}
+
 /// One row of the checklist: an issue from `preflight.pubgen`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AuditIssue {
@@ -20,10 +47,26 @@ pub struct AuditIssue {
     pub page: Option<usize>,
 }
 
+/// The triage tags an unresolved row can carry, in cycle order (empty = untagged).
+const TAGS: [&str; 3] = ["", "false-positive", "ignored"];
+
+fn tag_label(tag: &str) -> &'static str {
+    match tag {
+        "false-positive" => "FP",
+        "ignored" => "IG",
+        _ => "—",
+    }
+}
+
+/// Tags survive re-runs and regeneration through this identity: rule + defect text.
+fn tag_key(issue: &AuditIssue) -> String {
+    format!("{}|{}", issue.kind, issue.message)
+}
+
 /// Run the audit and keep its issues for the dialog.
 pub(crate) fn run_audit(app: &mut DesignApp, st: &mut PubgenState) {
     st.audit_revision = app.session.active().map(|d| d.revision).unwrap_or(0);
-    let r = app.run("preflight.pubgen", json!({"minPpi": st.audit_min_ppi}));
+    let r = app.run("preflight.pubgen", json!({"profile": st.audit_profile.param(), "minPpi": st.audit_min_ppi}));
     st.audit_issues = match r {
         Ok(v) => Some(parse_issues(&v)),
         Err(e) => {
@@ -62,7 +105,9 @@ pub(crate) fn audit_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut
     egui::Window::new("Audit Publication").open(&mut open).collapsible(false).resizable(true).default_width(440.0).show(ctx, |ui| {
         let t = Tokens::get(ui.ctx());
         let issues = st.audit_issues.clone().unwrap_or_default();
-        let errors = issues.iter().filter(|i| i.severity == "error").count();
+        let tag_of = |tags: &std::collections::HashMap<String, String>, issue: &AuditIssue| tags.get(&tag_key(issue)).cloned().unwrap_or_default();
+        let live = issues.iter().filter(|i| tag_of(&st.audit_tags, i).is_empty()).count();
+        let errors = issues.iter().filter(|i| i.severity == "error" && tag_of(&st.audit_tags, i).is_empty()).count();
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(vec2(10.0, 10.0), egui::Sense::hover());
             ui.painter().circle_filled(
@@ -72,13 +117,13 @@ pub(crate) fn audit_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut
             );
             crate::rtl::label(
                 ui,
-                if issues.is_empty() {
+                if live == 0 {
                     RichText::new(crate::i18n::tr(&app.ui.language, "No errors").to_string()).size(11.0)
                 } else {
                     RichText::new(format!(
                         "{}, {}",
                         crate::i18n::count_label(&app.ui.language, "errors", errors),
-                        crate::i18n::count_label(&app.ui.language, "warnings", issues.len() - errors)
+                        crate::i18n::count_label(&app.ui.language, "warnings", live - errors)
                     ))
                     .size(11.0)
                 },
@@ -86,7 +131,27 @@ pub(crate) fn audit_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut
             if ui.button("Re-run").clicked() {
                 run_audit(app, st);
             }
+        });
+        ui.horizontal(|ui| {
+            crate::rtl::label(ui, RichText::new("Distribution").size(10.0).color(t.text_dim));
+            for (profile, label) in [(AuditProfile::Digital, "Digital (online PDF)"), (AuditProfile::Print, "Print (press)")] {
+                if ui
+                    .radio(st.audit_profile == profile, label)
+                    .on_hover_text(match profile {
+                        AuditProfile::Digital => "150 ppi floor; no spine or bleed guards.",
+                        AuditProfile::Print => "300 ppi floor plus spine and bleed guards.",
+                    })
+                    .clicked()
+                {
+                    st.audit_profile = profile;
+                    st.audit_min_ppi = profile.default_min_ppi();
+                    run_audit(app, st);
+                }
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.checkbox(&mut st.audit_hide_tagged, "hide tagged").changed() {
+                    ui.ctx().request_repaint();
+                }
                 crate::rtl::label(ui, RichText::new("min ppi").size(10.0).color(t.text_dim));
                 ui.add(egui::DragValue::new(&mut st.audit_min_ppi).range(50.0..=600.0).speed(10.0));
             });
@@ -94,15 +159,37 @@ pub(crate) fn audit_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut
         ui.separator();
         egui::ScrollArea::vertical().max_height(380.0).show(ui, |ui| {
             for issue in &issues {
+                let key = tag_key(issue);
+                let tag = tag_of(&st.audit_tags, issue);
+                let tagged = !tag.is_empty();
+                if tagged && st.audit_hide_tagged {
+                    continue;
+                }
                 let page = issue.page.filter(|_| app.session.active().is_some()).map(|p| app.session.page_label(p));
-                let text = format!("{}  {}", if issue.severity == "error" { "⛔" } else { "⚠" }, issue.message);
-                let resp = ui.add(egui::Button::new(RichText::new(text).size(11.0)).frame(false));
-                if let Some(pg) = &page {
-                    crate::rtl::label(ui, RichText::new(format!("   page {pg}")).size(10.0).color(t.text_dim));
-                }
-                if resp.clicked() {
-                    open_issue(app, issue);
-                }
+                ui.horizontal(|ui| {
+                    let text = format!("{}  {}", if issue.severity == "error" { "⛔" } else { "⚠" }, issue.message);
+                    let mut text = RichText::new(text).size(11.0);
+                    if tagged {
+                        text = text.weak();
+                    }
+                    let resp = ui.add(egui::Button::new(text).frame(false));
+                    if let Some(pg) = &page {
+                        crate::rtl::label(ui, RichText::new(format!("   page {pg}")).size(10.0).color(t.text_dim));
+                    }
+                    if resp.clicked() {
+                        open_issue(app, issue);
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // Cycle: untagged → false positive → ignored → untagged.
+                        if ui.button(tag_label(&tag)).on_hover_text("Tag this finding: false positive, or temporarily ignored").clicked() {
+                            let next = TAGS[(TAGS.iter().position(|t| *t == tag).unwrap_or(0) + 1) % TAGS.len()];
+                            st.audit_tags.insert(key.clone(), next.to_string());
+                        }
+                    });
+                });
+            }
+            if !issues.is_empty() && issues.iter().all(|i| !tag_of(&st.audit_tags, i).is_empty()) {
+                crate::rtl::label(ui, RichText::new("Every finding is tagged.").size(10.0).color(t.text_dim));
             }
         });
     });
@@ -128,6 +215,23 @@ mod tests {
         assert_eq!(issues[0].item, Some(17));
         assert_eq!(issues[0].page, Some(2));
         assert_eq!(issues[1].item, None);
+    }
+
+    /// Tags survive re-runs through `kind|message`; the button cycles —, FP, IG, back to —.
+    #[test]
+    fn tag_keys_survive_and_the_cycle_returns_to_untagged() {
+        let issue = AuditIssue {
+            severity: "error".into(),
+            kind: "cellOverset".into(),
+            message: "Overset table cell: 4 characters".into(),
+            item: Some(17),
+            page: Some(2),
+        };
+        assert_eq!(tag_key(&issue), "cellOverset|Overset table cell: 4 characters");
+        let cycle = |tag: &str| TAGS[(TAGS.iter().position(|t| *t == tag).unwrap_or(0) + 1) % TAGS.len()];
+        assert_eq!(tag_label(cycle("")), "FP");
+        assert_eq!(tag_label(cycle("false-positive")), "IG");
+        assert_eq!(tag_label(cycle("ignored")), "—");
     }
 
     /// Clicking the overset row selects the offending frame and jumps to its page — through the

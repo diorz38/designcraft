@@ -12,8 +12,9 @@ use crate::{Result, Session};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![cmd!(query "preflight.pubgen", "Pubgen Preflight Audit", ["Window", "Output", "Pubgen Audit"], None,
-        "{minPpi?: 150} → {errors, warnings, issues}: the generic preflight plus the Pubgen rules \
-         (missing Sumber:/Catatan: lines, table-number sequence)", has_doc, run)]
+        "{profile?: \"print\"|\"digital\", minPpi?: 300|150} → {profile, errors, warnings, issues}: the generic preflight \
+         plus the Pubgen rules (missing Sumber:/Catatan: lines, table-number sequence, dual-lang parity; print adds \
+         spine/bleed guards and a 300 ppi floor)", has_doc, run)]
 }
 
 /// The keywords a table note line starts with
@@ -85,7 +86,7 @@ fn story_page(s: &Session, sid: designcraft_doc::StoryId) -> Option<usize> {
 /// A collected title number: (kind, chapter, number, story).
 type Title = (&'static str, u32, u32, designcraft_doc::StoryId);
 
-pub fn pubgen_issues(s: &Session) -> Vec<Issue> {
+pub fn pubgen_issues(s: &Session, print: bool) -> Vec<Issue> {
     let Some(st) = s.active() else { return vec![] };
     let d = &st.doc;
     let mut out = Vec::new();
@@ -111,7 +112,9 @@ pub fn pubgen_issues(s: &Session) -> Vec<Issue> {
     }
     sequence_issues(s, &mut titles, &mut out);
     parity_issues(s, &mut out);
-    cover_guards(s, &mut out);
+    if print {
+        cover_guards(s, &mut out);
+    }
     out
 }
 
@@ -343,11 +346,18 @@ fn flush_run(kind: &str, chapter: u32, same: &mut Vec<(u32, Option<usize>)>, out
 }
 
 fn run(s: &mut Session, p: &Value) -> Result<Value> {
-    let min = p.get("minPpi").and_then(Value::as_f64).unwrap_or(150.0);
+    // The distribution profile picks the rules: the print profile adds the spine and bleed
+    // guards and a stricter DPI floor. Absent, the document's intent decides.
+    let print = match p.get("profile").and_then(Value::as_str) {
+        Some("print") => true,
+        Some("digital") => false,
+        _ => s.active().is_none_or(|st| st.doc.settings.intent == Intent::Print),
+    };
+    let min = p.get("minPpi").and_then(Value::as_f64).unwrap_or(if print { 300.0 } else { 150.0 });
     let mut issues = check(s, min);
-    issues.extend(pubgen_issues(s));
+    issues.extend(pubgen_issues(s, print));
     let errors = issues.iter().filter(|i| i.severity == "error").count();
-    Ok(json!({"errors": errors, "warnings": issues.len() - errors, "issues": issues}))
+    Ok(json!({"profile": if print { "print" } else { "digital" }, "errors": errors, "warnings": issues.len() - errors, "issues": issues}))
 }
 
 #[cfg(test)]
@@ -457,7 +467,7 @@ mod command_tests {
         let mut s = Session::new();
         s.execute("file.new", &json!({})).unwrap();
         s.execute("frame.create", &json!({"rect": [20, 20, 300, 400], "content": "text", "text": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."})).unwrap();
-        assert!(super::pubgen_issues(&s).is_empty());
+        assert!(super::pubgen_issues(&s, false).is_empty());
     }
 }
 
@@ -586,5 +596,23 @@ mod cover_guard_tests {
         s.execute("file.new", &json!({})).unwrap();
         s.execute("frame.create", &json!({"rect": [300, 100, 400, 300], "content": "text", "text": "Centre"})).unwrap();
         assert!(kinds(&mut s, "spineGuard").is_empty());
+    }
+
+    /// The digital (online PDF) distribution profile drops the print-only guards even for a
+    /// print-intent document; `profile: "print"` brings them back.
+    #[test]
+    fn the_profile_picks_the_print_only_guards() {
+        let png = designcraft_render::Rendered { width: 400, height: 200, pixels: vec![200; 400 * 200 * 4] }.to_png();
+        let audit = |s: &mut Session, profile: &str| {
+            let r = s.execute("preflight.pubgen", &json!({"profile": profile})).unwrap();
+            (r["profile"].as_str().unwrap().to_string(), r["issues"].as_array().unwrap().iter().filter(|i| i["kind"] == "bleedGuard").count())
+        };
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"intent": "print", "bleed": 12})).unwrap();
+        s.execute("file.place", &json!({"base64": base64_encode(&png), "name": "short.png", "x": 600, "y": 100, "width": 16})).unwrap();
+        assert_eq!(audit(&mut s, "digital"), ("digital".into(), 0));
+        assert_eq!(audit(&mut s, "print"), ("print".into(), 1));
+        // No profile: the document's intent (print) decides.
+        assert_eq!(audit(&mut s, ""), ("print".into(), 1));
     }
 }

@@ -380,6 +380,15 @@ pub struct PubgenState {
     /// The document revision the last audit ran on; a different revision re-runs it silently.
     #[serde(skip)]
     pub audit_revision: u64,
+    /// The distribution profile: print adds the spine/bleed guards and a 300 ppi floor.
+    #[serde(default)]
+    pub audit_profile: audit::AuditProfile,
+    /// Triage tags per finding (`kind|message` → `false-positive` / `ignored`), kept across runs.
+    #[serde(default)]
+    pub audit_tags: HashMap<String, String>,
+    /// Rows carrying a tag are hidden from the checklist.
+    #[serde(default = "default_true")]
+    pub audit_hide_tagged: bool,
     /// Effective ppi for the generic raster-resolution rule inside the audit.
     #[serde(default)]
     pub audit_min_ppi: f64,
@@ -683,7 +692,10 @@ impl Default for PubgenState {
             audit_open: false,
             audit_issues: None,
             audit_revision: 0,
-            audit_min_ppi: 150.0,
+            audit_profile: audit::AuditProfile::Print,
+            audit_tags: HashMap::new(),
+            audit_hide_tagged: true,
+            audit_min_ppi: 300.0,
             dialog_excel_open: false,
             dialog_toc_open: false,
             dialog_cover_open: false,
