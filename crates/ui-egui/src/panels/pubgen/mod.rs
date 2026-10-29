@@ -359,8 +359,6 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
 
     charts::dialog::chart_dialog_ui(app, ui.ctx(), &mut st);
 
-    audit::audit_dialog_ui(app, ui.ctx(), &mut st);
-
     pubgen_header_band(app, ui, &mut st, &t);
 
     // 0. Publication compiler (one manifest → the whole document)

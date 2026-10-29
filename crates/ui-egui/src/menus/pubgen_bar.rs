@@ -130,6 +130,15 @@ fn pipeline(app: &mut DesignApp, ui: &mut egui::Ui, lang: &str) {
         });
         ui.close();
     }
+
+    // Last pipeline step: the QA audit over the finished layout (Pillar 3).
+    if item(ui, lang, "Audit Publication…", has_doc) {
+        crate::dock::pubgen::with_state(ui.ctx(), |st| {
+            st.audit_open = true;
+            st.audit_issues = None; // the dialog runs `preflight.pubgen` on first paint
+        });
+        ui.close();
+    }
 }
 
 /// Manual content: CSV ingest, layout utilities, the dual-language switch and AI translation.

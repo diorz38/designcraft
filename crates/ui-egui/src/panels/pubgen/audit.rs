@@ -27,7 +27,7 @@ pub(crate) fn run_audit(app: &mut DesignApp, st: &mut PubgenState) {
         Ok(v) => Some(parse_issues(&v)),
         Err(e) => {
             st.header_status = Some((format!("Audit failed: {e}"), false));
-            None
+            Some(vec![]) // shown as an empty checklist; the status band carries the error
         }
     };
 }
@@ -40,6 +40,10 @@ fn parse_issues(v: &Value) -> Vec<AuditIssue> {
 pub(crate) fn audit_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut PubgenState) {
     if !st.audit_open {
         return;
+    }
+    // Opened from the menu: the menu handler can only set flags, so run here on first paint.
+    if st.audit_issues.is_none() {
+        run_audit(app, st);
     }
     let mut open = st.audit_open;
     egui::Window::new("Audit Publication").open(&mut open).collapsible(false).resizable(true).default_width(440.0).show(ctx, |ui| {

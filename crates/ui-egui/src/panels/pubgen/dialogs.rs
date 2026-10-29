@@ -361,6 +361,7 @@ pub fn show_all_dialogs(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubge
     dialog_hf_ui(app, ctx, st);
     dialog_manual_ui(app, ctx, st);
     dialog_utils_ui(app, ctx, st);
+    super::audit::audit_dialog_ui(app, ctx, st);
 
     if st.show_about_dialog {
         about_pubgen_dialog(app, ctx, &mut st.show_about_dialog, &Tokens::get(ctx));
