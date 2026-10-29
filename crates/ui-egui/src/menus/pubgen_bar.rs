@@ -102,9 +102,11 @@ fn popup(ui: &mut egui::Ui, rtl: bool, min_width: f32, contents: impl FnOnce(&mu
     });
 }
 
-/// A menu row: label, enabled, clicked.
+/// A menu row: label, enabled, clicked. A disabled row says why (the audit's P1-5).
 fn item(ui: &mut egui::Ui, lang: &str, label: &str, enabled: bool) -> bool {
-    ui.add_enabled(enabled, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(lang, label)))).clicked()
+    let resp = ui.add_enabled(enabled, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(lang, label))));
+    let resp = if !enabled { resp.on_hover_text(crate::i18n::tr(lang, "Open a document first")) } else { resp };
+    resp.clicked()
 }
 
 /// A submenu row that opens `contents`.
@@ -140,15 +142,10 @@ fn content(app: &mut DesignApp, ui: &mut egui::Ui, lang: &str, rtl: bool) {
 
     ui.separator();
 
-    let is_bilingual = crate::dock::pubgen::with_state(ui.ctx(), |st| st.bilingual_output);
-    let check_mark = if is_bilingual { "✓ " } else { "   " };
-    let bi_label = format!("{}{}", check_mark, crate::i18n::tr(lang, "Dual Language Mode"));
-    if ui.button(crate::rtl::widget(ui, bi_label)).clicked() {
-        crate::dock::pubgen::with_state(ui.ctx(), |st| {
-            st.bilingual_output = !st.bilingual_output;
-        });
-        ui.close();
-    }
+    // The dual-language toggle rides the upstream row machinery: its checkmark comes from
+    // `menus::state::checked`, its chord (Ctrl+Shift+L) from the keymap (P1-3).
+    let dual = [super::cmd_item("pubgen.dualLanguage", serde_json::Value::Null)];
+    super::tree::menu_items(app, ui, &dual, "Publication Tools");
 
     submenu(ui, lang, rtl, "AI Translate", 260.0, |ui| ai_translate(app, ui, lang, has_doc));
 }
@@ -409,5 +406,28 @@ mod tests {
         let texts = collect_texts(&output.shapes);
         assert!(texts.iter().any(|t| t.contains("About PubGen")), "{texts:?}");
         assert!(texts.iter().any(|t| t.contains("DesignCraft Menus") || t.contains("PubGen Menus")), "{texts:?}");
+    }
+
+    /// The dual-language toggle is an upstream `Item::Cmd` row: its checkmark comes from
+    /// `menus::state::checked`, not a hand-drawn prefix (the audit's P1-3).
+    #[test]
+    fn the_dual_language_toggle_draws_an_upstream_checkmark() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx, "en");
+        let mut app = app();
+        app.egui_ctx = Some(ctx.clone());
+        let content = |app: &mut DesignApp| {
+            let lang = app.ui.language.clone();
+            let input =
+                egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), ..Default::default() };
+            let mut output = ctx.run_ui(input, |ui| content(app, ui, &lang, false));
+            output.textures_delta.clear();
+            collect_texts(&output.shapes)
+        };
+        assert!(content(&mut app).iter().any(|t| t.contains("✓") && t.contains("Dual Language Mode")), "bilingual by default, checked");
+        crate::dock::pubgen::with_state(&ctx, |st| {
+            st.bilingual_output = false;
+        });
+        assert!(content(&mut app).iter().any(|t| t.contains("Dual Language Mode") && !t.contains("✓")), "single after the toggle, unchecked");
     }
 }

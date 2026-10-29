@@ -227,7 +227,20 @@ pub(super) fn menu_items(app: &mut DesignApp, ui: &mut egui::Ui, items: &[Item],
                 if let Some(sc) = shortcut_label(app, id, params) {
                     b = b.shortcut_text(sc);
                 }
-                if ui.add_enabled(menu_enabled(app, id), b).clicked() {
+                let enabled = menu_enabled(app, id);
+                let mut resp = ui.add_enabled(enabled, b);
+                #[cfg(feature = "pubgen")]
+                {
+                    // A disabled Pubgen row says why, and the margins row shows the numbers its
+                    // short label left out (the audit's P1-5 and P1-2).
+                    if !enabled && id.starts_with("pubgen.") {
+                        resp = resp.on_hover_text(crate::i18n::tr(lang, "Open a document first"));
+                    }
+                    if id == "pubgen.bpsMargins" {
+                        resp = resp.on_hover_text("Margins 20 / 20 / 19 / 15 mm (top, bottom, inside, outside).\nUndo with Ctrl+Z.");
+                    }
+                }
+                if resp.clicked() {
                     activate(app, id, params);
                     ui.close();
                 }
