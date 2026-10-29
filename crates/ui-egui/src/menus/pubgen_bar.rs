@@ -116,7 +116,9 @@ fn submenu(ui: &mut egui::Ui, lang: &str, rtl: bool, label: &str, min_width: f32
 
 /// The generation pipeline: Excel generate, compile, charts, ToC, cover, headers and the audit —
 /// rows come from `UI_COMMANDS`, so labels, gates and chords are the upstream menu machinery's.
+/// A row whose background job runs (compile, AI cover) carries a ● marker (the audit's P1-6).
 fn pipeline(app: &mut DesignApp, ui: &mut egui::Ui) {
+    let (compiling, covering) = crate::dock::pubgen::with_state(ui.ctx(), |st| (st.compile_job.is_some(), st.cover_job.is_some()));
     let items: Vec<crate::menus::Item> = [
         "pubgen.generateFromExcel",
         "pubgen.compileProject",
@@ -127,7 +129,20 @@ fn pipeline(app: &mut DesignApp, ui: &mut egui::Ui) {
         "pubgen.audit",
     ]
     .iter()
-    .map(|id| super::cmd_item(id, serde_json::Value::Null))
+    .map(|id| {
+        let mut it = super::cmd_item(id, serde_json::Value::Null);
+        if let crate::menus::Item::Cmd { label, id, .. } = &mut it {
+            let running = match id.as_str() {
+                "pubgen.compileProject" => compiling,
+                "pubgen.publicationCover" => covering,
+                _ => false,
+            };
+            if running {
+                *label = format!("●  {label}");
+            }
+        }
+        it
+    })
     .collect();
     super::bar::menu_column(app, ui, &[("Publication", items)]);
 }
@@ -429,5 +444,22 @@ mod tests {
             st.bilingual_output = false;
         });
         assert!(content(&mut app).iter().any(|t| t.contains("Dual Language Mode") && !t.contains("✓")), "single after the toggle, unchecked");
+    }
+
+    /// A row whose background job runs carries a ● marker (the audit's P1-6).
+    #[test]
+    fn a_running_job_marks_its_publication_row() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx, "en");
+        let mut app = app();
+        app.egui_ctx = Some(ctx.clone());
+        assert!(!publication_rows(&mut app, &ctx).iter().any(|t| t.starts_with('●')), "idle: no dot");
+        crate::dock::pubgen::with_state(&ctx, |st| {
+            st.compile_job = Some(Box::new(crate::dock::pubgen::compile::CompileJob::fake_running()));
+        });
+        let rows = publication_rows(&mut app, &ctx);
+        let marked: Vec<_> = rows.iter().filter(|t| t.starts_with('●')).collect();
+        assert_eq!(marked.len(), 1, "exactly the compiling row: {rows:?}");
+        assert!(marked[0].contains("Compile Publication"), "{marked:?}");
     }
 }

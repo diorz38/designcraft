@@ -635,6 +635,19 @@ impl CompileJob {
         self.cancelled.store(true, Ordering::Relaxed);
     }
 
+    /// A job that merely claims to run: the menu bar's ● marker tests only need the flag.
+    #[cfg(test)]
+    pub(crate) fn fake_running() -> Self {
+        Self::new(CompilePlan {
+            manifest: ProjectManifest::default(),
+            manifest_path: std::path::PathBuf::new(),
+            output_document: std::path::PathBuf::new(),
+            output_pdf: None,
+            chapters: Vec::new(),
+            warnings: Vec::new(),
+        })
+    }
+
     pub(crate) fn progress(&self) -> (usize, usize) {
         (self.next.min(self.steps.len()), self.steps.len())
     }
