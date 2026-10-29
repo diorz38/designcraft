@@ -95,6 +95,11 @@ pub fn menu_tree() -> Vec<(&'static str, Vec<Item>)> {
                     shortcut: None,
                 });
             }
+            // The Pubgen panel, restorable like every other panel (the audit's P1-1).
+            if *name == "Window" {
+                items.push(Item::Sep);
+                items.push(cmd_item("window.pubgenPanel", serde_json::Value::Null));
+            }
         }
     }
     tree

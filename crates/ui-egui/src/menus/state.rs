@@ -156,6 +156,8 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
         }
         #[cfg(feature = "pubgen")]
         "pubgen.dualLanguage" => app.egui_ctx.as_ref().is_some_and(|ctx| crate::dock::pubgen::with_state(ctx, |st| st.bilingual_output)),
+        #[cfg(feature = "pubgen")]
+        "window.pubgenPanel" => crate::panel_docking::showing(app, "pubgen"),
         _ => return None,
     })
 }

@@ -2502,8 +2502,8 @@ mod tests {
     fn the_compile_command_is_registered_with_its_parameters() {
         let entry = crate::menus::UI_COMMANDS.iter().find(|c| c.0 == "pubgen.compileProject");
         let (_, label, shortcut, params) = entry.unwrap();
-        assert_eq!(*label, "Compile Publication…");
-        assert!(shortcut.is_none());
+        assert_eq!(*label, "Compile Publication");
+        assert_eq!(*shortcut, Some("Ctrl+Shift+B"));
         for key in ["path", "sync", "pdf"] {
             assert!(params.contains(key), "params doc names `{key}`: {params}");
         }

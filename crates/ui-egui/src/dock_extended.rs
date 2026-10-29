@@ -58,6 +58,9 @@ pub const ICON_PANELS: &[(&str, &str, &str)] = &[
 /// Panels that only float, outside the docking layout (they open from a menu).
 pub const FLOATING_PANELS: &[(&str, &str)] = &[("tabs", "Tabs")];
 
+/// The dock panels the Pubgen fork adds: known to the dock, absent upstream.
+pub const PUBGEN_PANELS: &[(&str, &str, &str)] = &[("pubgen", "PubGen", "panel-properties")];
+
 /// The English name of panel `id`.
 pub fn panel_label(id: &str) -> &'static str {
     DOCK_TABS.iter().chain(ICON_PANELS).map(|p| (p.0, p.1)).chain(FLOATING_PANELS.iter().copied()).find(|p| p.0 == id).map_or("Panel", |p| p.1)
@@ -409,7 +412,7 @@ mod pubgen_menu_tests {
         let pubgen_idx = texts.iter().position(|t| t == "Publication");
         let help_idx = texts.iter().position(|t| t == "Help");
         assert!(texts.iter().any(|t| t == "File"), "File menu must be present in menu bar. Got: {texts:?}");
-        assert!(texts.iter().any(|t| t == "PubGen Tools"), "PubGen Tools menu must be present in menu bar. Got: {texts:?}");
+        assert!(texts.iter().any(|t| t == "Publication Tools"), "Publication Tools menu must be present in menu bar. Got: {texts:?}");
         assert!(pubgen_idx.is_some(), "Publication menu must be present in menu bar. Got: {texts:?}");
         assert!(help_idx.is_some(), "Help menu must be present in menu bar. Got: {texts:?}");
         assert!(pubgen_idx.unwrap() < help_idx.unwrap(), "Publication must appear before Help");

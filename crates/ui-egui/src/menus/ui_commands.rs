@@ -115,6 +115,8 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("pubgen.marginsDialog", "Page Margins & Renumbering Options…", None, "{} — open the page utilities card"),
     #[cfg(feature = "pubgen")]
     ("pubgen.dualLanguage", "Dual Language Mode", Some("Ctrl+Shift+L"), "{} — toggle bilingual (ID/EN) output"),
+    #[cfg(feature = "pubgen")]
+    ("window.pubgenPanel", "PubGen Panel", None, "{} — show or hide the PubGen panel (Window panel toggle, like every other panel)"),
     ("app.palette", "Quick Apply…", Some("Cmd+Return"), "{} — search styles and commands"),
     ("app.preferences", "Preferences…", Some("Cmd+K"), "{}"),
     ("window.uiScale", "UI Scaling", None, "{scale: 0.5–3 (1 = 100%)} — the size of the whole interface"),
