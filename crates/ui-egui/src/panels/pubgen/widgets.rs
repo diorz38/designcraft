@@ -78,66 +78,67 @@ fn pubgen_logo_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
 pub(crate) fn about_pubgen_dialog(app: &mut DesignApp, ctx: &egui::Context, open: &mut bool, t: &Tokens) {
     let mut is_open = *open;
     let mut close_clicked = false;
-    egui::Window::new(egui::RichText::new("About PubGen").size(15.0))
-        .open(&mut is_open)
+    let rtl = crate::i18n::is_rtl(&app.ui.language);
+    let window = egui::Window::new(egui::RichText::new("About PubGen").size(15.0))
         .collapsible(false)
         .resizable(false)
         .default_width(420.0)
         .pivot(egui::Align2::CENTER_CENTER)
-        .default_pos(ctx.content_rect().center())
-        .show(ctx, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.add_space(10.0);
-                if let Some(tex) = pubgen_logo_texture(ctx) {
-                    let logo_size = vec2(72.0, 72.0);
-                    ui.image((tex.id(), logo_size));
-                } else {
-                    let (r, _) = ui.allocate_exact_size(vec2(72.0, 72.0), Sense::hover());
-                    let p = ui.painter();
-                    p.rect_filled(r, 6.0, t.accent);
-                    crate::rtl::paint(p, r.center(), egui::Align2::CENTER_CENTER, "PubGen", crate::theme::semibold(16.0), Color32::WHITE);
+        .default_pos(ctx.content_rect().center());
+    let response = window.show(ctx, |ui| {
+        ui.vertical_centered(|ui| {
+            ui.add_space(10.0);
+            if let Some(tex) = pubgen_logo_texture(ctx) {
+                let logo_size = vec2(72.0, 72.0);
+                ui.image((tex.id(), logo_size));
+            } else {
+                let (r, _) = ui.allocate_exact_size(vec2(72.0, 72.0), Sense::hover());
+                let p = ui.painter();
+                p.rect_filled(r, 6.0, t.accent);
+                crate::rtl::paint(p, r.center(), egui::Align2::CENTER_CENTER, "PubGen", crate::theme::semibold(16.0), Color32::WHITE);
+            }
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new("PubGen").font(crate::theme::semibold(22.0)).color(t.text_strong));
+            ui.label(egui::RichText::new("Publication Generator").font(crate::theme::semibold(14.0)).color(t.text));
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new("Automated multi-page statistical report & catalogue publishing generator for BPS.").size(12.0).color(t.text_dim),
+            );
+            ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(10.0);
+
+            ui.label(egui::RichText::new("Developed by IPDS BPS Karawang\nBudi Yunior (dior@bps.go.id)").size(12.5).color(t.text_strong));
+            ui.add_space(4.0);
+
+            let mail_resp = ui
+                .add(egui::Label::new(egui::RichText::new("dior@bps.go.id").size(12.0).color(t.accent).underline()).sense(Sense::click()))
+                .on_hover_text("Send email to dior@bps.go.id")
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if mail_resp.clicked() {
+                app.ui.pending_urls.push("mailto:dior@bps.go.id".to_string());
+            }
+
+            ui.add_space(16.0);
+            ui.separator();
+            ui.horizontal(|ui| {
+                // PubGen replaces DesignCraft's menu bar by default; give the full one back here
+                // too, so the About window is always a way back.
+                let pubgen_on = crate::menus::pubgen_bar::pubgen_menus_on(ui.ctx());
+                let toggle = if pubgen_on { "Show DesignCraft Menus" } else { "Show PubGen Menus" };
+                if ui.button(toggle).clicked() {
+                    crate::menus::pubgen_bar::set_pubgen_menus_on(ui.ctx(), !pubgen_on);
                 }
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new("PubGen").font(crate::theme::semibold(22.0)).color(t.text_strong));
-                ui.label(egui::RichText::new("Publication Generator").font(crate::theme::semibold(14.0)).color(t.text));
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new("Automated multi-page statistical report & catalogue publishing generator for BPS.")
-                        .size(12.0)
-                        .color(t.text_dim),
-                );
-                ui.add_space(12.0);
-                ui.separator();
-                ui.add_space(10.0);
-
-                ui.label(egui::RichText::new("Developed by IPDS BPS Karawang\nBudi Yunior (dior@bps.go.id)").size(12.5).color(t.text_strong));
-                ui.add_space(4.0);
-
-                let mail_resp = ui
-                    .add(egui::Label::new(egui::RichText::new("dior@bps.go.id").size(12.0).color(t.accent).underline()).sense(Sense::click()))
-                    .on_hover_text("Send email to dior@bps.go.id")
-                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                if mail_resp.clicked() {
-                    app.ui.pending_urls.push("mailto:dior@bps.go.id".to_string());
+                if ui.button("Close").clicked() {
+                    close_clicked = true;
                 }
-
-                ui.add_space(16.0);
-                ui.separator();
-                ui.horizontal(|ui| {
-                    // PubGen replaces DesignCraft's menu bar by default; give the full one back here
-                    // too, so the About window is always a way back.
-                    let pubgen_on = crate::menus::pubgen_bar::pubgen_menus_on(ui.ctx());
-                    let toggle = if pubgen_on { "Show DesignCraft Menus" } else { "Show PubGen Menus" };
-                    if ui.button(toggle).clicked() {
-                        crate::menus::pubgen_bar::set_pubgen_menus_on(ui.ctx(), !pubgen_on);
-                    }
-                    if ui.button("Close").clicked() {
-                        close_clicked = true;
-                    }
-                });
-                ui.add_space(4.0);
             });
+            ui.add_space(4.0);
         });
+    });
+    if let Some(response) = response {
+        super::dialogs::close_button_overlay(ctx, "about", rtl, response.response.rect, &mut is_open);
+    }
     *open = is_open && !close_clicked;
 }
 

@@ -1927,46 +1927,50 @@ pub(crate) fn compile_new_project_dialog_ui(app: &mut DesignApp, ui: &mut Ui, st
 
     let lang = app.ui.language.clone();
 
-    egui::Window::new(RichText::new(crate::i18n::tr(&lang, "New Publication Project (pubgen_project.json)")).size(14.0).color(t.text))
-        .open(&mut open)
+    let rtl = crate::i18n::is_rtl(&lang);
+
+    let window = egui::Window::new(RichText::new(crate::i18n::tr(&lang, "New Publication Project (pubgen_project.json)")).size(14.0).color(t.text))
         .collapsible(false)
         .resizable(true)
         .default_width(580.0)
-        .default_height(600.0)
-        .show(ui.ctx(), |ui| {
-            // Tabs
-            ui.horizontal(|ui| {
-                ui.selectable_value(&mut dialog.tab, NewProjectTab::Files, crate::i18n::tr(&lang, "1. Files & Chapters"));
-                ui.selectable_value(&mut dialog.tab, NewProjectTab::Cover, crate::i18n::tr(&lang, "2. Cover Style"));
-                ui.selectable_value(&mut dialog.tab, NewProjectTab::TocAndLayout, crate::i18n::tr(&lang, "3. TOC & Layout"));
-            });
-            ui.separator();
+        .default_height(600.0);
+    let response = window.show(ui.ctx(), |ui| {
+        // Tabs
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut dialog.tab, NewProjectTab::Files, crate::i18n::tr(&lang, "1. Files & Chapters"));
+            ui.selectable_value(&mut dialog.tab, NewProjectTab::Cover, crate::i18n::tr(&lang, "2. Cover Style"));
+            ui.selectable_value(&mut dialog.tab, NewProjectTab::TocAndLayout, crate::i18n::tr(&lang, "3. TOC & Layout"));
+        });
+        ui.separator();
 
-            egui::ScrollArea::vertical().max_height(480.0).show(ui, |ui| match dialog.tab {
-                NewProjectTab::Files => render_new_project_files_tab(app, ui, &mut dialog, t, &lang),
-                NewProjectTab::Cover => render_new_project_cover_tab(app, ui, &mut dialog, t, &lang),
-                NewProjectTab::TocAndLayout => render_new_project_toc_tab(ui, &mut dialog, t, &lang),
-            });
+        egui::ScrollArea::vertical().max_height(480.0).show(ui, |ui| match dialog.tab {
+            NewProjectTab::Files => render_new_project_files_tab(app, ui, &mut dialog, t, &lang),
+            NewProjectTab::Cover => render_new_project_cover_tab(app, ui, &mut dialog, t, &lang),
+            NewProjectTab::TocAndLayout => render_new_project_toc_tab(ui, &mut dialog, t, &lang),
+        });
 
-            ui.separator();
-            if let Some(err) = &dialog.error_message {
-                ui.label(RichText::new(err).size(11.0).color(egui::Color32::from_rgb(220, 80, 80)));
+        ui.separator();
+        if let Some(err) = &dialog.error_message {
+            ui.label(RichText::new(err).size(11.0).color(egui::Color32::from_rgb(220, 80, 80)));
+        }
+
+        ui.horizontal(|ui| {
+            if ui.button(crate::i18n::tr(&lang, "Cancel")).clicked() {
+                close = true;
             }
-
-            ui.horizontal(|ui| {
-                if ui.button(crate::i18n::tr(&lang, "Cancel")).clicked() {
-                    close = true;
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button(RichText::new(crate::i18n::tr(&lang, "Save & Compile Now")).color(t.accent)).clicked() {
+                    save_and_compile = true;
                 }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(RichText::new(crate::i18n::tr(&lang, "Save & Compile Now")).color(t.accent)).clicked() {
-                        save_and_compile = true;
-                    }
-                    if ui.button(crate::i18n::tr(&lang, "Save Project Manifest")).clicked() {
-                        save_and_open = true;
-                    }
-                });
+                if ui.button(crate::i18n::tr(&lang, "Save Project Manifest")).clicked() {
+                    save_and_open = true;
+                }
             });
         });
+    });
+    if let Some(response) = response {
+        super::dialogs::close_button_overlay(ui.ctx(), "compile_new", rtl, response.response.rect, &mut open);
+    }
 
     if save_and_open || save_and_compile {
         match dialog.save_manifest() {

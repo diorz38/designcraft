@@ -453,50 +453,53 @@ pub fn dialog_ui(app: &mut DesignApp, st: &mut PubgenState, ui: &mut egui::Ui) {
     let Some(mut dialog) = st.ai_dialog.take() else { return };
     let mut open = true;
     let mut closed_by_x = false;
-    egui::Window::new(egui::RichText::new("Translate with AI — setup").size(15.0))
-        .open(&mut open)
+    let rtl = crate::i18n::is_rtl(&app.ui.language);
+    let window = egui::Window::new(egui::RichText::new("Translate with AI — setup").size(15.0))
         .collapsible(false)
         .resizable(false)
         .default_width(460.0)
         .pivot(egui::Align2::CENTER_CENTER)
-        .default_pos(ui.ctx().content_rect().center())
-        .show(ui.ctx(), |ui| {
-            ui.horizontal(|ui| {
-                ui.selectable_value(&mut dialog.tab, DIALOG_TAB_SETUP, "Setup");
-                ui.selectable_value(&mut dialog.tab, DIALOG_TAB_TERMINOLOGY, "Terminology");
-            });
-            ui.separator();
+        .default_pos(ui.ctx().content_rect().center());
+    let response = window.show(ui.ctx(), |ui| {
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut dialog.tab, DIALOG_TAB_SETUP, "Setup");
+            ui.selectable_value(&mut dialog.tab, DIALOG_TAB_TERMINOLOGY, "Terminology");
+        });
+        ui.separator();
 
-            if dialog.tab == DIALOG_TAB_TERMINOLOGY {
-                terminology_pane(app, st, &mut dialog, ui);
-                ui.separator();
-                ui.horizontal(|ui| {
-                    if ui.button("Close").clicked() {
-                        closed_by_x = true;
-                    }
-                });
-                return;
-            }
-
-            ui.horizontal(|ui| {
-                ui.radio_value(&mut dialog.provider, PROVIDER_GROQ, "Online — Groq (free account)");
-                ui.radio_value(&mut dialog.provider, PROVIDER_OFFLINE, "Offline on this computer");
-            });
-            ui.separator();
-
-            if dialog.provider == PROVIDER_GROQ {
-                groq_pane(app, st, &mut dialog, ui);
-            } else {
-                offline_pane(app, st, &mut dialog, ui);
-            }
-
+        if dialog.tab == DIALOG_TAB_TERMINOLOGY {
+            terminology_pane(app, st, &mut dialog, ui);
             ui.separator();
             ui.horizontal(|ui| {
                 if ui.button("Close").clicked() {
                     closed_by_x = true;
                 }
             });
+            return;
+        }
+
+        ui.horizontal(|ui| {
+            ui.radio_value(&mut dialog.provider, PROVIDER_GROQ, "Online — Groq (free account)");
+            ui.radio_value(&mut dialog.provider, PROVIDER_OFFLINE, "Offline on this computer");
         });
+        ui.separator();
+
+        if dialog.provider == PROVIDER_GROQ {
+            groq_pane(app, st, &mut dialog, ui);
+        } else {
+            offline_pane(app, st, &mut dialog, ui);
+        }
+
+        ui.separator();
+        ui.horizontal(|ui| {
+            if ui.button("Close").clicked() {
+                closed_by_x = true;
+            }
+        });
+    });
+    if let Some(response) = response {
+        super::dialogs::close_button_overlay(ui.ctx(), "ai_setup", rtl, response.response.rect, &mut open);
+    }
     open &= !closed_by_x;
     if dialog.close_requested || !open {
         st.ai_dialog = None;
