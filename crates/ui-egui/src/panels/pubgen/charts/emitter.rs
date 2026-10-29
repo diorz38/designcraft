@@ -509,7 +509,9 @@ pub fn emit_chart(
         // Male Header + Icon
         let icon_h = 18.0f64;
         let icon_w = 8.0f64;
-        let _ = emit_male_pictogram(app, spread_idx, [center_left - 24.0, hdr_y0 + 4.0, center_left - 24.0 + icon_w, hdr_y0 + 4.0 + icon_h], male_color);
+        if let Ok(ids) = emit_male_pictogram(app, spread_idx, [center_left - 24.0, hdr_y0 + 4.0, center_left - 24.0 + icon_w, hdr_y0 + 4.0 + icon_h], male_color) {
+            frame_ids.extend(ids);
+        }
         if let Ok(fid) = emit_text(app, spread_idx, male_hdr_rect, &male_label, 8.5, true, "center", Some(male_color)) {
             frame_ids.push(fid);
         }
@@ -520,7 +522,9 @@ pub fn emit_chart(
         }
 
         // Female Header + Icon
-        let _ = emit_female_pictogram(app, spread_idx, [center_right + 16.0, hdr_y0 + 4.0, center_right + 16.0 + icon_w, hdr_y0 + 4.0 + icon_h], female_color);
+        if let Ok(ids) = emit_female_pictogram(app, spread_idx, [center_right + 16.0, hdr_y0 + 4.0, center_right + 16.0 + icon_w, hdr_y0 + 4.0 + icon_h], female_color) {
+            frame_ids.extend(ids);
+        }
         if let Ok(fid) = emit_text(app, spread_idx, female_hdr_rect, &female_label, 8.5, true, "center", Some(female_color)) {
             frame_ids.push(fid);
         }
@@ -583,48 +587,57 @@ pub fn emit_chart(
             }
 
             // Col 1: Male (Icon on left, texts on right)
-            let icon_pad = 12.0f64;
-            let icon_w = 12.0f64;
-            let icon_h = 28.0f64;
+            let icon_pad = 8.0f64;
+            let icon_w = 9.0f64;
+            let icon_h = 24.0f64;
             let icon_y = s_rect[1] + (s_rect[3] - s_rect[1] - icon_h) / 2.0;
-            let _ = emit_male_pictogram(app, spread_idx, [s_rect[0] + icon_pad, icon_y, s_rect[0] + icon_pad + icon_w, icon_y + icon_h], male_color);
+            if let Ok(ids) = emit_male_pictogram(app, spread_idx, [s_rect[0] + icon_pad, icon_y, s_rect[0] + icon_pad + icon_w, icon_y + icon_h], male_color) {
+                frame_ids.extend(ids);
+            }
 
-            let text_x0 = s_rect[0] + icon_pad + icon_w + 10.0;
-            let text_x1 = d1 - 4.0;
-            let c1_title = [text_x0, s_rect[1] + 5.0, text_x1, s_rect[1] + 16.0];
-            let c1_num = [text_x0, s_rect[1] + 16.0, text_x1, s_rect[1] + 34.0];
-            let c1_sub = [text_x0, s_rect[1] + 34.0, text_x1, s_rect[3] - 4.0];
-            let _ = emit_text(app, spread_idx, c1_title, &summary.male_label, 7.0, true, "left", Some(male_color)).map(|id| frame_ids.push(id));
+            let text_x0 = s_rect[0] + icon_pad + icon_w + 6.0;
+            let text_x1 = d1 - 2.0;
+            let c1_title = [text_x0, s_rect[1] + 4.0, text_x1, s_rect[1] + 16.0];
+            let c1_num = [text_x0, s_rect[1] + 15.0, text_x1, s_rect[1] + 33.0];
+            let c1_sub = [text_x0, s_rect[1] + 33.0, text_x1, s_rect[3] - 3.0];
+            let _ = emit_text(app, spread_idx, c1_title, &summary.male_label, 6.0, true, "left", Some(male_color)).map(|id| frame_ids.push(id));
             let _ = emit_text(app, spread_idx, c1_num, &format_indonesian_number(summary.total_male), 13.0, true, "left", Some("#0F172A")).map(|id| frame_ids.push(id));
             let _ = emit_text(app, spread_idx, c1_sub, "jiwa (people)", 6.5, false, "left", Some("#64748B")).map(|id| frame_ids.push(id));
 
             // Col 2: Total Population (Family/Group Icon on left, texts on right)
-            let grp_w = 24.0f64;
-            let grp_h = 24.0f64;
-            let grp_x = d1 + 10.0;
+            let grp_w = 18.0f64;
+            let grp_h = 22.0f64;
+            let grp_pad = 6.0f64;
+            let grp_x = d1 + grp_pad;
             let grp_y = s_rect[1] + (s_rect[3] - s_rect[1] - grp_h) / 2.0;
-            let _ = emit_group_pictogram(app, spread_idx, [grp_x, grp_y, grp_x + grp_w, grp_y + grp_h], "#0F172A");
+            if let Ok(ids) = emit_group_pictogram(app, spread_idx, [grp_x, grp_y, grp_x + grp_w, grp_y + grp_h], "#0F172A") {
+                frame_ids.extend(ids);
+            }
 
-            let c2_text_x0 = grp_x + grp_w + 10.0;
-            let c2_text_x1 = d2 - 4.0;
-            let c2_title = [c2_text_x0, s_rect[1] + 5.0, c2_text_x1, s_rect[1] + 16.0];
-            let c2_num = [c2_text_x0, s_rect[1] + 16.0, c2_text_x1, s_rect[1] + 34.0];
-            let c2_sub = [c2_text_x0, s_rect[1] + 34.0, c2_text_x1, s_rect[3] - 4.0];
-            let _ = emit_text(app, spread_idx, c2_title, &summary.combined_label, 7.0, true, "left", Some("#0F172A")).map(|id| frame_ids.push(id));
+            let c2_text_x0 = grp_x + grp_w + 6.0;
+            let c2_text_x1 = d2 - 2.0;
+            let c2_title = [c2_text_x0, s_rect[1] + 4.0, c2_text_x1, s_rect[1] + 16.0];
+            let c2_num = [c2_text_x0, s_rect[1] + 15.0, c2_text_x1, s_rect[1] + 33.0];
+            let c2_sub = [c2_text_x0, s_rect[1] + 33.0, c2_text_x1, s_rect[3] - 3.0];
+            let _ = emit_text(app, spread_idx, c2_title, &summary.combined_label, 6.0, true, "left", Some("#0F172A")).map(|id| frame_ids.push(id));
             let _ = emit_text(app, spread_idx, c2_num, &format_indonesian_number(summary.total_combined), 14.0, true, "left", Some("#0F172A")).map(|id| frame_ids.push(id));
             let _ = emit_text(app, spread_idx, c2_sub, "jiwa (people)", 6.5, false, "left", Some("#64748B")).map(|id| frame_ids.push(id));
 
             // Col 3: Female (Icon on left, texts on right)
-            let fem_x = d2 + 12.0;
+            let fem_pad = 8.0f64;
+            let fem_w = 9.0f64;
+            let fem_x = d2 + fem_pad;
             let fem_y = s_rect[1] + (s_rect[3] - s_rect[1] - icon_h) / 2.0;
-            let _ = emit_female_pictogram(app, spread_idx, [fem_x, fem_y, fem_x + icon_w, fem_y + icon_h], female_color);
+            if let Ok(ids) = emit_female_pictogram(app, spread_idx, [fem_x, fem_y, fem_x + fem_w, fem_y + icon_h], female_color) {
+                frame_ids.extend(ids);
+            }
 
-            let c3_text_x0 = fem_x + icon_w + 10.0;
-            let c3_text_x1 = s_rect[2] - 4.0;
-            let c3_title = [c3_text_x0, s_rect[1] + 5.0, c3_text_x1, s_rect[1] + 16.0];
-            let c3_num = [c3_text_x0, s_rect[1] + 16.0, c3_text_x1, s_rect[1] + 34.0];
-            let c3_sub = [c3_text_x0, s_rect[1] + 34.0, c3_text_x1, s_rect[3] - 4.0];
-            let _ = emit_text(app, spread_idx, c3_title, &summary.female_label, 7.0, true, "left", Some(female_color)).map(|id| frame_ids.push(id));
+            let c3_text_x0 = fem_x + fem_w + 6.0;
+            let c3_text_x1 = s_rect[2] - 2.0;
+            let c3_title = [c3_text_x0, s_rect[1] + 4.0, c3_text_x1, s_rect[1] + 16.0];
+            let c3_num = [c3_text_x0, s_rect[1] + 15.0, c3_text_x1, s_rect[1] + 33.0];
+            let c3_sub = [c3_text_x0, s_rect[1] + 33.0, c3_text_x1, s_rect[3] - 3.0];
+            let _ = emit_text(app, spread_idx, c3_title, &summary.female_label, 6.0, true, "left", Some(female_color)).map(|id| frame_ids.push(id));
             let _ = emit_text(app, spread_idx, c3_num, &format_indonesian_number(summary.total_female), 13.0, true, "left", Some("#0F172A")).map(|id| frame_ids.push(id));
             let _ = emit_text(app, spread_idx, c3_sub, "jiwa (people)", 6.5, false, "left", Some("#64748B")).map(|id| frame_ids.push(id));
         }
@@ -865,21 +878,26 @@ mod tests {
         let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
         let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
 
-        assert!(count >= 20, "Population pyramid must emit bars, labels, ticks, pictograms, and summary frames");
+        assert!(count >= 30, "Population pyramid must emit bars, labels, ticks, pictograms, and summary frames (got {count})");
 
-        // Verify that bars have stroke outlines
+        // Verify that bars have stroke outlines and pictograms (ellipses & polygons) are inside the group
         let active = app.session.active().unwrap();
         let mut bar_strokes = 0;
+        let mut pictogram_shapes = 0;
         for it in &active.doc.spreads[0].items {
             if let designcraft_doc::Content::Group { items } = &it.content {
                 for kid in items {
                     if kid.stroke.weight > 0.0 {
                         bar_strokes += 1;
                     }
+                    if matches!(kid.shape, designcraft_doc::Shape::Oval | designcraft_doc::Shape::Polygon) {
+                        pictogram_shapes += 1;
+                    }
                 }
             }
         }
         assert!(bar_strokes >= 4, "Population pyramid bars must have stroke outlines (got {bar_strokes})");
+        assert!(pictogram_shapes >= 8, "Pictograms must be included inside the chart group (got {pictogram_shapes})");
     }
 
     #[test]
