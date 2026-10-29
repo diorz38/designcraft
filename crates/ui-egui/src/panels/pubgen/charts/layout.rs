@@ -269,6 +269,8 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
         override_max.max(raw_max).max(1.0)
     } else if matches!(spec.chart_type, ChartType::Gauge) {
         if matches!(spec.value_format, super::spec::ValueFormat::Percent) { 100.0 } else { compute_nice_ceiling(raw_max.max(1.0)) }
+    } else if matches!(spec.chart_type, ChartType::PopulationPyramid) {
+        compute_pyramid_ceiling(raw_max)
     } else {
         compute_nice_ceiling(raw_max)
     };
@@ -380,6 +382,25 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
         }
         ChartType::Gauge => layout_gauge(spec, categories, series_values, plot_rect, ceiling, bilingual, legend_items, axis_baseline, axis_left),
     }
+}
+
+/// Compute nice rounded ceiling specifically for 4-interval population pyramids.
+/// E.g. raw_max 7940 -> ceiling 8000 (step 2000: 0, 2k, 4k, 6k, 8k);
+///      raw_max 11240 -> ceiling 12000 (step 3000: 0, 3k, 6k, 9k, 12k).
+pub fn compute_pyramid_ceiling(raw: f64) -> f64 {
+    if raw <= 0.0 {
+        return 4000.0;
+    }
+    let raw_step = raw / 4.0;
+    let magnitude = 10.0f64.powf(raw_step.log10().floor());
+    let normalized = raw_step / magnitude;
+
+    // Clean step multipliers for 4-interval axis:
+    // (1.0 -> 4k, 1.25 -> 5k, 1.5 -> 6k, 2.0 -> 8k, 2.5 -> 10k, 3.0 -> 12k, 4.0 -> 16k, 5.0 -> 20k, 6.0 -> 24k, 7.5 -> 30k, 8.0 -> 32k, 10.0 -> 40k)
+    const NICE_STEPS: [f64; 12] = [1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.5, 8.0, 10.0];
+    let step_mult = NICE_STEPS.iter().copied().find(|&s| s >= normalized - 1e-9).unwrap_or(10.0);
+    let step = step_mult * magnitude;
+    step * 4.0
 }
 
 /// Compute nice rounded ceiling for chart axis.
@@ -1296,5 +1317,22 @@ mod tests {
         assert_eq!(g.needle_points.len(), 3, "Needle must be a triangular polygon");
         assert_eq!(g.readout_text, "75.0%");
         assert_eq!(g.subtitle_text, "Pencapaian Target");
+    }
+
+    #[test]
+    fn test_compute_pyramid_ceiling_rounds_to_tight_4_step_intervals() {
+        // User example 1: max 7940 -> ceiling 8000 (0, 2000, 4000, 6000, 8000)
+        assert_eq!(compute_pyramid_ceiling(7940.0), 8000.0);
+
+        // User example 2: max 11240 -> ceiling 12000 (0, 3000, 6000, 9000, 12000)
+        assert_eq!(compute_pyramid_ceiling(11240.0), 12000.0);
+
+        // Other common BPS scale thresholds
+        assert_eq!(compute_pyramid_ceiling(8000.0), 8000.0);
+        assert_eq!(compute_pyramid_ceiling(8001.0), 10000.0);
+        assert_eq!(compute_pyramid_ceiling(4500.0), 5000.0);
+        assert_eq!(compute_pyramid_ceiling(5500.0), 6000.0);
+        assert_eq!(compute_pyramid_ceiling(15500.0), 16000.0);
+        assert_eq!(compute_pyramid_ceiling(19500.0), 20000.0);
     }
 }
