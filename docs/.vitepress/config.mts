@@ -12,7 +12,10 @@ export default defineConfig({
   // Links to repo files outside docs/ (contributors.md, ROADMAP.md, etc.)
   ignoreDeadLinks: [/^\/pubgen\/..*\//, /\.\.\/(ROADMAP|contributors)/],
 
-  head: [['link', { rel: 'icon', type: 'image/png', href: '/pubgen/images/thumb01.png' }]],
+  // Serve docs/images (referenced by ASSETS.md / cargo xtask assets) without moving them.
+  vite: { publicDir: '../images' },
+
+  head: [['link', { rel: 'icon', type: 'image/png', href: '/pubgen/thumb01.png' }]],
 
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
