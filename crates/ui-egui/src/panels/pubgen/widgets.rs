@@ -76,62 +76,62 @@ fn pubgen_logo_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
 
 /// About PubGen popup dialog modal styled like About DesignCraft.
 pub(crate) fn about_pubgen_dialog(app: &mut DesignApp, ctx: &egui::Context, open: &mut bool, t: &Tokens) {
-    let area = egui::Id::unique("about_pubgen_modal");
-    let instance = area.with("placement");
-    let resp = crate::modal_drag::modal(ctx, area, instance).show(ctx, |ui| {
-        ui.set_width(420.0);
-        let margin = egui::Frame::popup(ui.style()).inner_margin;
-        let top = ui.cursor().top();
-        let title_row = Rect::from_min_max(
-            pos2(ui.max_rect().left() - margin.leftf(), top - margin.topf()),
-            pos2(ui.max_rect().right() + margin.rightf(), top + ui.spacing().interact_size.y),
-        );
-        crate::modal_drag::title_drag(ui, instance, title_row);
+    let mut is_open = *open;
+    let mut close_clicked = false;
+    egui::Window::new(egui::RichText::new("About PubGen").size(15.0))
+        .open(&mut is_open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(420.0)
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(ctx.content_rect().center())
+        .show(ctx, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.add_space(10.0);
+                if let Some(tex) = pubgen_logo_texture(ctx) {
+                    let logo_size = vec2(72.0, 72.0);
+                    ui.image((tex.id(), logo_size));
+                } else {
+                    let (r, _) = ui.allocate_exact_size(vec2(72.0, 72.0), Sense::hover());
+                    let p = ui.painter();
+                    p.rect_filled(r, 6.0, t.accent);
+                    crate::rtl::paint(p, r.center(), egui::Align2::CENTER_CENTER, "PubGen", crate::theme::semibold(16.0), Color32::WHITE);
+                }
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new("PubGen").font(crate::theme::semibold(22.0)).color(t.text_strong));
+                ui.label(egui::RichText::new("Publication Generator").font(crate::theme::semibold(14.0)).color(t.text));
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new("Automated multi-page statistical report & catalogue publishing generator for BPS.")
+                        .size(12.0)
+                        .color(t.text_dim),
+                );
+                ui.add_space(12.0);
+                ui.separator();
+                ui.add_space(10.0);
 
-        ui.vertical_centered(|ui| {
-            ui.add_space(10.0);
-            if let Some(tex) = pubgen_logo_texture(ctx) {
-                let logo_size = vec2(72.0, 72.0);
-                ui.image((tex.id(), logo_size));
-            } else {
-                let (r, _) = ui.allocate_exact_size(vec2(72.0, 72.0), Sense::hover());
-                let p = ui.painter();
-                p.rect_filled(r, 6.0, t.accent);
-                crate::rtl::paint(p, r.center(), egui::Align2::CENTER_CENTER, "PubGen", crate::theme::semibold(16.0), Color32::WHITE);
-            }
-            ui.add_space(8.0);
-            ui.label(egui::RichText::new("PubGen").font(crate::theme::semibold(22.0)).color(t.text_strong));
-            ui.label(egui::RichText::new("Publication Generator").font(crate::theme::semibold(14.0)).color(t.text));
-            ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new("Automated multi-page statistical report & catalogue publishing generator for BPS.").size(12.0).color(t.text_dim),
-            );
-            ui.add_space(12.0);
-            ui.separator();
-            ui.add_space(10.0);
+                ui.label(egui::RichText::new("Developed by IPDS BPS Karawang\nBudi Yunior (dior@bps.go.id)").size(12.5).color(t.text_strong));
+                ui.add_space(4.0);
 
-            ui.label(egui::RichText::new("Developed by IPDS BPS Karawang\nBudi Yunior (dior@bps.go.id)").size(12.5).color(t.text_strong));
-            ui.add_space(4.0);
+                let mail_resp = ui
+                    .add(egui::Label::new(egui::RichText::new("dior@bps.go.id").size(12.0).color(t.accent).underline()).sense(Sense::click()))
+                    .on_hover_text("Send email to dior@bps.go.id")
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                if mail_resp.clicked() {
+                    app.ui.pending_urls.push("mailto:dior@bps.go.id".to_string());
+                }
 
-            let mail_resp = ui
-                .add(egui::Label::new(egui::RichText::new("dior@bps.go.id").size(12.0).color(t.accent).underline()).sense(Sense::click()))
-                .on_hover_text("Send email to dior@bps.go.id")
-                .on_hover_cursor(egui::CursorIcon::PointingHand);
-            if mail_resp.clicked() {
-                app.ui.pending_urls.push("mailto:dior@bps.go.id".to_string());
-            }
-
-            ui.add_space(16.0);
-            if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&app.ui.language, "  Close  "))).clicked() {
-                *open = false;
-            }
-            ui.add_space(6.0);
+                ui.add_space(16.0);
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui.button("Close").clicked() {
+                        close_clicked = true;
+                    }
+                });
+                ui.add_space(4.0);
+            });
         });
-    });
-
-    if resp.should_close() {
-        *open = false;
-    }
+    *open = is_open && !close_clicked;
 }
 
 /// A prominent outline button for primary workflow actions (Master Excel ingest).
@@ -738,6 +738,8 @@ pub(crate) fn card2_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenSta
 
 #[allow(dead_code)]
 pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    let max_w = ui.available_width();
+    ui.set_max_width(max_w);
     // 1. Template Style with Hover Thumbnail Preview
     ui.horizontal(|ui| {
         ui.label(RichText::new("Style:").size(11.0).color(t.text));
@@ -1421,6 +1423,75 @@ pub(crate) fn manual_import_accordion_ui(app: &mut DesignApp, ui: &mut Ui, st: &
     .show(ui, |ui| {
         card_header_footer_body_ui(app, ui, st, t);
     });
+
+    divider(ui);
+
+    egui::CollapsingHeader::new(crate::rtl::widget(
+        ui,
+        egui::RichText::new(crate::i18n::tr(&app.ui.language, "Vector Chart (Add or Edit Chart)")).size(11.0).color(t.text_strong),
+    ))
+    .id_salt("pubgen_collapse_chart")
+    .default_open(true)
+    .show(ui, |ui| {
+        card_chart_body_ui(app, ui, st, t);
+    });
+}
+
+pub(crate) fn card_chart_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
+    let lang = app.ui.language.clone();
+    let has_doc = app.session.active().is_some();
+    let cur_page = crate::canvas::current_page(app).unwrap_or(0);
+    let cur_spread = app.session.active().and_then(|a| a.doc.page_loc(cur_page)).map_or(0, |(si, _)| si);
+
+    // Check if current spread has a chart
+    let has_chart_on_spread = app.session.active().is_some_and(|active| {
+        active.doc.spreads.get(cur_spread).is_some_and(|sp| {
+            sp.items.iter().any(|it| {
+                if let designcraft_doc::Content::Text(tf) = &it.content
+                    && let Some(story) = active.doc.story(tf.story)
+                {
+                    let text = story.text.trim();
+                    text.starts_with("Grafik") || text.starts_with("Figure")
+                } else {
+                    false
+                }
+            })
+        })
+    });
+
+    let status_str = if !has_doc {
+        crate::i18n::tr(&lang, "No document open").to_string()
+    } else if has_chart_on_spread {
+        format!("{} (Spread {})", crate::i18n::tr(&lang, "Chart detected on current spread"), cur_spread + 1)
+    } else {
+        format!("{} (Spread {})", crate::i18n::tr(&lang, "No chart on current spread"), cur_spread + 1)
+    };
+
+    ui.label(RichText::new(status_str).size(10.5).color(if has_chart_on_spread { egui::Color32::from_rgb(46, 125, 50) } else { t.text_dim }));
+
+    ui.add_space(4.0);
+
+    ui.horizontal(|ui| {
+        let add_btn = ui.add_enabled(has_doc, egui::Button::new(RichText::new(crate::i18n::tr(&lang, "➕ Add New Chart…")).size(11.0)));
+        if add_btn.clicked() {
+            st.chart_dialog = Some(Box::new(super::charts::dialog::ChartDialog::new(app, false)));
+        }
+
+        let edit_btn = ui.add_enabled(
+            has_doc && has_chart_on_spread,
+            egui::Button::new(RichText::new(crate::i18n::tr(&lang, "✏️ Edit Current Chart…")).size(11.0)),
+        );
+        if edit_btn.clicked() {
+            st.chart_dialog = Some(Box::new(super::charts::dialog::ChartDialog::new(app, true)));
+        }
+    });
+
+    ui.add_space(4.0);
+    ui.label(
+        RichText::new(crate::i18n::tr(&lang, "Supports Bar, Stacked, Horizontal, Line, Area, and Donut with BPS palette & bilingual titles."))
+            .size(9.5)
+            .color(t.text_dim),
+    );
 }
 
 #[cfg(test)]

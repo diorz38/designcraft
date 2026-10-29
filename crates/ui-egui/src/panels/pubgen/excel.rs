@@ -1053,11 +1053,22 @@ pub fn extract_dotted_number(text: &str) -> Option<String> {
 /// Row 2: file;[path of image file] (or col 0: file, col 1: path)
 /// Row 3 (optional): template;[template path or ID]
 pub fn parse_chart_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String, String, String, String, Option<String>)> {
-    let row1 = sheet.grid.first()?;
-    let row2 = sheet.grid.get(1);
+    let (title_val, file_val) = if let Some(spec) = super::charts::spec::parse_chart_spec(sheet) {
+        let t =
+            if !spec.title_id.is_empty() { spec.title_id } else { sheet.grid.first().map(|r| extract_field_lenient(r, "title")).unwrap_or_default() };
+        let f = sheet.grid.iter().find_map(|r| extract_field_for_keys(r, &["file", "file_path", "image", "gambar"])).unwrap_or_default();
+        (t, f)
+    } else {
+        let row1 = sheet.grid.first()?;
+        let row2 = sheet.grid.get(1);
+        let title = extract_field_lenient(row1, "title");
+        let file = row2.map(|r| extract_field_lenient(r, "file")).unwrap_or_default();
+        (title, file)
+    };
 
-    let title_val = extract_field_lenient(row1, "title");
-    let file_val = row2.map(|r| extract_field_lenient(r, "file")).unwrap_or_default();
+    if title_val.is_empty() && file_val.is_empty() {
+        return None;
+    }
 
     let first_word = title_val.split_whitespace().next().unwrap_or("Grafik");
     let type_val = if ["grafik", "graph", "chart", "bagan", "diagram", "peta", "map"].iter().any(|k| first_word.eq_ignore_ascii_case(k)) {
@@ -1459,6 +1470,17 @@ pub fn worksheet_to_csv(sheet: &ExcelSheetData) -> Option<String> {
     worksheet_to_csv_with_theme(sheet, None)
 }
 
+/// Convert a single worksheet to raw CSV string preserving every row and column cell as-is.
+pub fn raw_sheet_to_csv(sheet: &ExcelSheetData) -> String {
+    let mut out = String::new();
+    for row in &sheet.grid {
+        let line = row.iter().map(|c| escape_csv_field(c)).collect::<Vec<_>>().join(",");
+        out.push_str(&line);
+        out.push('\n');
+    }
+    out
+}
+
 struct CatalogEntryItem {
     entry_type: String,
     number: String,
@@ -1625,15 +1647,28 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
             && let Some((t_val, n_val, title_val, f_val, tpl_val)) = parse_chart_sheet_with_template(sheet)
         {
             let chart_theme = extract_theme_from_sheet(sheet);
+            let is_vector = super::charts::spec::parse_chart_spec(sheet).is_some();
+            let effective_file = if is_vector {
+                let filename = format!("{safe_name}.csv");
+                let csv_content = raw_sheet_to_csv(sheet);
+                table_csvs.push((filename.clone(), csv_content));
+                if f_val.is_empty() { filename } else { f_val }
+            } else {
+                f_val
+            };
+
+            let title_en_val =
+                super::charts::spec::parse_chart_spec(sheet).and_then(|s| if !s.title_en.is_empty() { Some(s.title_en) } else { None });
+
             entries.push(CatalogEntryItem {
                 entry_type: t_val,
                 number: n_val,
                 title: title_val,
-                file: f_val,
+                file: effective_file,
                 template: tpl_val,
                 image1: None,
                 image2: None,
-                title_en: None,
+                title_en: title_en_val,
                 file_en: None,
                 theme: chart_theme,
             });

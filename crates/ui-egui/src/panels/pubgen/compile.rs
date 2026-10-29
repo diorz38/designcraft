@@ -1204,7 +1204,14 @@ pub(crate) fn compile_project(app: &mut DesignApp, p: &Value) -> Result<Value, S
         let remembered = app.session.prefs.pubgen_project_path.trim();
         (!remembered.is_empty()).then(|| remembered.to_string())
     });
-    let path = path.ok_or_else(|| "no publication manifest: pass path or open one in the Pubgen panel".to_string())?;
+    let Some(path) = path else {
+        if let Some(ctx) = app.egui_ctx.clone() {
+            super::with_state(&ctx, |st| {
+                st.dialog_excel_open = true;
+            });
+        }
+        return Ok(serde_json::json!({"dialog": "pubgen.compileProject", "open": true}));
+    };
     if path.chars().count() > MAX_PATH_CHARS {
         return Err("path: too long".into());
     }

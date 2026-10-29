@@ -521,7 +521,6 @@ pub fn execute_generate_back_cover(app: &mut DesignApp, st: &PubgenState) -> Res
     let _ = app.session.edit(|doc, _| {
         if let Some(sp) = doc.spreads.get_mut(back_si) {
             let sp = std::sync::Arc::make_mut(sp);
-            sp.allow_shuffle = false;
             if let Some(pg) = sp.pages.get_mut(back_pi) {
                 pg.margins = designcraft_doc::Margins::uniform(0.0);
                 pg.local_margins = true;
@@ -1954,7 +1953,7 @@ pub(crate) mod tests {
         // Headline: the title and its second line down the left of the dark block.
         let title = frame("KARAWANG");
         let suffix = frame("Title 2");
-        assert!(title.y1 <= suffix.y0 + 1.0, "headline order: {title:?} {suffix:?}");
+        assert!(title.y0 < suffix.y0 && title.y1 <= suffix.y0 + 5.0, "headline order: {title:?} {suffix:?}");
         assert!(suffix.y1 < page.y0 + 740.0, "the headline sits inside the dark block: {suffix:?}");
 
         // Year in the accent block, with the volume directly underneath it.

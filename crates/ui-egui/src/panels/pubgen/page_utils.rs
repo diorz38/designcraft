@@ -310,6 +310,48 @@ pub fn execute_page_from_image(app: &mut DesignApp, st: &mut PubgenState, path: 
     Ok(format!("Placed '{filename}' as {mode_desc} on Page {cur_label}"))
 }
 
+/// Adds a blank page after `cur_page` (0-based) while preserving document facing-page rules.
+/// In Double-sided mode, ensures spreads strictly form facing pairs [Left, Right] rather than
+/// corrupted multi-page island spreads.
+pub fn execute_add_blank_page(app: &mut DesignApp, cur_page: usize) -> Result<String, String> {
+    let cur_label = app.session.page_label(cur_page);
+
+    // 1. Ensure all spreads allow shuffle so repaginate() can maintain proper facing-pages [Left, Right] spreads.
+    let _ = app.session.edit(|doc, _| {
+        for sp in &mut doc.spreads {
+            let sp = std::sync::Arc::make_mut(sp);
+            sp.allow_shuffle = true;
+        }
+        Ok(serde_json::Value::Null)
+    });
+
+    // 2. Insert 1 page after cur_page
+    app.run("layout.pages.insert", json!({"after": cur_page, "count": 1})).map_err(|e| format!("Failed to insert page: {e}"))?;
+
+    let next_page = cur_page + 1;
+
+    // 3. Apply standard document margins to the new page and ensure repaginate() cleans up spreads
+    let _ = app.session.edit(|doc, _| {
+        let margins = detect_document_margins(doc);
+        if let Some((si, pi)) = doc.page_loc(next_page) {
+            if let Some(sp) = doc.spreads.get_mut(si) {
+                let sp = std::sync::Arc::make_mut(sp);
+                if let Some(pg) = sp.pages.get_mut(pi) {
+                    pg.margins = margins;
+                    pg.local_margins = true;
+                }
+                sp.relayout();
+            }
+        }
+        doc.repaginate();
+        Ok(serde_json::Value::Null)
+    });
+
+    crate::canvas::go_to_page(app, next_page);
+    let next_label = app.session.page_label(next_page);
+    Ok(format!("Added blank page after Page {cur_label} (new Page {next_label})"))
+}
+
 pub(crate) fn page_utilities_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     section(ui, crate::i18n::tr(&app.ui.language, "4. Page Utilities"), true);
 
@@ -345,12 +387,13 @@ pub(crate) fn page_utilities_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubge
         let tip_page = format!("Insert a blank page after Page {cur_label}");
         let resp_page = outline_button(ui, add_page_text, hw).on_hover_text(tip_page);
         if resp_page.clicked() {
-            let _ = app.run("layout.pages.insert", json!({"after": cur_page, "count": 1}));
-            crate::canvas::go_to_page(app, cur_page + 1);
-            let next_label = app.session.page_label(cur_page + 1);
-            let msg = format!("Added blank page after Page {cur_label} (new Page {next_label})");
-            st.utilities_status = Some((msg.clone(), true));
-            st.card3_status = Some((msg, true));
+            let res = execute_add_blank_page(app, cur_page);
+            let (msg, ok) = match res {
+                Ok(m) => (m, true),
+                Err(e) => (e, false),
+            };
+            st.utilities_status = Some((msg.clone(), ok));
+            st.card3_status = Some((msg, ok));
         }
     });
 
@@ -823,6 +866,25 @@ pub(crate) mod tests {
                 assert!((pg.margins.inside - expected_inside).abs() < 1e-6);
                 assert!((pg.margins.outside - expected_outside).abs() < 1e-6);
             }
+        }
+    }
+
+    #[test]
+    fn test_add_blank_page_preserves_facing_pages_spreads() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"pages": 5})).unwrap();
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.spreads.len(), 3);
+        assert_eq!(active.doc.spreads[1].pages.len(), 2);
+
+        let res = execute_add_blank_page(&mut app, 2);
+        assert!(res.is_ok(), "execute_add_blank_page failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 6);
+        for (i, sp) in active.doc.spreads.iter().enumerate() {
+            assert!(sp.pages.len() <= 2, "Spread {i} has {} pages (> 2), violated facing pages rule!", sp.pages.len());
         }
     }
 }
