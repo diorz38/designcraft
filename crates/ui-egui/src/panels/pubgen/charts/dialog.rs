@@ -34,6 +34,23 @@ pub struct AvailableTable {
     pub label: String,
 }
 
+/// Where a new chart page should be placed in the document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChartPlacement {
+    /// Insert a new page after the currently selected / active page (or right before back cover if on last page / back cover)
+    SelectedPage,
+    /// Insert a new page right after the source table's page
+    AfterTable,
+    /// Place onto the current selected page without creating a new page
+    CurrentPage,
+}
+
+impl Default for ChartPlacement {
+    fn default() -> Self {
+        Self::AfterTable
+    }
+}
+
 /// Form state for the Chart Options popup window.
 #[derive(Debug, Clone)]
 pub struct ChartDialog {
@@ -63,9 +80,13 @@ pub struct ChartDialog {
     pub raw_data: String,
     /// Target spread index where the chart will be placed.
     pub target_spread: usize,
+    /// 0-based page number that was active/selected when dialog opened.
+    pub selected_page: usize,
     /// 1-based page number to import table data from.
     pub import_page: usize,
-    /// Whether to automatically insert a new page after the table/reference page and place the chart on it.
+    /// Insertion location mode.
+    pub placement: ChartPlacement,
+    /// Whether to automatically insert a new page and place the chart on it.
     pub insert_on_new_page: bool,
     /// If editing an existing chart on the spread, store its item ID to replace it.
     pub editing_item_id: Option<u64>,
@@ -179,7 +200,9 @@ impl Default for ChartDialog {
             max_value_override: String::new(),
             raw_data: DEFAULT_SAMPLE_CSV.into(),
             target_spread: 0,
+            selected_page: 0,
             import_page: 1,
+            placement: ChartPlacement::AfterTable,
             insert_on_new_page: true,
             editing_item_id: None,
             status: None,
@@ -195,13 +218,21 @@ impl ChartDialog {
             return dlg;
         };
 
-        let cur_page = crate::canvas::current_page(app).unwrap_or(0);
+        let cur_page = active.selection.page.or_else(|| crate::canvas::current_page(app)).unwrap_or(0);
         let cur_spread = active.doc.page_loc(cur_page).map_or(0, |(si, _)| si);
         dlg.target_spread = cur_spread;
+        dlg.selected_page = cur_page;
         dlg.import_page = cur_page.saturating_add(1);
 
         if edit {
+            dlg.placement = ChartPlacement::CurrentPage;
             dlg.insert_on_new_page = false;
+        } else {
+            dlg.placement = ChartPlacement::SelectedPage;
+            dlg.insert_on_new_page = true;
+        }
+
+        if edit {
             // Check if any selected item or spread item is a chart
             if let Some(spread) = active.doc.spreads.get(cur_spread) {
                 // If user selected an item, check that first
@@ -329,15 +360,45 @@ impl ChartDialog {
         let (categories, series_values) = extract_chart_data(&sheet_data, &spec).map_err(|e| format!("Failed to extract chart data: {e}"))?;
 
         // If insert_on_new_page is enabled and not editing an existing chart,
-        // automatically create a new blank page for the chart right after the table / reference page.
-        let target_page_idx = if self.insert_on_new_page && self.editing_item_id.is_none() {
-            let ref_page = if self.import_page > 0 { self.import_page.saturating_sub(1) } else { crate::canvas::current_page(app).unwrap_or(0) };
-            super::super::page_utils::execute_add_blank_page(app, ref_page)?;
+        // automatically create a new blank page for the chart according to placement mode.
+        let target_page_idx = if self.insert_on_new_page && self.editing_item_id.is_none() && self.placement != ChartPlacement::CurrentPage {
+            let is_back_cover = {
+                let active = app.session.active();
+                let total = active.as_ref().map(|a| a.doc.page_count()).unwrap_or(1);
+                let bp = active.as_ref().and_then(|a| crate::dock::pubgen::covers::find_back_cover_page(&a.doc));
+                bp == Some(self.selected_page) || (self.selected_page >= total.saturating_sub(1) && bp.is_some())
+            };
+
+            let ref_page = match self.placement {
+                ChartPlacement::SelectedPage => {
+                    if is_back_cover && self.selected_page > 0 {
+                        // When user selected the back cover (or last page), insert right before the back cover
+                        self.selected_page.saturating_sub(1)
+                    } else {
+                        self.selected_page
+                    }
+                }
+                ChartPlacement::AfterTable => {
+                    if self.import_page > 0 {
+                        self.import_page.saturating_sub(1)
+                    } else {
+                        self.selected_page
+                    }
+                }
+                ChartPlacement::CurrentPage => self.selected_page,
+            };
+
+            crate::dock::pubgen::page_utils::execute_add_blank_page(app, ref_page)?;
+            // Keep back cover at the very end of the document if one exists
+            crate::dock::pubgen::covers::ensure_back_cover_at_end(app);
+
             let new_page = ref_page + 1;
             crate::canvas::go_to_page(app, new_page);
             Some(new_page)
         } else {
-            crate::canvas::current_page(app)
+            let p = self.selected_page;
+            crate::canvas::go_to_page(app, p);
+            Some(p)
         };
 
         let (margin, target_sp) = {
@@ -905,6 +966,12 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
     let mut close = false;
     let mut apply = false;
 
+    if let Some(active) = app.session.active() {
+        if let Some(p) = active.selection.page {
+            dialog.selected_page = p;
+        }
+    }
+
     let lang = app.ui.language.clone();
     let is_editing = dialog.editing_item_id.is_some();
     let window_title =
@@ -972,8 +1039,51 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                     });
 
                     if !is_editing {
+                        let sel_label = app.session.page_label(dialog.selected_page);
+                        let tbl_label = format!("{}", dialog.import_page);
+                        let is_last_or_back_cover = {
+                            let active = app.session.active();
+                            let total = active.as_ref().map(|a| a.doc.page_count()).unwrap_or(1);
+                            let bp = active.as_ref().and_then(|a| crate::dock::pubgen::covers::find_back_cover_page(&a.doc));
+                            dialog.selected_page >= total.saturating_sub(1) || bp == Some(dialog.selected_page)
+                        };
+
                         ui.horizontal(|ui| {
-                            ui.checkbox(&mut dialog.insert_on_new_page, crate::i18n::tr(&lang, "Automatically insert new Chart Page after Table"));
+                            ui.label(RichText::new("📄").size(12.0));
+                            ui.label(RichText::new(crate::i18n::tr(&lang, "Insert Location:")).strong().size(11.0).color(t.text_strong));
+
+                            let opt_selected = if is_last_or_back_cover {
+                                format!("New Page before Last Page / Back Cover (p. {})", sel_label)
+                            } else {
+                                format!("New Page after Selected Page (p. {})", sel_label)
+                            };
+                            let opt_table = format!("New Page after Source Table (p. {})", tbl_label);
+                            let opt_current = format!("On Selected Page (p. {})", sel_label);
+
+                            let current_text = match dialog.placement {
+                                ChartPlacement::SelectedPage => &opt_selected,
+                                ChartPlacement::AfterTable => &opt_table,
+                                ChartPlacement::CurrentPage => &opt_current,
+                            };
+
+                            let combo_w = (ui.available_width() - 10.0).clamp(200.0, 360.0);
+                            craft_ui::ComboBox::from_id_salt("pubgen_chart_placement")
+                                .selected_text(current_text)
+                                .width(combo_w)
+                                .show_ui(ui, |ui| {
+                                    if ui.selectable_label(dialog.placement == ChartPlacement::SelectedPage, &opt_selected).clicked() {
+                                        dialog.placement = ChartPlacement::SelectedPage;
+                                        dialog.insert_on_new_page = true;
+                                    }
+                                    if ui.selectable_label(dialog.placement == ChartPlacement::AfterTable, &opt_table).clicked() {
+                                        dialog.placement = ChartPlacement::AfterTable;
+                                        dialog.insert_on_new_page = true;
+                                    }
+                                    if ui.selectable_label(dialog.placement == ChartPlacement::CurrentPage, &opt_current).clicked() {
+                                        dialog.placement = ChartPlacement::CurrentPage;
+                                        dialog.insert_on_new_page = false;
+                                    }
+                                });
                         });
                     }
                 });
@@ -1477,5 +1587,62 @@ mod tests {
         let (g1, g2) = split_grafik_title("Grafik 02.03 Jumlah Penduduk");
         assert_eq!(g1, "Grafik 02.03");
         assert_eq!(g2, "Jumlah Penduduk");
+    }
+
+    #[test]
+    fn test_chart_dialog_inserts_at_selected_page_regardless_of_imported_table_page() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"pages": 6})).unwrap();
+
+        let mut dlg = ChartDialog::default();
+        dlg.insert_on_new_page = true;
+        dlg.selected_page = 5; // User selected last page (0-indexed 5 = page 6)
+        dlg.import_page = 2; // Data was imported from table on page 2!
+        dlg.placement = ChartPlacement::SelectedPage;
+
+        let res = dlg.apply_chart(&mut app, false);
+        assert!(res.is_ok(), "apply_chart failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), 7, "A new chart page should have been inserted");
+
+        // Verify the chart was placed on page index 6 (the 7th page, inserted after page 5)
+        let (sp_idx, _) = active.doc.page_loc(6).unwrap();
+        assert!(!active.doc.spreads[sp_idx].items.is_empty(), "Spread for new page 6 must contain chart items");
+    }
+
+    #[test]
+    fn test_chart_dialog_inserts_before_back_cover_when_on_last_page() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"pages": 4})).unwrap();
+
+        let st = PubgenState::default();
+        crate::dock::pubgen::covers::execute_generate_back_cover(&mut app, &st).unwrap();
+
+        let active_initial = app.session.active().unwrap();
+        let initial_pages = active_initial.doc.page_count();
+        let back_initial = crate::dock::pubgen::covers::find_back_cover_page(&active_initial.doc);
+        assert_eq!(back_initial, Some(initial_pages - 1), "Back cover must be initial last page");
+
+        let last_idx = initial_pages - 1;
+        let mut dlg = ChartDialog::default();
+        dlg.insert_on_new_page = true;
+        dlg.selected_page = last_idx; // User selected the back cover
+        dlg.import_page = 1; // Table from chapter 1
+        dlg.placement = ChartPlacement::SelectedPage;
+
+        let res = dlg.apply_chart(&mut app, false);
+        assert!(res.is_ok(), "apply_chart failed: {:?}", res);
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), initial_pages + 1, "Document should have 1 additional page");
+
+        // The back cover must remain at the very end
+        let back_page = crate::dock::pubgen::covers::find_back_cover_page(&active.doc);
+        assert_eq!(back_page, Some(initial_pages), "Back cover must remain at the last page");
+
+        // The chart page must be placed on page index `last_idx` (right before the back cover)
+        let (chart_sp, _) = active.doc.page_loc(last_idx).unwrap();
+        assert!(!active.doc.spreads[chart_sp].items.is_empty(), "Spread for page before back cover must contain chart items");
     }
 }

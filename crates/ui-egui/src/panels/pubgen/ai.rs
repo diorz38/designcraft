@@ -874,10 +874,10 @@ impl BpsGlossary {
         let rel = std::path::Path::new("assets").join("pubgen").join(BPS_GLOSSARY_FILE);
         let from_manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join(&rel);
         let mut candidates = vec![rel.clone(), from_manifest];
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(exe_dir) = exe.parent() {
-                candidates.push(exe_dir.join(&rel));
-            }
+        if let Ok(exe) = std::env::current_exe()
+            && let Some(exe_dir) = exe.parent()
+        {
+            candidates.push(exe_dir.join(&rel));
         }
         candidates
     }

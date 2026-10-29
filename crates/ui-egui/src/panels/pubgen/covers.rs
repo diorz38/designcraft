@@ -103,12 +103,12 @@ fn resolve_template_path(path: &str) -> Option<std::path::PathBuf> {
     if from_manifest.is_file() {
         return Some(from_manifest);
     }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
-            let from_exe = exe_dir.join(path);
-            if from_exe.is_file() {
-                return Some(from_exe);
-            }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(exe_dir) = exe.parent()
+    {
+        let from_exe = exe_dir.join(path);
+        if from_exe.is_file() {
+            return Some(from_exe);
         }
     }
     None

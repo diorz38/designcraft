@@ -1179,10 +1179,10 @@ pub fn resolve_divider_template(tpl_spec: &str) -> String {
             std::path::PathBuf::from("../../assets/templates/dividers"),
             std::path::PathBuf::from("../assets/templates/dividers"),
         ];
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(exe_dir) = exe.parent() {
-                bases.push(exe_dir.join("assets").join("templates").join("dividers"));
-            }
+        if let Ok(exe) = std::env::current_exe()
+            && let Some(exe_dir) = exe.parent()
+        {
+            bases.push(exe_dir.join("assets").join("templates").join("dividers"));
         }
         for dir in &bases {
             if let Ok(entries) = std::fs::read_dir(dir) {

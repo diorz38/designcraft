@@ -47,16 +47,16 @@ pub fn resolve_template_path_spec(catalog_path: &str, spec: &str) -> Option<Stri
     if std::path::Path::new(&direct_ext).is_file() {
         return Some(direct_ext);
     }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let p = dir.join(clean);
-            if p.is_file() {
-                return Some(p.to_string_lossy().to_string());
-            }
-            let p_ext = dir.join(&direct_ext);
-            if p_ext.is_file() {
-                return Some(p_ext.to_string_lossy().to_string());
-            }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        let p = dir.join(clean);
+        if p.is_file() {
+            return Some(p.to_string_lossy().to_string());
+        }
+        let p_ext = dir.join(&direct_ext);
+        if p_ext.is_file() {
+            return Some(p_ext.to_string_lossy().to_string());
         }
     }
     if let Some(alias) = alias_opt {
@@ -67,16 +67,16 @@ pub fn resolve_template_path_spec(catalog_path: &str, spec: &str) -> Option<Stri
         if std::path::Path::new(&alias_ext).is_file() {
             return Some(alias_ext);
         }
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(dir) = exe.parent() {
-                let p = dir.join(alias);
-                if p.is_file() {
-                    return Some(p.to_string_lossy().to_string());
-                }
-                let p_ext = dir.join(&alias_ext);
-                if p_ext.is_file() {
-                    return Some(p_ext.to_string_lossy().to_string());
-                }
+        if let Ok(exe) = std::env::current_exe()
+            && let Some(dir) = exe.parent()
+        {
+            let p = dir.join(alias);
+            if p.is_file() {
+                return Some(p.to_string_lossy().to_string());
+            }
+            let p_ext = dir.join(&alias_ext);
+            if p_ext.is_file() {
+                return Some(p_ext.to_string_lossy().to_string());
             }
         }
     }
@@ -111,11 +111,11 @@ pub fn resolve_template_path_spec(catalog_path: &str, spec: &str) -> Option<Stri
         std::path::PathBuf::from("../../assets/templates"),
         std::path::PathBuf::from("../assets/templates"),
     ];
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
-            root_candidates.push(exe_dir.join("assets").join("templates"));
-            root_candidates.push(exe_dir.join("templates"));
-        }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(exe_dir) = exe.parent()
+    {
+        root_candidates.push(exe_dir.join("assets").join("templates"));
+        root_candidates.push(exe_dir.join("templates"));
     }
     if let Some(root) = root_candidates.into_iter().find(|p| p.is_dir()) {
         // Direct under assets/templates
