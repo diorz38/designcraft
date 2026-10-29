@@ -141,6 +141,29 @@ if ($env:CRAFT_FONTS_DIR) {
     Copy-Item $ofl.FullName (Join-Path $Portable "OFL-$($ofl.Directory.Name).txt")
   }
 }
+
+# Pubgen samples: include DUAL_LANG and SINGLE_LANG sample files, excluding *.csv and *.zip
+$SamplesSrc = Join-Path $Root 'plan\pubgen\samples'
+$SamplesDest = Join-Path $Portable 'samples'
+foreach ($folder in 'DUAL_LANG', 'SINGLE_LANG') {
+  $srcDir = Join-Path $SamplesSrc $folder
+  if (Test-Path $srcDir) {
+    $destDir = Join-Path $SamplesDest $folder
+    New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+    Get-ChildItem -Path $srcDir -Recurse | Where-Object {
+      -not $_.PSIsContainer -and $_.Extension -ne '.csv' -and $_.Extension -ne '.zip'
+    } | ForEach-Object {
+      $relative = $_.FullName.Substring($srcDir.Length).TrimStart('\', '/')
+      $targetFile = Join-Path $destDir $relative
+      $targetParent = Split-Path -Parent $targetFile
+      if (-not (Test-Path $targetParent)) {
+        New-Item -ItemType Directory -Force -Path $targetParent | Out-Null
+      }
+      Copy-Item -LiteralPath $_.FullName -Destination $targetFile -Force
+    }
+  }
+}
+
 $Zip = Join-Path $Dist "designcraft-$Version-windows-$Arch-portable.zip"
 Remove-Item -Force $Zip -ErrorAction SilentlyContinue
 Compress-Archive -Path $Portable -DestinationPath $Zip
