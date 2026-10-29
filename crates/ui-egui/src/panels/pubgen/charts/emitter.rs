@@ -101,6 +101,176 @@ pub fn emit_polygon(
     Ok(fid)
 }
 
+/// Emits an ellipse / circle frame onto the given spread.
+pub fn emit_ellipse(
+    app: &mut DesignApp,
+    spread_idx: usize,
+    rect: [f64; 4],
+    fill: &str,
+    stroke: &str,
+    stroke_weight: f64,
+) -> Result<u64, String> {
+    let res = app
+        .run(
+            "frame.create",
+            json!({
+                "spread": spread_idx,
+                "rect": rect,
+                "content": "unassigned",
+                "shape": "ellipse",
+                "caret": false,
+            }),
+        )
+        .map_err(|e| format!("frame.create ellipse failed: {e}"))?;
+
+    let fid = res.get("id").and_then(Value::as_u64).ok_or_else(|| "frame.create returned no id".to_string())?;
+
+    if fill != "[None]" {
+        let fill_swatch = ensure_swatch(app, fill)?;
+        let _ = app.run("object.fill", json!({"ids": [fid], "swatch": fill_swatch}));
+    } else {
+        let _ = app.run("object.fill", json!({"ids": [fid], "swatch": "[None]"}));
+    }
+
+    if stroke != "[None]" {
+        let stroke_swatch = ensure_swatch(app, stroke)?;
+        let _ = app.run("object.stroke", json!({"ids": [fid], "swatch": stroke_swatch}));
+        let _ = app.run("object.strokeWeight", json!({"ids": [fid], "weight": stroke_weight}));
+    } else {
+        let _ = app.run("object.stroke", json!({"ids": [fid], "swatch": "[None]"}));
+    }
+
+    Ok(fid)
+}
+
+/// Emits a stylized male person pictogram (head ellipse + torso/legs polygon).
+pub fn emit_male_pictogram(
+    app: &mut DesignApp,
+    spread_idx: usize,
+    rect: [f64; 4],
+    color: &str,
+) -> Result<Vec<u64>, String> {
+    let mut ids = Vec::new();
+    let [x0, y0, x1, y1] = rect;
+    let w = (x1 - x0).max(4.0);
+    let h = (y1 - y0).max(8.0);
+    let cx = (x0 + x1) / 2.0;
+
+    // Head
+    let head_r = (w * 0.32).min(h * 0.13);
+    let head_rect = [cx - head_r, y0, cx + head_r, y0 + 2.0 * head_r];
+    if let Ok(hid) = emit_ellipse(app, spread_idx, head_rect, color, "[None]", 0.0) {
+        ids.push(hid);
+    }
+
+    // Body & legs as polygon
+    let body_top = y0 + 2.0 * head_r + h * 0.04;
+    let sw = w * 0.78;
+    let crotch_y = body_top + h * 0.38;
+    let leg_w = sw * 0.36;
+    let leg_gap = sw * 0.18;
+
+    let pts = vec![
+        (cx - sw / 2.0, body_top),
+        (cx + sw / 2.0, body_top),
+        (cx + sw / 2.0, crotch_y),
+        (cx + leg_gap / 2.0 + leg_w, y1),
+        (cx + leg_gap / 2.0, y1),
+        (cx, crotch_y + h * 0.06),
+        (cx - leg_gap / 2.0, y1),
+        (cx - leg_gap / 2.0 - leg_w, y1),
+        (cx - sw / 2.0, crotch_y),
+    ];
+    if let Ok(bid) = emit_polygon(app, spread_idx, &pts, color, "[None]", 0.0) {
+        ids.push(bid);
+    }
+
+    Ok(ids)
+}
+
+/// Emits a stylized female person pictogram (head ellipse + dress/legs polygon).
+pub fn emit_female_pictogram(
+    app: &mut DesignApp,
+    spread_idx: usize,
+    rect: [f64; 4],
+    color: &str,
+) -> Result<Vec<u64>, String> {
+    let mut ids = Vec::new();
+    let [x0, y0, x1, y1] = rect;
+    let w = (x1 - x0).max(4.0);
+    let h = (y1 - y0).max(8.0);
+    let cx = (x0 + x1) / 2.0;
+
+    // Head
+    let head_r = (w * 0.32).min(h * 0.13);
+    let head_rect = [cx - head_r, y0, cx + head_r, y0 + 2.0 * head_r];
+    if let Ok(hid) = emit_ellipse(app, spread_idx, head_rect, color, "[None]", 0.0) {
+        ids.push(hid);
+    }
+
+    // Dress & legs as polygon
+    let body_top = y0 + 2.0 * head_r + h * 0.04;
+    let shoulder_w = w * 0.52;
+    let skirt_bottom = body_top + h * 0.45;
+    let skirt_w = w * 0.92;
+    let leg_w = w * 0.22;
+    let leg_gap = w * 0.16;
+
+    let pts = vec![
+        (cx - shoulder_w / 2.0, body_top),
+        (cx + shoulder_w / 2.0, body_top),
+        (cx + skirt_w / 2.0, skirt_bottom),
+        (cx + leg_gap / 2.0 + leg_w, skirt_bottom),
+        (cx + leg_gap / 2.0 + leg_w, y1),
+        (cx + leg_gap / 2.0, y1),
+        (cx + leg_gap / 2.0, skirt_bottom),
+        (cx - leg_gap / 2.0, skirt_bottom),
+        (cx - leg_gap / 2.0, y1),
+        (cx - leg_gap / 2.0 - leg_w, y1),
+        (cx - leg_gap / 2.0 - leg_w, skirt_bottom),
+        (cx - skirt_w / 2.0, skirt_bottom),
+    ];
+    if let Ok(bid) = emit_polygon(app, spread_idx, &pts, color, "[None]", 0.0) {
+        ids.push(bid);
+    }
+
+    Ok(ids)
+}
+
+/// Emits a stylized population group pictogram (center person flanked by two persons).
+pub fn emit_group_pictogram(
+    app: &mut DesignApp,
+    spread_idx: usize,
+    rect: [f64; 4],
+    color: &str,
+) -> Result<Vec<u64>, String> {
+    let mut ids = Vec::new();
+    let [x0, y0, x1, y1] = rect;
+    let w = (x1 - x0).max(6.0);
+    let h = (y1 - y0).max(8.0);
+    let cx = (x0 + x1) / 2.0;
+
+    // Center person
+    let c_rect = [cx - w * 0.22, y0, cx + w * 0.22, y1];
+    if let Ok(cids) = emit_male_pictogram(app, spread_idx, c_rect, color) {
+        ids.extend(cids);
+    }
+
+    // Left person (slightly smaller)
+    let l_rect = [x0, y0 + h * 0.12, x0 + w * 0.38, y1];
+    if let Ok(lids) = emit_male_pictogram(app, spread_idx, l_rect, color) {
+        ids.extend(lids);
+    }
+
+    // Right person (slightly smaller)
+    let r_rect = [x1 - w * 0.38, y0 + h * 0.12, x1, y1];
+    if let Ok(rids) = emit_female_pictogram(app, spread_idx, r_rect, color) {
+        ids.extend(rids);
+    }
+
+    Ok(ids)
+}
+
 /// Emits a single rectangle frame onto the given spread.
 pub fn emit_rect(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], fill: &str, stroke: &str, stroke_weight: f64) -> Result<u64, String> {
     let res = app
@@ -182,6 +352,11 @@ pub fn emit_text(
                     });
                 }
             }
+            if let Some(it) = doc.item_mut(designcraft_doc::ItemId(fid))
+                && let designcraft_doc::Content::Text(tf) = &mut it.content
+            {
+                tf.options.vertical_justification = designcraft_doc::VerticalJustification::Center;
+            }
             Ok(Value::Null)
         });
     }
@@ -235,12 +410,19 @@ pub fn emit_chart(
 
     // 3. Bars
     for bar in &layout.bars {
-        let color = if spec.chart_type == super::spec::ChartType::PopulationPyramid && bar.series_idx == 1 {
-            if palette.len() > 1 { series_color(palette, 1) } else { "#ED1C6F" }
+        let (color, stroke_color) = if spec.chart_type == super::spec::ChartType::PopulationPyramid {
+            if bar.series_idx == 0 {
+                // Male: Blue with dark blue outline
+                (series_color(palette, 0), "#1A4971")
+            } else {
+                // Female: Pink with dark pink outline
+                (if palette.len() > 1 { series_color(palette, 1) } else { "#F04C82" }, "#A61445")
+            }
         } else {
-            series_color(palette, bar.series_idx)
+            (series_color(palette, bar.series_idx), "[None]")
         };
-        let fid = emit_rect(app, spread_idx, bar.rect, color, "[None]", 0.0)?;
+        let stroke_weight = if stroke_color == "[None]" { 0.0 } else { 0.75 };
+        let fid = emit_rect(app, spread_idx, bar.rect, color, stroke_color, stroke_weight)?;
         frame_ids.push(fid);
     }
 
@@ -303,18 +485,18 @@ pub fn emit_chart(
         frame_ids.push(max_fid);
     }
 
-    // 5c. Population pyramid specific elements: headers and bottom summary box
+    // 5c. Population pyramid specific elements: headers, baseline ticks, and bottom summary box
     if spec.chart_type == super::spec::ChartType::PopulationPyramid {
         let cx = (layout.plot_rect[0] + layout.plot_rect[2]) / 2.0;
-        let center_col_w = 54.0f64;
+        let center_col_w = 48.0f64;
         let center_left = cx - center_col_w / 2.0;
         let center_right = cx + center_col_w / 2.0;
 
-        let hdr_y0 = (layout.plot_rect[1] - 22.0).max(0.0);
+        let hdr_y0 = (layout.plot_rect[1] - 30.0).max(0.0);
         let hdr_y1 = layout.plot_rect[1] - 4.0;
 
         let male_hdr_rect = [layout.plot_rect[0], hdr_y0, center_left - 10.0, hdr_y1];
-        let center_hdr_rect = [center_left, hdr_y0, center_right, hdr_y1];
+        let center_hdr_rect = [center_left - 6.0, hdr_y0, center_right + 6.0, hdr_y1];
         let female_hdr_rect = [center_right + 10.0, hdr_y0, layout.plot_rect[2], hdr_y1];
 
         let male_label = spec.series.first().map(|s| s.display_label(bilingual)).unwrap_or_else(|| "LAKI-LAKI (MALE)".into()).to_uppercase();
@@ -322,70 +504,129 @@ pub fn emit_chart(
         let center_label = if bilingual { "KELOMPOK UMUR\n(AGE GROUPS)" } else { "KELOMPOK UMUR" };
 
         let male_color = series_color(palette, 0);
-        let female_color = if palette.len() > 1 { series_color(palette, 1) } else { "#ED1C6F" };
+        let female_color = if palette.len() > 1 { series_color(palette, 1) } else { "#F04C82" };
 
+        // Male Header + Icon
+        let icon_h = 18.0f64;
+        let icon_w = 8.0f64;
+        let _ = emit_male_pictogram(app, spread_idx, [center_left - 24.0, hdr_y0 + 4.0, center_left - 24.0 + icon_w, hdr_y0 + 4.0 + icon_h], male_color);
         if let Ok(fid) = emit_text(app, spread_idx, male_hdr_rect, &male_label, 8.5, true, "center", Some(male_color)) {
             frame_ids.push(fid);
         }
-        if let Ok(fid) = emit_text(app, spread_idx, center_hdr_rect, center_label, 7.0, true, "center", Some("#333333")) {
+
+        // Center Header (Age Groups)
+        if let Ok(fid) = emit_text(app, spread_idx, center_hdr_rect, center_label, 7.0, true, "center", Some("#1E293B")) {
             frame_ids.push(fid);
         }
+
+        // Female Header + Icon
+        let _ = emit_female_pictogram(app, spread_idx, [center_right + 16.0, hdr_y0 + 4.0, center_right + 16.0 + icon_w, hdr_y0 + 4.0 + icon_h], female_color);
         if let Ok(fid) = emit_text(app, spread_idx, female_hdr_rect, &female_label, 8.5, true, "center", Some(female_color)) {
             frame_ids.push(fid);
         }
 
-        // Axis label below baseline
-        let axis_title_rect = [cx - 100.0, layout.plot_rect[3] - 44.0 - 12.0 + 2.0, cx + 100.0, layout.plot_rect[3] - 44.0 - 12.0 + 14.0];
-        let axis_title = if bilingual { "JUMLAH PENDUDUK (POPULATION)" } else { "JUMLAH PENDUDUK" };
-        if let Ok(fid) = emit_text(app, spread_idx, axis_title_rect, axis_title, 7.5, true, "center", Some("#475569")) {
-            frame_ids.push(fid);
-        }
-
-        // Summary Card at bottom
         if let Some(summary) = &layout.pyramid_summary {
+            // Baseline at axis_y
+            let axis_y = summary.axis_y;
+            if let Ok(base_fid) = emit_rect(app, spread_idx, [layout.plot_rect[0], axis_y, layout.plot_rect[2], axis_y + 1.0], "#64748B", "[None]", 0.0) {
+                frame_ids.push(base_fid);
+            }
+
+            // Axis ticks: 4 intervals (0, 25%, 50%, 75%, 100%)
+            let ceiling = summary.ceiling;
+            let max_w = summary.max_bar_w;
+            let steps = 4;
+            for i in 0..=steps {
+                let frac = i as f64 / steps as f64;
+                let val = (1.0 - frac) * ceiling;
+                let val_str = spec.value_format.format(val, bilingual);
+
+                // Left tick (Male): from center_left towards left
+                let x_left = summary.center_left - (1.0 - frac) * max_w;
+                let _ = emit_rect(app, spread_idx, [x_left - 0.5, axis_y, x_left + 0.5, axis_y + 3.0], "#64748B", "[None]", 0.0).map(|id| frame_ids.push(id));
+                let lbl_rect_left = [x_left - 20.0, axis_y + 3.0, x_left + 20.0, axis_y + 13.0];
+                let _ = emit_text(app, spread_idx, lbl_rect_left, &val_str, 7.5, false, "center", Some("#333333")).map(|id| frame_ids.push(id));
+
+                // Right tick (Female): from center_right towards right
+                let val_right = frac * ceiling;
+                let val_str_r = spec.value_format.format(val_right, bilingual);
+                let x_right = summary.center_right + frac * max_w;
+                let _ = emit_rect(app, spread_idx, [x_right - 0.5, axis_y, x_right + 0.5, axis_y + 3.0], "#64748B", "[None]", 0.0).map(|id| frame_ids.push(id));
+                let lbl_rect_right = [x_right - 20.0, axis_y + 3.0, x_right + 20.0, axis_y + 13.0];
+                let _ = emit_text(app, spread_idx, lbl_rect_right, &val_str_r, 7.5, false, "center", Some("#333333")).map(|id| frame_ids.push(id));
+            }
+
+            // Axis Title: JUMLAH PENDUDUK (POPULATION)
+            let title_y0 = axis_y + 14.0;
+            let axis_title_rect = [cx - 120.0, title_y0, cx + 120.0, title_y0 + 12.0];
+            let axis_title = if bilingual { "JUMLAH PENDUDUK (POPULATION)" } else { "JUMLAH PENDUDUK" };
+            if let Ok(fid) = emit_text(app, spread_idx, axis_title_rect, axis_title, 7.5, true, "center", Some("#1E293B")) {
+                frame_ids.push(fid);
+            }
+
+            // Summary Card at bottom
             let s_rect = summary.rect;
-            if let Ok(box_fid) = emit_rect(app, spread_idx, s_rect, "#F8FAFC", "#CBD5E1", 1.0) {
+            if let Ok(box_fid) = emit_rect(app, spread_idx, s_rect, "#FFFFFF", "#CBD5E1", 1.0) {
                 frame_ids.push(box_fid);
             }
 
             let col_w = (s_rect[2] - s_rect[0]) / 3.0;
-
-            // Dividers
             let d1 = s_rect[0] + col_w;
             let d2 = s_rect[0] + 2.0 * col_w;
-            if let Ok(dfid1) = emit_rect(app, spread_idx, [d1, s_rect[1] + 4.0, d1 + 0.5, s_rect[3] - 4.0], "#CBD5E1", "[None]", 0.0) {
+
+            // Vertical Dividers
+            if let Ok(dfid1) = emit_rect(app, spread_idx, [d1, s_rect[1] + 4.0, d1 + 0.5, s_rect[3] - 4.0], "#E2E8F0", "[None]", 0.0) {
                 frame_ids.push(dfid1);
             }
-            if let Ok(dfid2) = emit_rect(app, spread_idx, [d2, s_rect[1] + 4.0, d2 + 0.5, s_rect[3] - 4.0], "#CBD5E1", "[None]", 0.0) {
+            if let Ok(dfid2) = emit_rect(app, spread_idx, [d2, s_rect[1] + 4.0, d2 + 0.5, s_rect[3] - 4.0], "#E2E8F0", "[None]", 0.0) {
                 frame_ids.push(dfid2);
             }
 
-            // Col 1: Male
-            let c1_title = [s_rect[0] + 2.0, s_rect[1] + 3.0, s_rect[0] + col_w - 2.0, s_rect[1] + 13.0];
-            let c1_num = [s_rect[0] + 2.0, s_rect[1] + 13.0, s_rect[0] + col_w - 2.0, s_rect[1] + 30.0];
-            let c1_sub = [s_rect[0] + 2.0, s_rect[1] + 30.0, s_rect[0] + col_w - 2.0, s_rect[3] - 2.0];
-            let _ = emit_text(app, spread_idx, c1_title, &summary.male_label, 7.0, true, "center", Some(male_color)).map(|id| frame_ids.push(id));
-            let _ = emit_text(app, spread_idx, c1_num, &format_indonesian_number(summary.total_male), 12.0, true, "center", Some("#1E293B"))
-                .map(|id| frame_ids.push(id));
-            let _ = emit_text(app, spread_idx, c1_sub, "jiwa (people)", 6.5, false, "center", Some("#64748B")).map(|id| frame_ids.push(id));
+            // Col 1: Male (Icon on left, texts on right)
+            let icon_pad = 12.0f64;
+            let icon_w = 12.0f64;
+            let icon_h = 28.0f64;
+            let icon_y = s_rect[1] + (s_rect[3] - s_rect[1] - icon_h) / 2.0;
+            let _ = emit_male_pictogram(app, spread_idx, [s_rect[0] + icon_pad, icon_y, s_rect[0] + icon_pad + icon_w, icon_y + icon_h], male_color);
 
-            // Col 2: Total Population
-            let c2_title = [d1 + 2.0, s_rect[1] + 3.0, d2 - 2.0, s_rect[1] + 13.0];
-            let c2_num = [d1 + 2.0, s_rect[1] + 13.0, d2 - 2.0, s_rect[1] + 30.0];
-            let c2_sub = [d1 + 2.0, s_rect[1] + 30.0, d2 - 2.0, s_rect[3] - 2.0];
-            let _ = emit_text(app, spread_idx, c2_title, &summary.combined_label, 7.0, true, "center", Some("#0F172A")).map(|id| frame_ids.push(id));
-            let _ = emit_text(app, spread_idx, c2_num, &format_indonesian_number(summary.total_combined), 13.0, true, "center", Some("#0F172A"))
-                .map(|id| frame_ids.push(id));
-            let _ = emit_text(app, spread_idx, c2_sub, "jiwa (people)", 6.5, false, "center", Some("#64748B")).map(|id| frame_ids.push(id));
+            let text_x0 = s_rect[0] + icon_pad + icon_w + 10.0;
+            let text_x1 = d1 - 4.0;
+            let c1_title = [text_x0, s_rect[1] + 5.0, text_x1, s_rect[1] + 16.0];
+            let c1_num = [text_x0, s_rect[1] + 16.0, text_x1, s_rect[1] + 34.0];
+            let c1_sub = [text_x0, s_rect[1] + 34.0, text_x1, s_rect[3] - 4.0];
+            let _ = emit_text(app, spread_idx, c1_title, &summary.male_label, 7.0, true, "left", Some(male_color)).map(|id| frame_ids.push(id));
+            let _ = emit_text(app, spread_idx, c1_num, &format_indonesian_number(summary.total_male), 13.0, true, "left", Some("#0F172A")).map(|id| frame_ids.push(id));
+            let _ = emit_text(app, spread_idx, c1_sub, "jiwa (people)", 6.5, false, "left", Some("#64748B")).map(|id| frame_ids.push(id));
 
-            // Col 3: Female
-            let c3_title = [d2 + 2.0, s_rect[1] + 3.0, s_rect[2] - 2.0, s_rect[1] + 13.0];
-            let c3_num = [d2 + 2.0, s_rect[1] + 13.0, s_rect[2] - 2.0, s_rect[1] + 30.0];
-            let c3_sub = [d2 + 2.0, s_rect[1] + 30.0, s_rect[2] - 2.0, s_rect[3] - 2.0];
-            let _ = emit_text(app, spread_idx, c3_title, &summary.female_label, 7.0, true, "center", Some(female_color)).map(|id| frame_ids.push(id));
-            let _ = emit_text(app, spread_idx, c3_num, &format_indonesian_number(summary.total_female), 12.0, true, "center", Some("#1E293B"))
-                .map(|id| frame_ids.push(id));
-            let _ = emit_text(app, spread_idx, c3_sub, "jiwa (people)", 6.5, false, "center", Some("#64748B")).map(|id| frame_ids.push(id));
+            // Col 2: Total Population (Family/Group Icon on left, texts on right)
+            let grp_w = 24.0f64;
+            let grp_h = 24.0f64;
+            let grp_x = d1 + 10.0;
+            let grp_y = s_rect[1] + (s_rect[3] - s_rect[1] - grp_h) / 2.0;
+            let _ = emit_group_pictogram(app, spread_idx, [grp_x, grp_y, grp_x + grp_w, grp_y + grp_h], "#0F172A");
+
+            let c2_text_x0 = grp_x + grp_w + 10.0;
+            let c2_text_x1 = d2 - 4.0;
+            let c2_title = [c2_text_x0, s_rect[1] + 5.0, c2_text_x1, s_rect[1] + 16.0];
+            let c2_num = [c2_text_x0, s_rect[1] + 16.0, c2_text_x1, s_rect[1] + 34.0];
+            let c2_sub = [c2_text_x0, s_rect[1] + 34.0, c2_text_x1, s_rect[3] - 4.0];
+            let _ = emit_text(app, spread_idx, c2_title, &summary.combined_label, 7.0, true, "left", Some("#0F172A")).map(|id| frame_ids.push(id));
+            let _ = emit_text(app, spread_idx, c2_num, &format_indonesian_number(summary.total_combined), 14.0, true, "left", Some("#0F172A")).map(|id| frame_ids.push(id));
+            let _ = emit_text(app, spread_idx, c2_sub, "jiwa (people)", 6.5, false, "left", Some("#64748B")).map(|id| frame_ids.push(id));
+
+            // Col 3: Female (Icon on left, texts on right)
+            let fem_x = d2 + 12.0;
+            let fem_y = s_rect[1] + (s_rect[3] - s_rect[1] - icon_h) / 2.0;
+            let _ = emit_female_pictogram(app, spread_idx, [fem_x, fem_y, fem_x + icon_w, fem_y + icon_h], female_color);
+
+            let c3_text_x0 = fem_x + icon_w + 10.0;
+            let c3_text_x1 = s_rect[2] - 4.0;
+            let c3_title = [c3_text_x0, s_rect[1] + 5.0, c3_text_x1, s_rect[1] + 16.0];
+            let c3_num = [c3_text_x0, s_rect[1] + 16.0, c3_text_x1, s_rect[1] + 34.0];
+            let c3_sub = [c3_text_x0, s_rect[1] + 34.0, c3_text_x1, s_rect[3] - 4.0];
+            let _ = emit_text(app, spread_idx, c3_title, &summary.female_label, 7.0, true, "left", Some(female_color)).map(|id| frame_ids.push(id));
+            let _ = emit_text(app, spread_idx, c3_num, &format_indonesian_number(summary.total_female), 13.0, true, "left", Some("#0F172A")).map(|id| frame_ids.push(id));
+            let _ = emit_text(app, spread_idx, c3_sub, "jiwa (people)", 6.5, false, "left", Some("#64748B")).map(|id| frame_ids.push(id));
         }
     }
 
@@ -416,7 +657,8 @@ pub fn emit_chart(
         }
     }
 
-    // 8. Legend
+    // 8. Legend (Skipped for PopulationPyramid which has dedicated headers and summary card)
+    if spec.chart_type != super::spec::ChartType::PopulationPyramid {
     for leg in &layout.legend_items {
         let color = if spec.chart_type == super::spec::ChartType::PopulationPyramid && leg.series_idx == 1 {
             if palette.len() > 1 { series_color(palette, 1) } else { "#ED1C6F" }
@@ -461,6 +703,7 @@ pub fn emit_chart(
             }
         }
         frame_ids.push(lfid);
+    }
     }
 
     // 9. Group all emitted frames
@@ -622,7 +865,21 @@ mod tests {
         let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
         let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
 
-        assert!(count > 10, "Population pyramid must emit bars, labels, and summary frames");
+        assert!(count >= 20, "Population pyramid must emit bars, labels, ticks, pictograms, and summary frames");
+
+        // Verify that bars have stroke outlines
+        let active = app.session.active().unwrap();
+        let mut bar_strokes = 0;
+        for it in &active.doc.spreads[0].items {
+            if let designcraft_doc::Content::Group { items } = &it.content {
+                for kid in items {
+                    if kid.stroke.weight > 0.0 {
+                        bar_strokes += 1;
+                    }
+                }
+            }
+        }
+        assert!(bar_strokes >= 4, "Population pyramid bars must have stroke outlines (got {bar_strokes})");
     }
 
     #[test]

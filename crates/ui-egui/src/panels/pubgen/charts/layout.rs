@@ -103,6 +103,11 @@ pub struct PyramidSummary {
     pub male_label: String,
     pub female_label: String,
     pub combined_label: String,
+    pub axis_y: f64,
+    pub ceiling: f64,
+    pub max_bar_w: f64,
+    pub center_left: f64,
+    pub center_right: f64,
 }
 
 /// Complete geometry layout for a Gauge / Speedometer chart.
@@ -178,10 +183,8 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
     } else {
         AXIS_LABEL_W
     };
-    let bottom_axis_h = if is_donut || is_gauge {
+    let bottom_axis_h = if is_donut || is_gauge || is_pyramid {
         0.0
-    } else if is_pyramid {
-        22.0
     } else if is_hbar {
         16.0
     } else if any_rotated {
@@ -189,16 +192,14 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
     } else {
         AXIS_LABEL_H + 4.0
     };
-    let bottom_gap = if any_rotated { 16.0 } else { 4.0 };
+    let bottom_gap = if is_pyramid { 0.0 } else if any_rotated { 16.0 } else { 4.0 };
 
     let use_category_legend = is_donut || (spec.series.len() <= 1 && !is_gauge && !is_pyramid);
 
-    let legend_rows = if is_gauge {
+    let legend_rows = if is_gauge || is_pyramid {
         0
     } else if spec.show_legend {
-        if is_pyramid {
-            1
-        } else if use_category_legend && !categories.is_empty() {
+        if use_category_legend && !categories.is_empty() {
             categories.len().div_ceil(4)
         } else if !spec.series.is_empty() {
             spec.series.len().div_ceil(3)
@@ -211,8 +212,8 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
     let legend_h = if legend_rows > 0 { legend_rows as f64 * LEGEND_ROW_H + 6.0 } else { 0.0 };
 
     let plot_x0 = margin.x0 + left_reserve;
-    let plot_x1 = (margin.x1 - 12.0).max(plot_x0 + 10.0);
-    let plot_y0 = margin.y0 + top_offset + 10.0;
+    let plot_x1 = if is_pyramid { margin.x1 } else { (margin.x1 - 12.0).max(plot_x0 + 10.0) };
+    let plot_y0 = if is_pyramid { margin.y0 + top_offset + 32.0 } else { margin.y0 + top_offset + 10.0 };
     let plot_y1 = (margin.y1 - bottom_axis_h - legend_h - bottom_gap).max(plot_y0 + 10.0);
     let plot_rect = [plot_x0, plot_y0, plot_x1, plot_y1];
 
@@ -712,7 +713,7 @@ fn layout_population_pyramid(
     plot_rect: [f64; 4],
     ceiling: f64,
     bilingual: bool,
-    legend_items: Vec<LegendItem>,
+    _legend_items: Vec<LegendItem>,
     axis_baseline: [f64; 4],
     axis_left: [f64; 4],
 ) -> ChartLayout {
@@ -722,21 +723,31 @@ fn layout_population_pyramid(
     let mut grid_lines = Vec::new();
 
     let cx = (plot_rect[0] + plot_rect[2]) / 2.0;
-    let center_col_w = 54.0f64;
-    let val_lbl_w = 42.0f64;
+    let center_col_w = 48.0f64;
+    let val_lbl_w = 38.0f64;
     let center_left = cx - center_col_w / 2.0;
     let center_right = cx + center_col_w / 2.0;
 
-    let max_bar_w = (center_left - (plot_rect[0] + val_lbl_w)).max(20.0);
+    let max_bar_w = (center_left - (plot_rect[0] + val_lbl_w + 4.0)).max(30.0);
 
-    // Reserve 48pt at bottom for the 3-column Summary Box (Total Male, Total Population, Total Female)
-    let summary_h = 44.0f64;
-    let summary_gap = 12.0f64;
-    let pyramid_bottom = plot_rect[3] - summary_h - summary_gap;
+    // Reserve bottom space for baseline axis, ticks, title and 3-column Summary Box
+    let summary_h = 50.0f64;
+    let axis_gap = 14.0f64;
+    let title_gap = 14.0f64;
+    let box_gap = 8.0f64;
+    let bottom_reserve = axis_gap + title_gap + box_gap + summary_h;
+    let pyramid_bottom = (plot_rect[3] - bottom_reserve).max(plot_rect[1] + 50.0);
 
     let cat_count = categories.len().max(1);
-    let row_h = (pyramid_bottom - plot_rect[1]) / cat_count as f64;
-    let bar_h = (row_h * 0.72).clamp(4.0, 15.0);
+    let avail_bars_h = (pyramid_bottom - plot_rect[1]).max(40.0);
+    // Natural compact row height: 14pt min up to 26pt max
+    let row_h = (avail_bars_h / cat_count as f64).clamp(14.0, 26.0);
+    let bar_gap = 2.0f64;
+    let bar_h = (row_h - bar_gap).max(4.0);
+
+    // Position pyramid bottom right after the bars
+    let actual_bars_h = cat_count as f64 * row_h;
+    let pyramid_bottom = plot_rect[1] + actual_bars_h;
 
     let male_vals = series_values.first().map(Vec::as_slice).unwrap_or(&[]);
     let female_vals = series_values.get(1).map(Vec::as_slice).unwrap_or(&[]);
@@ -758,8 +769,14 @@ fn layout_population_pyramid(
         let y0 = row_y + (row_h - bar_h) / 2.0;
         let y1 = y0 + bar_h;
 
-        // Faint horizontal reference line across the row
-        grid_lines.push(GridLine { rect: [plot_rect[0], row_y + row_h, plot_rect[2], row_y + row_h + 0.5], value: 0.0, label: String::new() });
+        // Subtle horizontal grid line every 2 age groups (10-year cohort markers)
+        if r % 2 == 1 {
+            grid_lines.push(GridLine {
+                rect: [plot_rect[0], row_y + row_h, plot_rect[2], row_y + row_h + 0.5],
+                value: 0.0,
+                label: String::new(),
+            });
+        }
 
         // 1. Male bar (Left side extending from center_left towards left)
         let v_m = male_vals.get(c_idx).copied().unwrap_or(0.0);
@@ -792,13 +809,26 @@ fn layout_population_pyramid(
 
     // Summary Card at bottom
     let total_combined = total_male + total_female;
-    let summary_rect = [plot_rect[0], pyramid_bottom + summary_gap, plot_rect[2], plot_rect[3]];
+    let summary_y0 = pyramid_bottom + axis_gap + title_gap + box_gap;
+    let summary_rect = [plot_rect[0], summary_y0, plot_rect[2], summary_y0 + summary_h];
     let male_label = if bilingual { "TOTAL LAKI-LAKI (MALE)" } else { "TOTAL LAKI-LAKI" }.to_string();
     let female_label = if bilingual { "TOTAL PEREMPUAN (FEMALE)" } else { "TOTAL PEREMPUAN" }.to_string();
     let combined_label = if bilingual { "TOTAL PENDUDUK (TOTAL POPULATION)" } else { "TOTAL PENDUDUK" }.to_string();
 
-    let pyramid_summary =
-        Some(PyramidSummary { rect: summary_rect, total_male, total_female, total_combined, male_label, female_label, combined_label });
+    let pyramid_summary = Some(PyramidSummary {
+        rect: summary_rect,
+        total_male,
+        total_female,
+        total_combined,
+        male_label,
+        female_label,
+        combined_label,
+        axis_y: pyramid_bottom,
+        ceiling,
+        max_bar_w,
+        center_left,
+        center_right,
+    });
 
     ChartLayout {
         bars,
@@ -810,7 +840,7 @@ fn layout_population_pyramid(
         grid_lines,
         x_tick_labels,
         value_labels,
-        legend_items,
+        legend_items: Vec::new(), // No redundant bottom legend
         axis_baseline,
         axis_left,
         plot_rect,
@@ -1239,6 +1269,14 @@ mod tests {
         assert_eq!(sum.total_male, 4500.0);
         assert_eq!(sum.total_female, 4350.0);
         assert_eq!(sum.total_combined, 8850.0);
+
+        // Verify fatter bars and closer spacing
+        let gap = male_bars[1].rect[1] - male_bars[0].rect[3];
+        assert!(gap <= 2.5, "Inter-bar vertical gap must be close (<= 2.5pt), got {gap}");
+        assert!(male_bars[0].rect[3] - male_bars[0].rect[1] >= 20.0, "Bars must be thick/fat");
+
+        // Population pyramid must not have redundant bottom legend
+        assert!(layout.legend_items.is_empty(), "Population pyramid must not have redundant bottom legend");
     }
 
     #[test]
