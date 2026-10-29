@@ -32,7 +32,6 @@ pub fn menu_bar(app: &mut DesignApp, ui: &mut egui::Ui) -> bool {
     let rtl = crate::i18n::is_rtl(&app.ui.language);
     let tree = crate::menus::menu_tree();
     let file = tree.iter().find(|(name, _)| *name == "File");
-    let help = tree.iter().find(|(name, _)| *name == "Help");
     // 0 File · 1 Publication · 2 PubGen Tools · 3 Help, mirrored right to left.
     let slots: [usize; 4] = if rtl { [3, 2, 1, 0] } else { [0, 1, 2, 3] };
     for slot in slots {
@@ -44,14 +43,23 @@ pub fn menu_bar(app: &mut DesignApp, ui: &mut egui::Ui) -> bool {
             }
             1 => publication_menu(app, ui),
             2 => content_menu(app, ui),
-            _ => {
-                if let Some((name, entries)) = help {
-                    designcraft_menu(app, ui, name, entries);
-                }
-            }
+            _ => help_menu(app, ui),
         }
     }
     true
+}
+
+/// DesignCraft's Help rows, then About PubGen… and the menu-bar toggle — the single home for both.
+fn help_menu(app: &mut DesignApp, ui: &mut egui::Ui) {
+    let tree = crate::menus::menu_tree();
+    let Some((name, entries)) = tree.iter().find(|(n, _)| *n == "Help") else { return };
+    let lang = app.ui.language.clone();
+    let rtl = crate::i18n::is_rtl(&lang);
+    crate::menus::menu_button(ui, crate::rtl::widget(ui, crate::i18n::tr(&lang, name)), |ui| {
+        super::bar::menu_column(app, ui, &[(name, entries.to_vec())]);
+        ui.separator();
+        popup(ui, rtl, 240.0, |ui| about(ui, &lang));
+    });
 }
 
 /// One of DesignCraft's own menus (File, Help), drawn from the upstream menu tree.
@@ -88,14 +96,6 @@ fn pipeline(app: &mut DesignApp, ui: &mut egui::Ui, lang: &str) {
     let has_doc = app.session.active().is_some();
 
     if item(ui, lang, "Master Excel Import & Generate…", has_doc) {
-        crate::dock::pubgen::with_state(ui.ctx(), |st| {
-            st.dialog_excel_open = true;
-        });
-        ui.close();
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    if item(ui, lang, "Publication Compile Wizard…", true) {
         crate::dock::pubgen::with_state(ui.ctx(), |st| {
             st.dialog_excel_open = true;
         });
@@ -277,16 +277,12 @@ pub fn pubgen_menu(app: &mut DesignApp, ui: &mut egui::Ui) {
     });
 }
 
-/// The Publication menu: the generation pipeline, then About.
+/// The Publication menu: the generation pipeline. (About and the menu-bar toggle live in Help.)
 fn publication_menu(app: &mut DesignApp, ui: &mut egui::Ui) {
     let lang = app.ui.language.clone();
     let rtl = crate::i18n::is_rtl(&lang);
     crate::menus::menu_button(ui, crate::rtl::widget(ui, crate::i18n::tr(&lang, "Publication")), |ui| {
-        popup(ui, rtl, 260.0, |ui| {
-            pipeline(app, ui, &lang);
-            ui.separator();
-            about(ui, &lang);
-        });
+        popup(ui, rtl, 260.0, |ui| pipeline(app, ui, &lang));
     });
 }
 
@@ -400,5 +396,46 @@ mod tests {
         output.textures_delta.clear();
         let texts = collect_texts(&output.shapes);
         assert!(texts.iter().any(|t| t == "Pubgen"), "the menu button is drawn: {texts:?}");
+    }
+
+    /// The Publication menu's rows, drawn like the popup draws them (the popup itself needs a
+    /// click; the contents function is what the click opens).
+    fn publication_rows(app: &mut DesignApp, ctx: &egui::Context) -> Vec<String> {
+        let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), ..Default::default() };
+        let mut output = ctx.run_ui(input, |ui| {
+            let lang = app.ui.language.clone();
+            pipeline(app, ui, &lang);
+        });
+        output.textures_delta.clear();
+        collect_texts(&output.shapes)
+    }
+
+    /// One action, one route: the Publication menu is exactly the pipeline — no second Excel row,
+    /// no About (§2.4-1/2 of the accessibility audit).
+    #[test]
+    fn publication_menu_is_exactly_the_pipeline() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx, "en");
+        let mut app = app();
+        let rows = publication_rows(&mut app, &ctx);
+        let excel = rows.iter().filter(|t| t.contains("Excel")).count();
+        assert_eq!(excel, 1, "one Excel route only: {rows:?}");
+        assert!(!rows.iter().any(|t| t.contains("Compile Wizard")), "the duplicate route is gone: {rows:?}");
+        assert!(!rows.iter().any(|t| t.contains("About")), "About lives in Help: {rows:?}");
+    }
+
+    /// Help carries About PubGen… and the menu-bar toggle — the one place both live.
+    #[test]
+    fn help_menu_ends_with_about_and_the_bar_toggle() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx, "en");
+        let app = app();
+        let lang = app.ui.language.clone();
+        let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), ..Default::default() };
+        let mut output = ctx.run_ui(input, |ui| about(ui, &lang));
+        output.textures_delta.clear();
+        let texts = collect_texts(&output.shapes);
+        assert!(texts.iter().any(|t| t.contains("About PubGen")), "{texts:?}");
+        assert!(texts.iter().any(|t| t.contains("DesignCraft Menus") || t.contains("PubGen Menus")), "{texts:?}");
     }
 }
