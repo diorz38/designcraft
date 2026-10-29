@@ -122,6 +122,7 @@ fn pipeline(app: &mut DesignApp, ui: &mut egui::Ui) {
     let items: Vec<crate::menus::Item> = [
         "pubgen.generateFromExcel",
         "pubgen.compileProject",
+        "pubgen.profileCustomize",
         "pubgen.vectorChart",
         "pubgen.tableOfContents",
         "pubgen.publicationCover",
@@ -153,7 +154,15 @@ fn content(app: &mut DesignApp, ui: &mut egui::Ui, lang: &str, rtl: bool) {
 
     submenu_items(app, ui, lang, "Manual Ingest & Tables", &["pubgen.pageFromCsv", "pubgen.tableFromCsv"]);
 
-    submenu_items(app, ui, lang, "Page & Layout Utilities", &["pubgen.bpsMargins", "pubgen.marginsDialog"]);
+    submenu(ui, lang, rtl, "Publication Profiles", 240.0, |ui| profiles_submenu(app, ui, lang, has_doc));
+
+    submenu_items(
+        app,
+        ui,
+        lang,
+        "Page & Layout Utilities",
+        &["pubgen.profileCustomize", "pubgen.profileMargins", "pubgen.bpsMargins", "pubgen.marginsDialog"],
+    );
 
     ui.separator();
 
@@ -163,6 +172,49 @@ fn content(app: &mut DesignApp, ui: &mut egui::Ui, lang: &str, rtl: bool) {
     super::tree::menu_items(app, ui, &dual, "Publication Tools");
 
     submenu(ui, lang, rtl, "AI Translate", 260.0, |ui| ai_translate(app, ui, lang, has_doc));
+}
+
+/// Submenu for choosing built-in or custom publication profiles, customizing, and applying profile margins.
+fn profiles_submenu(app: &mut DesignApp, ui: &mut egui::Ui, lang: &str, has_doc: bool) {
+    let (active_id, custom) = crate::dock::pubgen::with_state(ui.ctx(), |st| (st.active_profile_id.clone(), st.profile_custom.clone()));
+
+    for p in crate::dock::pubgen::ProfileManager::builtin_profiles() {
+        let is_active = active_id == p.id;
+        let prefix = if is_active { "✓ " } else { "   " };
+        let label = format!("{prefix}{}", p.name);
+        if ui.button(crate::rtl::widget(ui, &label)).clicked() {
+            crate::dock::pubgen::with_state(ui.ctx(), |st| {
+                st.apply_profile(p.clone(), true);
+            });
+            ui.close();
+        }
+    }
+
+    if let Some(cust) = custom {
+        let is_active = active_id == "custom";
+        let prefix = if is_active { "✓ " } else { "   " };
+        let label = format!("{prefix}{}", cust.name);
+        if ui.button(crate::rtl::widget(ui, &label)).clicked() {
+            crate::dock::pubgen::with_state(ui.ctx(), |st| {
+                st.apply_profile(cust.clone(), true);
+            });
+            ui.close();
+        }
+    }
+
+    ui.separator();
+
+    if item(ui, lang, "Customize Active Profile…", true) {
+        crate::dock::pubgen::with_state(ui.ctx(), |st| {
+            st.dialog_profile_customize_open = true;
+        });
+        ui.close();
+    }
+
+    if item(ui, lang, "Apply Profile Margins", has_doc) {
+        let _ = crate::dock::pubgen::execute_set_page_margins(app);
+        ui.close();
+    }
 }
 
 /// A submenu whose rows are `UI_COMMANDS` ids: upstream rendering (gates, chords, checkmarks).
@@ -461,5 +513,36 @@ mod tests {
         let marked: Vec<_> = rows.iter().filter(|t| t.starts_with('●')).collect();
         assert_eq!(marked.len(), 1, "exactly the compiling row: {rows:?}");
         assert!(marked[0].contains("Compile Publication"), "{marked:?}");
+    }
+
+    /// Pillar 7: Publication Profile is accessible in the pipeline and via UI commands.
+    #[test]
+    fn publication_profile_accessible_from_menu_and_pipeline() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx, "en");
+        let mut app = app();
+        app.egui_ctx = Some(ctx.clone());
+
+        let rows = publication_rows(&mut app, &ctx);
+        assert!(rows.iter().any(|t| t.contains("Publication Profile")), "Publication Profile row in pipeline: {rows:?}");
+
+        // Test running pubgen.profileCustomize UI command
+        let _ = crate::menus::run::run_ui(&mut app, "pubgen.profileCustomize", &serde_json::json!({}));
+        let is_open = crate::dock::pubgen::with_state(&ctx, |st| st.dialog_profile_customize_open);
+        assert!(is_open, "dialog_profile_customize_open set by UI command");
+
+        // Test running pubgen.selectProfile UI command
+        let _ = crate::menus::run::run_ui(&mut app, "pubgen.selectProfile", &serde_json::json!({"id": "bps_brs"}));
+        let active_id = crate::dock::pubgen::with_state(&ctx, |st| st.active_profile_id.clone());
+        assert_eq!(active_id, "bps_brs", "active profile changed to bps_brs");
+
+        // Test profiles_submenu renders
+        let lang = app.ui.language.clone();
+        let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), ..Default::default() };
+        let mut output = ctx.run_ui(input, |ui| profiles_submenu(&mut app, ui, &lang, false));
+        output.textures_delta.clear();
+        let sub_texts = collect_texts(&output.shapes);
+        assert!(sub_texts.iter().any(|t| t.contains("Berita Resmi Statistik")), "profiles submenu lists BRS: {sub_texts:?}");
+        assert!(sub_texts.iter().any(|t| t.contains("Laporan Tahunan Korporat")), "profiles submenu lists Corporate: {sub_texts:?}");
     }
 }

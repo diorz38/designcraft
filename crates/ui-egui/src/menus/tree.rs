@@ -233,6 +233,7 @@ pub(super) fn menu_items(app: &mut DesignApp, ui: &mut egui::Ui, items: &[Item],
                     b = b.shortcut_text(sc);
                 }
                 let enabled = menu_enabled(app, id);
+                #[allow(unused_mut)]
                 let mut resp = ui.add_enabled(enabled, b);
                 #[cfg(feature = "pubgen")]
                 {

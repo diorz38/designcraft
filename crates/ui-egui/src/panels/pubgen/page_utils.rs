@@ -46,10 +46,18 @@ pub fn detect_document_margins(doc: &designcraft_doc::Document) -> designcraft_d
 /// - Outside: 15.00 mm
 pub fn execute_set_page_margins(app: &mut DesignApp) -> Result<String, String> {
     const PT_PER_MM: f64 = 72.0 / 25.4;
-    let top_pt = 20.20 * PT_PER_MM;
-    let bottom_pt = 20.0 * PT_PER_MM;
-    let inside_pt = 19.0 * PT_PER_MM;
-    let outside_pt = 15.0 * PT_PER_MM;
+    let (top_mm, bottom_mm, inside_mm, outside_mm) = if let Some(ref ctx) = app.egui_ctx {
+        super::with_state(ctx, |st| {
+            let m = &st.active_profile().geometry.margins_mm;
+            (m.top, m.bottom, m.inside, m.outside)
+        })
+    } else {
+        (20.20, 20.0, 19.0, 15.0)
+    };
+    let top_pt = top_mm * PT_PER_MM;
+    let bottom_pt = bottom_mm * PT_PER_MM;
+    let inside_pt = inside_mm * PT_PER_MM;
+    let outside_pt = outside_mm * PT_PER_MM;
 
     // Record which pages are COVER or DIV (already 0 margins) before layout.documentSetup
     let zero_margin_pages: Vec<usize> = app

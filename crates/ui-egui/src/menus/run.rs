@@ -1128,6 +1128,24 @@ fn run_ui_part5(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value
         #[cfg(feature = "pubgen")]
         "pubgen.marginsDialog" => pubgen_state(app, |st| st.dialog_utils_open = true),
         #[cfg(feature = "pubgen")]
+        "pubgen.profileCustomize" => pubgen_state(app, |st| st.dialog_profile_customize_open = true),
+        #[cfg(feature = "pubgen")]
+        "pubgen.profileMargins" => crate::dock::pubgen::execute_set_page_margins(app).map(|_| Value::Null),
+        #[cfg(feature = "pubgen")]
+        "pubgen.selectProfile" => {
+            let id = p.get("id").and_then(Value::as_str).unwrap_or("bps_dda").to_string();
+            pubgen_state(app, |st| {
+                if id == "custom" {
+                    if let Some(ref c) = st.profile_custom.clone() {
+                        st.apply_profile(c.clone(), true);
+                    }
+                } else {
+                    let prof = crate::dock::pubgen::ProfileManager::get_profile(&id);
+                    st.apply_profile(prof, true);
+                }
+            })
+        }
+        #[cfg(feature = "pubgen")]
         "pubgen.bpsMargins" => crate::dock::pubgen::execute_set_page_margins(app).map(|_| Value::Null),
         #[cfg(feature = "pubgen")]
         "pubgen.dualLanguage" => pubgen_state(app, |st| {

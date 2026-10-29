@@ -158,6 +158,11 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
         "pubgen.dualLanguage" => app.egui_ctx.as_ref().is_some_and(|ctx| crate::dock::pubgen::with_state(ctx, |st| st.bilingual_output)),
         #[cfg(feature = "pubgen")]
         "window.pubgenPanel" => crate::panel_docking::showing(app, "pubgen"),
+        #[cfg(feature = "pubgen")]
+        "pubgen.selectProfile" => {
+            let req = params.get("id").and_then(Value::as_str);
+            app.egui_ctx.as_ref().is_some_and(|ctx| crate::dock::pubgen::with_state(ctx, |st| req == Some(st.active_profile_id.as_str())))
+        }
         _ => return None,
     })
 }

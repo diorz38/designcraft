@@ -96,6 +96,8 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     #[cfg(feature = "pubgen")]
     ("pubgen.generateFromExcel", "Generate from Excel", Some("Ctrl+Shift+G"), "{} — open the Master Excel import and generate the pages"),
     #[cfg(feature = "pubgen")]
+    ("pubgen.profileCustomize", "Publication Profile", None, "{} — open the Publication Profile and Customizer dialog"),
+    #[cfg(feature = "pubgen")]
     ("pubgen.vectorChart", "Vector Chart", Some("Ctrl+Shift+V"), "{} — open the statistical vector chart dialog"),
     #[cfg(feature = "pubgen")]
     ("pubgen.tableOfContents", "Table of Contents", Some("Ctrl+Alt+T"), "{} — open the Table of Contents dialog"),
@@ -109,6 +111,10 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("pubgen.pageFromCsv", "Page from CSV…", None, "{} — open the manual import card on its Page tab"),
     #[cfg(feature = "pubgen")]
     ("pubgen.tableFromCsv", "Table from CSV…", None, "{} — open the manual import card on its Table tab"),
+    #[cfg(feature = "pubgen")]
+    ("pubgen.profileMargins", "Apply Profile Margins", None, "{} — apply page margins from the active publication profile"),
+    #[cfg(feature = "pubgen")]
+    ("pubgen.selectProfile", "Select Publication Profile", None, "{id: string} — set the active publication profile"),
     #[cfg(feature = "pubgen")]
     ("pubgen.bpsMargins", "Standard BPS Margins", Some("Ctrl+Shift+M"), "{} — apply the standard BPS margins (20/20/19/15 mm)"),
     #[cfg(feature = "pubgen")]
