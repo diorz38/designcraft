@@ -980,15 +980,7 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
     let available_h = (ctx.content_rect().height() - 90.0).max(200.0);
     let scroll_h = 600.0f32.min(available_h);
 
-    let window = egui::Window::new(RichText::new(window_title).size(15.0))
-        .collapsible(false)
-        .resizable(false)
-        .default_width(540.0)
-        .min_width(540.0)
-        .max_width(540.0)
-        .pivot(egui::Align2::CENTER_CENTER)
-        .default_pos(ctx.content_rect().center());
-    let response = window.show(ctx, |ui| {
+    crate::dock::pubgen::dialogs::dialog_window(ctx, window_title, crate::i18n::is_rtl(&lang), false, &mut open, 540.0, |ui| {
             egui::ScrollArea::vertical().max_width(540.0).max_height(scroll_h).auto_shrink([false, true]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(6.0, 5.0);
 
@@ -1298,9 +1290,6 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                 });
             });
         });
-    if let Some(response) = response {
-        crate::dock::pubgen::dialogs::close_button_overlay(ctx, "chart", crate::i18n::is_rtl(&lang), response.response.rect, &mut open);
-    }
 
     if apply {
         if let Err(err) = dialog.apply_chart(app, st.bilingual_output) {

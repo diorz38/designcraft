@@ -453,14 +453,7 @@ pub fn dialog_ui(app: &mut DesignApp, st: &mut PubgenState, ui: &mut egui::Ui) {
     let Some(mut dialog) = st.ai_dialog.take() else { return };
     let mut open = true;
     let mut closed_by_x = false;
-    let rtl = crate::i18n::is_rtl(&app.ui.language);
-    let window = egui::Window::new(egui::RichText::new("Translate with AI — setup").size(15.0))
-        .collapsible(false)
-        .resizable(false)
-        .default_width(460.0)
-        .pivot(egui::Align2::CENTER_CENTER)
-        .default_pos(ui.ctx().content_rect().center());
-    let response = window.show(ui.ctx(), |ui| {
+    super::dialogs::dialog_window(ui.ctx(), "Translate with AI — setup", crate::i18n::is_rtl(&app.ui.language), false, &mut open, 460.0, |ui| {
         ui.horizontal(|ui| {
             ui.selectable_value(&mut dialog.tab, DIALOG_TAB_SETUP, "Setup");
             ui.selectable_value(&mut dialog.tab, DIALOG_TAB_TERMINOLOGY, "Terminology");
@@ -497,9 +490,6 @@ pub fn dialog_ui(app: &mut DesignApp, st: &mut PubgenState, ui: &mut egui::Ui) {
             }
         });
     });
-    if let Some(response) = response {
-        super::dialogs::close_button_overlay(ui.ctx(), "ai_setup", rtl, response.response.rect, &mut open);
-    }
     open &= !closed_by_x;
     if dialog.close_requested || !open {
         st.ai_dialog = None;

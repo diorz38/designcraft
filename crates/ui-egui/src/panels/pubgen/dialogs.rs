@@ -11,10 +11,112 @@ use crate::theme::Tokens;
 
 use super::*;
 
+/// Shared popup dialog shell: a title band spanning the full window width with a
+/// thin ✕ hugging the corner, then the dialog body.
+///
+/// egui's stock title-bar ✕ sits ~24 px in from the corner (atom layout, not
+/// adjustable), so we drop the stock title bar entirely (`title_bar(false)`) and
+/// draw our own band. The band is also the drag handle; `WindowDrag::Off` keeps
+/// the body free for DragValues and text fields. `open` is cleared when the ✕
+/// is clicked. `title` doubles as the window id and must be unique per dialog.
+pub fn dialog_window(
+    ctx: &egui::Context,
+    title: &str,
+    rtl: bool,
+    resizable: bool,
+    open: &mut bool,
+    default_width: f32,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    let area_id = egui::Id::unique(("pubgen_dialog", title));
+    let pending_pos = ctx.data_mut(|d| d.get_temp::<egui::Pos2>(area_id.with("band_drag_pos")));
+    let mut close_clicked = false;
+    let mut window = egui::Window::new("")
+        .id(area_id)
+        .title_bar(false)
+        .drag_area(egui::WindowDrag::Off)
+        .collapsible(false)
+        .resizable(resizable)
+        .min_width(default_width)
+        .max_width(default_width)
+        .default_width(default_width)
+        .pivot(Align2::CENTER_CENTER)
+        .default_pos(ctx.content_rect().center());
+    if let Some(pivot_pos) = pending_pos {
+        window = window.fixed_pos(pivot_pos);
+    }
+    // Zero inner margin so the band spans the full window width; the body
+    // wraps itself in a margin frame below.
+    window.frame(egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::same(0))).show(ctx, |ui| {
+        if title_band_ui(ui, ctx, area_id, title, rtl) {
+            close_clicked = true;
+        }
+        egui::Frame::NONE.inner_margin(egui::Margin::same(6)).show(ui, |ui| {
+            add_contents(ui);
+        });
+    });
+    *open &= !close_clicked;
+}
+
+/// Paints the title band, handles band-drag and the corner ✕. Returns true when
+/// the ✕ was clicked.
+fn title_band_ui(ui: &mut egui::Ui, ctx: &egui::Context, area_id: egui::Id, title: &str, rtl: bool) -> bool {
+    let visuals = ctx.global_style().visuals.clone();
+    let (band_rect, band) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 30.0), egui::Sense::click_and_drag());
+    let r = visuals.window_corner_radius;
+    ui.painter().add(egui::epaint::RectShape::filled(
+        band_rect,
+        egui::CornerRadius { nw: r.nw, ne: r.ne, sw: 0, se: 0 },
+        visuals.widgets.open.weak_bg_fill,
+    ));
+    ui.painter().line_segment([band_rect.left_bottom(), band_rect.right_bottom()], visuals.widgets.noninteractive.bg_stroke);
+
+    // Drag the window by its band: remember the position at drag start, then
+    // reposition via `.fixed_pos` next pass (Area::end overwrites any mid-pass
+    // state write, so the move lands one frame later).
+    let anchor_key = area_id.with("band_drag_anchor");
+    let drag_pos_key = area_id.with("band_drag_pos");
+    if band.drag_started()
+        && let Some(state) = egui::AreaState::load(ctx, area_id)
+    {
+        ctx.data_mut(|d| d.insert_temp(anchor_key, state.left_top_pos()));
+    }
+    if band.dragged()
+        && let Some(anchor) = ctx.data_mut(|d| d.get_temp::<egui::Pos2>(anchor_key))
+        && let Some(delta) = band.total_drag_delta()
+        && let Some(mut state) = egui::AreaState::load(ctx, area_id)
+    {
+        state.set_left_top_pos(anchor + delta);
+        if let Some(pivot_pos) = state.pivot_pos {
+            ctx.data_mut(|d| d.insert_temp(drag_pos_key, pivot_pos));
+        }
+    }
+    if band.drag_stopped() {
+        ctx.data_mut(|d| d.remove_temp::<egui::Pos2>(anchor_key));
+        ctx.data_mut(|d| d.remove_temp::<egui::Pos2>(drag_pos_key));
+    }
+
+    // Thin ✕ like egui's stock close button: two short line segments.
+    let x_center = if rtl { band_rect.left() + 12.0 } else { band_rect.right() - 12.0 };
+    let x_mid = egui::pos2(x_center, band_rect.center().y);
+    let x_rect = egui::Rect::from_center_size(x_mid, egui::vec2(20.0, 20.0));
+    let close = ui.interact(x_rect, ui.auto_id_with("dialog_close"), egui::Sense::click());
+    close.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Close window"));
+    if close.hovered() {
+        ui.painter().rect_filled(x_rect, 3.0, visuals.widgets.hovered.weak_bg_fill);
+    }
+    let stroke = if close.hovered() { visuals.widgets.hovered.fg_stroke } else { visuals.widgets.noninteractive.fg_stroke };
+    ui.painter().line_segment([egui::pos2(x_mid.x - 4.0, x_mid.y - 4.0), egui::pos2(x_mid.x + 4.0, x_mid.y + 4.0)], stroke);
+    ui.painter().line_segment([egui::pos2(x_mid.x + 4.0, x_mid.y - 4.0), egui::pos2(x_mid.x - 4.0, x_mid.y + 4.0)], stroke);
+
+    ui.painter().text(band_rect.center(), Align2::CENTER_CENTER, title, crate::theme::semibold(15.0), visuals.strong_text_color());
+
+    close.clicked()
+}
+
 /// Standard unified popup window shell matching "Translate with AI":
-/// Native egui::Window, centered in container, non-collapsible,
-/// with a corner-pinned close button (✕), vertical scroll area,
-/// and bottom Close button.
+/// centered in container, non-collapsible, vertical scroll area,
+/// and bottom Close button, inside the shared [`dialog_window`] shell.
 fn pubgen_dialog_modal(
     ctx: &egui::Context,
     title: &str,
@@ -24,24 +126,13 @@ fn pubgen_dialog_modal(
     max_height: f32,
     add_contents: impl FnOnce(&mut egui::Ui),
 ) {
-    let mut is_open = *open;
-    let mut close_clicked = false;
     let available_h = (ctx.content_rect().height() - 90.0).max(200.0);
     let scroll_h = max_height.min(available_h);
 
-    let window = egui::Window::new(RichText::new(title).size(15.0))
-        .collapsible(false)
-        .resizable(false)
-        .min_width(default_width)
-        .max_width(default_width)
-        .default_width(default_width)
-        .pivot(Align2::CENTER_CENTER)
-        .default_pos(ctx.content_rect().center());
-    let response = window.show(ctx, |ui| {
-        ui.set_width(default_width);
-        ui.set_max_width(default_width);
-        let content_w = default_width - 24.0;
-        egui::ScrollArea::vertical().max_width(default_width).max_height(scroll_h).auto_shrink([false, false]).show(ui, |ui| {
+    let mut close_btn = false;
+    dialog_window(ctx, title, rtl, false, open, default_width, |ui| {
+        let content_w = default_width - 16.0;
+        egui::ScrollArea::vertical().max_width(content_w).max_height(scroll_h).auto_shrink([false, false]).show(ui, |ui| {
             ui.set_width(content_w);
             ui.set_max_width(content_w);
             add_contents(ui);
@@ -50,35 +141,13 @@ fn pubgen_dialog_modal(
         ui.separator();
         ui.horizontal(|ui| {
             if ui.button("Close").clicked() {
-                close_clicked = true;
+                close_btn = true;
             }
         });
     });
-
-    // egui's built-in ✕ sits ~24 px in from the window corner; pin our own to the corner instead.
-    if let Some(response) = response {
-        close_button_overlay(ctx, &title, rtl, response.response.rect, &mut is_open);
+    if close_btn {
+        *open = false;
     }
-
-    *open = is_open && !close_clicked;
-}
-
-/// The ✕ button of a Pubgen dialog, pinned 2 px from the window's top corner.
-///
-/// egui's built-in title-bar close button is placed by its atom layout well inside the
-/// corner; this replaces it (drop `.open(...)`, call this with the window's outer rect).
-pub fn close_button_overlay(ctx: &egui::Context, id: &str, rtl: bool, window_rect: egui::Rect, open: &mut bool) {
-    let size = egui::vec2(20.0, 22.0);
-    let pos = if rtl {
-        egui::pos2(window_rect.left() + 4.0, window_rect.top() + 5.0)
-    } else {
-        egui::pos2(window_rect.right() - 4.0 - size.x, window_rect.top() + 5.0)
-    };
-    egui::Area::new(egui::Id::unique(["pubgen_close", id].join(":"))).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
-        if ui.add_sized(size, egui::Button::new(RichText::new("✕").size(13.0)).frame(false)).clicked() {
-            *open = false;
-        }
-    });
 }
 
 /// Modal dialog for Master Excel import, sheet parsing, and 1-click batch generation.
@@ -325,64 +394,137 @@ pub fn pubgen_dialogs(app: &mut DesignApp, ctx: &egui::Context) {
 
 #[cfg(test)]
 mod tests {
-    /// The ✕ of a Pubgen dialog must hug the window's top-right corner: egui's built-in
-    /// title-bar close button sat ~24 px in, which read as a hole in the title bar.
+    /// What the shared [`super::dialog_window`] shell painted: the window frame fill,
+    /// the title-band fill, and the ✕ (two thin diagonal line segments).
+    struct Painted {
+        frame: egui::Rect,
+        band: Option<egui::Rect>,
+        glyph_right: f32,
+    }
+
+    fn collect_shapes(shape: &egui::Shape, out: &mut Painted) {
+        match shape {
+            egui::Shape::Rect(r) if r.rect.width() > 300.0 => {
+                if r.rect.height() < 50.0 {
+                    out.band = Some(match out.band {
+                        Some(b) => b.union(r.rect),
+                        None => r.rect,
+                    });
+                } else if r.stroke.width > 0.0 {
+                    // The window frame fill has the window stroke; the shadow rect has none.
+                    out.frame = out.frame.union(r.rect);
+                }
+            }
+            // The ✕ is two short diagonal line segments.
+            egui::Shape::LineSegment { points, .. }
+                if (points[1].x - points[0].x).abs() > 2.0 && ((points[1].x - points[0].x).abs() - (points[1].y - points[0].y).abs()).abs() < 0.1 =>
+            {
+                out.glyph_right = out.glyph_right.max(points[0].x).max(points[1].x);
+            }
+            egui::Shape::Vec(shapes) => {
+                for s in shapes {
+                    collect_shapes(s, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn run_pass(ctx: &egui::Context, events: Vec<egui::Event>, open: &mut bool) -> Painted {
+        let mut painted = Painted { frame: egui::Rect::NOTHING, band: None, glyph_right: f32::MIN };
+        let mut output = ctx.run_ui(
+            egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), events, ..Default::default() },
+            |ui| {
+                super::dialog_window(ui.ctx(), "Title", false, false, open, 480.0, |ui| {
+                    ui.label("body");
+                });
+            },
+        );
+        output.textures_delta.clear();
+        for clipped in &output.shapes {
+            collect_shapes(&clipped.shape, &mut painted);
+        }
+        painted
+    }
+
+    /// The ✕ must hug the corner (egui's stock one sat ~24 px in) and the title band
+    /// must span the full window width, like a normal window header.
     #[test]
-    fn close_button_hugs_the_window_corner() {
+    fn dialog_band_spans_the_window_and_close_hugs_the_corner() {
         let ctx = egui::Context::default();
         crate::theme::install_fonts(&ctx, "en");
         let mut open = true;
-        let mut window_rect = egui::Rect::NOTHING;
-        let mut glyph_right = f32::MIN;
-        for pass in 0..3 {
-            // The overlay area appears one pass after the window; click it on the last pass.
-            let events = if pass == 2 {
-                let pos = egui::pos2(window_rect.right() - 4.0 - 10.0, window_rect.top() + 5.0 + 11.0);
-                vec![
-                    egui::Event::PointerMoved(pos),
-                    egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() },
-                    egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() },
-                ]
-            } else {
-                Vec::new()
-            };
-            let mut output = ctx.run_ui(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))),
-                    events,
-                    ..Default::default()
-                },
-                |ui| {
-                    let window = egui::Window::new("Title").collapsible(false).resizable(false).default_width(480.0);
-                    let response = window.show(ui.ctx(), |ui| {
-                        ui.label("body");
-                    });
-                    if let Some(response) = response {
-                        window_rect = response.response.rect;
-                        super::close_button_overlay(ui.ctx(), "test", false, response.response.rect, &mut open);
-                    }
-                },
-            );
-            output.textures_delta.clear();
-            fn glyph(shape: &egui::Shape, right: &mut f32) {
-                match shape {
-                    egui::Shape::Text(t) if t.galley.job.text.contains('✕') => *right = (*right).max(t.pos.x + t.galley.rect.right()),
-                    egui::Shape::Vec(shapes) => {
-                        for s in shapes {
-                            glyph(s, right);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            for clipped in &output.shapes {
-                glyph(&clipped.shape, &mut glyph_right);
-            }
+        let mut painted = Painted { frame: egui::Rect::NOTHING, band: None, glyph_right: f32::MIN };
+        for _ in 0..3 {
+            painted = run_pass(&ctx, Vec::new(), &mut open);
         }
-        assert!(window_rect.is_positive(), "window not painted");
-        assert!(glyph_right.is_finite(), "✕ glyph not painted");
-        let gap = window_rect.right() - glyph_right;
-        assert!(gap < 12.0, "✕ sits {gap:.1} px from the window's right edge");
+        assert!(painted.frame.is_positive(), "window not painted");
+        let band = painted.band.expect("title band not painted");
+        assert!(band.width() >= painted.frame.width() - 4.0, "band {:.1} wide but window frame {:.1} wide", band.width(), painted.frame.width());
+        assert!(
+            (band.left() - painted.frame.left()).abs() < 3.0 && (band.right() - painted.frame.right()).abs() < 3.0,
+            "band not flush with the window edges"
+        );
+        assert!(painted.glyph_right.is_finite(), "✕ glyph not painted");
+        let gap = painted.frame.right() - painted.glyph_right;
+        assert!(gap < 14.0, "✕ sits {gap:.1} px from the window's right edge");
+    }
+
+    /// Clicking the ✕ closes the dialog.
+    #[test]
+    fn corner_close_click_closes_the_dialog() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx, "en");
+        let mut open = true;
+        let mut painted = Painted { frame: egui::Rect::NOTHING, band: None, glyph_right: f32::MIN };
+        for _ in 0..3 {
+            painted = run_pass(&ctx, Vec::new(), &mut open);
+        }
+        let pos = egui::pos2(painted.frame.right() - 12.0, painted.frame.top() + 15.0);
+        let events = vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() },
+            egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() },
+        ];
+        run_pass(&ctx, events, &mut open);
         assert!(!open, "clicking the ✕ must close the dialog");
+    }
+
+    /// Dragging the title band moves the window.
+    #[test]
+    fn title_band_drag_moves_the_window() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx, "en");
+        let mut open = true;
+        let mut painted = Painted { frame: egui::Rect::NOTHING, band: None, glyph_right: f32::MIN };
+        for _ in 0..3 {
+            painted = run_pass(&ctx, Vec::new(), &mut open);
+        }
+        assert!(painted.frame.is_positive(), "window not painted");
+        let start_left = painted.frame.left();
+        let grab = egui::pos2(painted.frame.left() + 40.0, painted.frame.top() + 15.0);
+        let moved = egui::pos2(grab.x + 120.0, grab.y + 60.0);
+        run_pass(
+            &ctx,
+            vec![
+                egui::Event::PointerMoved(grab),
+                egui::Event::PointerButton { pos: grab, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() },
+            ],
+            &mut open,
+        );
+        // One pass to settle the press before moving, as a real pointer would.
+        run_pass(&ctx, vec![egui::Event::PointerMoved(grab)], &mut open);
+        run_pass(&ctx, vec![egui::Event::PointerMoved(moved)], &mut open);
+        painted = run_pass(
+            &ctx,
+            vec![egui::Event::PointerButton { pos: moved, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }],
+            &mut open,
+        );
+        assert!(
+            painted.frame.left() > start_left + 80.0,
+            "window did not follow the band drag: left {:.1} → {:.1}",
+            start_left,
+            painted.frame.left()
+        );
     }
 }

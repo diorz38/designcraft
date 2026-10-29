@@ -76,16 +76,8 @@ fn pubgen_logo_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
 
 /// About PubGen popup dialog modal styled like About DesignCraft.
 pub(crate) fn about_pubgen_dialog(app: &mut DesignApp, ctx: &egui::Context, open: &mut bool, t: &Tokens) {
-    let mut is_open = *open;
     let mut close_clicked = false;
-    let rtl = crate::i18n::is_rtl(&app.ui.language);
-    let window = egui::Window::new(egui::RichText::new("About PubGen").size(15.0))
-        .collapsible(false)
-        .resizable(false)
-        .default_width(420.0)
-        .pivot(egui::Align2::CENTER_CENTER)
-        .default_pos(ctx.content_rect().center());
-    let response = window.show(ctx, |ui| {
+    super::dialogs::dialog_window(ctx, "About PubGen", crate::i18n::is_rtl(&app.ui.language), false, open, 420.0, |ui| {
         ui.vertical_centered(|ui| {
             ui.add_space(10.0);
             if let Some(tex) = pubgen_logo_texture(ctx) {
@@ -136,10 +128,9 @@ pub(crate) fn about_pubgen_dialog(app: &mut DesignApp, ctx: &egui::Context, open
             ui.add_space(4.0);
         });
     });
-    if let Some(response) = response {
-        super::dialogs::close_button_overlay(ctx, "about", rtl, response.response.rect, &mut is_open);
+    if close_clicked {
+        *open = false;
     }
-    *open = is_open && !close_clicked;
 }
 
 /// A prominent outline button for primary workflow actions (Master Excel ingest).
