@@ -1098,8 +1098,54 @@ fn run_ui_part5(app: &mut DesignApp, id: &str, p: &Value) -> Option<Result<Value
             let edit = p.get("edit").and_then(Value::as_bool).unwrap_or(false);
             crate::dock::pubgen::open_chart_dialog(app, edit).map(|()| Value::Null)
         }
+        #[cfg(feature = "pubgen")]
+        "pubgen.generateFromExcel" => pubgen_state(app, |st| st.dialog_excel_open = true),
+        #[cfg(feature = "pubgen")]
+        "pubgen.vectorChart" => crate::dock::pubgen::open_chart_dialog(app, false).map(|()| Value::Null),
+        #[cfg(feature = "pubgen")]
+        "pubgen.tableOfContents" => pubgen_state(app, |st| st.dialog_toc_open = true),
+        #[cfg(feature = "pubgen")]
+        "pubgen.publicationCover" => pubgen_state(app, |st| st.dialog_cover_open = true),
+        #[cfg(feature = "pubgen")]
+        "pubgen.headerFooter" => pubgen_state(app, |st| st.dialog_hf_open = true),
+        #[cfg(feature = "pubgen")]
+        "pubgen.audit" => {
+            pubgen_state(app, |st| {
+                st.audit_open = true;
+                st.audit_issues = None; // the dialog runs `preflight.pubgen` on first paint
+            })
+        }
+        #[cfg(feature = "pubgen")]
+        "pubgen.pageFromCsv" => pubgen_state(app, |st| {
+            st.dialog_manual_open = true;
+            st.dialog_manual_tab = 0;
+        }),
+        #[cfg(feature = "pubgen")]
+        "pubgen.tableFromCsv" => pubgen_state(app, |st| {
+            st.dialog_manual_open = true;
+            st.dialog_manual_tab = 1;
+        }),
+        #[cfg(feature = "pubgen")]
+        "pubgen.marginsDialog" => pubgen_state(app, |st| st.dialog_utils_open = true),
+        #[cfg(feature = "pubgen")]
+        "pubgen.bpsMargins" => crate::dock::pubgen::execute_set_page_margins(app).map(|_| Value::Null),
+        #[cfg(feature = "pubgen")]
+        "pubgen.dualLanguage" => pubgen_state(app, |st| {
+            st.bilingual_output = !st.bilingual_output;
+        }),
         _ => return None,
     })
+}
+
+/// Run `f` against the Pubgen panel state, the way the panel's own buttons do. Without a running
+/// interface (tests, a script before the first frame) this is a silent no-op, like
+/// [`crate::dock::pubgen::open_chart_dialog`].
+#[cfg(feature = "pubgen")]
+fn pubgen_state(app: &mut DesignApp, f: impl FnOnce(&mut crate::dock::pubgen::PubgenState)) -> Result<Value, String> {
+    let Some(ctx) = app.egui_ctx.clone() else { return Ok(Value::Null) };
+    crate::dock::pubgen::with_state(&ctx, f);
+    ctx.request_repaint();
+    Ok(Value::Null)
 }
 
 /// Save by handing the serialized document to the host as a download (web).

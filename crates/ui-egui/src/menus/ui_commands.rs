@@ -82,8 +82,8 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     #[cfg(feature = "pubgen")]
     (
         "pubgen.compileProject",
-        "Compile Publication…",
-        None,
+        "Compile Publication",
+        Some("Ctrl+Shift+B"),
         "{path? (default: the manifest last opened), sync?: bool (default true; false hands the job to the Pubgen panel, one step per frame), pdf?: path (export the PDF here)} — compile a pubgen_project.json into one .designcraft and report {document, pdf, pages, chapters, warnings, elapsedMs}",
     ),
     #[cfg(feature = "pubgen")]
@@ -93,6 +93,28 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
         None,
         "{edit?: bool} — open the vector chart options popup to add or edit a statistical chart on the active spread",
     ),
+    #[cfg(feature = "pubgen")]
+    ("pubgen.generateFromExcel", "Generate from Excel", Some("Ctrl+Shift+G"), "{} — open the Master Excel import and generate the pages"),
+    #[cfg(feature = "pubgen")]
+    ("pubgen.vectorChart", "Vector Chart", Some("Ctrl+Shift+V"), "{} — open the statistical vector chart dialog"),
+    #[cfg(feature = "pubgen")]
+    ("pubgen.tableOfContents", "Table of Contents", Some("Ctrl+Alt+T"), "{} — open the Table of Contents dialog"),
+    #[cfg(feature = "pubgen")]
+    ("pubgen.publicationCover", "Publication Cover", None, "{} — open the Publication Cover dialog"),
+    #[cfg(feature = "pubgen")]
+    ("pubgen.headerFooter", "Header & Footer Setup", None, "{} — open the Header & Footer Setup dialog"),
+    #[cfg(feature = "pubgen")]
+    ("pubgen.audit", "Audit Publication", Some("Ctrl+Shift+Alt+A"), "{} — open the Audit Publication checklist (preflight.pubgen)"),
+    #[cfg(feature = "pubgen")]
+    ("pubgen.pageFromCsv", "Page from CSV…", None, "{} — open the manual import card on its Page tab"),
+    #[cfg(feature = "pubgen")]
+    ("pubgen.tableFromCsv", "Table from CSV…", None, "{} — open the manual import card on its Table tab"),
+    #[cfg(feature = "pubgen")]
+    ("pubgen.bpsMargins", "Standard BPS Margins", Some("Ctrl+Shift+M"), "{} — apply the standard BPS margins (20/20/19/15 mm)"),
+    #[cfg(feature = "pubgen")]
+    ("pubgen.marginsDialog", "Page Margins & Renumbering Options…", None, "{} — open the page utilities card"),
+    #[cfg(feature = "pubgen")]
+    ("pubgen.dualLanguage", "Dual Language Mode", Some("Ctrl+Shift+L"), "{} — toggle bilingual (ID/EN) output"),
     ("app.palette", "Quick Apply…", Some("Cmd+Return"), "{} — search styles and commands"),
     ("app.preferences", "Preferences…", Some("Cmd+K"), "{}"),
     ("window.uiScale", "UI Scaling", None, "{scale: 0.5–3 (1 = 100%)} — the size of the whole interface"),

@@ -154,6 +154,8 @@ pub fn checked(app: &DesignApp, id: &str, params: &Value) -> Option<bool> {
                 .or_else(|| st.selection.items.iter().find_map(|i| st.doc.item(*i)?.text_frame().map(|t| t.story)))?;
             st.doc.story(sid)?.vertical == params.get("vertical").and_then(Value::as_bool)?
         }
+        #[cfg(feature = "pubgen")]
+        "pubgen.dualLanguage" => app.egui_ctx.as_ref().is_some_and(|ctx| crate::dock::pubgen::with_state(ctx, |st| st.bilingual_output)),
         _ => return None,
     })
 }
@@ -183,7 +185,6 @@ pub fn menu_enabled(app: &DesignApp, id: &str) -> bool {
     }
     enabled(app, id)
 }
-
 /// Whether a native menu bar item can be chosen: as in the in-window menus, but the editing
 /// commands a focused text field takes are always available to it.
 pub fn native_menu_enabled(app: &DesignApp, ctx: &egui::Context, id: &str) -> bool {
