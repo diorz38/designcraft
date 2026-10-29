@@ -1,0 +1,6 @@
+# Binary document formats — no line-ending normalization, no text diff.
+# Custom merge driver "newest-binary" picks whichever side was committed more
+# recently; no conflict is raised. The driver is registered in .git/config
+# (or your global ~/.gitconfig) — see scripts/merge-binary-newest.py.
+*.designcraft binary merge=newest-binary
+

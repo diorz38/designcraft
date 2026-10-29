@@ -7,6 +7,49 @@ use crate::DesignApp;
 #[cfg(not(target_arch = "wasm32"))]
 use craft_update::updater::{Action, Status, Updater};
 
+/// The app entry for update checks — points at this fork's releases.
+#[cfg(not(target_arch = "wasm32"))]
+const THIS_APP: craft_update::app::App = craft_update::app::App::new(
+    "designcraft",
+    "DesignCraft",
+    "Page layout and publishing",
+    "diorz38/designcraft-pubgen",
+);
+
+/// Builds a [`craft_update::updater::CheckSource`] that includes pre-releases.
+///
+/// This fork uses versions like `0.13.0-pubgen.0.7.9`, which carry a semver pre-release
+/// identifier. The upstream `check_for_update` helper hard-codes `allow_prerelease = false`
+/// and would silently skip every one of our releases, so we supply our own source that
+/// passes `true` to `parse_github_release_list`.
+#[cfg(not(target_arch = "wasm32"))]
+fn make_check_source() -> craft_update::updater::CheckSource {
+    use std::sync::Arc;
+    use craft_update::{Http, http::Fetched, parse_github_release_list, parse_version, is_newer};
+
+    let version = env!("CARGO_PKG_VERSION").to_owned();
+    Arc::new(move || {
+        let http = Http::new(&format!("{}/Update", THIS_APP.name))
+            .map_err(|e| format!("could not create HTTP client: {e}"))?;
+        let url = format!(
+            "https://api.github.com/repos/{}/releases?per_page=30",
+            THIS_APP.repo,
+        );
+        match http.get_api(&url, None)? {
+            Fetched::Body { text, .. } => {
+                // allow_prerelease = true so versions like `0.13.0-pubgen.0.7.9` are found.
+                let latest = parse_github_release_list(&text, THIS_APP.repo, true)?;
+                let Some(release) = latest else { return Ok(None) };
+                let Some(rel_v) = &release.version else { return Ok(None) };
+                let Some(cur_v) = parse_version(&version) else { return Ok(None) };
+                if is_newer(rel_v, &cur_v) { Ok(Some(release)) } else { Ok(None) }
+            }
+            Fetched::RateLimited { .. } => Err("GitHub's request limit was reached".into()),
+            Fetched::NotModified | Fetched::NotFound => Ok(None),
+        }
+    })
+}
+
 pub(crate) struct Runtime {
     #[cfg(not(target_arch = "wasm32"))]
     updater: Updater,
@@ -26,7 +69,8 @@ impl Default for Runtime {
     fn default() -> Self {
         Self {
             #[cfg(not(target_arch = "wasm32"))]
-            updater: Updater::new(&craft_update::suite::DESIGNCRAFT, env!("CARGO_PKG_VERSION")),
+            updater: Updater::new(&THIS_APP, env!("CARGO_PKG_VERSION"))
+                .with_source(make_check_source()),
             #[cfg(not(target_arch = "wasm32"))]
             startup_check: false,
             #[cfg(not(target_arch = "wasm32"))]
@@ -163,7 +207,7 @@ mod tests {
             tag: "v99.0.0".into(),
             version: craft_update::parse_version("99.0.0"),
             name: "DesignCraft 99.0.0".into(),
-            html_url: "https://github.com/storytold/designcraft/releases/tag/v99.0.0".into(),
+            html_url: "https://github.com/diorz38/designcraft-pubgen/releases/tag/v99.0.0".into(),
             ..Default::default()
         };
         app.updates_rt.updater.offer(release);
