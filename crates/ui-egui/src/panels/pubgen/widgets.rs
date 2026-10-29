@@ -954,10 +954,12 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
                 .on_hover_text("Circular center photo");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
-                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
-                {
-                    st.cover_image_skyline = path;
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    let ctx = ui.ctx().clone();
+                    let _ = app.ask_open("place", crate::app::file_dialogs::Bound::Document, move |_app, path| {
+                        super::with_state(&ctx, |st| st.cover_image_skyline = path);
+                        Ok(serde_json::Value::Null)
+                    });
                 }
             });
         }
@@ -971,10 +973,12 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
                     egui::TextEdit::singleline(&mut st.cover_image_landscape).hint_text("outputs/city_landscape.jpg"),
                 )
                 .on_hover_text("Diagonal polygon background landscape photo");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
-                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
-                {
-                    st.cover_image_landscape = path;
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    let ctx = ui.ctx().clone();
+                    let _ = app.ask_open("place", crate::app::file_dialogs::Bound::Document, move |_app, path| {
+                        super::with_state(&ctx, |st| st.cover_image_landscape = path);
+                        Ok(serde_json::Value::Null)
+                    });
                 }
             });
             ui.horizontal(|ui| {
@@ -985,10 +989,12 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
                 .on_hover_text("Circular cutout foreground photo");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
-                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
-                {
-                    st.cover_image_skyline = path;
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    let ctx = ui.ctx().clone();
+                    let _ = app.ask_open("place", crate::app::file_dialogs::Bound::Document, move |_app, path| {
+                        super::with_state(&ctx, |st| st.cover_image_skyline = path);
+                        Ok(serde_json::Value::Null)
+                    });
                 }
             });
         }
@@ -1002,10 +1008,12 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
                 .on_hover_text("Top-right hexagonal photo cutout");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
-                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
-                {
-                    st.cover_image_skyline = path;
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    let ctx = ui.ctx().clone();
+                    let _ = app.ask_open("place", crate::app::file_dialogs::Bound::Document, move |_app, path| {
+                        super::with_state(&ctx, |st| st.cover_image_skyline = path);
+                        Ok(serde_json::Value::Null)
+                    });
                 }
             });
         }
@@ -1019,10 +1027,12 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
                 .on_hover_text("Circular center photo nestled inside the horseshoe medallion");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
-                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
-                {
-                    st.cover_image_skyline = path;
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    let ctx = ui.ctx().clone();
+                    let _ = app.ask_open("place", crate::app::file_dialogs::Bound::Document, move |_app, path| {
+                        super::with_state(&ctx, |st| st.cover_image_skyline = path);
+                        Ok(serde_json::Value::Null)
+                    });
                 }
             });
         }
@@ -1036,10 +1046,12 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
                     egui::TextEdit::singleline(&mut st.cover_image_landscape).hint_text("outputs/city_landscape.jpg"),
                 )
                 .on_hover_text("Tri-hexagon honeycomb cluster photo");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
-                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
-                {
-                    st.cover_image_landscape = path;
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    let ctx = ui.ctx().clone();
+                    let _ = app.ask_open("place", crate::app::file_dialogs::Bound::Document, move |_app, path| {
+                        super::with_state(&ctx, |st| st.cover_image_landscape = path);
+                        Ok(serde_json::Value::Null)
+                    });
                 }
             });
         }
@@ -1053,10 +1065,12 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
                 .on_hover_text("Vertical architecture or city skyline photo");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
-                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
-                {
-                    st.cover_image_skyline = path;
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    let ctx = ui.ctx().clone();
+                    let _ = app.ask_open("place", crate::app::file_dialogs::Bound::Document, move |_app, path| {
+                        super::with_state(&ctx, |st| st.cover_image_skyline = path);
+                        Ok(serde_json::Value::Null)
+                    });
                 }
             });
         }
@@ -1070,10 +1084,12 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
                 .on_hover_text("Full-height cityscape panel behind the diagonal band and arrow");
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
-                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
-                {
-                    st.cover_image_skyline = path;
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    let ctx = ui.ctx().clone();
+                    let _ = app.ask_open("place", crate::app::file_dialogs::Bound::Document, move |_app, path| {
+                        super::with_state(&ctx, |st| st.cover_image_skyline = path);
+                        Ok(serde_json::Value::Null)
+                    });
                 }
             });
         }
@@ -1099,10 +1115,12 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
                     egui::TextEdit::singleline(&mut st.cover_image_skyline).hint_text("outputs/city_skyline.jpg"),
                 )
                 .on_hover_text(hover);
-                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
-                    && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
-                {
-                    st.cover_image_skyline = path;
+                if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                    let ctx = ui.ctx().clone();
+                    let _ = app.ask_open("place", crate::app::file_dialogs::Bound::Document, move |_app, path| {
+                        super::with_state(&ctx, |st| st.cover_image_skyline = path);
+                        Ok(serde_json::Value::Null)
+                    });
                 }
             });
         }
@@ -1117,10 +1135,12 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
         let w = (ui.available_width() - 65.0).max(80.0);
         ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_image_logo).hint_text("outputs/bps_logo.png"))
             .on_hover_text("Path to logo image file (PNG / JPG / SVG)");
-        if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
-            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
-        {
-            st.cover_image_logo = path;
+        if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+            let ctx = ui.ctx().clone();
+            let _ = app.ask_open("place", crate::app::file_dialogs::Bound::Document, move |_app, path| {
+                super::with_state(&ctx, |st| st.cover_image_logo = path);
+                Ok(serde_json::Value::Null)
+            });
         }
     });
 
@@ -1142,10 +1162,12 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
             let w = (ui.available_width() - 65.0).max(80.0);
             ui.add_sized([w, crate::widgets::FIELD_H], egui::TextEdit::singleline(&mut st.cover_image_back).hint_text("outputs/event_theme.png"))
                 .on_hover_text("Back cover event theme image (from COVER sheet event_theme)");
-            if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked()
-                && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("place"))
-            {
-                st.cover_image_back = path;
+            if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                let ctx = ui.ctx().clone();
+                let _ = app.ask_open("place", crate::app::file_dialogs::Bound::Document, move |_app, path| {
+                    super::with_state(&ctx, |st| st.cover_image_back = path);
+                    Ok(serde_json::Value::Null)
+                });
             }
         });
         ui.horizontal(|ui| {

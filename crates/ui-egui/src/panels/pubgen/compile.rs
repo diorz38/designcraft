@@ -1540,12 +1540,16 @@ pub(crate) fn compile_card_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
             st.compile_checked.clear();
             st.compile_summary.clear();
         }
-        if outline_button(ui, crate::i18n::tr(&lang, "Open…"), 50.0).clicked()
-            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("pubgenProject"))
-        {
-            st.compile_manifest_path = path;
-            st.compile_checked.clear();
-            st.compile_summary.clear();
+        if outline_button(ui, crate::i18n::tr(&lang, "Open…"), 50.0).clicked() {
+            let ctx = ui.ctx().clone();
+            let _ = app.ask_open("pubgenProject", crate::app::file_dialogs::Bound::App, move |_app, path| {
+                super::with_state(&ctx, |st| {
+                    st.compile_manifest_path = path;
+                    st.compile_checked.clear();
+                    st.compile_summary.clear();
+                });
+                Ok(serde_json::Value::Null)
+            });
         }
         if outline_button(ui, crate::i18n::tr(&lang, "New…"), 46.0).clicked() {
             st.compile_new_dialog = Some(Box::new(NewProjectDialog::default()));
@@ -1642,10 +1646,16 @@ fn render_new_project_files_tab(app: &mut DesignApp, ui: &mut Ui, dialog: &mut N
             [w, FIELD_H],
             egui::TextEdit::singleline(&mut dialog.manifest_save_path).hint_text("e.g. C:/Projects/Karawang/pubgen_project.json"),
         );
-        if outline_button(ui, crate::i18n::tr(lang, "Browse…"), 64.0).clicked()
-            && let Some(picked) = app.services.pick_save.as_mut().and_then(|f| f("pubgen_project.json"))
-        {
-            dialog.manifest_save_path = picked;
+        if outline_button(ui, crate::i18n::tr(lang, "Browse…"), 64.0).clicked() {
+            let ctx = ui.ctx().clone();
+            let _ = app.ask_save("pubgen_project.json", crate::app::file_dialogs::Bound::App, move |_app, picked| {
+                super::with_state(&ctx, |st| {
+                    if let Some(dialog) = &mut st.compile_new_dialog {
+                        dialog.manifest_save_path = picked;
+                    }
+                });
+                Ok(serde_json::Value::Null)
+            });
         }
     });
     ui.label(RichText::new("All chapter and output paths will be saved relative to this manifest folder.").size(10.0).color(t.text_dim));
@@ -1653,19 +1663,25 @@ fn render_new_project_files_tab(app: &mut DesignApp, ui: &mut Ui, dialog: &mut N
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         ui.label(RichText::new(format!("Chapters ({})", dialog.chapters.len())).strong().size(12.0).color(t.text));
-        if outline_button(ui, crate::i18n::tr(lang, "+ Add Workbook…"), 130.0).clicked()
-            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
-        {
-            let p = PathBuf::from(&path);
-            let num = (dialog.chapters.len() + 1) as u32;
-            let stem = p.file_stem().and_then(std::ffi::OsStr::to_str).unwrap_or("Chapter");
-            let title = deduce_chapter_title(stem, num);
-            dialog.chapters.push(ChapterSpec { chapter: num, path, title });
-            if dialog.manifest_save_path.is_empty()
-                && let Some(parent) = p.parent()
-            {
-                dialog.manifest_save_path = parent.join("pubgen_project.json").to_string_lossy().to_string();
-            }
+        if outline_button(ui, crate::i18n::tr(lang, "+ Add Workbook…"), 130.0).clicked() {
+            let ctx = ui.ctx().clone();
+            let _ = app.ask_open("dataMerge", crate::app::file_dialogs::Bound::App, move |_app, path| {
+                super::with_state(&ctx, |st| {
+                    if let Some(dialog) = &mut st.compile_new_dialog {
+                        let p = PathBuf::from(&path);
+                        let num = (dialog.chapters.len() + 1) as u32;
+                        let stem = p.file_stem().and_then(std::ffi::OsStr::to_str).unwrap_or("Chapter");
+                        let title = deduce_chapter_title(stem, num);
+                        dialog.chapters.push(ChapterSpec { chapter: num, path, title });
+                        if dialog.manifest_save_path.is_empty()
+                            && let Some(parent) = p.parent()
+                        {
+                            dialog.manifest_save_path = parent.join("pubgen_project.json").to_string_lossy().to_string();
+                        }
+                    }
+                });
+                Ok(serde_json::Value::Null)
+            });
         }
     });
 
@@ -1742,10 +1758,16 @@ fn render_new_project_files_tab(app: &mut DesignApp, ui: &mut Ui, dialog: &mut N
     ui.horizontal(|ui| {
         let w = (ui.available_width() - 75.0).max(120.0);
         ui.add_sized([w, FIELD_H], egui::TextEdit::singleline(&mut dialog.front_matter_workbook).hint_text("e.g. workbooks/00_Front_Matter.xlsx"));
-        if outline_button(ui, crate::i18n::tr(lang, "Browse…"), 64.0).clicked()
-            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
-        {
-            dialog.front_matter_workbook = path;
+        if outline_button(ui, crate::i18n::tr(lang, "Browse…"), 64.0).clicked() {
+            let ctx = ui.ctx().clone();
+            let _ = app.ask_open("dataMerge", crate::app::file_dialogs::Bound::App, move |_app, path| {
+                super::with_state(&ctx, |st| {
+                    if let Some(dialog) = &mut st.compile_new_dialog {
+                        dialog.front_matter_workbook = path;
+                    }
+                });
+                Ok(serde_json::Value::Null)
+            });
         }
     });
     ui.label(
@@ -1810,10 +1832,16 @@ fn render_new_project_cover_tab(app: &mut DesignApp, ui: &mut Ui, dialog: &mut N
     ui.horizontal(|ui| {
         let w = (ui.available_width() - 75.0).max(120.0);
         ui.add_sized([w, FIELD_H], egui::TextEdit::singleline(&mut dialog.cover_source).hint_text("e.g. workbooks/BAB_01_2025.xlsx"));
-        if outline_button(ui, crate::i18n::tr(lang, "Browse…"), 64.0).clicked()
-            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
-        {
-            dialog.cover_source = path;
+        if outline_button(ui, crate::i18n::tr(lang, "Browse…"), 64.0).clicked() {
+            let ctx = ui.ctx().clone();
+            let _ = app.ask_open("dataMerge", crate::app::file_dialogs::Bound::App, move |_app, path| {
+                super::with_state(&ctx, |st| {
+                    if let Some(dialog) = &mut st.compile_new_dialog {
+                        dialog.cover_source = path;
+                    }
+                });
+                Ok(serde_json::Value::Null)
+            });
         }
     });
     ui.label(

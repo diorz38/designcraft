@@ -4393,7 +4393,10 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
             title_id: "Grafik Penduduk".into(),
             title_en: "Population Chart".into(),
             category_col: "A".into(),
-            series: vec![super::charts::spec::SeriesSpec { col: "B".into(), label_id: "Laki-laki".into(), label_en: "Male".into() }],
+            series: vec![
+                super::charts::spec::SeriesSpec { col: "B".into(), label_id: "Laki-laki".into(), label_en: "Male".into() },
+                super::charts::spec::SeriesSpec { col: "C".into(), label_id: "Perempuan".into(), label_en: "Female".into() },
+            ],
             data_start_row: 1,
             data_end_row: 2,
             value_format: super::charts::spec::ValueFormat::Number,
@@ -4403,7 +4406,7 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
             max_value_override: None,
         };
         let categories = vec!["Desa A".into()];
-        let values = vec![vec![100.0]];
+        let values = vec![vec![100.0, 80.0]];
         let margin = designcraft_geom::Rect { x0: 36.0, y0: 36.0, x1: 500.0, y1: 700.0 };
 
         let layout = super::charts::layout::compute_layout(&spec, &categories, &values, margin, true);

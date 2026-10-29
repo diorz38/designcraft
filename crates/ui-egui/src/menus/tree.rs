@@ -81,6 +81,7 @@ pub(super) fn parse_entries(entries: &[&str]) -> Vec<Item> {
 
 /// The whole menu tree (InDesign order).
 pub fn menu_tree() -> Vec<(&'static str, Vec<Item>)> {
+    #[allow(unused_mut)]
     let mut tree: Vec<(&'static str, Vec<Item>)> = MENUS.iter().map(|(m, e)| (*m, parse_entries(e))).collect();
     #[cfg(feature = "pubgen")]
     {

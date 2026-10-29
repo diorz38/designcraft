@@ -3520,12 +3520,7 @@ pub fn execute_download_csv_zip(app: &mut DesignApp, st: &mut PubgenState) -> Re
         }
 
         if files.is_empty() {
-            // Prompt user to pick an Excel file to convert and zip
-            if let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge")) {
-                execute_excel_to_csvs(st, &path)?;
-            } else {
-                return Err("No CSV files available to download. Please convert an Excel file or load CSVs first.".into());
-            }
+            return Err("No CSV files available to download. Please convert an Excel file or load CSVs first.".into());
         } else {
             let files_ref: Vec<(&str, &str)> = files.iter().map(|(n, c)| (n.as_str(), c.as_str())).collect();
             let bytes = create_csv_zip(&files_ref)?;
@@ -3551,28 +3546,14 @@ pub fn execute_download_csv_zip(app: &mut DesignApp, st: &mut PubgenState) -> Re
     if let Some(download) = app.services.download.as_mut() {
         download(&zip_name, &st.generated_zip_bytes).map_err(|e| format!("Could not download {zip_name}: {e}"))?;
         Ok(format!("Downloaded {zip_name}"))
-    } else if let Some(pick_save) = app.services.pick_save.as_mut() {
-        if let Some(save_path) = pick_save(&zip_name) {
-            if let Some(w) = app.services.write.as_mut() {
-                w(&save_path, &st.generated_zip_bytes).map_err(|e| format!("Could not save {save_path}: {e}"))?;
-            } else {
-                std::fs::write(&save_path, &st.generated_zip_bytes).map_err(|e| format!("Could not save {save_path}: {e}"))?;
-            }
-            let file_name = std::path::Path::new(&save_path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or(save_path);
-            Ok(format!("Saved {file_name}"))
-        } else {
-            Ok("ZIP download cancelled".into())
-        }
     } else {
-        // Fallback: save to parent dir of card1_path or current dir
-        let target_dir = if !st.card1_path.is_empty() {
-            std::path::Path::new(&st.card1_path).parent().unwrap_or(std::path::Path::new(".")).to_path_buf()
-        } else {
-            std::path::PathBuf::from(".")
-        };
-        let save_path = target_dir.join(&zip_name);
-        std::fs::write(&save_path, &st.generated_zip_bytes).map_err(|e| format!("Could not save {}: {e}", save_path.display()))?;
-        Ok(format!("Saved {}", save_path.display()))
+        let zip_bytes = st.generated_zip_bytes.clone();
+        let name = zip_name.clone();
+        let _ = app.ask_save(&name, crate::app::file_dialogs::Bound::App, move |_app, save_path| {
+            let _ = std::fs::write(&save_path, &zip_bytes);
+            Ok(serde_json::Value::Null)
+        });
+        Ok(format!("Requested save for {zip_name}"))
     }
 }
 
@@ -3585,24 +3566,28 @@ pub(crate) fn master_excel_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
         .on_hover_text("When checked, picking an Excel file automatically runs 'Page from CSV', inserts each sheet's table with default options, and generates the cover page before Page 1 from the COVER sheet");
 
     let resp_excel = primary_outline_button(ui, t, "Excel to CSV Data (.xlsx)…", full_width(ui)).on_hover_text(tip_excel);
-    if resp_excel.clicked()
-        && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("dataMerge"))
-    {
-        st.excel_source_path = path.clone();
-        let res = execute_excel_and_generate(app, st, &path);
-        let collected = super::vocab::collect_document(app, st);
-        if st.auto_fill_ai_drafts {
-            super::ai::fill_blank_drafts(app, st, ui.ctx().clone());
-        }
-        let (mut msg, ok) = match res {
-            Ok(msg) => (msg, true),
-            Err(e) => (e, false),
-        };
-        if ok && collected > 0 {
-            msg.push_str(&format!(" Vocabulary: {collected} new term(s) collected."));
-        }
-        st.excel_status = Some((msg.clone(), ok));
-        st.card3_status = Some((msg, ok));
+    if resp_excel.clicked() {
+        let ctx = ui.ctx().clone();
+        let _ = app.ask_open("dataMerge", crate::app::file_dialogs::Bound::Document, move |app, path| {
+            super::with_state(&ctx, |st| {
+                st.excel_source_path = path.clone();
+                let res = execute_excel_and_generate(app, st, &path);
+                let collected = super::vocab::collect_document(app, st);
+                if st.auto_fill_ai_drafts {
+                    super::ai::fill_blank_drafts(app, st, ctx.clone());
+                }
+                let (mut msg, ok) = match res {
+                    Ok(msg) => (msg, true),
+                    Err(e) => (e, false),
+                };
+                if ok && collected > 0 {
+                    msg.push_str(&format!(" Vocabulary: {collected} new term(s) collected."));
+                }
+                st.excel_status = Some((msg.clone(), ok));
+                st.card3_status = Some((msg, ok));
+            });
+            Ok(serde_json::Value::Null)
+        });
     }
 
     // Active catalog / excel indicator
@@ -4037,10 +4022,12 @@ pub(crate) mod flow_tests {
         load_card1_csv(&mut st, cat_path.to_str().unwrap());
         st.card2_sheet_tables = vec![tbl_path.to_str().unwrap().to_string()];
 
-        // Configure mock pick_save to save to a destination path
+        // Configure mock download to save to a destination path
         let save_dest = temp_dir.join("downloaded.zip");
-        let dest_clone = save_dest.to_str().unwrap().to_string();
-        app.services.pick_save = Some(Box::new(move |_| Some(dest_clone.clone())));
+        let dest_clone = save_dest.clone();
+        app.services.download = Some(Box::new(move |_name, bytes| {
+            std::fs::write(&dest_clone, bytes).map_err(|e| e.to_string())
+        }));
 
         let res = execute_download_csv_zip(&mut app, &mut st);
         assert!(res.is_ok(), "execute_download_csv_zip should succeed: {res:?}");

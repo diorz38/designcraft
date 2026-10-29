@@ -324,26 +324,33 @@ fn terminology_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSe
             .button("Import CSV…")
             .on_hover_text("Load a two-column glossary sheet (Indonesian, English); the English becomes the official column, Save writes them to the JSON.")
             .clicked()
-            && let Some(path) = app.services.pick_open.as_mut().and_then(|f| f("glossary"))
         {
-            match std::fs::read_to_string(&path) {
-                Ok(content) => {
-                    let imported = terms_from_csv(&content);
-                    if imported.is_empty() {
-                        dialog.terms_status = Some((format!("No terms found in {path} — expected two columns: Indonesian, English."), false));
-                    } else {
-                        let count = imported.len();
-                        let (added, updated) = merge_terms(&mut dialog.terms, imported);
-                        let msg = if added + updated == 0 {
-                            format!("The sheet's {count} term(s) already match the list.")
-                        } else {
-                            format!("Imported {added} new term(s) and set {updated} official translation(s) of {count} — Save to keep them.")
-                        };
-                        dialog.terms_status = Some((msg, true));
+            let ctx = ui.ctx().clone();
+            let _ = app.ask_open("glossary", crate::app::file_dialogs::Bound::App, move |_app, path| {
+                super::with_state(&ctx, |st| {
+                    if let Some(dialog) = &mut st.ai_dialog {
+                        match std::fs::read_to_string(&path) {
+                            Ok(content) => {
+                                let imported = terms_from_csv(&content);
+                                if imported.is_empty() {
+                                    dialog.terms_status = Some((format!("No terms found in {path} — expected two columns: Indonesian, English."), false));
+                                } else {
+                                    let count = imported.len();
+                                    let (added, updated) = merge_terms(&mut dialog.terms, imported);
+                                    let msg = if added + updated == 0 {
+                                        format!("The sheet's {count} term(s) already match the list.")
+                                    } else {
+                                        format!("Imported {added} new term(s) and set {updated} official translation(s) of {count} — Save to keep them.")
+                                    };
+                                    dialog.terms_status = Some((msg, true));
+                                }
+                            }
+                            Err(err) => dialog.terms_status = Some((format!("Could not read {path}: {err}"), false)),
+                        }
                     }
-                }
-                Err(err) => dialog.terms_status = Some((format!("Could not read {path}: {err}"), false)),
-            }
+                });
+                Ok(serde_json::Value::Null)
+            });
         }
         if ui
             .button("Reset to bundled")
@@ -372,16 +379,26 @@ fn terminology_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSe
                 Some(err) => dialog.terms_status = Some((err, false)),
                 None => {
                     st.glossary.terms = dialog.terms.clone();
-                    if let Some(path) = app.pick_save("bps_glossary.json") {
-                        match st.glossary.save(std::path::Path::new(&path)) {
-                            Ok(()) => {
-                                let _ = app.run("prefs.set", json!({"pubgenGlossaryPath": path}));
-                                st.glossary_loaded = true;
-                                dialog.terms_status = Some((format!("Saved {} term(s) to {path}.", st.glossary.terms.len()), true));
+                    let ctx = ui.ctx().clone();
+                    let _ = app.ask_save("bps_glossary.json", crate::app::file_dialogs::Bound::App, move |app, path| {
+                        super::with_state(&ctx, |st| {
+                            match st.glossary.save(std::path::Path::new(&path)) {
+                                Ok(()) => {
+                                    let _ = app.run("prefs.set", json!({"pubgenGlossaryPath": path}));
+                                    st.glossary_loaded = true;
+                                    if let Some(dialog) = &mut st.ai_dialog {
+                                        dialog.terms_status = Some((format!("Saved {} term(s) to {path}.", st.glossary.terms.len()), true));
+                                    }
+                                }
+                                Err(err) => {
+                                    if let Some(dialog) = &mut st.ai_dialog {
+                                        dialog.terms_status = Some((format!("Could not save: {err}"), false));
+                                    }
+                                }
                             }
-                            Err(err) => dialog.terms_status = Some((format!("Could not save: {err}"), false)),
-                        }
-                    }
+                        });
+                        Ok(serde_json::Value::Null)
+                    });
                 }
             }
         }
