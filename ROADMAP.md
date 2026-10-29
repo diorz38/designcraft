@@ -1,6 +1,7 @@
 # DesignCraft roadmap
 
 **Stage: pre-alpha** · next: alpha, ~5–7 h away; beta ~28 points and ~420–750 h beyond that (the core-workflow gate, not the percentage: ready for real work is already ~47%)
+- **2026-10-29** · Pubgen v0.14.0-pubgen.0.8.0: Vector publication chart engine (8 archetypes, BPS 3-line title format, population pyramid 4-step nice scaling and gender summary card), Master Excel 4-step UX redesign, upstream DesignCraft 0.14.0 sync, and automated portable package sample distribution.
 - 2026-10-23: placed-artwork layer options survive IDML and native round trips per placement, independently of shared assets. Unsupported visibility overrides are explicit import/preflight/PDF warnings; format 4 prevents older native readers from silently discarding them. Rendering parity is still open; see [graphic-layer-options.md](docs/graphic-layer-options.md).
 - FID1: PDF export normalizes mixed emitted gradient color spaces to RGB with an explicit warning; homogeneous device-space gradients retain their components. Linear/radial, midpoint, archival and print policies have synthetic regression coverage.
 
@@ -379,6 +380,8 @@ list) · [roadmap.md](docs/roadmap.md) (milestones, plan) · [parity-checklist.m
 ## Progress log
 
 Newest first.
+
+- **2026-10-29** — **Pubgen v0.14.0-pubgen.0.8.0**: sync with upstream DesignCraft v0.14.0; Pubgen Panel UX redesign with streamlined Master Excel 4-step workflow (Load, Select Sheets, Set Margins, Generate All); full vector publication chart automation with 8 archetypes (Bar Clustered, Bar Stacked, Horizontal Bar, Line, Area, Donut, Gauge, Population Pyramid) adhering to official BPS publication standards; 3-line BPS publication title format (`Grafik XX.XX` bold 11pt, `[Judul Data]` bold 11pt, `Figure XX.XX [English Title]` italic 10pt) with smart title recognition from table source pages; Population Pyramid enhancements with fatter bars, tight 2.0pt vertical spacing, dynamic 4-step nice axis scaling (e.g. max 7940 -> 8000 with 0, 2k, 4k, 6k, 8k; max 11240 -> 12000 with 0, 3k, 6k, 9k, 12k), and bottom gender summary card; automatic inclusion of DUAL_LANG and SINGLE_LANG samples in portable app distribution excluding *.csv and *.zip files. No readiness percentage change.
 
 - **2026-10-27** · An iconic panel's flyout stays open while you work in the canvas or a text field: Auto-Collapse Iconic Panels is off by default, and preferences saved with it on start with it off. Preferences › Interface › Panels holds the setting next to the column bar's menu item. No readiness percentage change.
 - **2026-10-24** · Column rules run from the top line's ascent to the bottom line's descent, as InDesign draws them, instead of from the top to the bottom of the columns, on screen, in PDF and in PowerPoint export. The top and bottom insets shorten the rule from those lines. Existing documents draw their column rules at the new length. No readiness percentage change.

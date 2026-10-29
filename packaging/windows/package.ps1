@@ -21,7 +21,8 @@
 #>
 param(
   [ValidateSet('x64', 'x86', 'arm64')] [string] $Arch = 'x64',
-  [switch] $SkipBuild
+  [switch] $SkipBuild,
+  [switch] $PortableOnly
 )
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -62,7 +63,7 @@ if (-not $SkipBuild) {
   [Environment]::SetEnvironmentVariable($flagVar, '-C target-feature=+crt-static')
   # Fail the build (rather than warn) if the icon/VERSIONINFO can't be embedded.
   $env:DESIGNCRAFT_REQUIRE_WINRES = '1'
-  Invoke-Native "cargo build ($Target)" { cargo build --release --locked -p designcraft -p designcraft-cli --target $Target }
+  Invoke-Native "cargo build ($Target)" { cargo build --release --locked -p designcraft -p designcraft-cli --features designcraft/pubgen --target $Target }
 }
 
 $Bin = Join-Path $TargetDir "$Target\release"
@@ -106,19 +107,21 @@ if ($env:CRAFT_FONTS_DIR) {
 }
 # ---- end font notices for the MSI --------------------------------------------------------------
 
-# ---- MSI ---------------------------------------------------------------------------------------
-$Msi = Join-Path $Dist "designcraft-$Version-windows-$Arch.msi"
-Invoke-Native 'wix build' {
-  wix build (Join-Path $PSScriptRoot 'designcraft.wxs') (Join-Path $PSScriptRoot 'installer-ui.wxs') -arch $Arch `
-    -d "Version=$MsiVersion" -d "BinDir=$Stage" -d "IconPath=$(Join-Path $Root 'assets\app-icon\designcraft.ico')" `
-    -d "DocsDir=$Docs" -d "HasCraftFontLicences=$HasCraftFontLicences" `
-    -o $Msi
+if (-not $PortableOnly) {
+  # ---- MSI ---------------------------------------------------------------------------------------
+  $Msi = Join-Path $Dist "designcraft-$Version-windows-$Arch.msi"
+  Invoke-Native 'wix build' {
+    wix build (Join-Path $PSScriptRoot 'designcraft.wxs') (Join-Path $PSScriptRoot 'installer-ui.wxs') -arch $Arch `
+      -d "Version=$MsiVersion" -d "BinDir=$Stage" -d "IconPath=$(Join-Path $Root 'assets\app-icon\designcraft.ico')" `
+      -d "DocsDir=$Docs" -d "HasCraftFontLicences=$HasCraftFontLicences" `
+      -o $Msi
+  }
+  # Check the compiled scope, path and registration contract before signing.
+  & (Join-Path $PSScriptRoot 'check-install-policy.ps1') -MsiPath $Msi
+  # wix writes its debug symbols (.wixpdb) next to the MSI; keep them out of the release assets.
+  Remove-Item -Force -ErrorAction SilentlyContinue ([IO.Path]::ChangeExtension($Msi, '.wixpdb'))
+  & (Join-Path $PSScriptRoot 'sign.ps1') $Msi
 }
-# Check the compiled scope, path and registration contract before signing.
-& (Join-Path $PSScriptRoot 'check-install-policy.ps1') -MsiPath $Msi
-# wix writes its debug symbols (.wixpdb) next to the MSI; keep them out of the release assets.
-Remove-Item -Force -ErrorAction SilentlyContinue ([IO.Path]::ChangeExtension($Msi, '.wixpdb'))
-& (Join-Path $PSScriptRoot 'sign.ps1') $Msi
 
 # ---- portable zip ------------------------------------------------------------------------------
 $Portable = Join-Path $TargetDir "windows-package\designcraft-$Version-windows-$Arch-portable"
@@ -176,4 +179,8 @@ if ($Arch -ne 'arm64' -or $HostArch -eq 'arm64') {
 } else {
   Write-Output "skipping designcraft-cli --version: an $Arch build doesn't run on this $HostArch machine"
 }
-Get-Item $Msi, $Zip | Format-Table Name, Length
+if ($PortableOnly) {
+  Get-Item $Zip | Format-Table Name, Length
+} else {
+  Get-Item $Msi, $Zip | Format-Table Name, Length
+}
