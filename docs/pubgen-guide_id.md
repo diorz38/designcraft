@@ -7,6 +7,9 @@
 ## Daftar Isi
 1. [Apa itu Pubgen?](#1-apa-itu-pubgen)
 2. [Menemukan Pubgen di DesignCraft](#2-menemukan-pubgen-di-designcraft)
+   - [Panel PubGen](#panel-pubgen)
+   - [Beralih ke menu DesignCraft](#beralih-ke-menu-designcraft)
+   - [Tombol Mode Dwi Bahasa (Single Lang / Dual Lang)](#tombol-mode-dwi-bahasa-single-lang--dual-lang)
 3. [Bagian 1: Publication Cover (Pembuat Halaman Sampul Otomatis)](#3-bagian-1-publication-cover-pembuat-halaman-sampul-otomatis)
    - [Ikhtisar & Posisi Halaman](#ikhtisar--posisi-halaman)
    - [13 Gaya Sampul Eksekutif](#13-gaya-sampul-eksekutif)
@@ -38,14 +41,28 @@
    - [Impor Cerita Teks RTF (Page from RTF)](#impor-cerita-teks-rtf-page-from-rtf)
    - [Menyisipkan Gambar (Page from Image: Objek vs Latar Belakang Penuh)](#menyisipkan-gambar-page-from-image-objek-vs-latar-belakang-penuh)
    - [Penomoran Ulang Halaman & Seksi (Romawi vs Arab)](#penomoran-ulang-halaman--seksi-romawi-vs-arab)
-7. [Tutorial Praktis Langkah demi Langkah](#7-tutorial-praktis-langkah-demi-langkah)
-   - [Tutorial 1: Menyusun Publikasi Lengkap dalam 3 Menit](#tutorial-1-menyusun-publikasi-lengkap-dalam-3-menit)
-   - [Tutorial 2: Mendesain Sampul Kustom dengan Foto & Warna Sendiri](#tutorial-2-mendesain-sampul-kustom-dengan-foto--warna-sendiri)
-   - [Tutorial 3: Memformat Tabel Statistik Kompleks dari Excel](#tutorial-3-memformat-tabel-statistik-kompleks-dari-excel)
-8. [Tanya Jawab (FAQ) & Panduan Mengatasi Kendala](#8-tanya-jawab-faq--panduan-mengatasi-kendala)
-
----
-
+7. [Master Excel: Satu Buku Kerja Menjadi Halaman Jadi](#7-master-excel-satu-buku-kerja-menjadi-halaman-jadi)
+   - [Sheet menjadi apa](#sheet-menjadi-apa)
+8. [Grafik Vektor & Infografis Statistik](#8-grafik-vektor--infografis-statistik)
+   - [Sembilan arketipe](#sembilan-arketipe)
+   - [Yang ditanyakan dialog grafik](#yang-ditanyakan-dialog-grafik)
+   - [Grafik dari Excel](#grafik-dari-excel)
+9. [Header & Footer Setup](#9-header--footer-setup)
+10. [Publication Compiler (Pengikat Multi-Bab)](#10-publication-compiler-pengikat-multi-bab)
+    - [Manifest](#manifest)
+    - [Urutan kerja satu kompilasi](#urutan-kerja-satu-kompilasi)
+11. [Audit Publication (Preflight QA)](#11-audit-publication-preflight-qa)
+12. [Publication Profiles (Profil Publikasi)](#12-publication-profiles-profil-publikasi)
+13. [Terjemahan AI & Memori Terminologi](#13-terjemahan-ai--memori-terminologi)
+    - [Penyiapan](#penyiapan)
+    - [Menerjemahkan halaman](#menerjemahkan-halaman)
+    - [Memori terminologi](#memori-terminologi)
+14. [Tutorial Praktis Langkah demi Langkah](#14-tutorial-praktis-langkah-demi-langkah)
+    - [Tutorial 1: Menyusun Publikasi Lengkap dalam 3 Menit](#tutorial-1-menyusun-publikasi-lengkap-dalam-3-menit)
+    - [Tutorial 2: Mendesain Sampul Kustom dengan Foto & Warna Sendiri](#tutorial-2-mendesain-sampul-kustom-dengan-foto--warna-sendiri)
+    - [Tutorial 3: Memformat Tabel Statistik Kompleks dari Excel](#tutorial-3-memformat-tabel-statistik-kompleks-dari-excel)
+    - [Tutorial 4: Mengompilasi Seluruh Publikasi dari Satu Manifest](#tutorial-4-mengompilasi-seluruh-publikasi-dari-satu-manifest)
+15. [Tanya Jawab (FAQ) & Panduan Mengatasi Kendala](#15-tanya-jawab-faq--panduan-mengatasi-kendala)
 ## 1. Apa itu Pubgen?
 
 **Pubgen** (*Publication Generator*) adalah modul otomasi tata letak yang terpasang langsung di dalam DesignCraft.
@@ -53,29 +70,32 @@
 Dalam aplikasi tata letak konvensional (seperti Adobe InDesign atau QuarkXPress), pembuatan publikasi statistik setebal ratusan halaman (seperti buku *Kecamatan Dalam Angka*, *Kabupaten Dalam Angka*, atau Laporan Tahunan) menuntut ratusan langkah manual yang memakan waktu: menggambar kotak teks satu per satu, mengatur gaya judul, merapikan batas tabel, memasukkan logo, dan menyusun titik-titik daftar isi.
 
 Pubgen mengotomatiskan seluruh alur kerja tersebut:
-- **Sampul Instan**: Membangun sampul korporat eksekutif lengkap dengan geometri modern, bayangan lembut, foto terpotong rapi, dan tipografi resmi.
+- **Sampul Instan**: Membangun sampul korporat eksekutif lengkap dengan geometri modern, bayangan lembut, foto terpotong rapi, dan tipografi resmi — depan, dalam, dan belakang.
 - **Halaman Otomatis**: Membaca daftar bab atau tabel dari Excel/CSV dan menyusun puluhan halaman rapi dalam hitungan detik.
 - **Tabel Standar Penerbitan**: Memformat tabel data mengikuti standar baku BPS (garis horizontal tipis-tebal *booktabs*, header bertingkat, penomoran kolom resmi, serta penyorotan baris Jumlah/Total secara otomatis).
-- **Alat Editorial Praktis**: Memudahkan pengelolaan halaman bolak-balik (ganda), penomoran angka Romawi dan Arab, pengaliran teks dokumen RTF, serta peremajaan Daftar Isi secara dinamis.
+- **Grafik Vektor**: Mengubah sheet `CXX_XX` (atau tabel yang sudah ada) menjadi grafik asli yang bisa diedit — sembilan arketipe, dari batang dan garis sampai piramida penduduk, gauge, dan peta GeoJSON.
+- **Buku Satu Tombol**: Satu buku kerja Master Excel menghasilkan halaman, tabel, grafik, dan sampul sekaligus; Publication Compiler menyatukan banyak buku kerja bab menjadi satu dokumen dari satu manifest.
+- **Audit Mutu**: Preflight statistik memeriksa sel tabel terpotong, sumber yang hilang, nomor tabel yang loncat, kesetaraan dwibahasa, DPI gambar, dan — untuk cetak — spine serta bleed, dengan baris yang bisa diklik.
+- **Profil & Terminologi**: Profil publikasi mengganti perutean sheet, penamaan, geometri, dan gaya tabel; glosarium yang bisa diedit menjaga terjemahan AI memakai istilah statistik resmi.
+- **Alat Editorial Praktis**: Memudahkan pengelolaan halaman bolak-balik (ganda), penomoran angka Romawi dan Arab, header dan footer, pengaliran teks dokumen RTF, serta peremajaan Daftar Isi secara dinamis.
 
 ---
 
 ## 2. Menemukan Pubgen di DesignCraft
 
-Pubgen berada di **bilah menu**. Bila Pubgen terpasang, bilah menu mempertahankan seluruh menu bawaan
-DesignCraft dan menambahkan tiga menu sebelum **Help**:
+Pubgen berada di **bilah menu**. Bila Pubgen aktif — kondisi bawaan — bilah menu mempertahankan seluruh menu bawaan DesignCraft dan menambahkan **Publication**, **Publication Tools**, serta **Shortcut** sebelum **Help**:
 
 ```
-+---------------------------------------------------------------------------------------------------+
++-----------------------------------------------------------------------------------------------------------+
 |  File  Edit  Layout  Type  Object  Table  View  Window  Publication  Publication Tools  Shortcut  Help |
-+---------------------------------------------------------------------------------------------------+
++-----------------------------------------------------------------------------------------------------------+
 ```
 
 | Menu | Isinya |
 |---|---|
 | **File … Window** | Menu bawaan DesignCraft, tidak berubah. |
-| **Publication** | Alur pembuatan publikasi: Generate from Excel, Vector Chart, Table of Contents, Publication Cover, Header & Footer Setup, Audit Publication. |
-| **Publication Tools** | **Manual Ingest & Tables** (Page from CSV…, Table from CSV…), **Page & Layout Utilities** (Standard BPS Margins, Page Margins & Renumbering Options…), tanda centang **Dual Language Mode**, dan submenu **AI Translate**. |
+| **Publication** | Alur pembuatan publikasi: Generate from Excel (`Ctrl+Shift+G`), Compile Publication (`Ctrl+Shift+B`), Publication Profile, Vector Chart (`Ctrl+Shift+V`), Table of Contents (`Ctrl+Alt+T`), Publication Cover, Header & Footer Setup, Audit Publication (`Ctrl+Shift+Alt+A`). |
+| **Publication Tools** | **Manual Ingest & Tables** (Page from CSV…, Table from CSV…), **Publication Profiles** (pilih profil, Customize Active Profile…, Apply Profile Margins), **Page & Layout Utilities** (Standard BPS Margins `Ctrl+Shift+M`, Page Margins & Renumbering Options…), centang **Dual Language Mode** (`Ctrl+Shift+L`), dan **AI Translate** (Translate Selected Page, Translate Table Pages…, Fix Terms with Glossary, Setup…). |
 | **Shortcut** | Akses cepat ke aksi asli DesignCraft: Export PDF…, Preflight Document, Package…, Place…, New Sample Document. |
 | **Help** | Baris Help bawaan DesignCraft, lalu **About PubGen…** dan tombol pengalih bilah menu. |
 
@@ -85,7 +105,24 @@ Dengan begitu, publikasi lengkap hanya berjarak tiga kunjungan menu:
 2. **Publication ▸ Publication Cover** — membuat sampul.
 3. **Publication ▸ Table of Contents** — menyisipkan atau memperbarui Daftar Isi.
 
+Karya besar ditempuh lewat **Publication ▸ Compile Publication** (§10), sedangkan pekerjaan statistik lewat **Vector Chart** (§8), **Header & Footer Setup** (§9), **Publication Profile** (§12), dan **Audit Publication** (§11).
+
 Tindakan editorial lainnya (sebaran satu sisi, halaman kosong, halaman RTF dan gambar, penomoran ulang halaman) dibuka dari **Publication Tools ▸ Page & Layout Utilities…**, sedangkan jalur manual dari **Publication Tools ▸ Manual Ingest & Tables**.
+
+### Panel PubGen
+
+Semua yang ada di menu juga tersedia sebagai panel, dibuka dari **Window ▸ PubGen Panel**. Panel adalah permukaan kerja; menu hanyalah jalan pintas.
+
+| Area | Fungsinya |
+|---|---|
+| **Header panel** | Pemilih profil dengan ringkasan satu baris, **AI Translator**, **Translate this Page** (atau *Translate Review / Translate Table on this Page*), **Fix Terms**, **Retranslate (Glossary)**, **Translate Tables…**, **Audit Publication**, **Set Page Margin**, dan lencana Single/Dual Lang. |
+| **Publication Compiler** | Satu manifest menjadi seluruh publikasi (§10), khusus desktop. |
+| **1. Data Source & Generate (Master Excel)** | Alur buku kerja satu tombol (§7). |
+| **2. Table of Contents** | Gaya, judul, tata letak ToC, dan **Add TOC / Rebuild TOC** (§6). |
+| **3. Manual Import & Fine-Tuning** | Grup yang bisa dilipat berisi **Page from CSV** (§4) dan **Table from CSV** (§5) untuk kerja manual. |
+| **4. Page Utilities** | Sakelar sebaran, halaman kosong, penomoran ulang halaman dan seksi (§6). |
+
+Dialog terbuka di atasnya: Master Excel, Publication Cover, Table of Contents, Header & Footer, Vector Chart, Audit Publication, kustomisasi profil, penyiapan AI, dan About PubGen.
 
 ### Beralih ke menu DesignCraft
 Seluruh tindakan Pubgen juga tersedia di kumpulan menu lengkap DesignCraft, di dalam menu **Pubgen** yang terletak tepat sebelum **Help**. Untuk mencapai bilah DesignCraft polos — tanpa tiga menu Pubgen — alihkan bilah menunya:
@@ -103,24 +140,18 @@ Baris **Dual Language Mode** pada menu **Publication Tools** mencentang atau mel
   - **Halaman Pembatas Bab (`DIV`)**: Menampilkan judul ganda dengan subjudul bahasa Inggris menggunakan warna aksen.
   - **Bab Ulasan (`RXX`) & Bagian Depan (`BXX`)**: Membuat sebaran berurutan (halaman Indonesia diikuti halaman Inggris).
   - **Tabel Statistik (`XX_XX`)**: Menggunakan tajuk 2 baris (`Tabel` / `Table` miring) dan judul 2 baris dengan teks Inggris dicetak miring.
-  - **Grafik (`CXX_XX`)**: Memformat judul dan subjudul dwi bahasa dengan perlakuan cetak miring presisi pada bagian bahasa Inggris.
+  - **Grafik (`CXX_XX`)**: Memformat judul dwi bahasa (baris Indonesia, lalu `Figure NN.NN …` miring) dengan tipografi Inggris yang benar.
 
-### Terjemah dengan AI (Groq, fitur opsional)
-Jika sumber Anda murni bahasa Indonesia — tanpa kolom `title_en` / `file_en` dan tanpa pasangan `" / "` — kotak centang **Translate with AI** (di sebelah tombol Dual Lang) mengisi setengah bahasa Inggris untuk Anda. Memerlukan build dengan fitur terjemahan online (`cargo run --release -p designcraft --features pubgen,ai-translate-online`).
-
-1. Centang **Translate with AI** — dialog pengaturan terbuka.
-2. Pilih **Online — Groq (akun gratis)**, tempel kunci API dari [console.groq.com/keys](https://console.groq.com/keys), lalu pilih model (Refresh mengisi daftar dari akun Anda).
-3. Tekan **Use AI**, lalu **Generate Pages** seperti biasa.
-
-Yang terjadi di belakang: Pubgen mengumpulkan seluruh teks Indonesia (judul baris, judul sampul, isi tabel, paragraf narasi), menerjemahkannya di latar belakang dengan bilah kemajuan dan tombol Cancel yang berfungsi, lalu membuat halaman dengan bagian Inggris terisi. Generate kedua atas baris yang sama memakai hasil terjemahan dan selesai seketika.
-
-Dua kalimat jujur dari dialog: **teks katalog dikirim ke cloud Groq**, dan batas kuota gratis membuat pekerjaan besar lebih lambat, tidak diblokir. Kunci API disimpan lokal di pengaturan DesignCraft. Model offline (NLLB-200 distilled 600M, ONNX) direncanakan pada dialog yang sama; lisensinya **CC-BY-NC-4.0 — non-komersial**.
+### AI dalam satu paragraf
+AI bersifat opsional dan memerlukan build daring (`cargo run --release -p designcraft --features pubgen,ai-translate-online`). Terjemahan halaman dan sel tabel memakai **Groq**, sampul memakai **Cloudflare Workers AI** (§3), dan konsistensi istilah dijaga oleh memori terminologi yang bisa diedit. Penyiapan, tombol terjemahan halaman dan massal, editor glosarium, serta batasannya ada di §13.
 
 ---
 
 ## 3. Bagian 1: Publication Cover (Pembuat Halaman Sampul Otomatis)
 
-Menu **Publication Cover** memungkinkan Anda membuat halaman sampul depan buku/laporan berstandar eksekutif dengan satu kali klik.
+Menu **Publication Cover** memungkinkan Anda membuat halaman sampul depan buku/laporan berstandar eksekutif dengan satu kali klik. Buka dari **Publication ▸ Publication Cover**, atau gunakan kolom yang sama di alur Master Excel dan compiler (§7, §10).
+
+Selain sampul depan, **Add Inside cover and Back Cover** menyisipkan sampul dalam abu-abu di halaman 2 dan sampul belakang di akhir. **Map Overlay** menempatkan peta administrasi dekoratif di belakang teks dan logo sampul, dari peta bawaan maupun berkas `.geojson` Anda sendiri.
 
 ![Fiture Pubgen:Publication Cover](images/thumb02.png)
 
@@ -541,7 +572,7 @@ Jika Anda membuka berkas Excel yang memiliki banyak lembar (*multi-sheet* `.xlsx
 
 ## 6. Bagian 4: Utilitas Halaman & Tata Letak
 
-Dialog **PubGen Tools ▸ Page & Layout Utilities…** menyediakan berbagai tombol pintas untuk mempercepat perapian naskah buku:
+Dialog **Publication Tools ▸ Page & Layout Utilities…** menyediakan berbagai tombol pintas untuk mempercepat perapian naskah buku:
 
 
 ### Sakelar Halaman Tunggal vs Halaman Ganda (Facing Pages)
@@ -645,7 +676,257 @@ Buku resmi umumnya terbagi menjadi dua bagian penomoran:
 
 ---
 
-## 7. Tutorial Praktis Langkah demi Langkah
+## 7. Master Excel: Satu Buku Kerja Menjadi Halaman Jadi
+
+Kartu **1. Data Source & Generate (Master Excel)** di bagian atas panel PubGen mengubah satu berkas `.xlsx` menjadi satu bab utuh — halaman, tabel, grafik, dan sampul — dalam satu tindakan.
+
+| Kontrol | Fungsinya |
+|---|---|
+| **Auto-generate pages, tables & cover from sheets** | Aktif secara bawaan. Saat berkas dipilih, seluruh alur berjalan: "Page from CSV", tabel setiap sheet dengan opsi bawaannya, setiap halaman grafik, dan sampul dari sheet `COVER`. Matikan untuk hanya mengonversi buku kerja menjadi CSV. |
+| **Excel to CSV Data (.xlsx)…** | Pilih buku kerja. Pubgen menulis satu CSV katalog plus satu CSV tabel per sheet data, lalu (dengan auto-generate aktif) membuat halamannya. |
+| **Active: …** | Menampilkan nama buku kerja atau katalog yang dimuat beserta jumlah record katalog. |
+| **Download … / Download Generated CSVs as ZIP…** | Menyimpan semua CSV katalog dan tabel yang dihasilkan dalam satu `.zip`. |
+| Baris status | Melaporkan hasil generate atau kesalahan pertama, plus jumlah kosakata yang dijelaskan di §13. |
+
+### Sheet menjadi apa
+
+| Nama sheet | Menjadi |
+|---|---|
+| `COVER` | Nilai Publication Cover: `style`, `title1`, `title2`, `year`, `volume`, `no_catalogue`, ISSN/ISBN, `office_name`, `image_1`, `image_lanscape`, `office_logo`, `event_theme`. |
+| `DIV` | Halaman pembatas bab (art prosedural atau templat, diwarnai dari tema sheet). |
+| `GXX` | Halaman narasi bagian awal (Kata Pengantar, Penjelasan Teknis…). |
+| `BXX` | Halaman narasi bagian awal yang juga membawa versi bahasa Inggris. |
+| `RXX` | Spread ulasan: badan bahasa Indonesia, plus kolom Inggris pada mode Dual Lang. |
+| `XX_XX` | Halaman tabel statistik (`01_01`, `02_03`…), tabelnya disisipkan otomatis. |
+| `CXX_XX` | Halaman grafik — vektor bila sheet memuat blok `chart_type`, jika tidak gambarnya (§8). |
+| `MXX_XX` | Halaman peta choropleth GeoJSON (§8). |
+| `A02` | Baris **Publication Note**: judul `Keterangan Publikasi` plus halaman catatan RTF dari sheet. Tidak menghasilkan CSV tabel. |
+
+Perutean sheet **mengikuti profil** (§12): pola sampul, pembatas, narasi, tabel, dan grafik berasal dari profil aktif, dan Pubgen berpindah profil otomatis saat mengenali nama sheet BRS, laporan keuangan korporat, atau akademik. Pilihan profil eksplisit selalu menang.
+
+---
+
+## 8. Grafik Vektor & Infografis Statistik
+
+Grafik di Pubgen adalah objek dokumen asli — batang, garis, dan poligon vektor dengan teks sungguhan — bukan gambar. Tajam pada zoom berapa pun dan saat dicetak, serta masih bisa diedit setelah dibuat.
+
+Buka pembuat grafik dari **Publication ▸ Vector Chart** (`Ctrl+Shift+V`), baris **Chart Options…** di **Object ▸ Chart Options…**, atau biarkan Master Excel mengubah sheet `CXX_XX` menjadi halaman grafik.
+
+### Sembilan arketipe
+
+| Arketipe | Nilai yang diterima di `chart_type` | Kegunaan umum |
+|---|---|---|
+| Batang berkelompok | `bar_clustered`, `bar`, `column`, `batang` | perbandingan berdampingan per kategori |
+| Batang bertumpuk | `bar_stacked`, `stacked`, `stackedbar`, `stackedcolumn` | bagian dari keseluruhan per kategori |
+| Batang horizontal | `horizontal_bar`, `hbar`, `bar_h`, `batanghorizontal`, `ranked` | peringkat antarwilayah |
+| Garis | `line`, `garis`, `trend` | deret multi-tahun |
+| Area | `area`, `filled`, `arealine` | tren dengan volume |
+| Donat | `donut`, `doughnut`, `pie`, `donat`, `lingkaran` | pangsa dari total |
+| Piramida penduduk | `population_pyramid`, `pyramid`, `piramidapenduduk`, `piramida` | distribusi umur/jenis kelamin |
+| Gauge | `gauge`, `speedometer`, `dial`, `alatukur` | satu metrik terhadap target |
+| Peta choropleth | `map`, `choropleth`, `peta`, `geomap`, `thematicmap` | nilai menurut wilayah |
+
+### Yang ditanyakan dialog grafik
+
+1. **Import from Table** — pilih tabel yang sudah ada di dokumen (daftar berisi `Tabel 01.01 — … (Page N)`), pilih halamannya, lalu tekan **Auto-fill** untuk membaca kategori, seri, dan label dari tabel itu.
+2. **Insert Location** — *Selected page*, *After table*, atau *Current page*.
+3. **Chart Type & Titles** — arketipe serta **Title (ID)**, kolom dua baris mengikuti format BPS (`Grafik 01.01` di baris 1, judul data di baris 2), dan **Title (EN)** yang dirender sebagai `Figure 01.01 …` miring pada mode Dual Lang.
+4. **Data Columns & Rows** — huruf kolom kategori, rentang baris, dan hingga tiga seri, masing-masing dengan huruf kolom serta label legenda Indonesia dan Inggris.
+5. **Maps** (khusus choropleth) — peta administrasi bawaan atau berkas `.geojson` sendiri, tema warna, dan contoh CSV desa untuk mencoba mesinnya.
+6. **Formatting & Display Options** — *Number (1.234,5)*, *Percentage (%)*, atau *Currency IDR (Rp)*, batas nilai maksimum (kosong = batas "bulat" otomatis), serta **Show Value Labels**, **Show Legend**, **Show Gridlines**.
+
+### Grafik dari Excel
+
+Sheet grafik adalah blok pasangan `key` / `value`. Hanya `chart_type` yang wajib:
+
+```
+chart_type        bar_clustered
+title             Pertumbuhan Ekonomi Menurut Sektor
+title_en          Economic Growth by Sector
+category_col      A
+series_1_col      B
+series_1_label    Pertanian
+series_1_label_en Agriculture
+series_2_col      C
+series_2_label    Industri
+data_start_row    5
+data_end_row      12
+value_format      percent
+show_value_labels true
+```
+
+Kunci lain yang diterima: `data_start_row` / `data_end_row`, `max_value`, `show_legend`, `show_grid`, `geojson`. Seri 2 dan 3 memakai pola `series_N_col` / `series_N_label` / `series_N_label_en`. Tanpa `chart_type`, sheet ditempatkan sebagai gambar seperti sebelumnya.
+
+Grafik terindeks otomatis: halaman grafik vektor muncul di **Daftar Grafik** seperti gambar lainnya. Halaman peta juga bisa menjadi lapisan peta dekoratif di belakang teks dan logo sampul.
+
+---
+
+## 9. Header & Footer Setup
+
+**Publication ▸ Header & Footer Setup** membuka dialog templat. Header dan footer adalah objek dokumen, jadi milik halaman, bukan kotak teks.
+
+- **Style** — bawaan **Modern Minimal**, **Editorial Book**, dan **Corporate Report**, ditambah templat yang Anda simpan sendiri (bertanda **★**). Arahkan kursor ke baris atau tombol mata untuk pratinjau.
+- **Sided** — dua sisi (kiri/kanan bercermin) atau satu sisi.
+- **H. Off / F. Off** — jarak header dan footer dari tepi halaman, dalam poin.
+- **Scope** — seluruh dokumen, satu seksi (**Sections…**), atau rentang halaman.
+- **Teks Header / Footer** — kolom tunggal, kiri, dan kanan. Menerima `{page}`, `{section}`, dan `{runningHeader}`; karakter tab memisahkan dua bagian pada kolom tunggal.
+- **Objects** — garis header dan garis footer beserta ketebalannya, serta bilah aksen atas (tinggi dan bleed).
+- **Warna** — primary, accent, dark, rule, dan text.
+- **Save As New Template…** menyimpan pengaturan saat ini sebagai templat baru; tombol hapus menghapus templat kustom.
+- **Apply Header & Footer** menerapkannya ke dokumen; **Remove from Document** menghapusnya.
+
+Publication Compiler dapat menerapkan preset untuk Anda: `"headerFooter": { "preset": "book", "scope": "body" }` (§10).
+
+---
+
+## 10. Publication Compiler (Pengikat Multi-Bab)
+
+Kartu **Publication Compiler** di bagian atas panel membangun seluruh publikasi dari satu manifest. Daripada membuka sepuluh buku kerja bab satu per satu, Anda mendeskripsikannya sekali di `pubgen_project.json` lalu menekan **Compile**.
+
+- **Manifest** — ketik jalurnya atau pakai **Open…**. Manifest terakhir yang dibuka diingat dan dipakai saat kolom kosong.
+- **New…** — formulir pembuat proyek: judul publikasi, mode dwibahasa, jalur simpan, gaya dan tema sampul, daftar bab, margin, penomoran halaman, dan ekspor PDF. Hasilnya `pubgen_project.json` yang siap dijalankan.
+- **Compile** — menjalankan alur dengan bilah progres dan tombol **Cancel** yang berfungsi. Tanda titik menandai baris menu Publication selama proses berjalan.
+- Build yang gagal atau dibatalkan tidak menyentuh dokumen sebelumnya: berkas hasil disimpan pada langkah kedua terakhir. Dokumen yang sudah terbuka di tab tidak pernah ditimpa — build dilewati.
+
+### Manifest
+
+```json
+{
+  "version": 1,
+  "publicationTitle": "Kecamatan Karawang Timur Dalam Angka 2026",
+  "bilingual": true,
+  "profile": "bps_dda",
+  "output": {
+    "document": "build/karawang-timur.designcraft",
+    "pdf": "build/karawang-timur.pdf"
+  },
+  "document": {
+    "preset": "A4",
+    "facingPages": true,
+    "bleedMm": 3,
+    "marginsMm": { "top": 20.2, "bottom": 20, "inside": 19, "outside": 15 }
+  },
+  "cover": {
+    "source": "workbooks/BAB_01_2025.xlsx",
+    "style": 0,
+    "themePreset": 0,
+    "includeInside": true,
+    "includeBack": true
+  },
+  "frontMatter": { "workbook": "" },
+  "chapters": [
+    { "chapter": 1, "path": "workbooks/BAB_01_2025.xlsx", "title": "Geografi" },
+    { "chapter": 2, "path": "workbooks/BAB_02_2025.xlsx", "title": "Pemerintahan" }
+  ],
+  "pagination": { "frontMatterFormat": "lowerRoman", "bodyFormat": "arabic", "restartAtBody": true },
+  "toc": {
+    "placement": "afterFrontMatter",
+    "lists": ["contents", "tables", "charts"],
+    "titleBilingual": true,
+    "hangingIndent": true
+  },
+  "headerFooter": { "preset": "book", "scope": "body" },
+  "build": { "keepIntermediate": true, "exportPdf": true }
+}
+```
+
+Semua jalur relatif — buku kerja bab, sumber sampul, berkas keluaran — diselesaikan terhadap folder manifest. Kunci yang tidak dikenal diabaikan, dan setiap bagian boleh dihilangkan untuk memakai bawaannya.
+
+### Urutan kerja satu kompilasi
+
+1. Dokumen baru dengan ukuran halaman, halaman berhadapan, margin, dan bleed dari manifest (margin profil mengisi bila manifest masih memakai bawaan).
+2. Halaman induk untuk badan.
+3. Sampul depan dan (opsional) sampul dalam, dari sheet `COVER`.
+4. Bagian awal, bernomor Romawi kecil bila `restartAtBody` aktif.
+5. Placeholder daftar isi untuk daftar yang diminta.
+6. Setiap bab berurutan: pembatas, ulasan, grafik, tabel — nomor badan dimulai lagi dari Arab 1 dan berlanjut antar bab.
+7. Sampul belakang.
+8. Daftar isi/daftar tabel/daftar grafik, penomoran halaman, dan running header.
+9. Simpan, lalu ekspor PDF bila `build.exportPdf` aktif.
+
+Compiler hanya tersedia di aplikasi desktop: build web menyatakan bahwa kompilasi memerlukan aplikasi desktop. Lewat control channel atau skrip: `{"command":"pubgen.compileProject","params":{"path":"…/pubgen_project.json","pdf":"…/out.pdf"}}`; tambahkan `"sync": false` agar berjalan bertahap di panel.
+
+PDF yang dihasilkan adalah ekspor biasa. Preset **Print (PDF/X-4)** dan **Web** khusus Pubgen belum tersedia — untuk sekarang ekspor lewat **File ▸ Export PDF…**.
+
+---
+
+## 11. Audit Publication (Preflight QA)
+
+**Publication ▸ Audit Publication** (`Ctrl+Shift+Alt+A`), atau tombol **Audit Publication** di header panel, menjalankan daftar periksa publikasi sebelum dikirim ke percetakan atau dipublikasikan daring.
+
+| Aturan | Yang diperiksa | Tingkat |
+|---|---|---|
+| `PRF-01` | Teks terpotong di dalam sel tabel asli (kolom terlalu sempit, baris terlalu pendek). | Error |
+| `PRF-02` | Story overset: narasi meluap tanpa frame lanjutan. | Error |
+| `PRF-03` | Baris `Sumber:` / `Catatan:` yang kosong setelah titik dua. | Warning |
+| `PRF-04` | Penomoran tabel dan grafik: nomor loncat dan ganda, dikelompokkan per jenis dan bab (pasangan dwibahasa pada satu halaman bukan duplikat). | Warning |
+| `PRF-05` | Kesetaraan dwibahasa: halaman ulasan yang badan Inggrisnya kosong, placeholder, atau masih teks Indonesia. | Warning |
+| `PRF-06` | Gambar raster di bawah ambang DPI profil yang dipilih. | Warning |
+| `PRF-07` | Khusus cetak: grafis melewati tepi trim tanpa bleed 3 mm, dan teks dalam 5 mm dari spine (atau melewatinya). | Error |
+
+- **Digital (online PDF)** — ambang 150 ppi, tanpa pemeriksaan spine/bleed.
+- **Print (press)** — ambang 300 ppi plus pemeriksaan spine dan bleed.
+
+Klik baris mana pun untuk memilih objek bermasalah dan melompat ke halamannya. Tombol **FP / IG** memutar tag — *false positive* atau *ignored*. Baris bertag meredup, bisa disembunyikan dengan **hide tagged**, dan tidak lagi dihitung di ringkasan; tag dikunci berdasarkan aturan dan pesan sehingga bertahan setelah audit ulang maupun regenerasi. **Min ppi** menimpa ambang profil, dan **Re-run** menyegarkan daftar. Dialog juga menjalankan ulang sendiri bila dokumen berubah sejak audit terakhir, sehingga baris tidak pernah menunjuk objek yang sudah tidak ada.
+
+---
+
+## 12. Publication Profiles (Profil Publikasi)
+
+Profil adalah gaya rumah publikasi yang dideklarasikan sekali: sheet mana berperan sebagai apa, apa namanya, geometri halaman, struktur bagian awal, dan gaya tabel. Ganti profil, buku kerja yang sama menghasilkan publikasi berbeda.
+
+| Profil | Untuk | Geometri | Tabel |
+|---|---|---|---|
+| **BPS Daerah Dalam Angka** (`bps_dda`) | Buku tahunan KDA/KCDA resmi (bawaan) | A4, halaman berhadapan, 20,2 / 20 / 19 / 15 mm | baris nomor kolom, palet tema, pembatas bab |
+| **BPS Berita Resmi Statistik** (`bps_brs`) | Rilis pers dan rilis berkala | A4, halaman tunggal, 18 mm semua sisi | tanpa nomor kolom, baris zebra |
+| **Laporan Tahunan Korporat** (`corporate_annual`) | Laporan tahunan dan keberlanjutan | A4, berhadapan, 25 / 25 / 22 / 18 mm, label `Section` / `Table` / `Figure` | hanya garis horizontal, corporate navy |
+| **Monograf Akademik & Riset** (`academic_monograph`) | Kertas kerja, policy brief, LKIP/LAKIP | A4, berhadapan, 25 / 25 / 25 / 20 mm, `Gambar` untuk figur | tabel tiga garis gaya APA, monokrom |
+
+Cara memakainya:
+
+- **Header panel** — dropdown profil, lencana **Auto-detect** saat Pubgen mengenali buku kerja, ringkasan satu baris (ukuran halaman, margin, nomor kolom), dan **Sesuaikan…** untuk kustomisasi.
+- **Publication Tools ▸ Publication Profiles** — daftar yang sama dengan tanda centang, **Customize Active Profile…**, dan **Apply Profile Margins**.
+- **Publication Tools ▸ Page & Layout Utilities ▸ Standard BPS Margins** (`Ctrl+Shift+M`) — menerapkan 20 / 20 / 19 / 15 mm terlepas dari profil.
+- Compiler mematuhi `"profile"` di manifest (§10).
+
+**Kustomisasi** mengubah profil aktif di tempat: ukuran halaman dan halaman berhadapan, empat margin, prefiks bab/tabel/grafik, judul daftar isi dan daftar, label sumber dan catatan, penomoran bagian awal, pembatas bab, sampul dalam dan belakang, serta gaya tabel. **Apply to this session** menyimpan perubahan; **Reset to BPS DDA** kembali ke bawaan.
+
+Dua batasan yang perlu diketahui: profil kustom hanya bertahan selama sesi (pilihan aktif tidak disimpan antar peluncuran), dan profil belum bisa diimpor atau diekspor sebagai berkas.
+
+---
+
+## 13. Terjemahan AI & Memori Terminologi
+
+Fitur AI opsional Pubgen berjalan melalui **Groq** (terjemahan daring) dan **Cloudflare Workers AI** (latar sampul AI, §3). Semua di bawah ini memerlukan build daring (`--features pubgen,ai-translate-online`) dan kunci yang sudah dikonfigurasi.
+
+### Penyiapan
+
+Buka **Publication Tools ▸ AI Translate ▸ Setup…**, atau tekan **AI Translator** di header panel. Tempel API key Groq dari [console.groq.com/keys](https://console.groq.com/keys), pilih model (**Refresh models** mengisi daftar dari akun Anda), lalu **Use AI**. Kunci disimpan di preferensi DesignCraft lokal. Dialog juga jujur soal konsekuensinya: teks katalog dikirim ke cloud Groq, dan batas laju gratis membuat pekerjaan besar lebih lambat, bukan gagal.
+
+### Menerjemahkan halaman
+
+Mode Dual Lang harus aktif (**Publication Tools ▸ Dual Language Mode**, `Ctrl+Shift+L`). Lalu:
+
+- **Translate this Page** — label berubah menjadi **Translate Review on this Page** pada halaman ulasan `RXX` (judul bab dan badan kanan diganti bahasa Inggris, gaya paragraf dipertahankan) atau **Translate Table on this Page** pada halaman tabel (judul, sel header, dan kotak sumber/catatan diterjemahkan di tempat, bahasa Inggris di baris baru dengan huruf miring).
+- **Translate Tables…** — terjemahan massal untuk rentang halaman, dari tombol yang sama atau **Publication Tools ▸ AI Translate ▸ Translate Table Pages…**.
+- Bilah progres dan **Cancel** berjalan di latar belakang; hasil terjemahan di-cache, jadi Generate atau Translate kedua atas baris yang sama berjalan seketika.
+
+### Memori terminologi
+
+Glosarium resmi menjaga keluaran AI tetap memakai istilah statistik baku — *Kecamatan* → *Subdistrict*, *PDRB* → *GRDP*, *Luas Wilayah* → *Total Area*.
+
+- Glosarium bawaan ada di `assets/pubgen/bps_glossary.json`. Urutan pencarian: jalur tersimpan di preferensi, lalu aset, lalu folder build. Berkas hilang atau rusak menjadi glosarium kosong, bukan kesalahan.
+- Glosarium disuntikkan ke prompt (maksimal 200 istilah, `id = en`) dan diterapkan **secara deterministik pada sel utuh** setelah terjemahan.
+- Tab **Terminology** di dialog penyiapan AI adalah editor lengkap: cari, tambah, ubah, hapus, **Import CSV…** (dua kolom — Indonesia, Inggris — dengan koma, titik koma, tab, atau pipa; header opsional), **Reset to bundled**, dan **Save…** ke `bps_glossary.json` milik Anda.
+- **Collect Vocabulary** membaca halaman hasil generate (header, label baris, judul, baris catatan dan sumber, serta rangkaian frasa) dan menambahkan istilah Indonesia yang ditemukan dengan kolom Inggris kosong; setiap generate Excel melakukannya otomatis dan melaporkan `Vocabulary: N new term(s) collected`.
+- **Fill AI Drafts** mengisi sel Inggris kosong itu dari model, istilah per istilah. Kotak **Auto** di sampingnya mengulang langkah ini setelah setiap generate.
+- **Fix Terms** menerapkan glosarium pada terjemahan yang sudah ada di halaman terpilih; **Retranslate (Glossary)** membetulkan istilah tersebut lalu menerjemahkan ulang hanya teks yang ditandai glosarium (satu batch permintaan).
+
+> **Tidak ada di produk:** peringkas narasi *Draft Review* yang lama sudah dihapus pada Oktober 2026. Pubgen tidak menyusun prosa bab dari angka tabel saat ini; pekerjaan AI-nya adalah terjemahan dan terminologi. Bila perlu paragraf ulasan, tulis sendiri lalu tempatkan sebagai RTF.
+
+---
+
+## 14. Tutorial Praktis Langkah demi Langkah
 
 ### Tutorial 1: Menyusun Publikasi Lengkap dalam 3 Menit
 
@@ -659,19 +940,19 @@ Berikut alur kerja praktis menyusun publikasi statistik dari nol hingga selesai:
    - Isi judul: `KARAWANG TIMUR` dan tahun: `2026`.
    - Klik **Generate Cover Page**. Sampul langsung jadi di Halaman 1!
 3. **Membuat Halaman Judul Bab**:
-   - Buka **PubGen Tools ▸ Manual Ingest & Tables ▸ Page from CSV…**.
+   - Buka **Publication Tools ▸ Manual Ingest & Tables ▸ Page from CSV…**.
    - Klik **Browse...** lalu pilih berkas contoh `samples/KBDA2026_chapters.csv`.
    - Pilih preset: `1 Row · 3 Columns`.
    - Klik **Generate Pages**. Sebanyak 28 halaman judul bab otomatis terbentuk!
 4. **Memasukkan Tabel Data**:
    - Pindah ke Halaman 2 dokumen.
-   - Buka **PubGen Tools ▸ Manual Ingest & Tables ▸ Table from CSV…**.
+   - Buka **Publication Tools ▸ Manual Ingest & Tables ▸ Table from CSV…**.
    - Klik **Browse...** lalu pilih berkas `samples/kbda_2005.csv`.
    - Pilih gaya: `Horizontal Rules (Booktabs)`. Penempatan: `At page (below title)`.
    - Centang opsi `[x] Condition rules (Jumlah, Tahun, Kab, Kec...)`.
    - Klik **Insert Table**. Tabel statistik langsung terpasang rapi di bawah judul!
 5. **Membuat Daftar Isi**:
-   - Di **PubGen Tools ▸ Page & Layout Utilities…**, klik **Add Blank Page**.
+   - Di **Publication Tools ▸ Page & Layout Utilities…**, klik **Add Blank Page**.
    - Buka **Publication ▸ Table of Contents…**, lalu pilih TOC style: `TOC Table` (kolom Judul otomatis terisi `Daftar Table`), pilih
      Layout: `TablePage`.
    - Klik **Add TOC**. Daftar isi langsung tercipta lengkap dengan nomor halamannya! Untuk daftar grafik, pindah ke
@@ -721,7 +1002,21 @@ Jika Anda memiliki tabel dengan kelompok kolom bersusun (misalnya: Jumlah Pendud
 
 ---
 
-## 8. Tanya Jawab (FAQ) & Panduan Mengatasi Kendala
+### Tutorial 4: Mengompilasi Seluruh Publikasi dari Satu Manifest
+
+Untuk buku tahunan dengan delapan sampai dua belas buku kerja bab, compiler menggantikan perulangan manual:
+
+1. **Kumpulkan buku kerja** dalam satu folder, misalnya `workbooks/BAB_01_2025.xlsx` … `workbooks/BAB_10_2025.xlsx`, dengan sheet `COVER` di bab 1 atau di buku kerja tersendiri.
+2. **Pilih profil** di header panel — `BPS Daerah Dalam Angka` untuk buku tahunan KDA/KCDA (§12). Nilai `"profile"` di manifest menang bila diisi.
+3. **Buat manifest**: di kartu Publication Compiler tekan **New…**, isi judul, daftar bab, margin, dan apakah akan mengekspor PDF, lalu tentukan lokasi penyimpanan `pubgen_project.json`. Skema lengkapnya ada di §10.
+4. **Compile**: tekan **Compile**. Bilah progres menyebut setiap langkah — dokumen baru, halaman induk, sampul depan, sampul dalam, bagian awal, placeholder daftar, tiap bab, sampul belakang, daftar isi, penomoran halaman, running header, simpan, PDF. **Cancel** berhenti dengan rapi dan tidak menyentuh hasil build sebelumnya.
+5. **Periksa**: baca baris status (halaman, bab, peringatan), lalu jalankan **Audit Publication** (§11) dan klik baris yang ditandai untuk langsung melompat ke sana.
+6. **Ekspor**: dengan `"exportPdf": true` PDF ditulis di samping dokumen; bila tidak, gunakan **File ▸ Export PDF…**.
+
+
+---
+
+## 15. Tanya Jawab (FAQ) & Panduan Mengatasi Kendala
 
 #### T: Berkas CSV saya menggunakan pemisah titik koma (;), bukan koma (,). Apakah bisa dibaca?
 **J:** Tentu saja bisa! Pubgen dilengkapi dengan sensor pendeteksi otomatis yang mengenali titik koma (`;`), koma (`,`), maupun tab (`\t`). Anda tidak perlu mengubah pengaturan komputer Anda.
@@ -735,8 +1030,25 @@ Jika Anda memiliki tabel dengan kelompok kolom bersusun (misalnya: Jumlah Pendud
 #### T: Di mana berkas pengaturan dan riwayat kerja saya tersimpan jika menggunakan versi Portable?
 **J:** Versi *Portable* menyertakan berkas penanda bernama `portable.txt`. Berkas ini memastikan seluruh konfigurasi, riwayat, dan pemulihan sistem tersimpan secara terisolasi di dalam folder lokal `DesignCraftData/` persis di samping berkas program `designcraft.exe`. Tidak ada data yang ditulis ke Windows Registry maupun folder `%APPDATA%`, sehingga komputer Anda tetap bersih.
 
+---
+
+#### T: Halaman grafik muncul sebagai gambar biasa, bukan grafik vektor. Mengapa?
+**J:** Sheet `CXX_XX` digambar sebagai grafik vektor hanya bila memuat baris `chart_type` (§8). Bila baris itu tidak ada atau nilainya bukan salah satu dari sembilan arketipe, Pubgen mempertahankan perilaku lama dan menempatkan gambar dari sheet. Tambahkan `chart_type`, lalu generate ulang atau pakai **Publication ▸ Vector Chart** untuk membangun grafik dari tabel di halaman tersebut.
+
+#### T: Bolehkah saya menyembunyikan peringatan audit yang menurut saya aman?
+**J:** Boleh. Klik tombol **FP / IG** pada baris itu untuk menandainya *false positive* atau *ignored*. Baris bertag meredup, tidak dihitung lagi di ringkasan, dan bisa disembunyikan dengan **hide tagged**. Tag dikunci berdasarkan aturan dan pesan, sehingga bertahan setelah audit ulang bahkan regenerasi.
+
+#### T: Saya memilih profil publikasi, tetapi setelah restart kembali ke BPS DDA. Apakah itu bug?
+**J:** Bukan. Profil aktif dan perubahan kustomisasi hanya bertahan selama sesi; yang tersimpan bersama publikasi hanyalah `"profile"` di manifest compiler. Profil juga belum bisa diimpor atau diekspor sebagai berkas (§12).
+
+#### T: Mengapa prosa bab saya tidak diterjemahkan atau disusun AI?
+**J:** Fitur AI menerjemahkan teks halaman dan tabel serta merawat glosarium terminologi; peringkas narasi **Draft Review** yang lama sudah dihapus pada Oktober 2026. Tempatkan ulasan Anda sebagai RTF dan terjemahkan halaman itu bila perlu versi Inggrisnya (§13).
+
+#### T: Compile tidak melakukan apa pun di build web. Mengapa?
+**J:** Kompilasi membaca dan menulis berkas sehingga memerlukan aplikasi desktop; build web menyatakannya, bukan berpura-pura. Di desktop, manifest yang dokumen keluarannya sedang terbuka di tab akan dilewati agar build tidak menimpa pekerjaan Anda.
+
 #### T: Bagaimana cara menghasilkan berkas cetak beresolusi tinggi?
-**J:** Buka menu utama `File` ▸ `Export` ▸ `PDF (Print)`. Anda dapat memilih standar cetak profesional (seperti PDF/X), menyematkan profil warna ICC, serta memilih resolusi gambar 300 DPI untuk kebutuhan percetakan offset komersial.
+**J:** Gunakan **File ▸ Export PDF…**. Anda dapat memilih PDF/X-4, PDF/X-1a:2003, atau PDF/A-2b, mengatur CMYK dan tinta spot, bleed dengan tanda crop dan bleed, kompresi gambar, serta keluaran 300 ppi untuk percetakan offset. Langkah PDF di compiler masih ekspor biasa; preset Print dan Web khusus Pubgen belum tersedia, jadi gunakan dialog ini untuk berkas PDF/X-4.
 
 ---
 

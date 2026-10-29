@@ -7,6 +7,9 @@
 ## Table of Contents
 1. [What is Pubgen?](#1-what-is-pubgen)
 2. [Finding Pubgen in DesignCraft](#2-finding-pubgen-in-designcraft)
+   - [The PubGen panel](#the-pubgen-panel)
+   - [Switching back to DesignCraft's menus](#switching-back-to-designcrafts-menus)
+   - [Bilingual Publication Toggle (Single Lang / Dual Lang)](#bilingual-publication-toggle-single-lang--dual-lang)
 3. [Publication Cover (Cover Page Generator)](#3-publication-cover-cover-page-generator)
    - [Overview & Position](#overview--position)
    - [The 13 Executive Cover Styles](#the-13-executive-cover-styles)
@@ -38,14 +41,28 @@
    - [Page from RTF (Rich Text Import & Autoflow)](#page-from-rtf-rich-text-import--autoflow)
    - [Page from Image (Object vs. Full-Bleed Background)](#page-from-image-object-vs-full-bleed-background)
    - [Page Renumbering & Sections (Roman vs. Arabic)](#page-renumbering--sections-roman-vs-arabic)
-7. [Step-by-Step Practical Tutorials](#7-step-by-step-practical-tutorials)
-   - [Tutorial 1: Creating a Complete Publication in 3 Minutes](#tutorial-1-creating-a-complete-publication-in-3-minutes)
-   - [Tutorial 2: Designing a Custom Cover with Your Own Photo & Colors](#tutorial-2-designing-a-custom-cover-with-your-own-photo--colors)
-   - [Tutorial 3: Formatting Complex Statistical Tables from Excel](#tutorial-3-formatting-complex-statistical-tables-from-excel)
-8. [Frequently Asked Questions & Troubleshooting](#8-frequently-asked-questions--troubleshooting)
-
----
-
+7. [Master Excel: One Workbook to Finished Pages](#7-master-excel-one-workbook-to-finished-pages)
+   - [What each sheet becomes](#what-each-sheet-becomes)
+8. [Vector Charts & Statistical Infographics](#8-vector-charts--statistical-infographics)
+   - [The nine archetypes](#the-nine-archetypes)
+   - [What the chart dialog asks for](#what-the-chart-dialog-asks-for)
+   - [Charts from Excel](#charts-from-excel)
+9. [Header & Footer Setup](#9-header--footer-setup)
+10. [Publication Compiler (Multi-Chapter Binder)](#10-publication-compiler-multi-chapter-binder)
+    - [The manifest](#the-manifest)
+    - [What a compile does, in order](#what-a-compile-does-in-order)
+11. [Audit Publication (Preflight QA)](#11-audit-publication-preflight-qa)
+12. [Publication Profiles](#12-publication-profiles)
+13. [AI Translation & Terminology Memory](#13-ai-translation--terminology-memory)
+    - [Setup](#setup)
+    - [Translating pages](#translating-pages)
+    - [Terminology memory](#terminology-memory)
+14. [Step-by-Step Practical Tutorials](#14-step-by-step-practical-tutorials)
+    - [Tutorial 1: Creating a Complete Publication in 3 Minutes](#tutorial-1-creating-a-complete-publication-in-3-minutes)
+    - [Tutorial 2: Designing a Custom Cover with Your Own Photo & Colors](#tutorial-2-designing-a-custom-cover-with-your-own-photo--colors)
+    - [Tutorial 3: Formatting Complex Statistical Tables from Excel](#tutorial-3-formatting-complex-statistical-tables-from-excel)
+    - [Tutorial 4: Compiling a Whole Publication from One Manifest](#tutorial-4-compiling-a-whole-publication-from-one-manifest)
+15. [Frequently Asked Questions & Troubleshooting](#15-frequently-asked-questions--troubleshooting)
 ## 1. What is Pubgen?
 
 **Pubgen** (Publication Generator) is an automated layout engine built directly into DesignCraft.
@@ -53,29 +70,32 @@
 In conventional page layout programs (like Adobe InDesign or QuarkXPress), assembling a 300-page statistical yearbook or government report (such as *Kecamatan Dalam Angka* or an Annual Economic Census) requires hundreds of manual operations: drawing text frames, styling headers, formatting tables, placing logos, calculating TOC leader dots, and formatting covers.
 
 Pubgen turns this into a fast, automated workflow:
-- **Instant Covers**: Generates executive corporate covers with professional geometry, drop shadows, and clipped photographs.
+- **Instant Covers**: Generates executive corporate covers with professional geometry, drop shadows, and clipped photographs — front, inside and back.
 - **Instant Pages**: Reads your table of contents or chapter list from Excel/CSV and creates formatted pages in seconds.
 - **Publication Tables**: Formats statistical tables with BPS-standard booktabs horizontal rules, stacked column headers, column numbers, and conditional highlighting for totals.
-- **Live Editorial Tools**: Handles double-sided facing pages, Roman/Arabic page renumbering, RTF text autoflow, and Table of Contents generation.
+- **Vector Charts**: Turns `CXX_XX` sheets (or an existing table) into native, editable charts — nine archetypes, from bars and lines to population pyramids, gauges and GeoJSON maps.
+- **One-Button Book**: A Master Excel workbook builds pages, tables, charts and cover in one action, and the Publication Compiler weaves many chapter workbooks into a single document from one manifest.
+- **Quality Audit**: A statistical preflight checks table-cell overset, missing sources, numbering gaps, bilingual parity, image DPI and — for print — spine and bleed, with click-to-jump rows.
+- **House Profiles & Terminology**: Publication profiles switch sheet routing, naming, geometry and table styling; an editable glossary keeps AI translations on official statistical wording.
+- **Live Editorial Tools**: Handles double-sided facing pages, Roman/Arabic page renumbering, headers and footers, RTF text autoflow, and Table of Contents generation.
 
 ---
 
 ## 2. Finding Pubgen in DesignCraft
 
-Pubgen lives in **menu bar**. With Pubgen installed, the bar keeps DesignCraft's whole host tree and
-adds three menus before **Help**:
+Pubgen lives in the **menu bar**. With Pubgen on — the default — the bar keeps DesignCraft's whole host tree and adds **Publication**, **Publication Tools** and **Shortcut** before **Help**:
 
 ```
-+---------------------------------------------------------------------------------------------------+
++-----------------------------------------------------------------------------------------------------------+
 |  File  Edit  Layout  Type  Object  Table  View  Window  Publication  Publication Tools  Shortcut  Help |
-+---------------------------------------------------------------------------------------------------+
++-----------------------------------------------------------------------------------------------------------+
 ```
 
 | Menu | What it holds |
 |---|---|
 | **File … Window** | DesignCraft's own menus, unchanged. |
-| **Publication** | The generation pipeline: Generate from Excel, Vector Chart, Table of Contents, Publication Cover, Header & Footer Setup, Audit Publication. |
-| **Publication Tools** | **Manual Ingest & Tables** (Page from CSV…, Table from CSV…), **Page & Layout Utilities** (Standard BPS Margins, Page Margins & Renumbering Options…), the **Dual Language Mode** checkmark, and the **AI Translate** submenu. |
+| **Publication** | The generation pipeline: Generate from Excel (`Ctrl+Shift+G`), Compile Publication (`Ctrl+Shift+B`), Publication Profile, Vector Chart (`Ctrl+Shift+V`), Table of Contents (`Ctrl+Alt+T`), Publication Cover, Header & Footer Setup, Audit Publication (`Ctrl+Shift+Alt+A`). |
+| **Publication Tools** | **Manual Ingest & Tables** (Page from CSV…, Table from CSV…), **Publication Profiles** (pick a profile, Customize Active Profile…, Apply Profile Margins), **Page & Layout Utilities** (Standard BPS Margins `Ctrl+Shift+M`, Page Margins & Renumbering Options…), the **Dual Language Mode** checkmark (`Ctrl+Shift+L`), and **AI Translate** (Translate Selected Page, Translate Table Pages…, Fix Terms with Glossary, Setup…). |
 | **Shortcut** | Quick access to original DesignCraft actions: Export PDF…, Preflight Document, Package…, Place…, New Sample Document. |
 | **Help** | DesignCraft's own Help rows, then **About PubGen…** and the menu-bar switch. |
 
@@ -85,7 +105,24 @@ So a complete publication is three menu visits away:
 2. **Publication ▸ Publication Cover** — synthesize the cover.
 3. **Publication ▸ Table of Contents** — insert or rebuild the ToC.
 
+Large works go through **Publication ▸ Compile Publication** instead (§10), and the statistical work through **Vector Chart** (§8), **Header & Footer Setup** (§9), **Publication Profile** (§12) and **Audit Publication** (§11).
+
 The remaining editorial actions (single-sided spreads, blank pages, RTF and image pages, page renumbering) open from **Publication Tools ▸ Page & Layout Utilities…**, and the manual routes from **Publication Tools ▸ Manual Ingest & Tables**.
+
+### The PubGen panel
+
+Everything above is also a panel, opened from **Window ▸ PubGen Panel**. The panel is the working surface; the menus are the shortcuts.
+
+| Area | What it does |
+|---|---|
+| **Header band** | Profile selector with a one-line summary of the active profile, **AI Translator**, **Translate this Page** (or *Translate Review / Translate Table on this Page*), **Fix Terms**, **Retranslate (Glossary)**, **Translate Tables…**, **Audit Publication**, **Set Page Margin** and the Single/Dual Lang badge. |
+| **Publication Compiler** | One manifest → the whole publication (§10), desktop only. |
+| **1. Data Source & Generate (Master Excel)** | The one-button workbook workflow (§7). |
+| **2. Table of Contents** | TOC style, title, layout and **Add TOC / Rebuild TOC** (§6). |
+| **3. Manual Import & Fine-Tuning** | A collapsible group holding **Page from CSV** (§4) and **Table from CSV** (§5) for hand-driven work. |
+| **4. Page Utilities** | Spreads toggle, blank page, page renumbering and sections (§6). |
+
+Dialogs open on top: Master Excel, Publication Cover, Table of Contents, Header & Footer, Vector Chart, Audit Publication, the profile customizer, the AI setup dialog and About PubGen.
 
 ### Switching back to DesignCraft's menus
 Pubgen's actions also exist in DesignCraft's full menu set, under a **Pubgen** menu that sits just before **Help**. To reach the plain DesignCraft bar — without the three Pubgen menus — switch it:
@@ -103,24 +140,18 @@ The **Dual Language Mode** row in the **Publication Tools** menu ticks or untick
   - **Dividers (`DIV`)**: Emits dual-language chapter headings, with English subtitles rendered in the accent swatch.
   - **Review Chapters (`RXX`) & Front Matter (`BXX`)**: Synthesizes sequential spreads (Indonesian spread followed by English spread).
   - **Statistical Tables (`XX_XX`)**: Produces 2-row header chrome (`Tabel` / italic `Table`) and 2-line titles split on `" / "` with italicized English.
-  - **Charts (`CXX_XX`)**: Emits bilingual subtitle structures with accurate italicization of English components.
+  - **Charts (`CXX_XX`)**: Emits bilingual title structures (Indonesian line, then `Figure NN.NN …` in italic) with correct English typography.
 
-### Translate with AI (Groq, optional feature)
-When your source is pure Indonesian — no `title_en` / `file_en` columns and no `" / "` pairs — the **Translate with AI** checkbox (next to the Dual Lang toggle) fills the English half for you. It requires a build with the online translation feature (`cargo run --release -p designcraft --features pubgen,ai-translate-online`).
-
-1. Tick **Translate with AI** — the setup dialog opens.
-2. Choose **Online — Groq (free account)**, paste your API key from [console.groq.com/keys](https://console.groq.com/keys), and pick a model (Refresh fills the list from your account).
-3. Press **Use AI**, then **Generate Pages** as usual.
-
-What happens under the hood: Pubgen first collects every Indonesian text (row titles, cover headline, table cells, narrative paragraphs), translates them in the background with a progress bar and a working Cancel, then generates the pages with the English halves filled. A second Generate over the same rows reuses the translations and runs instantly.
-
-Two honest lines from the dialog: **catalog text is sent to Groq's cloud**, and free-tier rate limits make big jobs slower rather than blocking them. The API key is stored locally in DesignCraft settings. The optional offline model (NLLB-200 distilled 600M, ONNX) is planned on the same dialog; its licence is **CC-BY-NC-4.0 — non-commercial**.
+### AI, in one paragraph
+AI is optional and needs the online build (`cargo run --release -p designcraft --features pubgen,ai-translate-online`). It translates pages and table cells through **Groq**, fills covers through **Cloudflare Workers AI** (§3), and keeps wording consistent through an editable terminology memory. The setup, the page and batch translation buttons, the glossary editor and the limits are all in §13.
 
 ---
 
 ## 3. Publication Cover (Cover Page Generator)
 
-The **Publication Cover** section allows you to synthesize a complete, professional publication cover with a single click.
+The **Publication Cover** section allows you to synthesize a complete, professional publication cover with a single click. Open it from **Publication ▸ Publication Cover**, or use the same fields as part of the Master Excel and compiler flows (§7, §10).
+
+Beyond the front cover, **Add Inside cover and Back Cover** inserts a greyscale inside cover on page 2 and a back cover at the end. **Map Overlay** places a decorative administrative map behind the cover text and logo, from the bundled stock maps or your own `.geojson`.
 
 ```
 +-------------------------------------------------------------------+
@@ -601,7 +632,7 @@ If you open a multi-sheet Excel file (`.xlsx`):
 
 ## 6. Page & Layout Utilities & Editorial Tools
 
-The **PubGen Tools ▸ Page & Layout Utilities…** dialog holds the essential shortcuts for publication assembly.
+The **Publication Tools ▸ Page & Layout Utilities…** dialog holds the essential shortcuts for publication assembly.
 
 ```
 +-------------------------------------------------------------------+
@@ -746,7 +777,257 @@ Books typically have two numbering sections:
 
 ---
 
-## 7. Step-by-Step Practical Tutorials
+## 7. Master Excel: One Workbook to Finished Pages
+
+The **1. Data Source & Generate (Master Excel)** card at the top of the PubGen panel turns one `.xlsx` workbook into a finished chapter — pages, tables, charts and the cover — in a single action.
+
+| Control | What it does |
+|---|---|
+| **Auto-generate pages, tables & cover from sheets** | On by default. Picking a workbook then runs the whole pipeline: "Page from CSV", every sheet's table with its default options, every chart page, and the cover built from the `COVER` sheet. Turn it off to convert the workbook to CSVs only. |
+| **Excel to CSV Data (.xlsx)…** | Choose the workbook. Pubgen writes one catalog CSV plus one table CSV per data sheet, then (with auto-generate on) creates the pages. |
+| **Active: …** | Names the loaded workbook or catalog and the number of catalog records it holds. |
+| **Download … / Download Generated CSVs as ZIP…** | Saves every generated catalog and table CSV in one `.zip`. |
+| Status line | Reports what was generated, or the first error, plus the vocabulary count described in §13. |
+
+### What each sheet becomes
+
+| Sheet name | Becomes |
+|---|---|
+| `COVER` | The Publication Cover values: `style`, `title1`, `title2`, `year`, `volume`, `no_catalogue`, ISSN/ISBN, `office_name`, `image_1`, `image_lanscape`, `office_logo`, `event_theme`. |
+| `DIV` | A chapter divider page (procedural art or a template, coloured from the sheet's theme). |
+| `GXX` | Front-matter narrative pages (Kata Pengantar, Penjelasan Teknis…). |
+| `BXX` | Front-matter narrative pages that also carry the English half. |
+| `RXX` | A review spread: Indonesian body, plus the English column in Dual Lang. |
+| `XX_XX` | A statistical table page (`01_01`, `02_03`…), with its table inserted automatically. |
+| `CXX_XX` | A chart page — vector when the sheet carries a `chart_type` block, otherwise its picture (§8). |
+| `MXX_XX` | A GeoJSON choropleth map page (§8). |
+| `A02` | A **Publication Note** row: the `Keterangan Publikasi` title plus the sheet's RTF note page. No table CSV is produced. |
+
+Routing is **profile-driven** (§12): the cover, divider, narrative, table and chart patterns come from the active profile, and Pubgen switches profile automatically when it recognises BRS, corporate-financial or academic sheet names. An explicit profile choice always wins.
+
+---
+
+## 8. Vector Charts & Statistical Infographics
+
+Charts are native document objects — vector bars, lines and polygons with real text — not pictures. They stay sharp at any zoom and in print, and they are editable afterwards.
+
+Open the chart builder from **Publication ▸ Vector Chart** (`Ctrl+Shift+V`), the **Chart Options…** row in **Object ▸ Chart Options…**, or by letting Master Excel turn a `CXX_XX` sheet into a chart page.
+
+### The nine archetypes
+
+| Archetype | Values accepted in `chart_type` | Typical use |
+|---|---|---|
+| Clustered bars | `bar_clustered`, `bar`, `column`, `batang` | side-by-side comparison per category |
+| Stacked bars | `bar_stacked`, `stacked`, `stackedbar`, `stackedcolumn` | parts of a whole per category |
+| Horizontal bars | `horizontal_bar`, `hbar`, `bar_h`, `batanghorizontal`, `ranked` | ranked regional comparison |
+| Line | `line`, `garis`, `trend` | multi-year series |
+| Area | `area`, `filled`, `arealine` | trends with volume |
+| Donut | `donut`, `doughnut`, `pie`, `donat`, `lingkaran` | shares of a total |
+| Population pyramid | `population_pyramid`, `pyramid`, `piramidapenduduk`, `piramida` | age/sex distribution |
+| Gauge | `gauge`, `speedometer`, `dial`, `alatukur` | one metric against a target |
+| Choropleth map | `map`, `choropleth`, `peta`, `geomap`, `thematicmap` | values by area |
+
+### What the chart dialog asks for
+
+1. **Import from Table** — pick a table already in the document (the dropdown lists `Tabel 01.01 — … (Page N)`), choose the page, then press **Auto-fill** to read the categories, series and labels from that table.
+2. **Insert Location** — *Selected page*, *After table*, or *Current page*.
+3. **Chart Type & Titles** — the archetype plus **Title (ID)**, a two-line field that follows the BPS format (`Grafik 01.01` on line 1, the data title on line 2), and **Title (EN)**, rendered as `Figure 01.01 …` in italic in Dual Lang.
+4. **Data Columns & Rows** — the category column letter, the row span, and up to three series, each with its column letter and its Indonesian and English legend labels.
+5. **Maps** (choropleth only) — a stock administrative map or a custom `.geojson` path, a colour theme, and a sample village CSV for trying the engine.
+6. **Formatting & Display Options** — *Number (1.234,5)*, *Percentage (%)* or *Currency IDR (Rp)*, a maximum-value override (blank computes a "nice" ceiling), and **Show Value Labels**, **Show Legend**, **Show Gridlines**.
+
+### Charts from Excel
+
+A chart sheet is a block of `key` / `value` pairs. Only `chart_type` is mandatory:
+
+```
+chart_type        bar_clustered
+title             Pertumbuhan Ekonomi Menurut Sektor
+title_en          Economic Growth by Sector
+category_col      A
+series_1_col      B
+series_1_label    Pertanian
+series_1_label_en Agriculture
+series_2_col      C
+series_2_label    Industri
+data_start_row    5
+data_end_row      12
+value_format      percent
+show_value_labels true
+```
+
+Other accepted keys: `data_start_row` / `data_end_row`, `max_value`, `show_legend`, `show_grid`, `geojson`. Series 2 and 3 use the same `series_N_col` / `series_N_label` / `series_N_label_en` pattern. Without a `chart_type` the sheet is placed as a picture, exactly as before.
+
+Charts are indexed automatically: a vector chart page appears in **Daftar Grafik** / *List of Charts* like any other figure. Map pages can also feed a decorative map overlay behind the cover text and logo.
+
+---
+
+## 9. Header & Footer Setup
+
+**Publication ▸ Header & Footer Setup** opens the template dialog. Headers and footers are document objects, so they belong to the page, not to a text frame.
+
+- **Style** — built-in **Modern Minimal**, **Editorial Book** and **Corporate Report**, plus any templates you saved yourself (marked **★**). Hover a row, or the eye button, for a rendered preview.
+- **Sided** — double-sided (mirrored left/right) or single-sided.
+- **H. Off / F. Off** — header and footer distance from the page edge, in points.
+- **Scope** — the whole document, one section (**Sections…**), or a page range.
+- **Header / Footer text** — single, left and right fields. They accept `{page}`, `{section}` and `{runningHeader}`; a tab character splits the two halves of a single field.
+- **Objects** — header rule and footer rule with their weights, and a top accent bar (height and bleed).
+- **Colours** — primary, accent, dark, rule and text.
+- **Save As New Template…** stores the current setup under a name for reuse; the bin button deletes a custom template.
+- **Apply Header & Footer** writes it to the document; **Remove from Document** clears it.
+
+The Publication Compiler can apply a preset for you: `"headerFooter": { "preset": "book", "scope": "body" }` (§10).
+
+---
+
+## 10. Publication Compiler (Multi-Chapter Binder)
+
+The **Publication Compiler** card (top of the panel) builds an entire publication from one manifest. Instead of opening ten chapter workbooks one after another, you describe them once in `pubgen_project.json` and press **Compile**.
+
+- **Manifest** — type the path, or use **Open…**. The last manifest you opened is remembered and used when the field is empty.
+- **New…** — the project builder form: publication title, bilingual flag, save path, cover style and theme, chapter list, margins, pagination and PDF export. It writes a ready-to-run `pubgen_project.json`.
+- **Compile** — runs the pipeline with a progress bar and a working **Cancel**. A dot marks the Publication menu row while it runs.
+- A build that fails or is cancelled leaves the previous document untouched: the compiled file is saved second-to-last. A document already open in a tab is never overwritten — the build is skipped instead.
+
+### The manifest
+
+```json
+{
+  "version": 1,
+  "publicationTitle": "Kecamatan Karawang Timur Dalam Angka 2026",
+  "bilingual": true,
+  "profile": "bps_dda",
+  "output": {
+    "document": "build/karawang-timur.designcraft",
+    "pdf": "build/karawang-timur.pdf"
+  },
+  "document": {
+    "preset": "A4",
+    "facingPages": true,
+    "bleedMm": 3,
+    "marginsMm": { "top": 20.2, "bottom": 20, "inside": 19, "outside": 15 }
+  },
+  "cover": {
+    "source": "workbooks/BAB_01_2025.xlsx",
+    "style": 0,
+    "themePreset": 0,
+    "includeInside": true,
+    "includeBack": true
+  },
+  "frontMatter": { "workbook": "" },
+  "chapters": [
+    { "chapter": 1, "path": "workbooks/BAB_01_2025.xlsx", "title": "Geografi" },
+    { "chapter": 2, "path": "workbooks/BAB_02_2025.xlsx", "title": "Pemerintahan" }
+  ],
+  "pagination": { "frontMatterFormat": "lowerRoman", "bodyFormat": "arabic", "restartAtBody": true },
+  "toc": {
+    "placement": "afterFrontMatter",
+    "lists": ["contents", "tables", "charts"],
+    "titleBilingual": true,
+    "hangingIndent": true
+  },
+  "headerFooter": { "preset": "book", "scope": "body" },
+  "build": { "keepIntermediate": true, "exportPdf": true }
+}
+```
+
+Every relative path — chapter workbooks, cover source, output files — resolves against the folder holding the manifest. Unknown keys are ignored, and every section may be omitted to take its default.
+
+### What a compile does, in order
+
+1. A new document with the manifest's page size, facing pages, margins and bleed (profile margins fill in when the manifest leaves them at the defaults).
+2. Parent pages for the body.
+3. Front cover and (optionally) inside cover, from the `COVER` sheet.
+4. Front matter, numbered in lowercase Roman when `restartAtBody` is on.
+5. TOC placeholders for the requested lists.
+6. Each chapter in order: divider, reviews, charts, tables — body numbering restarts at Arabic 1 and continues across chapters.
+7. Back cover.
+8. The contents lists, page numbering and running headers.
+9. Save, then export the PDF when `build.exportPdf` is on.
+
+The compiler is desktop-only: the web build reports that compiling needs the desktop app. From the control channel or a script: `{"command":"pubgen.compileProject","params":{"path":"…/pubgen_project.json","pdf":"…/out.pdf"}}`; add `"sync": false` to run it step by step in the panel instead.
+
+The PDF this produces is a normal export. The dedicated Print (PDF/X-4) and Web presets are not implemented yet — export those from **File ▸ Export PDF…** for now.
+
+---
+
+## 11. Audit Publication (Preflight QA)
+
+**Publication ▸ Audit Publication** (`Ctrl+Shift+Alt+A`), or the **Audit Publication** button in the panel header, runs the publication checklist before you send anything to print or publish online.
+
+| Rule | Checks | Severity |
+|---|---|---|
+| `PRF-01` | Text clipped inside a native table cell (column too narrow, row too shallow). | Error |
+| `PRF-02` | Story overset: narrative text that overflowed without a continuation frame. | Error |
+| `PRF-03` | `Sumber:` / `Catatan:` note lines with nothing after the colon. | Warning |
+| `PRF-04` | Table and figure numbering: gaps and duplicates, grouped by kind and chapter (a bilingual pair on one page is not a duplicate). | Warning |
+| `PRF-05` | Dual-language parity: review pages whose English body is empty, a placeholder, or still the Indonesian text. | Warning |
+| `PRF-06` | Raster images below the DPI floor for the chosen profile. | Warning |
+| `PRF-07` | Print only: graphics crossing a trim edge without 3 mm bleed, and text within 5 mm of the spine (or across it). | Error |
+
+- **Digital (online PDF)** — 150 ppi floor, no spine/bleed guards.
+- **Print (press)** — 300 ppi floor, plus the spine and bleed guards.
+
+Click any row to select the offending object and jump to its page. The **FP / IG** button cycles a tag — *false positive* or *ignored*. Tagged rows dim, can be hidden with **hide tagged**, and stop counting in the header tally; tags are keyed by rule and message, so they survive a re-run and a regeneration. **Min ppi** overrides the profile floor, and **Re-run** refreshes the list. The dialog also re-runs itself when the document changed since the last audit, so a row never points at an object that no longer exists.
+
+---
+
+## 12. Publication Profiles
+
+A profile is the publication's house style, declared once: which sheets are what, what things are called, page geometry, front-matter structure and table styling. Switch profile and the same workbook produces a different publication.
+
+| Profile | For | Geometry | Tables |
+|---|---|---|---|
+| **BPS Daerah Dalam Angka** (`bps_dda`) | Official KDA/KCDA yearbooks (default) | A4, facing pages, 20.2 / 20 / 19 / 15 mm | column-number row, theme palette, chapter dividers |
+| **BPS Berita Resmi Statistik** (`bps_brs`) | Press releases and periodic releases | A4, single page, 18 mm all round | no column numbers, zebra rows |
+| **Laporan Tahunan Korporat** (`corporate_annual`) | Corporate annual and sustainability reports | A4, facing, 25 / 25 / 22 / 18 mm, `Section` / `Table` / `Figure` labels | horizontal rules only, corporate navy |
+| **Monograf Akademik & Riset** (`academic_monograph`) | Research papers, policy briefs, LKIP/LAKIP | A4, facing, 25 / 25 / 25 / 20 mm, `Gambar` for figures | APA-style three-line tables, monochrome |
+
+Where to use it:
+
+- **Panel header** — the profile dropdown, the **Auto-detect** badge when Pubgen recognised the workbook, a one-line summary of page size, margins and column numbering, and **Sesuaikan…** for the customizer.
+- **Publication Tools ▸ Publication Profiles** — the same list as checkmarks, **Customize Active Profile…**, and **Apply Profile Margins**.
+- **Publication Tools ▸ Page & Layout Utilities ▸ Standard BPS Margins** (`Ctrl+Shift+M`) — applies 20 / 20 / 19 / 15 mm regardless of profile.
+- The compiler honours `"profile"` in the manifest (§10).
+
+The **customizer** edits the active profile in place: page size and facing pages, the four margins, chapter/table/chart prefixes, TOC and list titles, source and note labels, front-matter numbering, chapter dividers, inside and back cover, and table styling. **Apply to this session** keeps your edits; **Reset to BPS DDA** goes back to the flagship defaults.
+
+Two limits worth knowing: a customised profile lives for the session only (the active choice is not saved between launches), and profiles cannot be imported or exported as files yet.
+
+---
+
+## 13. AI Translation & Terminology Memory
+
+Pubgen's optional AI features run through **Groq** (online translation) and **Cloudflare Workers AI** (AI cover backgrounds, §3). Everything below needs the online build (`--features pubgen,ai-translate-online`) and a configured key.
+
+### Setup
+
+Open **Publication Tools ▸ AI Translate ▸ Setup…**, or press **AI Translator** in the panel header. Paste your Groq API key from [console.groq.com/keys](https://console.groq.com/keys), pick a model (**Refresh models** fills the list from your account), then **Use AI**. The key is stored in your local DesignCraft preferences. The dialog is honest about the trade: catalog text is sent to Groq's cloud, and free-tier rate limits make large jobs slower rather than blocking them.
+
+### Translating pages
+
+Dual Lang must be on (**Publication Tools ▸ Dual Language Mode**, `Ctrl+Shift+L`). Then:
+
+- **Translate this Page** — the label becomes **Translate Review on this Page** on an `RXX` review page (chapter title and right-hand body are replaced with English, paragraph styles preserved) or **Translate Table on this Page** on a table page (title, header cells and the source/note box are translated in place, English on a new line in italic).
+- **Translate Tables…** — batch translation over a page range, opened from the same button or **Publication Tools ▸ AI Translate ▸ Translate Table Pages…**.
+- A progress bar and a working **Cancel** run in the background; translations are cached, so a second Generate or Translate over the same rows is instant.
+
+### Terminology memory
+
+An official glossary keeps AI output on standard statistical wording — *Kecamatan* → *Subdistrict*, *PDRB* → *GRDP*, *Luas Wilayah* → *Total Area*.
+
+- The bundled glossary is `assets/pubgen/bps_glossary.json`. Resolution order: your saved path in preferences, then the asset, then the build folder. A missing or malformed file degrades to an empty glossary, never an error.
+- The glossary is injected into the prompt (up to 200 terms, `id = en`) and applied **deterministically to whole cells** after translation.
+- The **Terminology** tab in the AI setup dialog is a full editor: search, add, edit, remove, **Import CSV…** (two columns — Indonesian, English — comma, semicolon, tab or pipe; header optional), **Reset to bundled**, and **Save…** to a `bps_glossary.json` of your own.
+- **Collect Vocabulary** reads the generated pages (headers, row labels, titles, note and source lines, plus phrase runs) and adds the Indonesian terms it finds with an empty English column; every Excel generation does this automatically and reports `Vocabulary: N new term(s) collected`.
+- **Fill AI Drafts** fills those blank English cells from the model term by term. The **Auto** checkbox beside it repeats the step after each generation.
+- **Fix Terms** applies the glossary to translations already on the selected page; **Retranslate (Glossary)** corrects those terms and re-runs only the texts the glossary flagged (one request batch).
+
+> **Not in the product:** the earlier *Draft Review* narrative summarizer was removed in October 2026. Pubgen does not draft chapter prose from table figures today; the AI work is translation and terminology. If you need a commentary paragraph, write it and place it as RTF.
+
+---
+
+## 14. Step-by-Step Practical Tutorials
 
 ### Tutorial 1: Creating a Complete Publication in 3 Minutes
 
@@ -760,19 +1041,19 @@ Follow this workflow to create a complete statistical booklet from zero:
    - Enter your Title: `KARAWANG TIMUR` and Year: `2026`.
    - Click **Generate Cover Page**. Your cover is created on Page 1!
 3. **Generate Content Pages**:
-   - Open **PubGen Tools ▸ Manual Ingest & Tables ▸ Page from CSV…**.
+   - Open **Publication Tools ▸ Manual Ingest & Tables ▸ Page from CSV…**.
    - Click **Browse...** and select `samples/KBDA2026_chapters.csv`.
    - Preset: `1 Row · 3 Columns`.
    - Click **Generate Pages**. 28 formatted pages are appended to your document!
 4. **Insert Statistical Tables**:
    - Go to Page 2 in the document.
-   - Open **PubGen Tools ▸ Manual Ingest & Tables ▸ Table from CSV…**.
+   - Open **Publication Tools ▸ Manual Ingest & Tables ▸ Table from CSV…**.
    - Click **Browse...** and select `samples/kbda_2005.csv`.
    - Style: `Horizontal Rules (Booktabs)`. Placement: `At page (below title)`.
    - Check `[x] Condition rules (Jumlah, Tahun, Kab, Kec...)`.
    - Click **Insert Table**. The table appears directly beneath the page header!
 5. **Add Table of Contents**:
-   - In **PubGen Tools ▸ Page & Layout Utilities…**, click **Add Blank Page**.
+   - In **Publication Tools ▸ Page & Layout Utilities…**, click **Add Blank Page**.
    - Open **Publication ▸ Table of Contents…**, then set Title: `DAFTAR TABEL`, Layout: `TablePage`.
    - Click **Add TOC**. Your Table of Contents is generated with leader dots!
 6. **Export**:
@@ -820,7 +1101,21 @@ When working with tables that have grouped columns (e.g. Population by Age and G
 
 ---
 
-## 8. Frequently Asked Questions & Troubleshooting
+### Tutorial 4: Compiling a Whole Publication from One Manifest
+
+For a yearbook with eight to twelve chapter workbooks, the compiler replaces the manual loop:
+
+1. **Collect the workbooks** in one folder, for example `workbooks/BAB_01_2025.xlsx` … `workbooks/BAB_10_2025.xlsx`, with the `COVER` sheet in chapter 1 or its own workbook.
+2. **Pick a profile** in the panel header — `BPS Daerah Dalam Angka` for a KDA/KCDA yearbook (§12). The manifest's own `"profile"` wins when it sets one.
+3. **Create the manifest**: in the Publication Compiler card press **New…**, fill in the title, the chapter list, margins and whether to export a PDF, then choose where to save `pubgen_project.json`. The full schema is in §10.
+4. **Compile**: press **Compile**. The progress bar names each step — new document, masters, front cover, inside cover, front matter, list placeholders, each chapter, back cover, contents lists, page numbering, running headers, save, PDF. **Cancel** stops cleanly and leaves any previous build untouched.
+5. **Check it**: read the status line (pages, chapters, warnings), then run **Audit Publication** (§11) and click any flagged row to jump straight to it.
+6. **Export**: with `"exportPdf": true` the PDF is written beside the document; otherwise use **File ▸ Export PDF…**.
+
+
+---
+
+## 15. Frequently Asked Questions & Troubleshooting
 
 #### Q: My CSV file has semicolons instead of commas. Will Pubgen recognize it?
 **A:** Yes! Pubgen features an intelligent delimiter sniffer that automatically identifies semicolons (`;`), commas (`,`), and tabs (`\t`). You do not need to convert your file.
@@ -834,8 +1129,23 @@ When working with tables that have grouped columns (e.g. Population by Age and G
 #### Q: Where are my settings saved in the Portable Demo?
 **A:** The portable demo includes a file named `portable.txt`. This instructs DesignCraft to store all your settings, crash recovery files, and preferences inside the local `DesignCraftData/` folder right next to `designcraft.exe`. Nothing is written to your Windows registry or `%APPDATA%`, keeping your computer completely clean.
 
+#### Q: A chart page appeared as an ordinary picture instead of a vector chart. Why?
+**A:** A `CXX_XX` sheet is drawn as a vector chart only when it carries a `chart_type` row (§8). If that row is missing or the value is not one of the nine archetypes, Pubgen keeps the old behaviour and places the sheet's picture. Add `chart_type`, then regenerate or use **Publication ▸ Vector Chart** to build the chart from the table on the page.
+
+#### Q: Can I hide an audit warning I have decided is fine?
+**A:** Yes. Click the **FP / IG** button on that row to tag it *false positive* or *ignored*. Tagged rows dim, stop counting in the header tally, and can be hidden entirely with **hide tagged**. Tags are keyed by rule and message, so they survive a re-run and even a regeneration.
+
+#### Q: I chose a publication profile and it was back to BPS DDA after restarting. Is that a bug?
+**A:** No. The active profile and the customizer's edits live for the session; only the compiler manifest's `"profile"` is stored with the publication. Profiles also cannot be imported or exported as files yet (§12).
+
+#### Q: Why is my chapter prose not translated or drafted by AI?
+**A:** The AI features translate page and table text and maintain the terminology glossary; the earlier **Draft Review** narrative summarizer was removed in October 2026. Place your commentary as RTF and translate that page if you need an English version (§13).
+
+#### Q: Compile does nothing on the web build. Why?
+**A:** Compiling reads and writes files and needs the desktop app; the web build says so instead of pretending. On desktop, a manifest whose output document is already open in a tab is skipped so the build cannot overwrite your work.
+
 #### Q: How do I export my publication to high-quality PDF?
-**A:** Go to the main menu: `File` > `Export` > `PDF (Print)`. You can choose PDF/X standards, embed ICC color profiles, and set 300 DPI image quality for commercial offset printing.
+**A:** Use **File ▸ Export PDF…**. You can choose PDF/X-4, PDF/X-1a:2003 or PDF/A-2b, set CMYK and spot inks, bleed with crop and bleed marks, image compression and 300 ppi output for commercial offset printing.
 
 ---
 
