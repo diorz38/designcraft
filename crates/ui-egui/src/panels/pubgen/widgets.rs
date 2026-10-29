@@ -379,6 +379,15 @@ pub(crate) fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
             }
         }
 
+        // "Audit Publication": the statistical preflight checklist (Pillar 3).
+        let audit_btn = ui
+            .add_enabled(total_pages > 0, egui::Button::new("Audit Publication"))
+            .on_hover_text("Run the Pubgen preflight audit: overset text and table cells, missing Sumber:/Catatan: lines, table-number sequence, dual-language parity, and spine/bleed guards.");
+        if audit_btn.clicked() {
+            st.audit_open = true;
+            audit::run_audit(app, st);
+        }
+
         let tip = "Set document margins:\nTop: 20.20 mm\nBottom: 20 mm\nInside: 19 mm\nOutside: 15 mm";
         let resp = outline_button(ui, crate::i18n::tr(&lang, "Set Page Margin"), 105.0).on_hover_text(tip);
         if resp.clicked() {

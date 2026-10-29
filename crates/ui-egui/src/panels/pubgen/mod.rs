@@ -27,6 +27,7 @@ pub use page_utils::{execute_add_blank_page, execute_set_page_margins};
 pub mod ai;
 pub mod ai_cover;
 pub mod ai_cover_job;
+pub mod audit;
 pub mod charts;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -357,6 +358,8 @@ pub fn show(app: &mut DesignApp, ui: &mut Ui) {
     ai::dialog_ui(app, &mut st, ui);
 
     charts::dialog::chart_dialog_ui(app, ui.ctx(), &mut st);
+
+    audit::audit_dialog_ui(app, ui.ctx(), &mut st);
 
     pubgen_header_band(app, ui, &mut st, &t);
 

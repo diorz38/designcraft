@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use super::ai;
 use super::ai_cover;
 use super::ai_cover_job;
+use super::audit;
 use super::locale::Locale;
 
 pub(super) fn default_file_col() -> usize {
@@ -370,6 +371,15 @@ pub struct PubgenState {
     /// Show the PubGen About modal dialog.
     #[serde(skip)]
     pub show_about_dialog: bool,
+    /// The Audit Publication dialog is open.
+    #[serde(skip)]
+    pub audit_open: bool,
+    /// The last `preflight.pubgen` result behind the Audit Publication dialog.
+    #[serde(skip)]
+    pub audit_issues: Option<Vec<audit::AuditIssue>>,
+    /// Effective ppi for the generic raster-resolution rule inside the audit.
+    #[serde(default)]
+    pub audit_min_ppi: f64,
     /// Dialog open flags for Pubgen menu popup windows.
     #[serde(skip)]
     pub dialog_excel_open: bool,
@@ -667,6 +677,9 @@ impl Default for PubgenState {
             bilingual_output: false,
             doc_language: String::new(),
             show_about_dialog: false,
+            audit_open: false,
+            audit_issues: None,
+            audit_min_ppi: 150.0,
             dialog_excel_open: false,
             dialog_toc_open: false,
             dialog_cover_open: false,
