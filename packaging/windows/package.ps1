@@ -186,6 +186,10 @@ $PortableMapsDir = Join-Path $Portable 'assets\pubgen\maps'
 if (Test-Path $PortableMapsDir) {
   Remove-Item -Recurse -Force $PortableMapsDir -ErrorAction SilentlyContinue
 }
+$PortableMapsZip = Join-Path $Portable 'assets\pubgen\pubgen_maps.zip'
+if (Test-Path $PortableMapsZip) {
+  Remove-Item -Force $PortableMapsZip -ErrorAction SilentlyContinue
+}
 
 $Zip = Join-Path $Dist "designcraft-$Version-windows-$Arch-portable.zip"
 Remove-Item -Force $Zip -ErrorAction SilentlyContinue
