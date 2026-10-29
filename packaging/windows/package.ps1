@@ -173,6 +173,20 @@ foreach ($folder in 'DUAL_LANG', 'SINGLE_LANG') {
   }
 }
 
+# Specifically include DUAL_LANG/maps sample folder (including contoh.csv and CONTOH_DESA.geojson)
+$DualLangMapsSrc = Join-Path $SamplesSrc 'DUAL_LANG\maps'
+if (Test-Path $DualLangMapsSrc) {
+  $DualLangMapsDest = Join-Path $SamplesDest 'DUAL_LANG\maps'
+  New-Item -ItemType Directory -Force -Path $DualLangMapsDest | Out-Null
+  Copy-Item -Recurse -Force "$DualLangMapsSrc\*" $DualLangMapsDest
+}
+
+# Exclude sensitive stock maps from loose assets directory since they are embedded into the exe
+$PortableMapsDir = Join-Path $Portable 'assets\pubgen\maps'
+if (Test-Path $PortableMapsDir) {
+  Remove-Item -Recurse -Force $PortableMapsDir -ErrorAction SilentlyContinue
+}
+
 $Zip = Join-Path $Dist "designcraft-$Version-windows-$Arch-portable.zip"
 Remove-Item -Force $Zip -ErrorAction SilentlyContinue
 Compress-Archive -Path $Portable -DestinationPath $Zip

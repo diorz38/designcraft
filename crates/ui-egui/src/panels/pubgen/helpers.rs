@@ -639,5 +639,5 @@ pub(crate) fn is_divider_type(type_val: &str) -> bool {
 }
 
 pub(crate) fn is_chart_type(type_val: &str) -> bool {
-    ["grafik", "graph", "chart", "bagan", "diagram"].iter().any(|k| type_val.eq_ignore_ascii_case(k))
+    ["grafik", "graph", "chart", "bagan", "diagram", "peta", "map"].iter().any(|k| type_val.eq_ignore_ascii_case(k))
 }

@@ -1,6 +1,7 @@
 # DesignCraft roadmap
 
 **Stage: pre-alpha** · next: alpha, ~5–7 h away; beta ~28 points and ~420–750 h beyond that (the core-workflow gate, not the percentage: ready for real work is already ~47%)
+- **2026-10-29** · Pubgen: Native GeoJSON Choropleth map chart engine with auto-generation from Excel (MXX_XX sheets, BPS 3-line bilingual titles, contrast-adaptive village value labels), decorative cover map overlay positioned behind textframes/logo, compile-time binary embedding of sensitive stock administrative maps, and portable package sample data distribution. No readiness percentage change.
 - **2026-10-29** · Pubgen v0.14.0-pubgen.0.8.0: Vector publication chart engine (8 archetypes, BPS 3-line title format, population pyramid 4-step nice scaling and gender summary card), Master Excel 4-step UX redesign, upstream DesignCraft 0.14.0 sync, and automated portable package sample distribution.
 - 2026-10-23: placed-artwork layer options survive IDML and native round trips per placement, independently of shared assets. Unsupported visibility overrides are explicit import/preflight/PDF warnings; format 4 prevents older native readers from silently discarding them. Rendering parity is still open; see [graphic-layer-options.md](docs/graphic-layer-options.md).
 - FID1: PDF export normalizes mixed emitted gradient color spaces to RGB with an explicit warning; homogeneous device-space gradients retain their components. Linear/radial, midpoint, archival and print policies have synthetic regression coverage.

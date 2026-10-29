@@ -35,14 +35,18 @@
 
 pub mod dialog;
 pub mod emitter;
+pub mod geojson;
 pub mod layout;
 pub mod palette;
 pub mod spec;
+pub mod stock_maps;
 
 pub use dialog::ChartDialog;
 pub use emitter::emit_chart;
+pub use geojson::{GeoFeature, GeoMap, ProjectedFeature};
 pub use layout::{
     AXIS_LABEL_H, AXIS_LABEL_W, BAR_GROUP_GAP, BAR_SERIES_GAP, BarRect, ChartLayout, DonutSlice, GridLine, LegendItem, XTickLabel, compute_layout,
 };
 pub use palette::{BPS_CHART_PALETTE, series_color};
 pub use spec::{ChartSpec, ChartType, SeriesSpec, ValueFormat, extract_chart_data, parse_chart_spec};
+pub use stock_maps::{StockMapEntry, list_stock_cover_maps, list_stock_map_charts, load_chart_geo_map, load_cover_geo_map, load_geo_map};

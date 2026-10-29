@@ -13,6 +13,17 @@ use crate::dock::pubgen::excel::ExcelSheetData;
 use crate::dock::pubgen::state::PubgenState;
 use crate::theme::Tokens;
 
+const DEFAULT_VILLAGE_SAMPLE_CSV: &str = "\
+nmdesa,title,title_en,value\n\
+CINTAASIH,Grafik 01.01 Indeks Pembangunan,Chart 01.01 Development Index,78.5\n\
+MULANGSARI,Grafik 01.01 Indeks Pembangunan,Chart 01.01 Development Index,82.1\n\
+TAMANMEKAR,Grafik 01.01 Indeks Pembangunan,Chart 01.01 Development Index,64.3\n\
+CIPTASARI,Grafik 01.01 Indeks Pembangunan,Chart 01.01 Development Index,71.0\n\
+TAMANSARI,Grafik 01.01 Indeks Pembangunan,Chart 01.01 Development Index,75.4\n\
+JATILAKSANA,Grafik 01.01 Indeks Pembangunan,Chart 01.01 Development Index,69.8\n\
+KERTASARI,Grafik 01.01 Indeks Pembangunan,Chart 01.01 Development Index,85.2\n\
+MEDALSARI,Grafik 01.01 Indeks Pembangunan,Chart 01.01 Development Index,60.5";
+
 const DEFAULT_SAMPLE_CSV: &str = "\
 Tahun,Pertanian,Industri,Jasa
 2021,3.8,4.2,5.1
@@ -76,6 +87,9 @@ pub struct ChartDialog {
     pub show_legend: bool,
     pub show_grid: bool,
     pub max_value_override: String,
+    pub map_stock_idx: usize,
+    pub map_custom_path: String,
+    pub map_palette_idx: usize,
     /// Editable raw CSV/TSV tabular data.
     pub raw_data: String,
     /// Target spread index where the chart will be placed.
@@ -198,6 +212,9 @@ impl Default for ChartDialog {
             show_legend: true,
             show_grid: true,
             max_value_override: String::new(),
+            map_stock_idx: 0,
+            map_custom_path: String::new(),
+            map_palette_idx: 0,
             raw_data: DEFAULT_SAMPLE_CSV.into(),
             target_spread: 0,
             selected_page: 0,
@@ -269,6 +286,62 @@ impl ChartDialog {
         dlg
     }
 
+    /// Automatically detects category, series, and titles from the CSV header row.
+    pub fn auto_detect_columns(&mut self) {
+        let first_line = match self.raw_data.lines().find(|l| !l.trim().is_empty()) {
+            Some(l) => l,
+            None => return,
+        };
+
+        let sep = if first_line.contains('\t') {
+            '\t'
+        } else if first_line.contains(';') {
+            ';'
+        } else {
+            ','
+        };
+
+        let headers: Vec<String> = first_line
+            .split(sep)
+            .map(|c| c.trim().trim_matches('"').trim().to_lowercase())
+            .collect();
+
+        for (idx, h) in headers.iter().enumerate() {
+            let col_letter = super::spec::index_to_col_letter(idx);
+            if matches!(h.as_str(), "nmdesa" | "desa" | "village" | "kecamatan" | "wilayah" | "category" | "kategori") {
+                self.category_col = col_letter;
+            } else if matches!(h.as_str(), "value" | "nilai" | "jumlah" | "total" | "persen" | "rate") {
+                self.series_1_col = col_letter;
+            }
+        }
+
+        let lines: Vec<&str> = self.raw_data.lines().filter(|l| !l.trim().is_empty()).collect();
+        if lines.len() >= 2 {
+            let row1_cells: Vec<String> = lines[1]
+                .split(sep)
+                .map(|c| c.trim().trim_matches('"').trim().to_string())
+                .collect();
+
+            if let Some(t_idx) = headers.iter().position(|h| h == "title" || h == "judul") {
+                if let Some(t_val) = row1_cells.get(t_idx) {
+                    if !t_val.is_empty() {
+                        self.title_id = t_val.clone();
+                    }
+                }
+            }
+            if let Some(te_idx) = headers.iter().position(|h| h == "title_en" || h == "judul_en") {
+                if let Some(te_val) = row1_cells.get(te_idx) {
+                    if !te_val.is_empty() {
+                        self.title_en = te_val.clone();
+                    }
+                }
+            }
+
+            self.data_start_row = 2;
+            self.data_end_row = lines.len();
+        }
+    }
+
     /// Parse the raw CSV/TSV data into `ExcelSheetData`.
     pub fn parse_sheet_data(&self) -> ExcelSheetData {
         let mut grid = Vec::new();
@@ -338,12 +411,26 @@ impl ChartDialog {
             show_legend: self.show_legend,
             show_grid: self.show_grid,
             max_value_override: max_val,
+            geojson_path: if self.chart_type == ChartType::Map {
+                if self.map_stock_idx == 999 && !self.map_custom_path.trim().is_empty() {
+                    Some(self.map_custom_path.clone())
+                } else {
+                    let stock_maps = super::stock_maps::list_stock_map_charts();
+                    stock_maps
+                        .get(self.map_stock_idx)
+                        .map(|m| m.path.to_string_lossy().to_string())
+                        .or_else(|| Some("PANGKALAN".to_string()))
+                }
+            } else {
+                None
+            },
+            map_palette_idx: self.map_palette_idx,
         }
     }
 
     /// Adjust series and row count to fit the active chart archetype's capacity.
     pub fn clamp_to_chart_type(&mut self) {
-        if self.chart_type == ChartType::Donut || self.chart_type == ChartType::Gauge {
+        if self.chart_type == ChartType::Donut || self.chart_type == ChartType::Gauge || self.chart_type == ChartType::Map {
             self.series_2_enabled = false;
             self.series_3_enabled = false;
         } else if self.chart_type == ChartType::PopulationPyramid {
@@ -1094,6 +1181,7 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                         ChartType::Donut => "Donut / Ring Chart",
                         ChartType::PopulationPyramid => "Population Pyramid (Piramida Penduduk)",
                         ChartType::Gauge => "Gauge / Speedometer Chart",
+                        ChartType::Map => "Map / Choropleth (Peta Tematik)",
                     };
                     craft_ui::ComboBox::from_id_salt("pubgen_chart_archetype").selected_text(cur_type_name).width(200.0).show_ui(ui, |ui| {
                         for (ct, name) in [
@@ -1105,6 +1193,7 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                             (ChartType::Donut, "Donut / Ring Chart"),
                             (ChartType::PopulationPyramid, "Population Pyramid (Piramida Penduduk)"),
                             (ChartType::Gauge, "Gauge / Speedometer Chart"),
+                            (ChartType::Map, "Map / Choropleth (Peta Tematik)"),
                         ] {
                             if ui.selectable_label(dialog.chart_type == ct, name).clicked() {
                                 dialog.chart_type = ct;
@@ -1156,6 +1245,73 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                             .size(10.5)
                             .color(t.text_dim),
                     );
+                } else if dialog.chart_type == ChartType::Map {
+                    ui.label(
+                        RichText::new(crate::i18n::tr(
+                            &lang,
+                            "ℹ Map charts visualize 1 data series (value column) mapped to geographic regions (nmdesa).",
+                        ))
+                        .size(10.5)
+                        .color(t.text_dim),
+                    );
+
+                    let stock_maps = super::stock_maps::list_stock_map_charts();
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(crate::i18n::tr(&lang, "Stock Map:")).size(11.0).color(t.text));
+                        let cur_map_label = if dialog.map_stock_idx == 999 {
+                            "Custom GeoJSON...".to_string()
+                        } else if let Some(m) = stock_maps.get(dialog.map_stock_idx) {
+                            m.display_name.clone()
+                        } else {
+                            stock_maps.first().map(|m| m.display_name.clone()).unwrap_or_else(|| "Pangkalan (Desa)".to_string())
+                        };
+
+                        craft_ui::ComboBox::from_id_salt("pubgen_chart_map_stock")
+                            .selected_text(cur_map_label)
+                            .width(220.0)
+                            .show_ui(ui, |ui| {
+                                for (idx, m) in stock_maps.iter().enumerate() {
+                                    ui.selectable_value(&mut dialog.map_stock_idx, idx, &m.display_name);
+                                }
+                                ui.separator();
+                                ui.selectable_value(&mut dialog.map_stock_idx, 999, "Custom GeoJSON...");
+                            });
+                    });
+
+                    if dialog.map_stock_idx == 999 {
+                        ui.horizontal(|ui| {
+                            let w = (ui.available_width() - 80.0).max(120.0);
+                            ui.add_sized([w, 20.0], egui::TextEdit::singleline(&mut dialog.map_custom_path).hint_text("Path to .geojson file"));
+                        });
+                    }
+
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(crate::i18n::tr(&lang, "Color Theme:")).size(11.0).color(t.text));
+                        let cur_pal_name = super::palette::MAP_COLOR_PRESETS
+                            .get(dialog.map_palette_idx)
+                            .map(|(n, _, _)| *n)
+                            .unwrap_or("BPS Blue (Default)");
+                        craft_ui::ComboBox::from_id_salt("pubgen_chart_map_palette")
+                            .selected_text(cur_pal_name)
+                            .width(180.0)
+                            .show_ui(ui, |ui| {
+                                for (idx, (pname, _, _)) in super::palette::MAP_COLOR_PRESETS.iter().enumerate() {
+                                    ui.selectable_value(&mut dialog.map_palette_idx, idx, *pname);
+                                }
+                            });
+                    });
+
+                    if ui.button("Load Sample Village CSV (Pangkalan)").clicked() {
+                        dialog.raw_data = DEFAULT_VILLAGE_SAMPLE_CSV.to_string();
+                        dialog.category_col = "A".into();
+                        dialog.series_1_col = "D".into();
+                        dialog.series_1_label_id = "Nilai Indeks".into();
+                        dialog.series_1_label_en = "Index Value".into();
+                        dialog.data_start_row = 2;
+                        dialog.data_end_row = 9;
+                        dialog.title_id = "Grafik 01.01 Indeks Pembangunan Desa, 2026".into();
+                        dialog.title_en = "Chart 01.01 Village Development Index, 2026".into();
+                    }
                 } else if dialog.chart_type == ChartType::PopulationPyramid {
                     // Series 2 (Female)
                     ui.horizontal(|ui| {
@@ -1245,9 +1401,17 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(crate::i18n::tr(&lang, "Data Table (CSV / TSV):")).strong().size(11.5).color(t.text_strong));
                     if ui.small_button(crate::i18n::tr(&lang, "Reset Sample Data")).clicked() {
-                        dialog.raw_data = DEFAULT_SAMPLE_CSV.to_string();
-                        dialog.data_start_row = 2;
-                        dialog.data_end_row = 6;
+                        if dialog.chart_type == ChartType::Map {
+                            dialog.raw_data = DEFAULT_VILLAGE_SAMPLE_CSV.to_string();
+                            dialog.auto_detect_columns();
+                        } else {
+                            dialog.raw_data = DEFAULT_SAMPLE_CSV.to_string();
+                            dialog.data_start_row = 2;
+                            dialog.data_end_row = 6;
+                        }
+                    }
+                    if ui.small_button(crate::i18n::tr(&lang, "Auto-Detect Columns")).clicked() {
+                        dialog.auto_detect_columns();
                     }
                 });
 
@@ -1306,6 +1470,27 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_map_chart_auto_detect_columns_and_build_spec() {
+        let mut dlg = ChartDialog::default();
+        dlg.chart_type = ChartType::Map;
+        dlg.raw_data = DEFAULT_VILLAGE_SAMPLE_CSV.to_string();
+
+        dlg.auto_detect_columns();
+
+        assert_eq!(dlg.category_col, "A"); // nmdesa
+        assert_eq!(dlg.series_1_col, "D");  // value
+        assert_eq!(dlg.title_id, "Grafik 01.01 Indeks Pembangunan");
+        assert_eq!(dlg.title_en, "Chart 01.01 Development Index");
+        assert_eq!(dlg.data_start_row, 2);
+        assert_eq!(dlg.data_end_row, 9);
+
+        let spec = dlg.build_spec();
+        assert_eq!(spec.chart_type, ChartType::Map);
+        assert_eq!(spec.category_col, "A");
+        assert_eq!(spec.series[0].col, "D");
+        assert!(spec.geojson_path.is_some());
+    }
     use super::*;
 
     #[test]
@@ -1340,6 +1525,46 @@ mod tests {
         let active = app.session.active().unwrap();
         assert!(!active.doc.spreads[0].items.is_empty(), "Spread must contain chart items");
     }
+
+    #[test]
+    fn test_chart_dialog_apply_map_chart() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
+
+        let mut dlg = ChartDialog::default();
+        dlg.chart_type = ChartType::Map;
+        dlg.raw_data = DEFAULT_VILLAGE_SAMPLE_CSV.to_string();
+        dlg.auto_detect_columns();
+        dlg.insert_on_new_page = false;
+
+        let res = dlg.apply_chart(&mut app, true);
+        assert!(res.is_ok(), "apply_chart for Map failed: {:?}", res);
+        let count = res.unwrap();
+        assert!(count > 0, "must emit vector map objects");
+
+        let active = app.session.active().unwrap();
+        assert!(!active.doc.spreads[0].items.is_empty(), "Spread must contain map chart items");
+    }
+
+    #[test]
+    fn test_map_chart_with_semicolon_delimited_csv() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
+
+        let mut dlg = ChartDialog::default();
+        dlg.chart_type = ChartType::Map;
+        dlg.raw_data = "nmdesa;title;title_en;value\nSUKATANI;Grafik 03.02 Penduduk;Figure 03.02 Population;19561\nMEKARMAYA;Grafik 03.02 Penduduk;Figure 03.02 Population;22014".to_string();
+        dlg.auto_detect_columns();
+        assert_eq!(dlg.category_col, "A");
+        assert_eq!(dlg.series_1_col, "D");
+        assert_eq!(dlg.title_id, "Grafik 03.02 Penduduk");
+        assert_eq!(dlg.title_en, "Figure 03.02 Population");
+        dlg.insert_on_new_page = false;
+
+        let res = dlg.apply_chart(&mut app, true);
+        assert!(res.is_ok(), "apply_chart with semicolon failed: {:?}", res);
+    }
+
 
     #[test]
     fn test_chart_dialog_editing_replaces_existing_chart() {

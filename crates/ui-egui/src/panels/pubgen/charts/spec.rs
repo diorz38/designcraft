@@ -54,6 +54,8 @@ pub enum ChartType {
     PopulationPyramid,
     /// Gauge / speedometer chart: radial arc and pointer for target/percentage metric.
     Gauge,
+    /// Geographic choropleth map chart.
+    Map,
 }
 
 impl ChartType {
@@ -68,6 +70,7 @@ impl ChartType {
             "donut" | "doughnut" | "pie" | "donat" | "lingkaran" => Some(Self::Donut),
             "populationpyramid" | "pyramid" | "piramidapenduduk" | "piramida" | "piramid" => Some(Self::PopulationPyramid),
             "gauge" | "speedometer" | "dial" | "alatukur" => Some(Self::Gauge),
+            "map" | "choropleth" | "peta" | "geomap" | "thematicmap" => Some(Self::Map),
             _ => None,
         }
     }
@@ -246,6 +249,9 @@ pub struct ChartSpec {
     pub show_grid: bool,
     /// When `Some`, overrides the automatically-computed Y-axis ceiling.
     pub max_value_override: Option<f64>,
+    /// Optional GeoJSON file path or stock map identifier for Map charts.
+    pub geojson_path: Option<String>,
+    pub map_palette_idx: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +269,7 @@ const SHOW_VALUE_LABELS_KEYS: &[&str] = &["show_value_labels", "showvaluelabels"
 const SHOW_LEGEND_KEYS: &[&str] = &["show_legend", "showlegend", "legend"];
 const SHOW_GRID_KEYS: &[&str] = &["show_grid", "showgrid", "grid", "gridlines"];
 const MAX_VALUE_KEYS: &[&str] = &["max_value", "maxvalue", "y_max", "ymax", "ceiling"];
+const GEOJSON_KEYS: &[&str] = &["geojson", "geojson_path", "geojson_file", "map", "map_file", "peta", "file_peta"];
 
 /// Series column/label keys for series index `n` (0-based): returns (col_keys, label_id_keys, label_en_keys).
 fn series_keys(n: usize) -> (&'static [&'static str], &'static [&'static str], &'static [&'static str]) {
@@ -363,6 +370,7 @@ pub fn parse_chart_spec(sheet: &ExcelSheetData) -> Option<ChartSpec> {
     let show_legend = parse_bool(lookup(&kv, SHOW_LEGEND_KEYS).as_deref(), true);
     let show_grid = parse_bool(lookup(&kv, SHOW_GRID_KEYS).as_deref(), true);
     let max_value_override = lookup(&kv, MAX_VALUE_KEYS).and_then(|s| s.trim().parse::<f64>().ok()).filter(|&v| v > 0.0);
+    let geojson_path = lookup(&kv, GEOJSON_KEYS);
 
     Some(ChartSpec {
         chart_type,
@@ -377,6 +385,8 @@ pub fn parse_chart_spec(sheet: &ExcelSheetData) -> Option<ChartSpec> {
         show_legend,
         show_grid,
         max_value_override,
+        geojson_path,
+        map_palette_idx: 0,
     })
 }
 
@@ -450,6 +460,89 @@ pub fn extract_chart_data(sheet: &ExcelSheetData, spec: &ChartSpec) -> Result<(V
     }
 
     Ok((categories, series_values))
+}
+
+/// Parsed contents of a Map Chart CSV (e.g. `nmdesa;title;title_en;value`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MapCsvData {
+    pub title: String,
+    pub title_en: String,
+    pub categories: Vec<String>,
+    pub values: Vec<f64>,
+}
+
+/// Parse a CSV file for map charts (containing village names, optional title/title_en, and numeric values).
+pub fn parse_map_data_csv(content: &str) -> Result<MapCsvData, String> {
+    let delim = super::super::csv::detect_delimiter(content);
+    let grid = super::super::csv::parse_csv_content_with_delim(content, delim);
+    if grid.is_empty() {
+        return Err("Empty CSV content".into());
+    }
+
+    let header = &grid[0];
+    let find_col = |patterns: &[&str], fallback: usize| -> usize {
+        for (i, h) in header.iter().enumerate() {
+            let l = h.trim().to_lowercase();
+            if patterns.iter().any(|p| l == *p) {
+                return i;
+            }
+        }
+        fallback
+    };
+
+    let col_desa = find_col(&["nmdesa", "desa", "village", "nama_desa", "kecamatan", "region", "wilayah", "name", "nama", "kategori", "category"], 0);
+    let col_title = find_col(&["title", "judul", "title_id", "titleid"], 1);
+    let col_title_en = find_col(&["title_en", "titleen", "judul_en", "judulen", "english_title"], 2);
+    let col_val = find_col(&["value", "nilai", "val", "jumlah", "total", "data"], 3);
+
+    let mut title = String::new();
+    let mut title_en = String::new();
+    let mut categories = Vec::new();
+    let mut values = Vec::new();
+
+    for row in grid.iter().skip(1) {
+        if row.is_empty() {
+            continue;
+        }
+        if title.is_empty() {
+            if let Some(t) = row.get(col_title).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                title = t.to_string();
+            }
+        }
+        if title_en.is_empty() {
+            if let Some(t) = row.get(col_title_en).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                title_en = t.to_string();
+            }
+        }
+
+        let cat = row.get(col_desa).map(|s| s.trim()).unwrap_or("");
+        let val_raw = if col_val < row.len() {
+            row[col_val].trim()
+        } else {
+            row.iter().find_map(|cell| {
+                let c = cell.trim();
+                if parse_cell_number(c).is_some() { Some(c) } else { None }
+            }).unwrap_or("")
+        };
+
+        if !cat.is_empty() {
+            if let Some(num) = parse_cell_number(val_raw) {
+                categories.push(cat.to_string());
+                values.push(num);
+            }
+        }
+    }
+
+    if categories.is_empty() {
+        return Err("No valid village / value rows found in map CSV".into());
+    }
+
+    Ok(MapCsvData {
+        title,
+        title_en,
+        categories,
+        values,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -590,6 +683,9 @@ mod tests {
         assert_eq!(ChartType::parse("pyramid"), Some(ChartType::PopulationPyramid));
         assert_eq!(ChartType::parse("gauge"), Some(ChartType::Gauge));
         assert_eq!(ChartType::parse("speedometer"), Some(ChartType::Gauge));
+        assert_eq!(ChartType::parse("map"), Some(ChartType::Map));
+        assert_eq!(ChartType::parse("choropleth"), Some(ChartType::Map));
+        assert_eq!(ChartType::parse("peta"), Some(ChartType::Map));
         assert_eq!(ChartType::parse("unknown_type"), None);
         assert_eq!(ChartType::parse(""), None);
     }
@@ -994,5 +1090,18 @@ mod tests {
         let f = ValueFormat::CurrencyIdr;
         assert_eq!(f.format(1500000.0, false), "Rp 1.500.000");
         assert_eq!(f.format(1500000.0, true), "IDR 1,500,000");
+    }
+
+    #[test]
+    fn test_parse_map_data_csv_semicolon_dual_lang() {
+        let csv = "nmdesa;title;title_en;value\n\
+SUKATANI;Grafik 03.02 Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025;Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025;19561\n\
+MEKARMAYA;Grafik 03.02 Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025;Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025;22014\n\
+MUARABARU;Grafik 03.02 Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025;Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025;18277\n";
+        let res = parse_map_data_csv(csv).expect("should parse successfully");
+        assert_eq!(res.title, "Grafik 03.02 Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025");
+        assert_eq!(res.title_en, "Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025");
+        assert_eq!(res.categories, vec!["SUKATANI", "MEKARMAYA", "MUARABARU"]);
+        assert_eq!(res.values, vec![19561.0, 22014.0, 18277.0]);
     }
 }

@@ -127,6 +127,36 @@ pub struct GaugeLayout {
     pub max_text: String,
 }
 
+/// A single mapped region on a Choropleth Map chart.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MapRegionLayout {
+    /// Bounding/coordinate polygon rings in page points.
+    pub polygons: Vec<Vec<(f64, f64)>>,
+    /// Fill color hex string (e.g. `"#0072BC"`).
+    pub color: String,
+    /// Stroke color hex string (e.g. `"#FFFFFF"`).
+    pub stroke_color: String,
+    /// Stroke weight in points.
+    pub stroke_weight: f64,
+    /// Region name (e.g. village `nmdesa`).
+    pub name: String,
+    /// Formatted value string.
+    pub value_str: String,
+    /// Numeric value.
+    pub value: f64,
+    /// Geographic centroid in page coordinates.
+    pub centroid: (f64, f64),
+}
+
+/// Legend item for Choropleth maps.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MapLegendEntry {
+    pub swatch_rect: [f64; 4],
+    pub color: String,
+    pub label: String,
+    pub label_rect: [f64; 4],
+}
+
 /// Complete geometry layout for a vector chart.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChartLayout {
@@ -158,6 +188,10 @@ pub struct ChartLayout {
     pub plot_rect: [f64; 4],
     /// Axis ceiling value used for scaling.
     pub ceiling: f64,
+    /// Mapped regions for `Map` (Choropleth) charts.
+    pub map_regions: Vec<MapRegionLayout>,
+    /// Map legend entries for `Map` charts.
+    pub map_legend: Vec<MapLegendEntry>,
 }
 
 /// Computes the complete pixel-precise layout for a chart.
@@ -170,6 +204,15 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
         0.0
     };
     let top_offset = if title_h > 0.0 { title_h + 8.0 } else { 0.0 };
+
+    if spec.chart_type == ChartType::Map {
+        let plot_x0 = margin.x0;
+        let plot_x1 = margin.x1;
+        let plot_y0 = margin.y0 + top_offset + 10.0;
+        let plot_y1 = margin.y1;
+        let plot_rect = [plot_x0, plot_y0, plot_x1, plot_y1];
+        return compute_map_layout(spec, categories, series_values, plot_rect, bilingual);
+    }
 
     let is_donut = matches!(spec.chart_type, ChartType::Donut);
     let is_gauge = matches!(spec.chart_type, ChartType::Gauge);
@@ -381,6 +424,7 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
             layout_population_pyramid(spec, categories, series_values, plot_rect, ceiling, bilingual, legend_items, axis_baseline, axis_left)
         }
         ChartType::Gauge => layout_gauge(spec, categories, series_values, plot_rect, ceiling, bilingual, legend_items, axis_baseline, axis_left),
+        ChartType::Map => compute_map_layout(spec, categories, series_values, plot_rect, bilingual),
     }
 }
 
@@ -500,6 +544,8 @@ fn layout_bar_clustered(
         axis_left,
         plot_rect,
         ceiling,
+        map_regions: Vec::new(),
+        map_legend: Vec::new(),
     }
 }
 
@@ -571,6 +617,8 @@ fn layout_bar_stacked(
         axis_left,
         plot_rect,
         ceiling,
+        map_regions: Vec::new(),
+        map_legend: Vec::new(),
     }
 }
 
@@ -645,6 +693,8 @@ fn layout_horizontal_bar(
         axis_left,
         plot_rect,
         ceiling,
+        map_regions: Vec::new(),
+        map_legend: Vec::new(),
     }
 }
 
@@ -724,6 +774,8 @@ fn layout_line_and_area(
         axis_left,
         plot_rect,
         ceiling,
+        map_regions: Vec::new(),
+        map_legend: Vec::new(),
     }
 }
 
@@ -866,6 +918,8 @@ fn layout_population_pyramid(
         axis_left,
         plot_rect,
         ceiling,
+        map_regions: Vec::new(),
+        map_legend: Vec::new(),
     }
 }
 
@@ -973,6 +1027,8 @@ fn layout_gauge(
         axis_left,
         plot_rect,
         ceiling,
+        map_regions: Vec::new(),
+        map_legend: Vec::new(),
     }
 }
 
@@ -1051,6 +1107,170 @@ fn layout_donut(
         axis_left,
         plot_rect,
         ceiling,
+        map_regions: Vec::new(),
+        map_legend: Vec::new(),
+    }
+}
+
+
+fn compute_map_layout(
+    spec: &ChartSpec,
+    categories: &[String],
+    series_values: &[Vec<f64>],
+    plot_rect: [f64; 4],
+    bilingual: bool,
+) -> ChartLayout {
+    let geo_map = if let Some(path) = &spec.geojson_path {
+        super::stock_maps::load_chart_geo_map(path).unwrap_or_else(|_| super::stock_maps::load_chart_geo_map("PANGKALAN").unwrap_or_else(|_| super::geojson::GeoMap {
+            name: "Fallback".into(),
+            bbox: [0.0, 0.0, 1.0, 1.0],
+            features: Vec::new(),
+        }))
+    } else {
+        super::stock_maps::load_chart_geo_map("PANGKALAN").unwrap_or_else(|_| super::geojson::GeoMap {
+            name: "Fallback".into(),
+            bbox: [0.0, 0.0, 1.0, 1.0],
+            features: Vec::new(),
+        })
+    };
+
+    let s_vals = series_values.first().map(Vec::as_slice).unwrap_or(&[]);
+    let mut min_val = f64::INFINITY;
+    let mut max_val = f64::NEG_INFINITY;
+
+    let mut val_map = std::collections::HashMap::new();
+    for (idx, &val) in s_vals.iter().enumerate() {
+        if let Some(cat) = categories.get(idx) {
+            let key = cat.trim().to_uppercase();
+            val_map.insert(key, val);
+            min_val = min_val.min(val);
+            max_val = max_val.max(val);
+        }
+    }
+
+    if !min_val.is_finite() || !max_val.is_finite() {
+        min_val = 0.0;
+        max_val = 100.0;
+    } else if (max_val - min_val).abs() < 1e-6 {
+        max_val = min_val + 1.0;
+    }
+
+    let (map_rect, legend_rect) = if spec.show_legend {
+        (
+            designcraft_geom::Rect {
+                x0: plot_rect[0],
+                y0: plot_rect[1],
+                x1: plot_rect[2],
+                y1: (plot_rect[3] - 32.0).max(plot_rect[1] + 20.0),
+            },
+            Some([plot_rect[0], plot_rect[3] - 28.0, plot_rect[2], plot_rect[3]]),
+        )
+    } else {
+        (
+            designcraft_geom::Rect {
+                x0: plot_rect[0],
+                y0: plot_rect[1],
+                x1: plot_rect[2],
+                y1: plot_rect[3],
+            },
+            None,
+        )
+    };
+
+    let projected = geo_map.project_features(map_rect);
+    let mut map_regions = Vec::new();
+
+    for pf in projected {
+        let feat = match geo_map.features.get(pf.feature_idx) {
+            Some(f) => f,
+            None => continue,
+        };
+
+        let feat_name = feat.nmdesa().or_else(|| feat.nmkec()).unwrap_or("");
+        let norm_name = feat_name.trim().to_uppercase();
+
+        let val_opt = val_map.get(&norm_name).copied();
+        let (min_hex, max_hex) = super::palette::MAP_COLOR_PRESETS
+            .get(spec.map_palette_idx)
+            .map(|(_, min_c, max_c)| (*min_c, *max_c))
+            .unwrap_or(("#E1F5FE", "#0072BC"));
+
+        let (val, fill_color) = if let Some(v) = val_opt {
+            let t = ((v - min_val) / (max_val - min_val)).clamp(0.0, 1.0);
+            let c = super::palette::interpolate_color(min_hex, max_hex, t);
+            (v, c)
+        } else {
+            (0.0, "#F1F5F9".to_string())
+        };
+
+        let value_str = if val_opt.is_some() {
+            spec.value_format.format(val, bilingual)
+        } else {
+            String::new()
+        };
+
+        map_regions.push(MapRegionLayout {
+            polygons: pf.polygons,
+            color: fill_color,
+            stroke_color: "#FFFFFF".to_string(),
+            stroke_weight: 0.75,
+            name: feat_name.to_string(),
+            value_str,
+            value: val,
+            centroid: pf.centroid,
+        });
+    }
+
+    let mut map_legend = Vec::new();
+    if let Some(l_rect) = legend_rect {
+        let steps = 5;
+        let total_w = l_rect[2] - l_rect[0];
+        let swatch_w = 40.0f64;
+        let swatch_h = 10.0f64;
+        let gap = 12.0f64;
+        let full_legend_w = steps as f64 * swatch_w + (steps - 1) as f64 * gap;
+        let start_x = l_rect[0] + (total_w - full_legend_w).max(0.0) * 0.5;
+        let swatch_y = l_rect[1] + 2.0;
+
+        for i in 0..steps {
+            let frac = i as f64 / (steps - 1) as f64;
+            let val = min_val + frac * (max_val - min_val);
+            let (min_hex, max_hex) = super::palette::MAP_COLOR_PRESETS
+                .get(spec.map_palette_idx)
+                .map(|(_, min_c, max_c)| (*min_c, *max_c))
+                .unwrap_or(("#E1F5FE", "#0072BC"));
+            let color = super::palette::interpolate_color(min_hex, max_hex, frac);
+            let sx0 = start_x + i as f64 * (swatch_w + gap);
+            let s_rect = [sx0, swatch_y, sx0 + swatch_w, swatch_y + swatch_h];
+            let lbl_rect = [sx0 - 4.0, swatch_y + swatch_h + 2.0, sx0 + swatch_w + 4.0, swatch_y + swatch_h + 12.0];
+            let label = spec.value_format.format(val, bilingual);
+
+            map_legend.push(MapLegendEntry {
+                swatch_rect: s_rect,
+                color,
+                label,
+                label_rect: lbl_rect,
+            });
+        }
+    }
+
+    ChartLayout {
+        bars: Vec::new(),
+        line_markers: Vec::new(),
+        line_segments: Vec::new(),
+        donut_slices: Vec::new(),
+        gauge: None,
+        pyramid_summary: None,
+        grid_lines: Vec::new(),
+        x_tick_labels: Vec::new(),
+        value_labels: Vec::new(),
+        legend_items: Vec::new(),
+        axis_baseline: [plot_rect[0], plot_rect[3], plot_rect[2], plot_rect[3]],
+        axis_left: [plot_rect[0], plot_rect[1], plot_rect[0], plot_rect[3]],
+        plot_rect,
+        ceiling: max_val,
+        map_regions,
+        map_legend,
     }
 }
 
@@ -1076,6 +1296,8 @@ mod tests {
             show_legend: true,
             show_grid: true,
             max_value_override: None,
+            geojson_path: None,
+            map_palette_idx: 0,
         }
     }
 

@@ -24,6 +24,85 @@ fn main() {
     if let Err(e) = std::fs::write(&out, generate(&json, &people)) {
         println!("cargo::warning=writing {}: {e}", out.display());
     }
+
+    generate_embedded_maps();
+}
+
+fn to_title_case(s: &str) -> String {
+    let mut out = String::new();
+    for word in s.replace('_', " ").split_whitespace() {
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        let mut chars = word.chars();
+        if let Some(first) = chars.next() {
+            out.extend(first.to_uppercase());
+            out.extend(chars.as_str().to_lowercase().chars());
+        }
+    }
+    out
+}
+
+fn generate_embedded_maps() {
+    let maps_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/pubgen/maps");
+    println!("cargo::rerun-if-changed={}", maps_dir.display());
+
+    let mut chart_entries = Vec::new();
+    let mut cover_entries = Vec::new();
+
+    if maps_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&maps_dir) {
+            let mut files: Vec<_> = entries
+                .flatten()
+                .filter(|e| e.path().extension().is_some_and(|ext| ext == "geojson"))
+                .collect();
+            files.sort_by_key(|e| e.file_name());
+
+            for entry in files {
+                let path = entry.path();
+                println!("cargo::rerun-if-changed={}", path.display());
+                let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+                let stem = fname.trim_end_matches(".geojson");
+                let text = match std::fs::read_to_string(&path) {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                };
+                let escaped_text = format!("{text:?}");
+
+                if let Some(prefix) = stem.strip_suffix("_DESA") {
+                    let id = prefix.to_uppercase();
+                    let disp = format!("{} (Desa)", to_title_case(prefix));
+                    chart_entries.push(format!("    EmbeddedMap {{ id: \"{id}\", display_name: \"{disp}\", filename: \"{fname}\", geojson: {escaped_text} }},"));
+                } else {
+                    let id = stem.to_uppercase();
+                    let disp = format!("{} (Kecamatan)", to_title_case(stem));
+                    cover_entries.push(format!("    EmbeddedMap {{ id: \"{id}\", display_name: \"{disp}\", filename: \"{fname}\", geojson: {escaped_text} }},"));
+                }
+            }
+        }
+    }
+
+    let mut out_src = String::new();
+    out_src.push_str("pub static EMBEDDED_CHART_MAPS: &[EmbeddedMap] = &[
+");
+    for entry in chart_entries {
+        out_src.push_str(&entry);
+        out_src.push('\n');
+    }
+    out_src.push_str("];\n\n");
+
+    out_src.push_str("pub static EMBEDDED_COVER_MAPS: &[EmbeddedMap] = &[
+");
+    for entry in cover_entries {
+        out_src.push_str(&entry);
+        out_src.push('\n');
+    }
+    out_src.push_str("];\n");
+
+    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap_or_default()).join("embedded_maps.rs");
+    if let Err(e) = std::fs::write(&out, out_src) {
+        println!("cargo::warning=writing {}: {e}", out.display());
+    }
 }
 
 fn read<T>(path: &std::path::Path, fallback: &str, parse: impl Fn(&str) -> Result<T, String>) -> Option<T> {

@@ -812,6 +812,61 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
         "When checked, automatically generates Inside Cover (grayscale & outlines) on page 2 and Back Cover at the end of the publication",
     );
 
+    ui.checkbox(&mut st.cover_add_map, "Add Map to Cover").on_hover_text(
+        "When checked, overlays a stylized geographic vector map on the cover page",
+    );
+    if st.cover_add_map {
+        ui.indent("pubgen_cover_map_sub", |ui| {
+            let stock_maps = super::charts::list_stock_cover_maps();
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Map:").size(10.5).color(t.text));
+                let cur_label = if st.cover_map_stock_idx == 999 {
+                    "Custom GeoJSON...".to_string()
+                } else if let Some(m) = stock_maps.get(st.cover_map_stock_idx) {
+                    m.display_name.clone()
+                } else {
+                    stock_maps.first().map(|m| m.display_name.clone()).unwrap_or_else(|| "Pangkalan (Cover / Kecamatan)".to_string())
+                };
+
+                let combo_w = (ui.available_width() - 50.0).clamp(110.0, 220.0);
+                craft_ui::ComboBox::from_id_salt("pubgen_cover_map_picker")
+                    .selected_text(cur_label)
+                    .width(combo_w)
+                    .show_ui(ui, |ui| {
+                        for (idx, m) in stock_maps.iter().enumerate() {
+                            ui.selectable_value(&mut st.cover_map_stock_idx, idx, &m.display_name);
+                        }
+                        ui.separator();
+                        ui.selectable_value(&mut st.cover_map_stock_idx, 999, "Custom GeoJSON...");
+                    });
+            });
+
+            if st.cover_map_stock_idx == 999 {
+                ui.horizontal(|ui| {
+                    let w = (ui.available_width() - 65.0).max(80.0);
+                    ui.add_sized(
+                        [w, crate::widgets::FIELD_H],
+                        egui::TextEdit::singleline(&mut st.cover_map_custom_path).hint_text("Path to .geojson file"),
+                    );
+                    if ui.add_sized([60.0, crate::widgets::FIELD_H], egui::Button::new("Browse…")).clicked() {
+                        let ctx = ui.ctx().clone();
+                        let _ = app.ask_open("place", crate::app::file_dialogs::Bound::Document, move |_app, path| {
+                            super::with_state(&ctx, |st| st.cover_map_custom_path = path);
+                            Ok(serde_json::Value::Null)
+                        });
+                    }
+                });
+            }
+
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Style:").size(10.5).color(t.text));
+                ui.radio_value(&mut st.cover_map_style, 0, "Watermark");
+                ui.radio_value(&mut st.cover_map_style, 1, "Accent Hero");
+                ui.radio_value(&mut st.cover_map_style, 2, "Outlines");
+            });
+        });
+    }
+
     // 2. Color Theme Preset
     ui.horizontal(|ui| {
         ui.label(RichText::new("Theme:").size(11.0).color(t.text));

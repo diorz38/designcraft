@@ -1518,24 +1518,92 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                 );
             }
         } else if is_chart_type(type_val) {
-            // Chart / Grafik layout:
-            let en_title_text = if !title_en_val.is_empty() {
+            // Chart / Grafik / Map layout:
+            let dir = std::path::Path::new(&st.card1_path).parent().unwrap_or(std::path::Path::new("."));
+            let clean_num = excel::sanitize_filename(num_val);
+            let mut detected_map_title = None;
+            let mut detected_map_title_en = None;
+
+            let c_candidates = [
+                if file_val.ends_with(".csv") { dir.join(file_val) } else { std::path::PathBuf::new() },
+                dir.join(format!("{file_val}.csv")),
+                dir.join(format!("{clean_num}.csv")),
+                dir.join(format!("C{clean_num}.csv")),
+                dir.join(format!("c{clean_num}.csv")),
+                dir.join(format!("C{}.csv", clean_num.replace('.', "_"))),
+                dir.join(format!("c{}.csv", clean_num.replace('.', "_"))),
+                dir.join(format!("M{clean_num}.csv")),
+                dir.join(format!("m{clean_num}.csv")),
+                dir.join(format!("M{}.csv", clean_num.replace('.', "_"))),
+                dir.join(format!("m{}.csv", clean_num.replace('.', "_"))),
+            ];
+
+            // Peek at candidates to discover title and title_en from map CSV if needed
+            for candidate in &c_candidates {
+                if candidate.as_os_str().is_empty() || !candidate.is_file() {
+                    continue;
+                }
+                if let Ok(content) = std::fs::read_to_string(candidate) {
+                    let delim = detect_delimiter(&content);
+                    let grid = parse_csv_content_with_delim(&content, delim);
+                    let sheet_data = excel::ExcelSheetData { name: num_val.to_string(), grid, merges: Vec::new() };
+                    if let Some(map_info) = excel::parse_map_sheet(&sheet_data) {
+                        let data_rel = map_info.data_csv_path.replace('\\', "/");
+                        let data_candidate = resolve_catalog_related_file(&st.card1_path, &data_rel, "csv")
+                            .or_else(|| {
+                                let p = dir.join(&data_rel);
+                                if p.is_file() { Some(p) } else { None }
+                            })
+                            .or_else(|| {
+                                let p = std::path::PathBuf::from(&data_rel);
+                                if p.is_file() { Some(p) } else { None }
+                            });
+                        if let Some(csv_p) = data_candidate {
+                            if let Ok(csv_text) = std::fs::read_to_string(&csv_p) {
+                                if let Ok(parsed_data) = super::charts::spec::parse_map_data_csv(&csv_text) {
+                                    if !parsed_data.title.is_empty() {
+                                        detected_map_title = Some(parsed_data.title);
+                                    }
+                                    if !parsed_data.title_en.is_empty() {
+                                        detected_map_title_en = Some(parsed_data.title_en);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    } else if let Ok(parsed_data) = super::charts::spec::parse_map_data_csv(&content) {
+                        if !parsed_data.title.is_empty() {
+                            detected_map_title = Some(parsed_data.title);
+                        }
+                        if !parsed_data.title_en.is_empty() {
+                            detected_map_title_en = Some(parsed_data.title_en);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            let eff_id_title = detected_map_title.as_deref().unwrap_or(clean_id_title);
+            let eff_title_en_val = if let Some(ref dte) = detected_map_title_en {
+                dte.as_str()
+            } else if !title_en_val.is_empty() {
                 title_en_val
             } else if clean_en_title != clean_id_title {
                 clean_en_title
             } else {
                 ""
             };
-            let has_dual_title_en = st.bilingual_output && !en_title_text.is_empty() && (!title_val.contains(" / ") || !title_en_val.is_empty());
+
+            let has_dual_title_en = !eff_title_en_val.is_empty() && (!title_val.contains(" / ") || !title_en_val.is_empty() || detected_map_title_en.is_some());
             let title_h = if has_dual_title_en { 60.0 } else { 48.0 };
 
             if has_dual_title_en {
-                let (ch_line, title_line) = split_chart_title(clean_id_title, num_val, type_val);
+                let (ch_line, title_line) = split_chart_title(eff_id_title, num_val, type_val);
                 let full_text = if title_line.is_empty() {
-                    format!("{ch_line}{}{en_title_text}", designcraft_doc::story::FORCED_LINE_BREAK)
+                    format!("{ch_line}{}{eff_title_en_val}", designcraft_doc::story::FORCED_LINE_BREAK)
                 } else {
                     format!(
-                        "{ch_line}{}{title_line}{}{en_title_text}",
+                        "{ch_line}{}{title_line}{}{eff_title_en_val}",
                         designcraft_doc::story::FORCED_LINE_BREAK,
                         designcraft_doc::story::FORCED_LINE_BREAK
                     )
@@ -1543,7 +1611,7 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
 
                 let title_rect = [margin.x0, margin.y0, margin.x1, margin.y0 + title_h];
                 if let Some(story) = frame_with_centered_bold_title(app, spread_idx, title_rect, &full_text, Some(&st.toc_style)) {
-                    let b_start = full_text.len().saturating_sub(en_title_text.len());
+                    let b_start = full_text.len().saturating_sub(eff_title_en_val.len());
                     let b_end = full_text.len();
                     let _ = app.run(
                         "text.select",
@@ -1599,19 +1667,7 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                 frame_with_centered_bold_title(app, spread_idx, title_rect, &full_text, Some(&st.toc_style));
             }
 
-            // 2. Vector chart engine first, with raster image fallback
-            let dir = std::path::Path::new(&st.card1_path).parent().unwrap_or(std::path::Path::new("."));
-            let clean_num = excel::sanitize_filename(num_val);
-            let c_candidates = [
-                if file_val.ends_with(".csv") { dir.join(file_val) } else { std::path::PathBuf::new() },
-                dir.join(format!("{file_val}.csv")),
-                dir.join(format!("{clean_num}.csv")),
-                dir.join(format!("C{clean_num}.csv")),
-                dir.join(format!("c{clean_num}.csv")),
-                dir.join(format!("C{}.csv", clean_num.replace('.', "_"))),
-                dir.join(format!("c{}.csv", clean_num.replace('.', "_"))),
-            ];
-
+            // 2. Vector chart / map engine first, with raster image fallback
             let mut vector_rendered = false;
             for candidate in &c_candidates {
                 if candidate.as_os_str().is_empty() || !candidate.exists() || !candidate.is_file() {
@@ -1621,6 +1677,88 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                     let delim = detect_delimiter(&content);
                     let grid = parse_csv_content_with_delim(&content, delim);
                     let sheet_data = excel::ExcelSheetData { name: num_val.to_string(), grid, merges: Vec::new() };
+
+                    // 2a. Map Chart (MXX_XX sheet with map and data)
+                    if let Some(map_info) = excel::parse_map_sheet(&sheet_data) {
+                        let data_rel = map_info.data_csv_path.replace('\\', "/");
+                        let data_candidate = resolve_catalog_related_file(&st.card1_path, &data_rel, "csv")
+                            .or_else(|| {
+                                let p = dir.join(&data_rel);
+                                if p.is_file() { Some(p) } else { None }
+                            })
+                            .or_else(|| {
+                                let p = std::path::PathBuf::from(&data_rel);
+                                if p.is_file() { Some(p) } else { None }
+                            });
+                        if let Some(csv_p) = data_candidate {
+                            if let Ok(csv_text) = std::fs::read_to_string(&csv_p) {
+                                if let Ok(parsed_data) = super::charts::spec::parse_map_data_csv(&csv_text) {
+                                    let pal_idx = map_info
+                                        .theme
+                                        .as_deref()
+                                        .or(if !theme_val.is_empty() { Some(theme_val) } else { None })
+                                        .map(super::charts::palette::find_map_palette_idx)
+                                        .unwrap_or(0);
+                                    let map_spec = super::charts::spec::ChartSpec {
+                                        chart_type: super::charts::spec::ChartType::Map,
+                                        title_id: if !parsed_data.title.is_empty() { parsed_data.title.clone() } else { eff_id_title.to_string() },
+                                        title_en: if !parsed_data.title_en.is_empty() { parsed_data.title_en.clone() } else { eff_title_en_val.to_string() },
+                                        category_col: "A".into(),
+                                        series: vec![super::charts::spec::SeriesSpec {
+                                            col: "B".into(),
+                                            label_id: "Nilai".into(),
+                                            label_en: "Value".into(),
+                                        }],
+                                        data_start_row: 1,
+                                        data_end_row: parsed_data.categories.len(),
+                                        value_format: super::charts::spec::ValueFormat::Number,
+                                        show_value_labels: true,
+                                        show_legend: true,
+                                        show_grid: false,
+                                        max_value_override: None,
+                                        geojson_path: Some(map_info.map_name_or_path.clone()),
+                                        map_palette_idx: pal_idx,
+                                    };
+                                    let chart_margin = designcraft_geom::Rect {
+                                        x0: margin.x0,
+                                        y0: margin.y0 + title_h + 8.0,
+                                        x1: margin.x1,
+                                        y1: margin.y1,
+                                    };
+                                    let layout = super::charts::layout::compute_layout(
+                                        &map_spec,
+                                        &parsed_data.categories,
+                                        &[parsed_data.values],
+                                        chart_margin,
+                                        st.bilingual_output,
+                                    );
+                                    let palette = if let Some(th) = &map_info.theme {
+                                        vec![th.clone()]
+                                    } else if !theme_val.is_empty() {
+                                        vec![theme_val.to_string()]
+                                    } else if let Some(ref th) = st.card2_theme_override {
+                                        vec![th.clone()]
+                                    } else if !st.cover_color_primary.is_empty() {
+                                        vec![st.cover_color_primary.clone(), st.cover_color_accent.clone()]
+                                    } else {
+                                        Vec::new()
+                                    };
+                                    match super::charts::emitter::emit_chart(app, spread_idx, &map_spec, &layout, &palette, st.bilingual_output) {
+                                        Ok(_n) => {
+                                            vector_charts_count = vector_charts_count.saturating_add(1);
+                                            vector_rendered = true;
+                                            break;
+                                        }
+                                        Err(e) => {
+                                            log::warn!("Vector map chart emit failed: {e}; falling back to raster");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 2b. Standard CXX_XX chart spec
                     if let Some(spec) = super::charts::spec::parse_chart_spec(&sheet_data) {
                         match super::charts::spec::extract_chart_data(&sheet_data, &spec) {
                             Ok((categories, series_values)) => {
@@ -4434,6 +4572,8 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
             show_legend: true,
             show_grid: false,
             max_value_override: None,
+            geojson_path: None,
+            map_palette_idx: 0,
         };
         let categories = vec!["Desa A".into()];
         let values = vec![vec![100.0, 80.0]];
@@ -4467,6 +4607,8 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
             show_legend: false,
             show_grid: false,
             max_value_override: None,
+            geojson_path: None,
+            map_palette_idx: 0,
         };
         let categories = vec!["Desa Karanganyar Subang".into()]; // > 12 chars
         let values = vec![vec![100.0]];
@@ -4517,5 +4659,74 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
         // Must succeed without panic
         let res = execute_generate_pages(&mut app, &st);
         assert!(res.is_ok(), "Error in chart data must cleanly fall back: {res:?}");
+    }
+
+    #[test]
+    fn test_mxx_map_chart_generation_and_three_line_title() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let maps_dir = dir.path().join("maps");
+        std::fs::create_dir_all(&maps_dir).unwrap();
+        let data_csv_path = maps_dir.join("contoh.csv");
+        let data_csv = "nmdesa;title;title_en;value\nSUKATANI;Grafik 03.02 Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025;Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025;19561\nMEKARMAYA;Grafik 03.02 Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025;Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025;22014\nMUARABARU;Grafik 03.02 Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025;Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025;18277\nSUKAKERTA;Grafik 03.02 Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025;Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025;15579\nTEGALWARU;Grafik 03.02 Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025;Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025;7442\nTEGALSARI;Grafik 03.02 Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025;Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025;15905\n";
+        std::fs::write(&data_csv_path, data_csv).unwrap();
+
+        let m_sheet_csv = dir.path().join("M03_02.csv");
+        std::fs::write(&m_sheet_csv, "map;CILAMAYA WETAN\ndata;maps\\contoh.csv\n").unwrap();
+
+        let catalog_path = dir.path().join("catalog.csv");
+        let cat_csv = "type;number;title;file;title_en\nGrafik;03.02;Grafik 03.02 Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025;M03_02.csv;Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025\n";
+        std::fs::write(&catalog_path, cat_csv).unwrap();
+
+        let st = PubgenState {
+            card1_path: catalog_path.to_string_lossy().to_string(),
+            card1_records: vec![vec![
+                "Grafik".into(),
+                "03.02".into(),
+                "Grafik 03.02 Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025".into(),
+                "M03_02.csv".into(),
+                "".into(), // template
+                "Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025".into(), // title_en
+            ]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into(), "template".into(), "title_en".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_file_col: 3,
+            card1_template_col: 4,
+            card1_title_en_col: 5,
+            card1_range_all: true,
+            bilingual_output: true,
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "Map chart generation should succeed: {res:?}");
+        let summary = res.unwrap();
+        assert!(summary.contains("1 vector chart(s) rendered"), "Summary should report vector map chart rendered: {summary}");
+
+        let active = app.session.active().unwrap();
+        // Check page title 3 lines
+        let title_story = active.doc.stories.values().find(|s| s.text.contains("Grafik 03.02")).expect("Title story must exist");
+        let lines: Vec<&str> = title_story.text.split(designcraft_doc::story::FORCED_LINE_BREAK).collect();
+        assert_eq!(lines.len(), 3, "Title must have exactly 3 lines: {:?}", lines);
+        assert_eq!(lines[0], "Grafik 03.02");
+        assert_eq!(lines[1], "Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025");
+        assert_eq!(lines[2], "Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025");
+
+        // Verify English title (line 3) is italicized
+        let en_line_text = lines[2];
+        let en_start = title_story.text.find(en_line_text).expect("EN line must be in text");
+        let en_fmt = title_story.char_format_of(en_start + 2);
+        assert_eq!(en_fmt.over.font_style.as_deref(), Some("Italic"), "English line must be formatted Italic");
+
+        // Verify village map label (line 1 nmdesa, line 2 value)
+        let sukatani_story = active.doc.stories.values().find(|s| s.text.contains("SUKATANI")).expect("Sukatani map label must exist");
+        let s_text = sukatani_story.text.replace(designcraft_doc::story::FORCED_LINE_BREAK, "\n");
+        let s_lines: Vec<&str> = s_text.lines().collect();
+        assert_eq!(s_lines[0], "SUKATANI", "Line 1 of map label must be nmdesa: {:?}", s_lines);
+        assert_eq!(s_lines[1], "19.561", "Line 2 of map label must be formatted value: {:?}", s_lines);
     }
 }

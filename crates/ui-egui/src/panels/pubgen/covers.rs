@@ -1088,6 +1088,9 @@ pub fn execute_generate_front_cover(app: &mut DesignApp, st: &PubgenState) -> Re
                 "Quarter Stack",
             ];
             let sname = style_names.get(st.cover_style).copied().unwrap_or("Template Cover");
+            if st.cover_add_map {
+                let _ = apply_cover_map_overlay(app, st);
+            }
             return Ok(sname.to_string());
         }
     }
@@ -1188,6 +1191,9 @@ pub fn execute_generate_front_cover(app: &mut DesignApp, st: &PubgenState) -> Re
         _ => return Err(format!("Unsupported cover style: {}", st.cover_style)),
     };
 
+    if st.cover_add_map {
+        let _ = apply_cover_map_overlay(app, st);
+    }
     Ok(style_name.to_string())
 }
 
@@ -1206,6 +1212,190 @@ pub fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<S
 
 /// Dimensions of the first page (or standard A4 default if no document is open).
 #[allow(dead_code)]
+/// Overlays a stylized vector map on the front cover spread (Spread 0) based on `st.cover_add_map`.
+pub fn apply_cover_map_overlay(app: &mut DesignApp, st: &PubgenState) -> Result<(), String> {
+    let map = if st.cover_map_stock_idx == 999 && !st.cover_map_custom_path.trim().is_empty() {
+        super::charts::stock_maps::load_cover_geo_map(&st.cover_map_custom_path)?
+    } else {
+        let stock_maps = super::charts::stock_maps::list_stock_cover_maps();
+        if let Some(m) = stock_maps.get(st.cover_map_stock_idx) {
+            super::charts::stock_maps::load_cover_geo_map(&m.path.to_string_lossy())?
+        } else {
+            super::charts::stock_maps::load_cover_geo_map("PANGKALAN")?
+        }
+    };
+
+    let (pw, ph) = get_cover_page_dimensions(app);
+
+    // Target rectangle for the map on the cover page.
+    // Scaled larger and positioned across lower-middle to bottom right (behind textboxes).
+    let target_rect = match st.cover_map_style {
+        0 => {
+            // Watermark / Background silhouette: large coverage
+            designcraft_geom::Rect {
+                x0: pw * 0.06,
+                y0: ph * 0.34,
+                x1: pw * 0.82,
+                y1: ph * 0.90,
+            }
+        }
+        1 => {
+            // Accent Hero: prominent size in lower-center / right
+            designcraft_geom::Rect {
+                x0: pw * 0.06,
+                y0: ph * 0.34,
+                x1: pw * 0.82,
+                y1: ph * 0.90,
+            }
+        }
+        _ => {
+            // Outlines:
+            designcraft_geom::Rect {
+                x0: pw * 0.06,
+                y0: ph * 0.34,
+                x1: pw * 0.82,
+                y1: ph * 0.90,
+            }
+        }
+    };
+
+    let projected = map.project_features(target_rect);
+
+    let primary = if st.cover_color_primary.trim().is_empty() { "#0072bc" } else { st.cover_color_primary.trim() };
+    let accent = if st.cover_color_accent.trim().is_empty() { "#f5ab19" } else { st.cover_color_accent.trim() };
+    let dark = if st.cover_color_dark.trim().is_empty() { "#122647" } else { st.cover_color_dark.trim() };
+
+    let mut emitted_ids = Vec::new();
+
+    for pf in &projected {
+        let is_hi = map.features.get(pf.feature_idx).map(|f| f.is_highlighted()).unwrap_or(false);
+
+        let (fill, stroke, stroke_weight) = match st.cover_map_style {
+            0 => {
+                // Watermark / Silhouette:
+                if is_hi {
+                    (accent, primary, 1.25)
+                } else {
+                    ("#F1F5F9", "#CBD5E1", 0.5)
+                }
+            }
+            1 => {
+                // Accent Hero:
+                if is_hi {
+                    (accent, dark, 1.5)
+                } else {
+                    (primary, "#FFFFFF", 0.75)
+                }
+            }
+            _ => {
+                // Outlines only:
+                if is_hi {
+                    ("[None]", accent, 1.75)
+                } else {
+                    ("[None]", "#94A3B8", 0.75)
+                }
+            }
+        };
+
+        for ring in &pf.polygons {
+            if let Ok(id) = super::charts::emitter::emit_polygon(app, 0, ring, fill, stroke, stroke_weight) {
+                emitted_ids.push(id);
+            }
+        }
+    }
+
+    let group_id = if emitted_ids.len() > 1 {
+        app.run("object.group", serde_json::json!({"ids": emitted_ids}))
+            .ok()
+            .and_then(|v| v.get("id").and_then(serde_json::Value::as_u64))
+    } else {
+        None
+    };
+
+    // Ensure the decorative map is positioned behind all textboxes and logo,
+    // but in front of background shapes and hero/landscape photo frames.
+    let map_item_ids: std::collections::HashSet<u64> = if let Some(gid) = group_id {
+        let mut s = std::collections::HashSet::new();
+        s.insert(gid);
+        s
+    } else {
+        emitted_ids.into_iter().collect()
+    };
+
+    let _ = app.session.edit(|doc, _| {
+        let non_empty_stories: std::collections::HashSet<_> = doc
+            .stories
+            .iter()
+            .filter(|(_, s)| !s.text.trim().is_empty())
+            .map(|(&id, _)| id)
+            .collect();
+
+        if let Some(sp) = doc.spreads.first_mut() {
+            let sp = std::sync::Arc::make_mut(sp);
+            let mut non_map_items = Vec::new();
+            let mut map_items = Vec::new();
+
+            for it in sp.items.drain(..) {
+                if map_item_ids.contains(&it.id.0) {
+                    map_items.push(it);
+                } else {
+                    non_map_items.push(it);
+                }
+            }
+
+            // Find the last photo/hero/landscape item index among non_map_items.
+            let last_photo_idx = non_map_items.iter().rposition(|it| {
+                it.label.contains("landscape")
+                    || it.label.contains("hero")
+                    || it.label.contains("background")
+                    || it.name.contains("landscape")
+                    || it.name.contains("hero")
+                    || it.name.contains("background")
+                    || (it.graphic().is_some() && !it.label.contains("logo") && !it.name.contains("logo"))
+            });
+
+            // Find the insertion index: strictly after any background/photo items, and before all textboxes / logo.
+            let insert_idx = if let Some(photo_idx) = last_photo_idx {
+                let after_photo = non_map_items.iter().enumerate().skip(photo_idx + 1).find(|(_, it)| {
+                    it.is_text_frame()
+                        || it.label.contains("text")
+                        || it.name.contains("text")
+                        || it.label.contains("logo")
+                        || it.name.contains("logo")
+                });
+                if let Some((idx, _)) = after_photo {
+                    idx
+                } else {
+                    (photo_idx + 1).min(non_map_items.len())
+                }
+            } else {
+                non_map_items
+                    .iter()
+                    .position(|it| {
+                        if it.label.contains("text") || it.name.contains("text") {
+                            return true;
+                        }
+                        if let designcraft_doc::Content::Text(tf) = &it.content {
+                            return non_empty_stories.contains(&tf.story);
+                        }
+                        false
+                    })
+                    .unwrap_or(non_map_items.len())
+            };
+
+            let mut reordered = Vec::with_capacity(non_map_items.len() + map_items.len());
+            reordered.extend(non_map_items.drain(..insert_idx));
+            reordered.extend(map_items);
+            reordered.extend(non_map_items);
+            sp.items = reordered;
+            sp.relayout();
+        }
+        Ok(serde_json::Value::Null)
+    });
+
+    Ok(())
+}
+
 pub(crate) fn get_cover_page_dimensions(app: &DesignApp) -> (f64, f64) {
     let Some(s) = app.session.active() else { return (595.2755905511812, 841.8897637795277) };
     let Some(sp) = s.doc.spreads.first() else { return (595.2755905511812, 841.8897637795277) };
@@ -2439,6 +2629,150 @@ pub(crate) mod tests {
             assert_eq!(g.fit_align, 3, "Back Cover background must align to left edge (fit_align = 3)");
         } else {
             panic!("Back bg is not a graphic");
+        }
+    }
+
+    #[test]
+    fn test_cover_map_overlay_uses_cover_geojson_with_highlight() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let st = PubgenState {
+            cover_add_map: true,
+            cover_map_stock_idx: 0,
+            cover_map_style: 1, // Accent Hero
+            cover_color_primary: "#0072BC".into(),
+            cover_color_accent: "#F5871F".into(),
+            ..Default::default()
+        };
+
+        let res = apply_cover_map_overlay(&mut app, &st);
+        assert!(res.is_ok(), "apply_cover_map_overlay failed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let sp0 = &active.doc.spreads[0];
+        // Must emit polygon items on spread 0
+        println!("sp0 items count: {}", sp0.items.len());
+        assert!(!sp0.items.is_empty(), "Expected map item/group to be emitted on cover spread");
+     }
+
+    #[test]
+    fn test_cover_map_overlay_z_order_behind_textboxes_and_larger_bounds() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let (pw, ph) = get_cover_page_dimensions(&app);
+
+        // 1. Create a background rectangle
+        app.run(
+            "frame.create",
+            json!({"spread": 0, "rect": [0.0, 0.0, pw, ph], "content": "unassigned", "shape": "rectangle"}),
+        )
+        .unwrap();
+
+        // 2. Create a photo frame (landscape)
+        let _ = app.run(
+            "frame.create",
+            json!({
+                "spread": 0,
+                "rect": [pw * 0.5, ph * 0.2, pw * 0.95, ph * 0.6],
+                "content": "graphic",
+                "shape": "rectangle"
+            }),
+        );
+        let _ = app.session.edit(|doc, _| {
+            if let Some(sp) = doc.spreads.first_mut() {
+                let sp = std::sync::Arc::make_mut(sp);
+                if let Some(it) = sp.items.last_mut() {
+                    let it = std::sync::Arc::make_mut(it);
+                    it.label = "#slot:image:landscape".into();
+                }
+            }
+            Ok(serde_json::Value::Null)
+        });
+
+        // 3. Create text boxes (Title and Agency)
+        add_cover_text_frame(
+            &mut app,
+            0,
+            [pw * 0.08, ph * 0.35, pw * 0.5, ph * 0.45],
+            "KECAMATAN KARAWANG TIMUR DALAM ANGKA",
+            "#ffffff",
+            "Arial",
+            "Bold",
+            18.0,
+            None,
+            None,
+            "left",
+        )
+        .unwrap();
+
+        add_cover_text_frame(
+            &mut app,
+            0,
+            [pw * 0.08, ph * 0.85, pw * 0.4, ph * 0.92],
+            "BADAN PUSAT STATISTIK",
+            "#ffffff",
+            "Arial",
+            "Regular",
+            9.0,
+            None,
+            None,
+            "left",
+        )
+        .unwrap();
+
+        let st = PubgenState {
+            cover_add_map: true,
+            cover_map_stock_idx: 0,
+            cover_map_style: 1, // Accent Hero
+            cover_color_primary: "#0072BC".into(),
+            cover_color_accent: "#F5871F".into(),
+            ..Default::default()
+        };
+
+        let res = apply_cover_map_overlay(&mut app, &st);
+        assert!(res.is_ok(), "apply_cover_map_overlay failed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let sp0 = &active.doc.spreads[0];
+
+        // Find the index of the map group (or polygon)
+        let map_idx = sp0
+            .items
+            .iter()
+            .position(|it| it.is_group() || it.shape == designcraft_doc::Shape::Polygon)
+            .expect("Map item/group must be present on spread 0");
+
+        // Find the indices of photo and textboxes
+        let photo_idx = sp0
+            .items
+            .iter()
+            .position(|it| it.label.contains("landscape") || it.name.contains("landscape"))
+            .expect("Photo frame must be present");
+
+        let text_indices: Vec<usize> = sp0
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, it)| it.is_text_frame())
+            .map(|(i, _)| i)
+            .collect();
+
+        assert!(!text_indices.is_empty(), "Text frames must be present");
+
+        // The map must be in front of the photo frame:
+        assert!(
+            map_idx > photo_idx,
+            "Map (index {map_idx}) must be in front of photo frame (index {photo_idx})"
+        );
+
+        // The map must be behind ALL textboxes:
+        for &t_idx in &text_indices {
+            assert!(
+                map_idx < t_idx,
+                "Map (index {map_idx}) must be behind textbox (index {t_idx})"
+            );
         }
     }
 }

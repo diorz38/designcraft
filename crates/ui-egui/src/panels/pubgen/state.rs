@@ -425,6 +425,18 @@ pub struct PubgenState {
     pub cover_agency_text: String,
     #[serde(default = "default_true")]
     pub cover_include_inside_back: bool,
+    /// Whether to overlay a stylized vector map on the cover page.
+    #[serde(default)]
+    pub cover_add_map: bool,
+    /// Selected stock cover map index (into `list_stock_cover_maps()`).
+    #[serde(default)]
+    pub cover_map_stock_idx: usize,
+    /// Path to custom GeoJSON file for cover map if not using stock.
+    #[serde(default)]
+    pub cover_map_custom_path: String,
+    /// Style of cover map: 0 = Watermark/Silhouette, 1 = Accent Hero, 2 = Outlines Only.
+    #[serde(default)]
+    pub cover_map_style: usize,
     /// Replace the cover page(s) already in the document instead of adding a new
     /// one in front (Publication Cover ▸ checkbox next to the generate button).
     #[serde(default)]
@@ -623,6 +635,10 @@ impl Default for PubgenState {
             cover_image_logo: default_cover_logo(),
             cover_agency_text: default_cover_agency_text(),
             cover_include_inside_back: false,
+            cover_add_map: false,
+            cover_map_stock_idx: 0,
+            cover_map_custom_path: String::new(),
+            cover_map_style: 0,
             cover_replace: false,
             cover_image_back: String::new(),
             cover_office_address: String::new(),

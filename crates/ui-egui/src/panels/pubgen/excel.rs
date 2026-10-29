@@ -889,6 +889,101 @@ pub fn is_chart_sheet(sheet_name: &str) -> bool {
     }
 }
 
+/// Check if a sheet is a map chart / geospatial figure sheet (named MXX_XX, MXX, MAP_XX, PETA_XX, etc.).
+pub fn is_map_sheet(sheet_name: &str) -> bool {
+    let s = sheet_name.trim();
+    if s.is_empty() {
+        return false;
+    }
+    let lower = s.to_lowercase();
+    if lower.starts_with('m') {
+        let rest = &lower[1..];
+        if rest.chars().all(|c| c.is_ascii_digit() || c == '_') && rest.chars().any(|c| c.is_ascii_digit()) {
+            return true;
+        }
+        if let Some(r) = rest.strip_prefix("ap_").or_else(|| rest.strip_prefix("ap")) {
+            if r.chars().all(|c| c.is_ascii_digit() || c == '_') && r.chars().any(|c| c.is_ascii_digit()) {
+                return true;
+            }
+        }
+    }
+    if let Some(rest) = lower.strip_prefix("peta_").or_else(|| lower.strip_prefix("peta")) {
+        if rest.chars().all(|c| c.is_ascii_digit() || c == '_') && rest.chars().any(|c| c.is_ascii_digit()) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Parsed parameters of a map chart sheet (MXX_XX).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MapSheetInfo {
+    pub map_name_or_path: String,
+    pub data_csv_path: String,
+    pub theme: Option<String>,
+    pub template: Option<String>,
+    pub title: Option<String>,
+    pub title_en: Option<String>,
+}
+
+/// Parse an MXX_XX map chart sheet.
+/// Expects at least:
+/// - `map`: stock map name (e.g. `CILAMAYA WETAN`) or path to GeoJSON
+/// - `data`: path to data CSV (e.g. `maps\contoh.csv`)
+/// And optional `theme`, `template`, `title`, `title_en`.
+pub fn parse_map_sheet(sheet: &ExcelSheetData) -> Option<MapSheetInfo> {
+    let mut map_val = None;
+    let mut data_val = None;
+    let mut theme_val = None;
+    let mut template_val = None;
+    let mut title_val = None;
+    let mut title_en_val = None;
+
+    for row in &sheet.grid {
+        if row.is_empty() {
+            continue;
+        }
+        let k = row[0].trim().to_lowercase();
+        let v = row.get(1).map(|s| s.trim()).unwrap_or("");
+        if v.is_empty() {
+            continue;
+        }
+        match k.as_str() {
+            "map" | "peta" | "geojson" | "geojson_path" | "map_file" | "file_peta" => {
+                map_val = Some(v.to_string());
+            }
+            "data" | "csv" | "file" | "file_path" | "data_file" => {
+                data_val = Some(v.to_string());
+            }
+            "theme" | "color" | "palette" | "warna" => {
+                theme_val = Some(v.to_string());
+            }
+            "template" | "tpl" => {
+                template_val = Some(v.to_string());
+            }
+            "title" | "judul" => {
+                title_val = Some(v.to_string());
+            }
+            "title_en" | "titleen" | "judul_en" | "judulen" => {
+                title_en_val = Some(v.to_string());
+            }
+            _ => {}
+        }
+    }
+
+    let map_name_or_path = map_val?;
+    let data_csv_path = data_val.unwrap_or_default();
+
+    Some(MapSheetInfo {
+        map_name_or_path,
+        data_csv_path,
+        theme: theme_val,
+        template: template_val,
+        title: title_val,
+        title_en: title_en_val,
+    })
+}
+
 /// Check if a sheet is a publication-note sheet (named `A02`, `A01..A99`, `A_01..A_99`, `KETERANGAN`, etc.)
 /// or a narrative RTF sheet starting with `G` (e.g. `G00`, `G01`, `G02`, etc.).
 pub fn is_note_sheet(sheet_name: &str) -> bool {
@@ -1509,6 +1604,11 @@ struct CatalogEntryItem {
 /// When bilingual fields (`title_en` on DIV or `file_en` on RXX/BXX) are present, `title_en,file_en` columns are appended.
 /// When a color theme is present (e.g. `table_theme` on DIV or COVER), `theme` column is appended and propagated to tables.
 pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> ExcelConversionResult {
+    convert_excel_to_csv_data_with_dir(sheets, base_stem, None)
+}
+
+/// Convert multiple Excel sheets into 1 catalog CSV and individual table CSVs, with optional base directory for resolving relative data files.
+pub fn convert_excel_to_csv_data_with_dir(sheets: &[ExcelSheetData], base_stem: &str, base_dir: Option<&std::path::Path>) -> ExcelConversionResult {
     let mut entries: Vec<CatalogEntryItem> = Vec::new();
     let mut table_csvs = Vec::new();
     let mut cover = None;
@@ -1682,6 +1782,74 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
                 theme: chart_theme,
             });
             // CXX sheets are graphic chart figures, not tabular data
+            continue;
+        }
+
+        // Check if sheet is an MXX_XX map chart sheet
+        if is_map_sheet(sheet_name)
+            && let Some(map_info) = parse_map_sheet(sheet)
+        {
+            let map_theme = extract_theme_from_sheet(sheet).or(map_info.theme.clone());
+            let filename = format!("{safe_name}.csv");
+            let csv_content = raw_sheet_to_csv(sheet);
+            table_csvs.push((filename.clone(), csv_content));
+
+            let mut title_val = map_info.title.clone().unwrap_or_default();
+            let mut title_en_val = map_info.title_en.clone();
+
+            if (title_val.is_empty() || title_en_val.is_none()) && !map_info.data_csv_path.is_empty() {
+                let norm_csv_path = map_info.data_csv_path.replace('\\', "/");
+                let mut candidates = vec![
+                    std::path::PathBuf::from(&norm_csv_path),
+                    std::path::Path::new(".").join(&norm_csv_path),
+                ];
+                if let Some(parent) = base_dir {
+                    candidates.insert(0, parent.join(&norm_csv_path));
+                }
+                for c in &candidates {
+                    if c.is_file() {
+                        if let Ok(content) = std::fs::read_to_string(c) {
+                            if let Ok(parsed) = super::charts::spec::parse_map_data_csv(&content) {
+                                if title_val.is_empty() && !parsed.title.is_empty() {
+                                    title_val = parsed.title;
+                                }
+                                if title_en_val.is_none() && !parsed.title_en.is_empty() {
+                                    title_en_val = Some(parsed.title_en);
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+
+            let num_val = extract_dotted_number(&title_val).unwrap_or_else(|| {
+                let clean = sheet.name.trim();
+                let stripped = clean.strip_prefix('M').or_else(|| clean.strip_prefix('m')).unwrap_or(clean);
+                let stripped = stripped.strip_prefix("ap_").or_else(|| stripped.strip_prefix("ap")).unwrap_or(stripped);
+                stripped.replace('_', ".")
+            });
+
+            let first_word = title_val.split_whitespace().next().unwrap_or("Grafik");
+            let type_val = if ["grafik", "graph", "chart", "bagan", "diagram", "peta", "map"].iter().any(|k| first_word.eq_ignore_ascii_case(k)) {
+                first_word.to_string()
+            } else {
+                "Grafik".to_string()
+            };
+
+            entries.push(CatalogEntryItem {
+                entry_type: type_val,
+                number: num_val.clone(),
+                title: if title_val.is_empty() { format!("Grafik {num_val}") } else { title_val },
+                file: filename,
+                template: map_info.template,
+                image1: None,
+                image2: None,
+                title_en: title_en_val,
+                file_en: None,
+                theme: map_theme,
+            });
+            // MXX sheets are map chart figures, not tabular data
             continue;
         }
 
@@ -2115,7 +2283,7 @@ pub fn execute_convert_excel(path: &str) -> Result<ConvertedExcelPackage, String
         return Err("No worksheets could be extracted from file".into());
     }
 
-    let converted = convert_excel_to_csv_data(&sheets, stem);
+    let converted = convert_excel_to_csv_data_with_dir(&sheets, stem, Some(parent_dir));
 
     // 1. Write catalog CSV
     let catalog_path = parent_dir.join(&converted.catalog_csv_name);
@@ -2400,6 +2568,62 @@ mod tests {
         assert_eq!(n2, "02.02");
         assert_eq!(title2, "Grafik 02.02 Produksi Padi");
         assert_eq!(f2, "C02_02.jpg");
+    }
+
+    #[test]
+    fn test_is_map_sheet_and_parse_mxx() {
+        assert!(is_map_sheet("M03_02"));
+        assert!(is_map_sheet("m03_02"));
+        assert!(is_map_sheet("M01_01"));
+        assert!(is_map_sheet("M01"));
+        assert!(is_map_sheet("MAP_01"));
+        assert!(is_map_sheet("PETA_01"));
+        assert!(!is_map_sheet("C03_02"));
+        assert!(!is_map_sheet("03_02"));
+        assert!(!is_map_sheet("R01"));
+
+        let sheet = ExcelSheetData {
+            name: "M03_02".into(),
+            grid: vec![
+                vec!["map".into(), "CILAMAYA WETAN".into()],
+                vec!["data".into(), "maps\\contoh.csv".into()],
+            ],
+            merges: Vec::new(),
+        };
+
+        let info = parse_map_sheet(&sheet).expect("should parse map sheet");
+        assert_eq!(info.map_name_or_path, "CILAMAYA WETAN");
+        assert_eq!(info.data_csv_path, "maps\\contoh.csv");
+    }
+
+    #[test]
+    fn test_convert_excel_with_mxx_map_sheet() {
+        let dir = tempfile::tempdir().unwrap();
+        let maps_dir = dir.path().join("maps");
+        std::fs::create_dir_all(&maps_dir).unwrap();
+        let csv_path = maps_dir.join("contoh.csv");
+        let csv_content = "nmdesa;title;title_en;value\nSUKATANI;Grafik 03.02 Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025;Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025;19561\nMEKARMAYA;Grafik 03.02 Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025;Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025;22014\n";
+        std::fs::write(&csv_path, csv_content).unwrap();
+
+        let m_sheet = ExcelSheetData {
+            name: "M03_02".into(),
+            grid: vec![
+                vec!["map".into(), "CILAMAYA WETAN".into()],
+                vec!["data".into(), "maps/contoh.csv".into()],
+            ],
+            merges: Vec::new(),
+        };
+
+        let res = convert_excel_to_csv_data_with_dir(&[m_sheet], "DUAL_LANG", Some(dir.path()));
+        assert_eq!(res.table_csvs.len(), 1);
+        assert_eq!(res.table_csvs[0].0, "M03_02.csv");
+
+        let lines: Vec<&str> = res.catalog_csv_content.lines().collect();
+        assert!(lines.len() >= 2);
+        assert!(lines[1].contains("Grafik"), "Entry type should be Grafik: {}", lines[1]);
+        assert!(lines[1].contains("03.02"), "Number should be 03.02: {}", lines[1]);
+        assert!(lines[1].contains("Perbandingan Jumlah Penduduk Kecamatan Cilamaya Wetan, 2025"), "Title should be from CSV: {}", lines[1]);
+        assert!(lines[1].contains("Figure 03.02 Comparison of Population Size in Cilamaya Wetan District, 2025"), "Title_en should be from CSV: {}", lines[1]);
     }
 
     #[test]

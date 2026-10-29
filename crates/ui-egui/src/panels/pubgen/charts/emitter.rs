@@ -399,10 +399,10 @@ pub fn emit_chart(
     }
 
     // 2. Axis baseline & left line (only for Cartesian coordinate charts)
-    if spec.chart_type != super::spec::ChartType::Donut && spec.chart_type != super::spec::ChartType::Gauge {
+    if spec.chart_type != super::spec::ChartType::Donut && spec.chart_type != super::spec::ChartType::Gauge && spec.chart_type != super::spec::ChartType::Map {
         let base_fid = emit_rect(app, spread_idx, layout.axis_baseline, "#333333", "[None]", 0.0)?;
         frame_ids.push(base_fid);
-        if spec.chart_type != super::spec::ChartType::PopulationPyramid {
+        if spec.chart_type != super::spec::ChartType::PopulationPyramid && spec.chart_type != super::spec::ChartType::Map {
             let left_fid = emit_rect(app, spread_idx, layout.axis_left, "#333333", "[None]", 0.0)?;
             frame_ids.push(left_fid);
         }
@@ -643,6 +643,46 @@ pub fn emit_chart(
         }
     }
 
+    // 5d. Map (Choropleth) regions and custom map legend
+    if spec.chart_type == super::spec::ChartType::Map {
+        for region in &layout.map_regions {
+            let color = if !region.color.is_empty() { &region.color } else { "#0072BC" };
+            for ring in &region.polygons {
+                if let Ok(fid) = emit_polygon(app, spread_idx, ring, color, &region.stroke_color, region.stroke_weight) {
+                    frame_ids.push(fid);
+                }
+            }
+
+            if (spec.show_value_labels || spec.chart_type == super::spec::ChartType::Map) && !region.name.is_empty() {
+                let text = if !region.value_str.is_empty() {
+                    format!("{}\n{}", region.name, region.value_str)
+                } else {
+                    region.name.clone()
+                };
+                let text_color = if let Some((r, g, b)) = super::palette::parse_hex_rgb(&region.color) {
+                    let lum = 0.299 * (r as f64) + 0.587 * (g as f64) + 0.114 * (b as f64);
+                    if lum < 140.0 { "#FFFFFF" } else { "#1E293B" }
+                } else {
+                    "#1E293B"
+                };
+                let (cx, cy) = region.centroid;
+                let lbl_rect = [cx - 36.0, cy - 11.0, cx + 36.0, cy + 11.0];
+                if let Ok(tfid) = emit_text(app, spread_idx, lbl_rect, &text, 6.0, true, "center", Some(text_color)) {
+                    frame_ids.push(tfid);
+                }
+            }
+        }
+
+        for leg in &layout.map_legend {
+            if let Ok(sfid) = emit_rect(app, spread_idx, leg.swatch_rect, &leg.color, "#CBD5E1", 0.5) {
+                frame_ids.push(sfid);
+            }
+            if let Ok(lfid) = emit_text(app, spread_idx, leg.label_rect, &leg.label, 7.0, false, "center", Some("#475569")) {
+                frame_ids.push(lfid);
+            }
+        }
+    }
+
     // 6. X-tick labels
     let is_hbar = matches!(spec.chart_type, super::spec::ChartType::HorizontalBar);
     for x_tick in &layout.x_tick_labels {
@@ -758,11 +798,44 @@ mod tests {
             show_legend: true,
             show_grid: true,
             max_value_override: None,
+            geojson_path: None,
+            map_palette_idx: 0,
         }
     }
 
     fn sample_margin() -> Rect {
         Rect { x0: 36.0, y0: 36.0, x1: 550.0, y1: 750.0 }
+    }
+
+    #[test]
+    fn map_chart_emits_polygon_frames_and_legend() {
+        let mut app = test_app();
+        let mut spec = sample_spec(ChartType::Map);
+        spec.geojson_path = Some("PANGKALAN".into());
+        spec.show_legend = true;
+        spec.show_value_labels = true;
+
+        let categories = vec![
+            "CINTAASIH".into(),
+            "MULANGSARI".into(),
+            "TAMANMEKAR".into(),
+            "CIPTASARI".into(),
+            "TAMANSARI".into(),
+            "JATILAKSANA".into(),
+            "KERTASARI".into(),
+            "MEDALSARI".into(),
+        ];
+        let values = vec![vec![78.5, 82.1, 64.3, 71.0, 75.4, 69.8, 85.2, 60.5]];
+
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        assert!(!layout.map_regions.is_empty(), "Map layout must contain regions");
+        assert!(!layout.map_legend.is_empty(), "Map layout must contain legend entries");
+
+        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
+        assert!(count > 10, "Map chart must emit multiple polygon and legend frames: {count}");
+
+        let active = app.session.active().unwrap();
+        assert!(!active.doc.spreads[0].items.is_empty());
     }
 
     #[test]

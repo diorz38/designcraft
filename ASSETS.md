@@ -71,80 +71,7 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `docs/brand/LICENSE-brand.txt` | (licence text) | ArtCraft Team | — | Terms for the ArtCraft Marks in `docs/brand/` |
 | `packaging/macos/dmg/background.svg` | @XusBadia | original work for this repository, derived from the DesignCraft app icon (`assets/app-icon/designcraft.svg`, referenced via `<image>`, not copied); text is outlined Inter / JetBrains Mono glyph paths | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | DesignCraft macOS DMG window background for the Finder window; `packaging/macos/dmg/generate.py` renders it to `background.tiff` (2026-10-08) |
 | `packaging/macos/dmg/background.tiff` | @XusBadia | Rendered from `packaging/macos/dmg/background.svg` by `packaging/macos/dmg/generate.py` | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) | 1x + 2x HiDPI TIFF for the macOS DMG window; includes the app icon (see its row) and LittleCMS's built-in sRGB profile ("No copyright, use freely") |
-| `plan/pubgen/samples/book_cover/busines_report.png` | DesignCraft contributor / Pubgen reference | user reference image for Pubgen Cover Style 8 (Business Report) | CC0-1.0 | Reference image |
-| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222013.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
-| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222115.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
-| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222232.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
-| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222409.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
-| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222503.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
-| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222649.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
-| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222741.png` | DesignCraft contributor / Pubgen reference | user reference screenshot for Pubgen Cover Style | CC0-1.0 | Reference image |
-| `plan/pubgen/samples/book_cover/modern-business-annual-report-template_412264-9400.avif` | DesignCraft contributor / Pubgen reference | user reference template for Pubgen Cover Style | CC0-1.0 | Reference template |
-| `plan/pubgen/samples/book_cover/modern-business-annual-report-template_412264-9400.jpg` | DesignCraft contributor / Pubgen reference | user reference template for Pubgen Cover Style (same template, JPEG rendition of the .avif row) | CC0-1.0 | Reference template |
-| `plan/pubgen/samples/images/bps_logo.png` | DesignCraft contributor / Pubgen sample | agency emblem placed by the Pubgen Cover generator (`cover_image_logo`); replace with your own before publishing | CC0-1.0 — **confirm**: an official emblem is not automatically CC0 | Test sample |
-| `plan/pubgen/samples/images/city_landscape.jpg` | DesignCraft contributor / Pubgen sample | wide landscape photo placed by the Pubgen Cover generator (`cover_image_landscape`) | CC0-1.0 — **confirm** if the photo is third-party | Test sample |
-| `plan/pubgen/samples/images/city_skyline.jpg` | DesignCraft contributor / Pubgen sample | vertical city photo placed by the Pubgen Cover generator (`cover_image_skyline`) | CC0-1.0 — **confirm** if the photo is third-party | Test sample |
-| `plan/pubgen/samples/Sarana_Ekonomi_Karawang_Timur_2025.png` | DesignCraft contributor / Pubgen sample | synthetic infographic test asset for Pubgen Page from Image | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/pembatas_bab.png` | DesignCraft contributor / Pubgen sample | synthetic chapter divider test asset for Pubgen Page from Image | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/visualisasi_keuangan_perdagangan_portrait.png` | DesignCraft contributor / Pubgen sample | synthetic portrait test asset for Pubgen Page from Image | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/Untitled-1.designcraft` | DesignCraft contributor (generated) | test sample document for Pubgen | CC0-1.0 | Test document |
-| `plan/pubgen/samples/Untitled-1.pdf` | DesignCraft contributor (generated) | test sample PDF export for Pubgen | CC0-1.0 | Test export |
-| `plan/pubgen/samples/Untitled-2.pdf` | DesignCraft contributor (generated) | test sample PDF export for Pubgen | CC0-1.0 | Test export |
-| `plan/pubgen/samples/C02_01.png` | DesignCraft contributor (generated) | synthetic chart-sheet test asset for Pubgen table-from-CSV | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/A02.rtf` | DesignCraft contributor / Pubgen sample | synthetic publication-note text asset for Pubgen Page from RTF | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/pembatas_bab.jpg` | DesignCraft contributor / Pubgen sample | synthetic chapter divider test asset for Pubgen Page from Image | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/B01_pict1.jpg` | DesignCraft contributor / Pubgen sample | sample picture placed by the Pubgen Page from RTF | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/B01_pict2.png` | DesignCraft contributor / Pubgen sample | sample picture placed by the Pubgen Page from RTF | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/DUAL_LANG/B01_pict1.jpg` | DesignCraft contributor / Pubgen sample | bilingual copy of the sample picture placed by the Pubgen Page from RTF | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/DUAL_LANG/B01_pict2.png` | DesignCraft contributor / Pubgen sample | bilingual copy of the sample picture placed by the Pubgen Page from RTF | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/DUAL_LANG/C02_01.png` | DesignCraft contributor (generated) | bilingual copy of the synthetic chart-sheet test asset | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/DUAL_LANG/Sarana_Ekonomi_Karawang_Timur_2025.png` | DesignCraft contributor / Pubgen sample | bilingual copy of the synthetic infographic test asset | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/DUAL_LANG/infografik_01.png` | DesignCraft contributors | bilingual copy of the sample infographic graphic illustration | CC0-1.0 | Authored sample graphic |
-| `plan/pubgen/samples/DUAL_LANG/infografik_02.png` | DesignCraft contributors | bilingual copy of the sample infographic graphic illustration | CC0-1.0 | Authored sample graphic |
-| `plan/pubgen/samples/DUAL_LANG/pembatas_bab.jpg` | DesignCraft contributor / Pubgen sample | bilingual copy of the synthetic chapter divider test asset | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/DUAL_LANG/visualisasi_keuangan_perdagangan_portrait.png` | DesignCraft contributor / Pubgen sample | bilingual copy of the synthetic portrait test asset | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/SINGLE_LANG/B01_pict1.jpg` | DesignCraft contributor / Pubgen sample | single-language copy of the sample picture placed by the Pubgen Page from RTF | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/SINGLE_LANG/B01_pict2.png` | DesignCraft contributor / Pubgen sample | single-language copy of the sample picture placed by the Pubgen Page from RTF | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/SINGLE_LANG/C02_01.png` | DesignCraft contributor (generated) | single-language copy of the synthetic chart-sheet test asset | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/SINGLE_LANG/Generated_Publication_single_lang.pdf` | DesignCraft contributor (generated) | test sample publication PDF export for Pubgen | CC0-1.0 | Test export |
-| `plan/pubgen/samples/SINGLE_LANG/Sarana_Ekonomi_Karawang_Timur_2025.png` | DesignCraft contributor / Pubgen sample | single-language copy of the synthetic infographic test asset | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/SINGLE_LANG/infografik_01.png` | DesignCraft contributors | single-language copy of the sample infographic graphic illustration | CC0-1.0 | Authored sample graphic |
-| `plan/pubgen/samples/SINGLE_LANG/infografik_02.png` | DesignCraft contributors | single-language copy of the sample infographic graphic illustration | CC0-1.0 | Authored sample graphic |
-| `plan/pubgen/samples/SINGLE_LANG/kcda2025.backup.designcraft` | DesignCraft contributor (generated) | single-language sample backup document for Pubgen | CC0-1.0 | Test document |
-| `plan/pubgen/samples/SINGLE_LANG/kcda2025.designcraft` | DesignCraft contributor (generated) | single-language sample publication document for Pubgen | CC0-1.0 | Test document |
-| `plan/pubgen/samples/SINGLE_LANG/kcda2025_2.designcraft` | DesignCraft contributor (generated) | single-language sample publication document for Pubgen | CC0-1.0 | Test document |
-| `plan/pubgen/samples/SINGLE_LANG/kcda2025_hf.designcraft` | DesignCraft contributor (generated) | single-language sample document with header/footer for Pubgen | CC0-1.0 | Test document |
-| `plan/pubgen/samples/SINGLE_LANG/pembatas_bab.jpg` | DesignCraft contributor / Pubgen sample | single-language copy of the synthetic chapter divider test asset | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/SINGLE_LANG/visualisasi_keuangan_perdagangan_portrait.png` | DesignCraft contributor / Pubgen sample | single-language copy of the synthetic portrait test asset | CC0-1.0 | Test sample |
-| `plan/pubgen/samples/style/design-1.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
-| `plan/pubgen/samples/style/design-2.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
-| `plan/pubgen/samples/style/design-3.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
-| `plan/pubgen/samples/style/design-4.designcraft` | DesignCraft contributor (generated) | sample cover design document for Pubgen | CC0-1.0 | Test document |
-| `plan/pubgen/samples/style/design-5.designcraft` | DesignCraft contributor (traced) | traced cover geometry for Cover Style 7 (Modern Horizon), drawn over the Pubgen reference template | CC0-1.0 | Test document |
-| `plan/pubgen/samples/style/design-6.designcraft` | DesignCraft contributor (traced) | traced cover geometry for Cover Style 9 (Urban Angle), drawn over the Pubgen reference template | CC0-1.0 | Test document |
-| `plan/pubgen/samples/style/design-10.designcraft` | DesignCraft contributor (traced) | traced cover geometry for Cover Style 8 (Business Report), drawn over the Pubgen reference template | CC0-1.0 | Test document |
-| `plan/pubgen/samples/style/daftar_isi.designcraft` | DesignCraft contributor (generated) | sample table-of-contents document for Pubgen | CC0-1.0 | Test document |
 | `plan/pubgen/Check_Cover.designcraft` | DesignCraft contributor (generated) | scratch document for checking the Publication Cover styles | CC0-1.0 | Test document |
-| `plan/pubgen/samples/thumb/business_report.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 8 (Business Report) | CC0-1.0 | Test thumbnail |
-| `plan/pubgen/samples/thumb/chevron_medallion.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 3 (Chevron Medallion) | CC0-1.0 | Test thumbnail |
-| `plan/pubgen/samples/thumb/corporate_headline.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 5 (Corporate Headline) | CC0-1.0 | Test thumbnail |
-| `plan/pubgen/samples/thumb/diagonal_arrow.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 6 (Diagonal Arrow) | CC0-1.0 | Test thumbnail |
-| `plan/pubgen/samples/thumb/folded_origami.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 2 (Folded Origami) | CC0-1.0 | Test thumbnail |
-| `plan/pubgen/samples/thumb/geometric_medallion.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 1 (Geometric Medallion) | CC0-1.0 | Test thumbnail |
-| `plan/pubgen/samples/thumb/honeycomb_hexagon.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 4 (Honeycomb Hexagon) | CC0-1.0 | Test thumbnail |
-| `plan/pubgen/samples/thumb/karawang_timur_hexagon_cover.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 4 (Honeycomb Hexagon) | CC0-1.0 | Test thumbnail |
-| `plan/pubgen/samples/thumb/modern_horizon.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 7 (Modern Horizon) | CC0-1.0 | Test thumbnail |
-| `plan/pubgen/samples/thumb/prism_diamonds.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 11 (Prism Diamonds) | CC0-1.0 | Test thumbnail |
-| `plan/pubgen/samples/thumb/quarter_stack.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 12 (Quarter Stack) | CC0-1.0 | Test thumbnail |
-| `plan/pubgen/samples/thumb/ai_base.png` | DesignCraft contributor (generated) | rendered template preview used as the thumbnail for the AI Base cover styles (100+); shows the layout with its placeholder background before generation | CC0-1.0 — **confirm** (embedded sample photo/emblem) | Test thumbnail |
-| `plan/pubgen/samples/thumb/tri_color_bands.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 10 (Tri-Color Bands) | CC0-1.0 | Test thumbnail |
-| `plan/pubgen/samples/thumb/urban_angle.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 9 (Urban Angle) | CC0-1.0 | Test thumbnail |
-| `plan/pubgen/samples/thumb/wave_curves.png` | DesignCraft contributor (generated) | rendered thumbnail for Cover Style 0 (Wave Curves) | CC0-1.0 | Test thumbnail |
-| `plan/pubgen/samples/DUAL_LANG/images/se2026.png` | DesignCraft contributor (authored) | sample logo/emblem for SE2026 in dual language sample | CC0-1.0 | Sample image |
-| `plan/pubgen/samples/images/bangga_melayani_bangsa.png` | DesignCraft contributor (authored) | sample emblem for Bangga Melayani Bangsa | CC0-1.0 | Sample image |
-| `plan/pubgen/samples/images/berakhlak.png` | DesignCraft contributor (authored) | sample emblem for Berakhlak | CC0-1.0 | Sample image |
-| `plan/pubgen/samples/images/data_cerdas.png` | DesignCraft contributor (authored) | sample emblem for Data Cerdas | CC0-1.0 | Sample image |
-| `plan/pubgen/samples/images/se2026.png` | DesignCraft contributor (authored) | sample logo/emblem for SE2026 | CC0-1.0 | Sample image |
 | `plan/pubgen/docs_images/pubgen_logo.jpg` | DesignCraft contributor (authored) | PubGen logo illustration in documentation | CC0-1.0 | Documentation image |
 | `plan/pubgen/docs_images/pubgen_logo.png` | DesignCraft contributor (authored) | PubGen logo illustration in documentation | CC0-1.0 | Documentation image |
 | `assets/templates/covers/000_wave_curves.designcraft` | DesignCraft contributor (authored) | cover template for Cover Style 0 (Wave Curves): copy of the `covers_original/` source, A4 artboard with slot-tagged frames and embedded preview | CC0-1.0 — **confirm** (embedded sample photo/emblem) | Authored in DesignCraft |
@@ -175,8 +102,6 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `assets/templates/dividers/002_batik_infographic.designcraft` | DesignCraft contributors (authored) | chapter divider template with bookmark ribbon, chapter number, first word, title and image slots | CC0-1.0 | Authored in DesignCraft |
 | `assets/templates/data_tables/001_single_table_standard.designcraft` | DesignCraft contributors (generated) | canonical interior template for statistical data tables with slot tags | CC0-1.0 | Built in code |
 | `assets/templates/front_matter/001_publication_note.designcraft` | DesignCraft contributors (generated) | canonical interior template for front-matter publication notes with slot tags | CC0-1.0 | Built in code |
-| `plan/pubgen/samples/infografik_01.png` | DesignCraft contributors | sample infographic graphic illustration for chapter divider testing | CC0-1.0 | Authored sample graphic |
-| `plan/pubgen/samples/infografik_02.png` | DesignCraft contributors | sample infographic graphic illustration for chapter divider testing | CC0-1.0 | Authored sample graphic |
 | `docs/images/thumb01.png` | DesignCraft contributors | screenshot of Pubgen dock panel in DesignCraft | MIT OR Apache-2.0 | Original UI screenshot |
 | `docs/images/thumb02.png` | DesignCraft contributors | screenshot of Publication Cover card in DesignCraft | MIT OR Apache-2.0 | Original UI screenshot |
 | `docs/images/thumb03.png` | DesignCraft contributors | screenshot of Page from CSV card in DesignCraft | MIT OR Apache-2.0 | Original UI screenshot |
@@ -231,3 +156,118 @@ backend keeps the same files; hashes and upstream licence notices are retained h
 | `ai_cover_generation/simulations/s103_p5__dynamic_waves_spread__teal_lime_raw.jpg` | DesignCraft contributor (AI-generated) | generated with DesignCraft's AI Cover feature (Cloudflare Workers AI Flux) from the app's own prompts | CC0-1.0 — **confirm** (AI-generated) | AI Base style s103, palette p5 (dynamic waves spread / teal lime raw); raw model output |
 | `ai_cover_generation/simulations/s104_p3__vibrant_s_curve_spread__forest_gold.png` | DesignCraft contributor (AI-generated) | generated with DesignCraft's AI Cover feature (Cloudflare Workers AI Flux) from the app's own prompts | CC0-1.0 — **confirm** (AI-generated) | AI Base style s104, palette p3 (vibrant s curve spread / forest gold); cover simulation result |
 | `ai_cover_generation/simulations/s104_p3__vibrant_s_curve_spread__forest_gold_raw.jpg` | DesignCraft contributor (AI-generated) | generated with DesignCraft's AI Cover feature (Cloudflare Workers AI Flux) from the app's own prompts | CC0-1.0 — **confirm** (AI-generated) | AI Base style s104, palette p3 (vibrant s curve spread / forest gold raw); raw model output |
+| `plan/pubgen/samples/DUAL_LANG/images/B01_pict1.jpg` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/DUAL_LANG/images/B01_pict2.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/DUAL_LANG/images/C02_01.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/DUAL_LANG/images/Sarana_Ekonomi_Karawang_Timur_2025.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/DUAL_LANG/images/bps_logo.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/DUAL_LANG/images/city_landscape.jpg` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/DUAL_LANG/images/city_skyline.jpg` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/DUAL_LANG/images/infografik_01.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/DUAL_LANG/images/infografik_02.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/DUAL_LANG/images/pembatas_bab.jpg` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/DUAL_LANG/images/se2026.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/DUAL_LANG/images/visualisasi_keuangan_perdagangan_portrait.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/SINGLE_LANG/B01_pict1.jpg` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/SINGLE_LANG/B01_pict2.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/SINGLE_LANG/C02_01.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/SINGLE_LANG/Sarana_Ekonomi_Karawang_Timur_2025.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/SINGLE_LANG/infografik_01.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/SINGLE_LANG/infografik_02.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/SINGLE_LANG/pembatas_bab.jpg` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/SINGLE_LANG/visualisasi_keuangan_perdagangan_portrait.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222013.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222115.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222232.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222409.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222503.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222649.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/book_cover/Screenshot 2026-10-18 222741.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/book_cover/busines_report.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/book_cover/modern-business-annual-report-template_412264-9400.jpg` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/images/bangga_melayani_bangsa.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/images/berakhlak.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/images/bps_logo.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/images/city_landscape.jpg` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/images/city_skyline.jpg` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/images/data_cerdas.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/images/se2026.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/style/daftar_isi.designcraft` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/style/design-1.designcraft` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/style/design-10.designcraft` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/style/design-2.designcraft` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/style/design-3.designcraft` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/style/design-4.designcraft` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/style/design-5.designcraft` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/style/design-6.designcraft` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/thumb/ai_base.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/thumb/business_report.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/thumb/chevron_medallion.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/thumb/corporate_headline.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/thumb/diagonal_arrow.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/thumb/folded_origami.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/thumb/geometric_medallion.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/thumb/honeycomb_hexagon.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/thumb/karawang_timur_hexagon_cover.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/thumb/modern_horizon.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/thumb/prism_diamonds.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/thumb/quarter_stack.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/thumb/tri_color_bands.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/thumb/urban_angle.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/thumb/wave_curves.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| ssets/pubgen/maps/CILAMAYA_KULON.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/CILAMAYA_KULON.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| ssets/pubgen/maps/CILAMAYA_KULON_DESA.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/CILAMAYA_KULON_DESA.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| ssets/pubgen/maps/KARAWANG_BARAT.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/KARAWANG_BARAT.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| ssets/pubgen/maps/KARAWANG_BARAT_DESA.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/KARAWANG_BARAT_DESA.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| ssets/pubgen/maps/KARAWANG_TIMUR.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/KARAWANG_TIMUR.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| ssets/pubgen/maps/KARAWANG_TIMUR_DESA.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/KARAWANG_TIMUR_DESA.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| ssets/pubgen/maps/LEMAHABANG.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/LEMAHABANG.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| ssets/pubgen/maps/LEMAHABANG_DESA.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/LEMAHABANG_DESA.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| ssets/pubgen/maps/MAJALAYA.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/MAJALAYA.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| ssets/pubgen/maps/MAJALAYA_DESA.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/MAJALAYA_DESA.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| ssets/pubgen/maps/RAWAMERTA.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/RAWAMERTA.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| ssets/pubgen/maps/RAWAMERTA_DESA.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/RAWAMERTA_DESA.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| ssets/pubgen/maps/TELAGASARI.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/TELAGASARI.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| ssets/pubgen/maps/TELAGASARI_DESA.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/TELAGASARI_DESA.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| ssets/pubgen/maps/TEMPURAN.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/TEMPURAN.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| ssets/pubgen/maps/TEMPURAN_DESA.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
+| ssets/pubgen/maps/TEMPURAN_DESA.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/CILAMAYA_KULON.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/CILAMAYA_KULON_DESA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/KARAWANG_BARAT.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/KARAWANG_BARAT_DESA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/KARAWANG_TIMUR.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/KARAWANG_TIMUR_DESA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/KUTAWALUYA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/KUTAWALUYA_DESA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/LEMAHABANG.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/LEMAHABANG_DESA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/MAJALAYA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/MAJALAYA_DESA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/RAWAMERTA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/RAWAMERTA_DESA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/TELAGASARI.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/TELAGASARI_DESA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/TEMPURAN.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/TEMPURAN_DESA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/JAYAKERTA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/JAYAKERTA_DESA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/PEDES.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/PEDES_DESA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/RENGASDENGKLOK.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/maps/RENGASDENGKLOK_DESA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
