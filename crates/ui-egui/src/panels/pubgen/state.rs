@@ -11,6 +11,10 @@ use super::ai_cover_job;
 use super::audit;
 use super::locale::Locale;
 
+pub(super) fn default_profile_id() -> String {
+    "bps_dda".into()
+}
+
 pub(super) fn default_file_col() -> usize {
     3
 }
@@ -330,6 +334,21 @@ pub struct PubgenState {
     #[serde(skip)]
     pub excel_had_cover: bool,
 
+    /// Active publication profile ID.
+    #[serde(default = "default_profile_id")]
+    pub active_profile_id: String,
+    /// Active custom profile overrides.
+    #[serde(default)]
+    pub profile_custom: Option<super::profiles::PubgenProfile>,
+    /// Whether the user locked the profile against auto-detection.
+    #[serde(default)]
+    pub profile_user_locked: bool,
+    /// Auto-detected profile ID from workbook sheets.
+    #[serde(default)]
+    pub profile_detected_id: Option<String>,
+    /// Customize Profile modal dialog open state.
+    #[serde(skip)]
+    pub dialog_profile_customize_open: bool,
     /// Status message for header actions (e.g. Set Page Margin)
     #[serde(default)]
     pub header_status: Option<(String, bool)>,
@@ -733,6 +752,38 @@ impl Default for PubgenState {
             hf_status: None,
             hf_initialized: false,
             hf_show_save_row: false,
+            active_profile_id: default_profile_id(),
+            profile_custom: None,
+            profile_user_locked: false,
+            profile_detected_id: None,
+            dialog_profile_customize_open: false,
+        }
+    }
+}
+
+impl PubgenState {
+    /// Gets the active publication profile (custom profile if active_profile_id == "custom", else looked up via ProfileManager).
+    pub fn active_profile(&self) -> super::profiles::PubgenProfile {
+        if self.active_profile_id == "custom"
+            && let Some(ref c) = self.profile_custom
+        {
+            return c.clone();
+        }
+        super::profiles::ProfileManager::get_profile(&self.active_profile_id)
+    }
+
+    /// Sets the active publication profile and synchronizes table styling and numbering flags.
+    pub fn apply_profile(&mut self, profile: super::profiles::PubgenProfile, user_locked: bool) {
+        self.active_profile_id = profile.id.clone();
+        self.card2_col_numbers = profile.table_styling.include_column_number_row;
+        if profile.table_styling.horizontal_rules_only {
+            self.card2_style = 3;
+        }
+        if user_locked {
+            self.profile_user_locked = true;
+        }
+        if profile.id == "custom" {
+            self.profile_custom = Some(profile);
         }
     }
 }

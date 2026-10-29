@@ -1,0 +1,76 @@
+{
+  "id": "bps_brs",
+  "name": "BPS Berita Resmi Statistik",
+  "description": "Press release dan rilis statistik berkala BPS, format halaman tunggal modern tanpa nomor kolom tabel.",
+  "sector": "BpsOfficial",
+  "geometry": {
+    "page_size": "A4",
+    "facing_pages": false,
+    "margins_mm": {
+      "top": 18.0,
+      "bottom": 18.0,
+      "inside": 18.0,
+      "outside": 18.0
+    }
+  },
+  "structure": {
+    "has_front_matter": false,
+    "front_matter_numbering": "none",
+    "restart_body_numbering": false,
+    "require_chapter_dividers": false,
+    "include_inside_cover": false,
+    "include_back_cover": false
+  },
+  "nomenclature": {
+    "chapter_prefix": "",
+    "table_prefix": "Tabel",
+    "chart_prefix": "Grafik",
+    "toc_title": "Daftar Isi",
+    "list_tables_title": "Daftar Tabel",
+    "list_charts_title": "Daftar Grafik",
+    "source_labels": [
+      "Sumber:",
+      "Source:",
+      "Data:"
+    ],
+    "note_labels": [
+      "Catatan:",
+      "Note:",
+      "Notes:"
+    ]
+  },
+  "sheet_routing": {
+    "cover_patterns": [
+      "(?i)^cover$",
+      "(?i)^sampul$"
+    ],
+    "divider_patterns": [
+      "(?i)^ringkasan.*",
+      "(?i)^section.*"
+    ],
+    "narrative_patterns": [
+      "(?i)^brs.*",
+      "(?i)^utama.*",
+      "(?i)^ringkasan.*",
+      "(?i)^ulasan.*",
+      "(?i)^narrative.*"
+    ],
+    "table_patterns": [
+      "(?i)^tabel.*",
+      "(?i)^table.*",
+      "(?i)^\\d+[_.]\\d+.*"
+    ],
+    "chart_patterns": [
+      "(?i)^grafik.*",
+      "(?i)^chart.*",
+      "(?i)^c\\d+.*"
+    ]
+  },
+  "table_styling": {
+    "include_column_number_row": false,
+    "alternating_row_fills": true,
+    "horizontal_rules_only": false,
+    "default_theme_palette": "bps_teal"
+  }
+}
+

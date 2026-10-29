@@ -50,6 +50,8 @@ pub(crate) struct ProjectManifest {
     pub version: u32,
     pub publication_title: String,
     pub bilingual: bool,
+    #[serde(default)]
+    pub profile: Option<String>,
     pub output: OutputSpec,
     pub document: DocumentSpec,
     pub cover: CoverSpec,
@@ -67,6 +69,7 @@ impl Default for ProjectManifest {
             version: 1,
             publication_title: String::new(),
             bilingual: false,
+            profile: None,
             output: OutputSpec::default(),
             document: DocumentSpec::default(),
             cover: CoverSpec::default(),
@@ -313,6 +316,21 @@ impl CompilePlan {
         let dir = manifest_path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
         let mut warnings = Vec::new();
 
+        let mut manifest = manifest;
+        if let Some(ref prof_id) = manifest.profile {
+            let prof = super::profiles::ProfileManager::get_profile(prof_id);
+            if (manifest.document.margins_mm.top - DEFAULT_MARGIN_TOP_MM).abs() < 1e-4
+                && (manifest.document.margins_mm.bottom - DEFAULT_MARGIN_BOTTOM_MM).abs() < 1e-4
+            {
+                manifest.document.margins_mm = MarginSpec {
+                    top: prof.geometry.margins_mm.top,
+                    bottom: prof.geometry.margins_mm.bottom,
+                    inside: prof.geometry.margins_mm.inside,
+                    outside: prof.geometry.margins_mm.outside,
+                };
+                manifest.document.facing_pages = prof.geometry.facing_pages;
+            }
+        }
         let chapters = plan_chapters(dir, &manifest, &mut warnings)?;
         let output_document = output_path(dir, manifest_path, &manifest, &mut warnings)?;
         let output_pdf = if manifest.build.export_pdf { Some(pdf_path(dir, &manifest, &output_document)?) } else { None };
@@ -334,8 +352,12 @@ impl CompilePlan {
 
     /// The ordered pipeline for this plan.
     pub(crate) fn steps(&self) -> Vec<CompileStep> {
+        let prof = self.manifest.profile.as_deref().map(super::profiles::ProfileManager::get_profile);
+        let include_inside = prof.as_ref().map(|p| p.structure.include_inside_cover).unwrap_or(true) && self.manifest.cover.include_inside;
+        let include_back = prof.as_ref().map(|p| p.structure.include_back_cover).unwrap_or(true) && self.manifest.cover.include_back;
+
         let mut steps = vec![CompileStep::NewDocument, CompileStep::MasterSetup, CompileStep::FrontCover];
-        if self.manifest.cover.include_inside {
+        if include_inside {
             steps.push(CompileStep::InsideCover);
         }
         steps.push(CompileStep::NormalizeSeedPage);
@@ -350,7 +372,7 @@ impl CompilePlan {
         if toc_at_end && !self.manifest.toc.lists.is_empty() {
             steps.push(CompileStep::TocPlaceholders);
         }
-        if self.manifest.cover.include_back {
+        if include_back {
             steps.push(CompileStep::BackCover);
         }
         if !self.manifest.toc.lists.is_empty() {
@@ -1459,6 +1481,7 @@ impl NewProjectDialog {
             version: 1,
             publication_title: title,
             bilingual: self.bilingual,
+            profile: None,
             output: OutputSpec { document: output_doc, pdf: output_pdf },
             document: DocumentSpec::default(),
             cover: CoverSpec {
@@ -2106,6 +2129,18 @@ mod tests {
         let mut m: ProjectManifest = serde_json::from_str("{}").unwrap();
         m.chapters = chapters.iter().map(|(name, n)| ChapterSpec { chapter: *n, path: workbook(dir, name), title: format!("Chapter {n}") }).collect();
         m
+    }
+
+    #[test]
+    fn manifest_with_profile_overrides_margins_and_facing() {
+        let dir = temp_dir("profile-manifest");
+        let manifest_path = dir.join("pubgen_project.json");
+        let mut m = manifest(&dir, &[("a.xlsx", 1)]);
+        m.profile = Some("bps_brs".into());
+        let plan = CompilePlan::from_manifest(&manifest_path, m).unwrap();
+        assert_eq!(plan.manifest.document.margins_mm.top, 18.0);
+        assert_eq!(plan.manifest.document.margins_mm.inside, 18.0);
+        assert!(!plan.manifest.document.facing_pages);
     }
 
     #[test]

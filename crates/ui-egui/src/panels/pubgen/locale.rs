@@ -110,6 +110,46 @@ pub fn words(locale: Locale) -> &'static LocaleWords {
     }
 }
 
+/// Resolve chapter prefix from active profile nomenclature, or fall back to locale default.
+pub fn chapter_prefix(profile: Option<&super::profiles::PubgenProfile>, locale: Locale) -> String {
+    if let Some(p) = profile
+        && !p.nomenclature.chapter_prefix.is_empty()
+    {
+        return p.nomenclature.chapter_prefix.clone();
+    }
+    words(locale).chapter.to_string()
+}
+
+/// Resolve table prefix from active profile nomenclature, or fall back to locale default.
+pub fn table_prefix(profile: Option<&super::profiles::PubgenProfile>, locale: Locale) -> String {
+    if let Some(p) = profile
+        && !p.nomenclature.table_prefix.is_empty()
+    {
+        return p.nomenclature.table_prefix.clone();
+    }
+    words(locale).table.to_string()
+}
+
+/// Resolve chart/figure prefix from active profile nomenclature, or fall back to locale default.
+pub fn chart_prefix(profile: Option<&super::profiles::PubgenProfile>, locale: Locale) -> String {
+    if let Some(p) = profile
+        && !p.nomenclature.chart_prefix.is_empty()
+    {
+        return p.nomenclature.chart_prefix.clone();
+    }
+    words(locale).figure.to_string()
+}
+
+/// Resolve TOC title from active profile nomenclature, or fall back to locale default.
+pub fn toc_title(profile: Option<&super::profiles::PubgenProfile>, locale: Locale) -> String {
+    if let Some(p) = profile
+        && !p.nomenclature.toc_title.is_empty()
+    {
+        return p.nomenclature.toc_title.clone();
+    }
+    words(locale).toc_contents.to_string()
+}
+
 /// Detect locale from catalog row type words.
 pub fn detect_from_records(type_col: usize, rows: &[Vec<String>]) -> Locale {
     let has_en = rows.iter().any(|r| {

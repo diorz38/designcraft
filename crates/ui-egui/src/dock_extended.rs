@@ -409,7 +409,7 @@ mod pubgen_menu_tests {
         let pubgen_idx = texts.iter().position(|t| t == "Publication");
         let help_idx = texts.iter().position(|t| t == "Help");
         assert!(texts.iter().any(|t| t == "File"), "File menu must be present in menu bar. Got: {texts:?}");
-        assert!(texts.iter().any(|t| t == "PubGen Tools"), "PubGen Tools menu must be present in menu bar. Got: {texts:?}");
+        assert!(texts.iter().any(|t| t == "Publication Tools"), "Publication Tools menu must be present in menu bar. Got: {texts:?}");
         assert!(pubgen_idx.is_some(), "Publication menu must be present in menu bar. Got: {texts:?}");
         assert!(help_idx.is_some(), "Help menu must be present in menu bar. Got: {texts:?}");
         assert!(pubgen_idx.unwrap() < help_idx.unwrap(), "Publication must appear before Help");

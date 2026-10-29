@@ -271,3 +271,7 @@ backend keeps the same files; hashes and upstream licence notices are retained h
 | `assets/pubgen/maps/PEDES_DESA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
 | `assets/pubgen/maps/RENGASDENGKLOK.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
 | `assets/pubgen/maps/RENGASDENGKLOK_DESA.qmd` | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
+| `assets/pubgen/profiles/academic_monograph.json` | DesignCraft contributor (authored) | PubGen profile preset: Academic Monograph (APA tables, wide margins) | CC0-1.0 | Built-in publication profile |
+| `assets/pubgen/profiles/bps_brs.json` | DesignCraft contributor (authored) | PubGen profile preset: BPS Berita Resmi Statistik (single-page press release) | CC0-1.0 | Built-in publication profile |
+| `assets/pubgen/profiles/bps_dda.json` | DesignCraft contributor (authored) | PubGen profile preset: BPS Daerah Dalam Angka (standard DDA/KCDA format) | CC0-1.0 | Built-in publication profile |
+| `assets/pubgen/profiles/corporate_annual.json` | DesignCraft contributor (authored) | PubGen profile preset: Corporate Annual Report (clean rules, corporate margins) | CC0-1.0 | Built-in publication profile |

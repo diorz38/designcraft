@@ -1,0 +1,74 @@
+{
+  "id": "bps_dda",
+  "name": "BPS Daerah Dalam Angka",
+  "description": "Publikasi standar BPS Kabupaten/Kota/Kecamatan Dalam Angka dengan nomor kolom tabel dan pembatas bab.",
+  "sector": "BpsOfficial",
+  "geometry": {
+    "page_size": "A4",
+    "facing_pages": true,
+    "margins_mm": {
+      "top": 20.2,
+      "bottom": 20.0,
+      "inside": 19.0,
+      "outside": 15.0
+    }
+  },
+  "structure": {
+    "has_front_matter": true,
+    "front_matter_numbering": "roman_lower",
+    "restart_body_numbering": true,
+    "require_chapter_dividers": true,
+    "include_inside_cover": true,
+    "include_back_cover": true
+  },
+  "nomenclature": {
+    "chapter_prefix": "BAB",
+    "table_prefix": "Tabel",
+    "chart_prefix": "Grafik",
+    "toc_title": "Daftar Isi",
+    "list_tables_title": "Daftar Tabel",
+    "list_charts_title": "Daftar Grafik",
+    "source_labels": [
+      "Sumber:",
+      "Source:",
+      "Sumber / Source:"
+    ],
+    "note_labels": [
+      "Catatan:",
+      "Note:",
+      "Catatan / Note:",
+      "Keterangan:"
+    ]
+  },
+  "sheet_routing": {
+    "cover_patterns": [
+      "(?i)^cover$",
+      "(?i)^sampul$"
+    ],
+    "divider_patterns": [
+      "(?i)^div.*",
+      "(?i)^pembatas.*"
+    ],
+    "narrative_patterns": [
+      "(?i)^r\\d+.*",
+      "(?i)^ulasan.*"
+    ],
+    "table_patterns": [
+      "(?i)^\\d+[_.]\\d+.*",
+      "(?i)^tabel.*",
+      "(?i)^table.*"
+    ],
+    "chart_patterns": [
+      "(?i)^c\\d+.*",
+      "(?i)^chart.*",
+      "(?i)^grafik.*"
+    ]
+  },
+  "table_styling": {
+    "include_column_number_row": true,
+    "alternating_row_fills": true,
+    "horizontal_rules_only": false,
+    "default_theme_palette": "bps_teal"
+  }
+}
+

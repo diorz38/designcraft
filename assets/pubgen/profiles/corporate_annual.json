@@ -1,0 +1,81 @@
+{
+  "id": "corporate_annual",
+  "name": "Laporan Tahunan Korporat",
+  "description": "Laporan Tahunan & Keberlanjutan Korporasi/BUMD dengan tabel minimalis (garis horizontal saja) dan margin lega.",
+  "sector": "Corporate",
+  "geometry": {
+    "page_size": "A4",
+    "facing_pages": true,
+    "margins_mm": {
+      "top": 25.0,
+      "bottom": 25.0,
+      "inside": 22.0,
+      "outside": 18.0
+    }
+  },
+  "structure": {
+    "has_front_matter": true,
+    "front_matter_numbering": "roman_lower",
+    "restart_body_numbering": true,
+    "require_chapter_dividers": true,
+    "include_inside_cover": true,
+    "include_back_cover": true
+  },
+  "nomenclature": {
+    "chapter_prefix": "Section",
+    "table_prefix": "Table",
+    "chart_prefix": "Figure",
+    "toc_title": "Table of Contents",
+    "list_tables_title": "List of Tables",
+    "list_charts_title": "List of Figures",
+    "source_labels": [
+      "Source:",
+      "Data:",
+      "Sumber:"
+    ],
+    "note_labels": [
+      "Note:",
+      "Notes:",
+      "Catatan:"
+    ]
+  },
+  "sheet_routing": {
+    "cover_patterns": [
+      "(?i)^cover$",
+      "(?i)^title.*"
+    ],
+    "divider_patterns": [
+      "(?i)^section.*",
+      "(?i)^div.*",
+      "(?i)^part.*"
+    ],
+    "narrative_patterns": [
+      "(?i)^summary.*",
+      "(?i)^report.*",
+      "(?i)^narrative.*",
+      "(?i)^ulasan.*",
+      "(?i)^management.*"
+    ],
+    "table_patterns": [
+      "(?i)^table.*",
+      "(?i)^financial.*",
+      "(?i)^balancesheet.*",
+      "(?i)^income.*",
+      "(?i)^tabel.*",
+      "(?i)^\\d+[_.]\\d+.*"
+    ],
+    "chart_patterns": [
+      "(?i)^chart.*",
+      "(?i)^figure.*",
+      "(?i)^grafik.*",
+      "(?i)^c\\d+.*"
+    ]
+  },
+  "table_styling": {
+    "include_column_number_row": false,
+    "alternating_row_fills": false,
+    "horizontal_rules_only": true,
+    "default_theme_palette": "corporate_navy"
+  }
+}
+

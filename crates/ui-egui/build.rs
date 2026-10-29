@@ -81,6 +81,15 @@ fn generate_embedded_maps() {
         }
     }
 
+    if chart_entries.is_empty() {
+        let fallback_chart = "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"properties\":{\"nmdesa\":\"SUKATANI\",\"nmkec\":\"PANGKALAN\"},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[107.0,-6.0],[107.1,-6.0],[107.1,-6.1],[107.0,-6.1],[107.0,-6.0]]]}}]}";
+        chart_entries.push(format!("    EmbeddedMap {{ id: \"PANGKALAN\", display_name: \"Pangkalan (Desa)\", filename: \"PANGKALAN_DESA.geojson\", geojson: {fallback_chart:?} }},"));
+    }
+    if cover_entries.is_empty() {
+        let fallback_cover = "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"properties\":{\"nmkec\":\"PANGKALAN\",\"highlight\":1},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[107.0,-6.0],[107.1,-6.0],[107.1,-6.1],[107.0,-6.1],[107.0,-6.0]]]}}]}";
+        cover_entries.push(format!("    EmbeddedMap {{ id: \"PANGKALAN\", display_name: \"Pangkalan (Kecamatan)\", filename: \"PANGKALAN.geojson\", geojson: {fallback_cover:?} }},"));
+    }
+
     let mut out_src = String::new();
     out_src.push_str(
         "pub static EMBEDDED_CHART_MAPS: &[EmbeddedMap] = &[

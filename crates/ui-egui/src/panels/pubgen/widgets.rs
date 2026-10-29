@@ -216,6 +216,70 @@ pub(crate) fn pubgen_header_band(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
         let lang = app.ui.language.clone();
         let backend_ready = ai::backend_from_prefs(app).is_some();
 
+    // Profile Switcher & Metadata Preview (Pillar 7)
+    ui.horizontal(|ui| {
+        ui.set_min_height(24.0);
+        let cur_prof = st.active_profile();
+        ui.label(RichText::new("Profil:").size(11.0).color(t.text_dim));
+
+        let mut changed_profile_id: Option<String> = None;
+        craft_ui::ComboBox::from_id_salt("pubgen_profile_select")
+            .selected_text(RichText::new(&cur_prof.name).size(11.0))
+            .show_ui(ui, |ui| {
+                for p in super::profiles::ProfileManager::builtin_profiles() {
+                    let is_sel = st.active_profile_id == p.id;
+                    if ui.selectable_label(is_sel, &p.name).clicked() {
+                        changed_profile_id = Some(p.id.clone());
+                    }
+                }
+                if let Some(ref cust) = st.profile_custom {
+                    let is_sel = st.active_profile_id == "custom";
+                    if ui.selectable_label(is_sel, &cust.name).clicked() {
+                        changed_profile_id = Some("custom".to_string());
+                    }
+                }
+            });
+
+        if let Some(new_id) = changed_profile_id {
+            if new_id == "custom" {
+                if let Some(ref c) = st.profile_custom.clone() {
+                    st.apply_profile(c.clone(), true);
+                }
+            } else {
+                let p = super::profiles::ProfileManager::get_profile(&new_id);
+                st.apply_profile(p, true);
+            }
+        }
+
+        // Auto-detect badge if detected
+        if let Some(ref det) = st.profile_detected_id {
+            if !st.profile_user_locked && det == &st.active_profile_id {
+                ui.label(RichText::new("⚡ Auto-detect").size(10.0).color(Color32::from_rgb(0, 150, 136)));
+            }
+        }
+
+        // Quick customize button
+        if outline_button(ui, "⚙ Sesuaikan…", 80.0).clicked() {
+            st.dialog_profile_customize_open = true;
+        }
+    });
+
+    // 1-line metadata preview
+    {
+        let prof = st.active_profile();
+        let facing_str = if prof.geometry.facing_pages { "Facing Pages" } else { "Single Page" };
+        let col_str = if prof.table_styling.include_column_number_row { "Aktif" } else { "Nonaktif" };
+        let m = &prof.geometry.margins_mm;
+        ui.label(
+            RichText::new(format!(
+                "Format: {} {} • Margin: {:.1}/{:.1}/{:.1}/{:.1} mm • No. Kolom: {}",
+                prof.geometry.page_size, facing_str, m.top, m.bottom, m.inside, m.outside, col_str
+            ))
+            .size(9.5)
+            .color(t.text_dim),
+        );
+    }
+
         // "Translate this Page" button (enabled when Dual Lang + backend setup + (RXX or Table page selected))
         let page_idx = app.session.active().and_then(|s| s.selection.page).or_else(|| crate::canvas::current_page(app));
         let review_target = page_idx.and_then(|p| ai::detect_page_target(app, p));

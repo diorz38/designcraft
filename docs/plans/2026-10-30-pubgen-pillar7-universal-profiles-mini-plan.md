@@ -2,7 +2,7 @@
 
 - **Document:** `docs/plans/2026-10-30-pubgen-pillar7-universal-profiles-mini-plan.md`
 - **Date:** 2026-10-30
-- **Status:** Draft — not started. M7 of [`2026-10-25-pubgen-future-roadmap-and-extension-plan.md`](2026-10-25-pubgen-future-roadmap-and-extension-plan.md) (Pillar 7)
+- **Status:** Complete — implemented and verified in branch `pubgen-pilar7`. M7 of [`2026-10-25-pubgen-future-roadmap-and-extension-plan.md`](2026-10-25-pubgen-future-roadmap-and-extension-plan.md) (Pillar 7)
 - **Branch:** `feature/pillar7-universal-profiles` (proposed, off `pubgen-0.7.X`)
 - **Target:** `crates/ui-egui/src/panels/pubgen/`, `assets/pubgen/profiles/`, `crates/engine/src/cmd/`, `docs/plans/`
 

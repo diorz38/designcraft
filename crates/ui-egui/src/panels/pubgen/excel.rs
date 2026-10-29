@@ -166,6 +166,39 @@ pub fn is_table_sheet_name(sheet_name: &str) -> bool {
     }
 }
 
+pub fn is_table_sheet_name_with_profile(sheet_name: &str, profile: &super::profiles::PubgenProfile) -> bool {
+    let s = sheet_name.trim().strip_suffix(".csv").unwrap_or(sheet_name.trim());
+    is_table_sheet_name(s) || profile.sheet_routing.matches_table(s)
+}
+
+/// Auto-detects the most suitable publication profile ID based on sheet names in the workbook.
+pub fn detect_profile_from_sheets(sheet_names: &[impl AsRef<str>]) -> &'static str {
+    for name in sheet_names {
+        let s = name.as_ref().trim();
+        let lower = s.to_lowercase();
+        if lower.starts_with("brs") || lower.contains("ringkasan") || lower.contains("utama") {
+            return "bps_brs";
+        }
+        if lower.contains("balancesheet")
+            || lower.contains("income_statement")
+            || lower.contains("cashflow")
+            || lower.contains("financial")
+            || lower == "p&l"
+        {
+            return "corporate_annual";
+        }
+        if lower.contains("pendahuluan")
+            || lower.contains("metodologi")
+            || lower.contains("abstrak")
+            || lower.contains("pembahasan")
+            || lower.contains("kesimpulan")
+        {
+            return "academic_monograph";
+        }
+    }
+    "bps_dda"
+}
+
 /// Split bilingual table title and harmonize trailing year (e.g. ", 2025") across both lines:
 /// Line 1: Indonesian text, [year]
 /// Line 2: English text, [year]
@@ -317,6 +350,10 @@ pub fn extract_first_two_digit_number(text: &str) -> Option<String> {
 /// Check if a sheet carries Publication Cover values (named `COVER`).
 pub fn is_cover_sheet(sheet_name: &str) -> bool {
     sheet_name.trim().eq_ignore_ascii_case("cover")
+}
+
+pub fn is_cover_sheet_with_profile(sheet_name: &str, profile: &super::profiles::PubgenProfile) -> bool {
+    is_cover_sheet(sheet_name) || profile.sheet_routing.matches_cover(sheet_name)
 }
 
 /// Sheets that are lookup/legend lists (e.g. dropdown sources), never publication pages.
@@ -639,6 +676,17 @@ pub fn matches_table_note_keyword(col1: &str) -> bool {
         || lower.starts_with("source")
 }
 
+pub fn matches_table_note_keyword_with_profile(col1: &str, profile: Option<&super::profiles::PubgenProfile>) -> bool {
+    if matches_table_note_keyword(col1) {
+        return true;
+    }
+    if let Some(prof) = profile {
+        let trimmed = col1.trim();
+        return prof.nomenclature.matches_source(trimmed) || prof.nomenclature.matches_note(trimmed);
+    }
+    false
+}
+
 pub fn is_table_note_or_source_row(row: &[impl AsRef<str>]) -> bool {
     let Some(col1) = row.first().map(|s| s.as_ref().trim()) else {
         return false;
@@ -879,6 +927,10 @@ pub fn parse_rtf_review_sheet(sheet: &ExcelSheetData) -> Option<(String, String,
 }
 
 /// Check if a sheet is a chart / graphic sheet (named CXX_XX or CXX where XX is digits, e.g. C02_01).
+pub fn is_chart_sheet_with_profile(sheet_name: &str, profile: &super::profiles::PubgenProfile) -> bool {
+    is_chart_sheet(sheet_name) || profile.sheet_routing.matches_chart(sheet_name)
+}
+
 pub fn is_chart_sheet(sheet_name: &str) -> bool {
     let s = sheet_name.trim();
     if s.len() >= 2 && (s.starts_with('C') || s.starts_with('c')) {
@@ -1183,6 +1235,10 @@ pub fn parse_chart_sheet(sheet: &ExcelSheetData) -> Option<(String, String, Stri
 }
 
 /// Check if a sheet is a divider sheet: named `DIV`, `DIV1`, `DIV01`, `DIV_01`, `DIVIDER`, or `PEMBATAS` (case-insensitive).
+pub fn is_divider_sheet_with_profile(sheet_name: &str, profile: &super::profiles::PubgenProfile) -> bool {
+    is_divider_sheet(sheet_name) || profile.sheet_routing.matches_divider(sheet_name)
+}
+
 pub fn is_divider_sheet(sheet_name: &str) -> bool {
     let s = sheet_name.trim();
     if s.is_empty() {
@@ -1602,6 +1658,25 @@ pub fn convert_excel_to_csv_data(sheets: &[ExcelSheetData], base_stem: &str) -> 
 
 /// Convert multiple Excel sheets into 1 catalog CSV and individual table CSVs, with optional base directory for resolving relative data files.
 pub fn convert_excel_to_csv_data_with_dir(sheets: &[ExcelSheetData], base_stem: &str, base_dir: Option<&std::path::Path>) -> ExcelConversionResult {
+    convert_excel_to_csv_data_with_profile(sheets, base_stem, base_dir, None)
+}
+
+/// Convert multiple Excel sheets into 1 catalog CSV and individual table CSVs, parameterizing sheet routing with the given profile.
+pub fn convert_excel_to_csv_data_with_profile(
+    sheets: &[ExcelSheetData],
+    base_stem: &str,
+    base_dir: Option<&std::path::Path>,
+    profile: Option<&super::profiles::PubgenProfile>,
+) -> ExcelConversionResult {
+    let default_prof = super::profiles::ProfileManager::default_profile();
+    let detected_id = if profile.is_none() {
+        let sheet_names: Vec<String> = sheets.iter().map(|s| s.name.clone()).collect();
+        detect_profile_from_sheets(&sheet_names)
+    } else {
+        ""
+    };
+    let detected_prof = if !detected_id.is_empty() { super::profiles::ProfileManager::get_profile(detected_id) } else { default_prof };
+    let active_prof = profile.unwrap_or(&detected_prof);
     let mut entries: Vec<CatalogEntryItem> = Vec::new();
     let mut table_csvs = Vec::new();
     let mut cover = None;
@@ -1613,7 +1688,7 @@ pub fn convert_excel_to_csv_data_with_dir(sheets: &[ExcelSheetData], base_stem: 
         let safe_name = sanitize_filename(sheet_name);
 
         // The COVER sheet supplies Publication Cover values, not a catalog page or table.
-        if is_cover_sheet(sheet_name) {
+        if is_cover_sheet_with_profile(sheet_name, active_prof) {
             let parsed_items = parse_batch_cover_sheet(sheet);
             if let Some(first) = parsed_items.first() {
                 let mut parsed_cover = first.clone();
@@ -1634,7 +1709,7 @@ pub fn convert_excel_to_csv_data_with_dir(sheets: &[ExcelSheetData], base_stem: 
         }
 
         // Check if sheet is a DIV divider sheet
-        if is_divider_sheet(sheet_name)
+        if is_divider_sheet_with_profile(sheet_name, active_prof)
             && let Some((t_val, n_val, title_val, f_val, tpl_val, ten_val)) = parse_divider_sheet_bilingual(sheet)
         {
             let div_theme = extract_theme_from_sheet(sheet);
@@ -1680,7 +1755,7 @@ pub fn convert_excel_to_csv_data_with_dir(sheets: &[ExcelSheetData], base_stem: 
 
         // Check if sheet is an RXX review chapter or a BXX front-matter chapter: both are
         // narrative RTF sheets laid out the same way
-        if (is_rtf_review_sheet(sheet_name) || is_b_sheet(sheet_name))
+        if (is_rtf_review_sheet(sheet_name) || is_b_sheet(sheet_name) || active_prof.sheet_routing.matches_narrative(sheet_name))
             && let Some((t_val, n_val, title_val, f_val, tpl_val, ten_val, fen_val)) = parse_rtf_review_sheet_bilingual(sheet)
         {
             let (image1, image2) = if is_b_sheet(sheet_name) { parse_sheet_images(sheet) } else { (None, None) };
@@ -1745,7 +1820,7 @@ pub fn convert_excel_to_csv_data_with_dir(sheets: &[ExcelSheetData], base_stem: 
         }
 
         // Check if sheet is a CXX_XX chart / figure sheet
-        if is_chart_sheet(sheet_name)
+        if is_chart_sheet_with_profile(sheet_name, active_prof)
             && let Some((t_val, n_val, title_val, f_val, tpl_val)) = parse_chart_sheet_with_template(sheet)
         {
             let chart_theme = extract_theme_from_sheet(sheet);
@@ -2260,6 +2335,10 @@ pub fn create_csv_zip(files: &[(&str, &str)]) -> Result<Vec<u8>, String> {
 
 /// Execute conversion of an XLSX file into catalog CSV, table CSVs, and a combined ZIP archive saved in the same directory.
 pub fn execute_convert_excel(path: &str) -> Result<ConvertedExcelPackage, String> {
+    execute_convert_excel_with_profile(path, None)
+}
+
+pub fn execute_convert_excel_with_profile(path: &str, profile: Option<&super::profiles::PubgenProfile>) -> Result<ConvertedExcelPackage, String> {
     let p = Path::new(path);
     if !p.exists() {
         return Err(format!("File does not exist: {path}"));
@@ -2273,7 +2352,7 @@ pub fn execute_convert_excel(path: &str) -> Result<ConvertedExcelPackage, String
         return Err("No worksheets could be extracted from file".into());
     }
 
-    let converted = convert_excel_to_csv_data_with_dir(&sheets, stem, Some(parent_dir));
+    let converted = convert_excel_to_csv_data_with_profile(&sheets, stem, Some(parent_dir), profile);
 
     // 1. Write catalog CSV
     let catalog_path = parent_dir.join(&converted.catalog_csv_name);
@@ -3597,7 +3676,15 @@ pub(crate) fn apply_excel_cover(st: &mut PubgenState, cover: &ExcelCoverData, ba
 }
 
 pub fn execute_excel_to_csvs(st: &mut PubgenState, path: &str) -> Result<String, String> {
-    let pkg = execute_convert_excel(path)?;
+    if let Ok(sheets) = parse_xlsx_sheets(path) {
+        let names: Vec<String> = sheets.iter().map(|s| s.name.clone()).collect();
+        let detected = detect_profile_from_sheets(&names);
+        st.profile_detected_id = Some(detected.to_string());
+        if !st.profile_user_locked {
+            st.apply_profile(super::profiles::ProfileManager::get_profile(detected), false);
+        }
+    }
+    let pkg = execute_convert_excel_with_profile(path, Some(&st.active_profile()))?;
     st.excel_source_path = path.to_string();
     st.excel_had_cover = pkg.cover.is_some();
     st.excel_batch_covers = pkg.batch_covers.clone();

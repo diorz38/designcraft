@@ -33,6 +33,7 @@ web-time = { workspace = true }
 unicode-bidi = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+regex = { workspace = true }
 log = { workspace = true }
 zip = { workspace = true }
 quick-xml = { workspace = true }

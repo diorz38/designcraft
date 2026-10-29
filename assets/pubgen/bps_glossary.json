@@ -38,8 +38,8 @@
     },
     {
       "id": "Kabupaten Karawang",
-      "ai": "",
-      "official": "Karawang Regency",
+      "ai": "Karawang Regency",
+      "official": "",
       "count": 3
     },
     {
@@ -93,7 +93,7 @@
     {
       "id": "Perempuan",
       "ai": "Female",
-      "official": "",
+      "official": "Female",
       "count": 1
     },
     {
@@ -202,6 +202,54 @@
       "id": "Sumber",
       "ai": "",
       "official": "Source",
+      "count": 0
+    },
+    {
+      "id": "Luas Wilayah",
+      "ai": "",
+      "official": "Total Area",
+      "count": 0
+    },
+    {
+      "id": "Kepadatan Penduduk",
+      "ai": "",
+      "official": "Population Density",
+      "count": 0
+    },
+    {
+      "id": "Jenis Kelamin",
+      "ai": "",
+      "official": "Sex",
+      "count": 0
+    },
+    {
+      "id": "Laju Pertumbuhan",
+      "ai": "",
+      "official": "Growth Rate",
+      "count": 0
+    },
+    {
+      "id": "Tahun",
+      "ai": "",
+      "official": "Year",
+      "count": 0
+    },
+    {
+      "id": "total",
+      "ai": "",
+      "official": "Total",
+      "count": 0
+    },
+    {
+      "id": "propinsi",
+      "ai": "",
+      "official": "Province",
+      "count": 0
+    },
+    {
+      "id": "no",
+      "ai": "",
+      "official": "No",
       "count": 0
     }
   ]

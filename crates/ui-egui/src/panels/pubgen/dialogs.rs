@@ -352,7 +352,121 @@ pub fn dialog_table_range_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut 
     st.show_table_range_popup = open;
 }
 
+pub fn dialog_profile_customize_ui(_app: &mut DesignApp, ctx: &egui::Context, st: &mut PubgenState) {
+    if !st.dialog_profile_customize_open {
+        return;
+    }
+    let rtl = false;
+    let mut open = st.dialog_profile_customize_open;
+    let mut prof = st.active_profile();
+    let mut should_close = false;
+    let mut should_apply = None;
+    let mut should_reset = false;
+
+    dialog_window(ctx, "Sesuaikan Profil Publikasi", rtl, true, &mut open, 480.0, |ui| {
+        egui::ScrollArea::vertical().max_height(480.0).show(ui, |ui| {
+            ui.add_space(4.0);
+            ui.heading(format!("Profil: {}", prof.name));
+            ui.label(RichText::new(&prof.description).size(10.5).color(Tokens::get(ctx).text_dim));
+            ui.add_space(8.0);
+
+            // 1. Geometri & Halaman
+            ui.group(|ui| {
+                ui.label(RichText::new("1. Geometri & Tata Letak Halaman").strong());
+                ui.horizontal(|ui| {
+                    ui.label("Ukuran Kertas:");
+                    craft_ui::ComboBox::from_id_salt("profile_page_size").selected_text(&prof.geometry.page_size).show_ui(ui, |ui| {
+                        for sz in &["A4", "B5", "A5", "Letter"] {
+                            ui.selectable_value(&mut prof.geometry.page_size, sz.to_string(), *sz);
+                        }
+                    });
+                });
+                ui.checkbox(&mut prof.geometry.facing_pages, "Halaman Berhadapan (Facing Spreads)");
+
+                ui.add_space(4.0);
+                ui.label("Margin Halaman (mm):");
+                ui.horizontal(|ui| {
+                    ui.label("Atas:");
+                    ui.add(egui::DragValue::new(&mut prof.geometry.margins_mm.top).range(5.0..=100.0).speed(0.5));
+                    ui.label("Bawah:");
+                    ui.add(egui::DragValue::new(&mut prof.geometry.margins_mm.bottom).range(5.0..=100.0).speed(0.5));
+                });
+                ui.horizontal(|ui| {
+                    let inside_lbl = if prof.geometry.facing_pages { "Dalam (Punggung):" } else { "Kiri:" };
+                    let outside_lbl = if prof.geometry.facing_pages { "Luar:" } else { "Kanan:" };
+                    ui.label(inside_lbl);
+                    ui.add(egui::DragValue::new(&mut prof.geometry.margins_mm.inside).range(5.0..=100.0).speed(0.5));
+                    ui.label(outside_lbl);
+                    ui.add(egui::DragValue::new(&mut prof.geometry.margins_mm.outside).range(5.0..=100.0).speed(0.5));
+                });
+            });
+
+            ui.add_space(6.0);
+
+            // 2. Format Tabel
+            ui.group(|ui| {
+                ui.label(RichText::new("2. Format & Gaya Tabel").strong());
+                ui.checkbox(&mut prof.table_styling.include_column_number_row, "Tampilkan baris penomoran kolom (1) (2) (3)");
+                ui.checkbox(&mut prof.table_styling.horizontal_rules_only, "Hanya garis horizontal (Gaya APA / Minimalis tanpa garis vertikal)");
+                ui.checkbox(&mut prof.table_styling.alternating_row_fills, "Pewarnaan baris berselang-seling (Zebra Striping)");
+            });
+
+            ui.add_space(6.0);
+
+            // 3. Nomenklatur & Label
+            ui.group(|ui| {
+                ui.label(RichText::new("3. Nomenklatur & Label").strong());
+                ui.horizontal(|ui| {
+                    ui.label("Label Bab:");
+                    ui.text_edit_singleline(&mut prof.nomenclature.chapter_prefix);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Label Tabel:");
+                    ui.text_edit_singleline(&mut prof.nomenclature.table_prefix);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Label Grafik:");
+                    ui.text_edit_singleline(&mut prof.nomenclature.chart_prefix);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Judul Daftar Isi:");
+                    ui.text_edit_singleline(&mut prof.nomenclature.toc_title);
+                });
+            });
+
+            ui.add_space(10.0);
+
+            // Tombol Aksi
+            ui.horizontal(|ui| {
+                if ui.button("Terapkan Sesi Ini").clicked() {
+                    should_apply = Some(prof.clone());
+                    should_close = true;
+                }
+                if ui.button("Reset ke BPS DDA").clicked() {
+                    should_reset = true;
+                    should_close = true;
+                }
+            });
+        });
+    });
+
+    if let Some(mut p) = should_apply {
+        p.id = "custom".to_string();
+        p.name = "Kustom (Disesuaikan)".to_string();
+        p.sanitize();
+        st.apply_profile(p, true);
+    } else if should_reset {
+        let dda = super::profiles::ProfileManager::default_profile();
+        st.apply_profile(dda, true);
+    }
+    if should_close {
+        open = false;
+    }
+    st.dialog_profile_customize_open = open;
+}
+
 pub fn show_all_dialogs(app: &mut DesignApp, ctx: &egui::Context, st: &mut PubgenState) {
+    dialog_profile_customize_ui(app, ctx, st);
     dialog_table_range_ui(app, ctx, st);
     dialog_excel_ui(app, ctx, st);
     dialog_chart_ui(app, ctx, st);

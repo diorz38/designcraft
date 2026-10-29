@@ -1763,6 +1763,7 @@ dependencies = [
  "log",
  "quick-xml 0.41.0",
  "raw-window-handle",
+ "regex",
  "serde",
  "serde_json",
  "tempfile",

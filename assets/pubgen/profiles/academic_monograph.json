@@ -1,0 +1,80 @@
+{
+  "id": "academic_monograph",
+  "name": "Monograf Akademik & Riset",
+  "description": "Kertas kerja penelitian, policy brief, dan laporan kinerja LPPD/LAKIP dengan standar tabel APA 3-garis.",
+  "sector": "Academic",
+  "geometry": {
+    "page_size": "A4",
+    "facing_pages": true,
+    "margins_mm": {
+      "top": 25.0,
+      "bottom": 25.0,
+      "inside": 25.0,
+      "outside": 20.0
+    }
+  },
+  "structure": {
+    "has_front_matter": true,
+    "front_matter_numbering": "roman_lower",
+    "restart_body_numbering": true,
+    "require_chapter_dividers": false,
+    "include_inside_cover": false,
+    "include_back_cover": false
+  },
+  "nomenclature": {
+    "chapter_prefix": "Bab",
+    "table_prefix": "Tabel",
+    "chart_prefix": "Gambar",
+    "toc_title": "Daftar Isi",
+    "list_tables_title": "Daftar Tabel",
+    "list_charts_title": "Daftar Gambar",
+    "source_labels": [
+      "Sumber:",
+      "Source:",
+      "Referensi:"
+    ],
+    "note_labels": [
+      "Catatan:",
+      "Note:"
+    ]
+  },
+  "sheet_routing": {
+    "cover_patterns": [
+      "(?i)^cover$",
+      "(?i)^judul.*"
+    ],
+    "divider_patterns": [
+      "(?i)^bab.*",
+      "(?i)^section.*",
+      "(?i)^div.*"
+    ],
+    "narrative_patterns": [
+      "(?i)^pendahuluan.*",
+      "(?i)^metodologi.*",
+      "(?i)^pembahasan.*",
+      "(?i)^kesimpulan.*",
+      "(?i)^abstrak.*",
+      "(?i)^ulasan.*",
+      "(?i)^r\\d+.*"
+    ],
+    "table_patterns": [
+      "(?i)^tabel.*",
+      "(?i)^table.*",
+      "(?i)^\\d+[_.]\\d+.*"
+    ],
+    "chart_patterns": [
+      "(?i)^gambar.*",
+      "(?i)^grafik.*",
+      "(?i)^chart.*",
+      "(?i)^figure.*",
+      "(?i)^c\\d+.*"
+    ]
+  },
+  "table_styling": {
+    "include_column_number_row": false,
+    "alternating_row_fills": false,
+    "horizontal_rules_only": true,
+    "default_theme_palette": "monochrome"
+  }
+}
+
