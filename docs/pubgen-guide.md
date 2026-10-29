@@ -62,39 +62,41 @@ Pubgen turns this into a fast, automated workflow:
 
 ## 2. Finding Pubgen in DesignCraft
 
-Pubgen lives in DesignCraft's **menu bar**. With Pubgen installed, the bar shows four menus:
+Pubgen lives in **menu bar**. With Pubgen installed, the bar keeps DesignCraft's whole host tree and
+adds three menus before **Help**:
 
 ```
-+--------------------------------------------------------------------------+
-|  File    Publication    PubGen Tools    Help                             |
-+--------------------------------------------------------------------------+
++---------------------------------------------------------------------------------------------------+
+|  File  Edit  Layout  Type  Object  Table  View  Window  Publication  Publication Tools  Shortcut  Help |
++---------------------------------------------------------------------------------------------------+
 ```
 
 | Menu | What it holds |
 |---|---|
-| **File** | DesignCraft's own File menu (New, Open, Save, Export, …). |
-| **Publication** | The generation pipeline: Master Excel Import & Generate…, Publication Compile Wizard…, Statistical Vector Chart…, Table of Contents…, Publication Cover…, Header & Footer Setup… — then **About PubGen…** and the menu-bar switch. |
-| **PubGen Tools** | **Manual Ingest & Tables** (Page from CSV…, Table from CSV…), **Page & Layout Utilities** (Set Standard BPS Margins, Page Margins & Renumbering Options…), the **Dual Language Mode** checkmark, and the **AI Translate** submenu. |
-| **Help** | DesignCraft's own Help menu. |
+| **File … Window** | DesignCraft's own menus, unchanged. |
+| **Publication** | The generation pipeline: Generate from Excel, Vector Chart, Table of Contents, Publication Cover, Header & Footer Setup, Audit Publication. |
+| **Publication Tools** | **Manual Ingest & Tables** (Page from CSV…, Table from CSV…), **Page & Layout Utilities** (Standard BPS Margins, Page Margins & Renumbering Options…), the **Dual Language Mode** checkmark, and the **AI Translate** submenu. |
+| **Shortcut** | Quick access to original DesignCraft actions: Export PDF…, Preflight Document, Package…, Place…, New Sample Document. |
+| **Help** | DesignCraft's own Help rows, then **About PubGen…** and the menu-bar switch. |
 
 So a complete publication is three menu visits away:
 
-1. **Publication ▸ Master Excel Import & Generate…** — read your Excel/CSV manuscript and build the pages.
-2. **Publication ▸ Publication Cover…** — synthesize the cover.
-3. **Publication ▸ Table of Contents…** — insert or rebuild the ToC.
+1. **Publication ▸ Generate from Excel** — read your Excel/CSV manuscript and build the pages.
+2. **Publication ▸ Publication Cover** — synthesize the cover.
+3. **Publication ▸ Table of Contents** — insert or rebuild the ToC.
 
-The remaining editorial actions (single-sided spreads, blank pages, RTF and image pages, page renumbering) open from **PubGen Tools ▸ Page & Layout Utilities…**, and the manual routes from **PubGen Tools ▸ Manual Ingest & Tables**.
+The remaining editorial actions (single-sided spreads, blank pages, RTF and image pages, page renumbering) open from **Publication Tools ▸ Page & Layout Utilities…**, and the manual routes from **Publication Tools ▸ Manual Ingest & Tables**.
 
 ### Switching back to DesignCraft's menus
-Pubgen's actions also exist in DesignCraft's full menu set, under a **Pubgen** menu that sits just before **Help**. To reach the rest of DesignCraft — Edit, Layout, Type, Object, View, Window — switch the bar:
+Pubgen's actions also exist in DesignCraft's full menu set, under a **Pubgen** menu that sits just before **Help**. To reach the plain DesignCraft bar — without the three Pubgen menus — switch it:
 
-- **Publication ▸ Show DesignCraft Menus**, or
-- the same button in the footer of **Publication ▸ About PubGen…**.
+- **Help ▸ Show DesignCraft Menus**, or
+- the same button in **Help ▸ About PubGen…**.
 
 The bar now shows DesignCraft's full menus with Pubgen appended before Help. Choose **Pubgen ▸ Show PubGen Menus** to switch back. The setting is per session: a fresh start opens in Pubgen mode.
 
 ### Bilingual Publication Toggle (`Single Lang` / `Dual Lang`)
-The **Dual Language Mode** row in the **PubGen Tools** menu ticks or unticks bilingual output (unticked = Single Lang, the default):
+The **Dual Language Mode** row in the **Publication Tools** menu ticks or unticks bilingual output (unticked = Single Lang, the default):
 - **Single Lang**: Standard monolingual generation matching legacy publications.
 - **Dual Lang**: Generates bilingual Indonesian-English content adhering to BPS statistical standards:
   - **Covers**: Binds the English title into the dedicated `#slot:text:title_en` frame where a cover provides one, and otherwise into the second headline line (`title#2`).

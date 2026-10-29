@@ -1,9 +1,9 @@
 //! PubGen's own menu bar (fork addition).
 //!
-//! DesignCraft's menu bar is replaced by File + Publication + PubGen Tools + Help while the PubGen
-//! menus are on (the default here). Those menus hold the PubGen panel's actions; File and
-//! Help are DesignCraft's own rows. The toggle in PubGen › About PubGen… (and in the About PubGen
-//! dialog) switches between this bar and DesignCraft's full one.
+//! DesignCraft's menu bar is replaced by the host tree plus Publication + Publication Tools +
+//! Shortcut (Help stays last) while the PubGen menus are on (the default here). Those menus hold
+//! the PubGen panel's actions; the host rows are DesignCraft's own. The toggle in Help (and in the
+//! About PubGen dialog) switches between this bar and DesignCraft's full one.
 //!
 //! Everything lives in this one file so an upstream update touches at most the single hook at the
 //! top of [`super::bar::menu_bar`]: no upstream menu table, command table or UI state is edited.
@@ -102,9 +102,18 @@ fn popup(ui: &mut egui::Ui, rtl: bool, min_width: f32, contents: impl FnOnce(&mu
     });
 }
 
-/// A menu row: label, enabled, clicked.
+/// A menu row: label, enabled, hover note, clicked.
 fn item(ui: &mut egui::Ui, lang: &str, label: &str, enabled: bool) -> bool {
-    ui.add_enabled(enabled, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(lang, label)))).clicked()
+    item_note(ui, lang, label, enabled, "")
+}
+
+/// A menu row with a hover note (e.g. the numbers a short label left out).
+fn item_note(ui: &mut egui::Ui, lang: &str, label: &str, enabled: bool, note: &str) -> bool {
+    let mut resp = ui.add_enabled(enabled, egui::Button::new(crate::rtl::widget(ui, crate::i18n::tr(lang, label))));
+    if !note.is_empty() {
+        resp = resp.on_hover_text(note);
+    }
+    resp.clicked()
 }
 
 /// A submenu row that opens `contents`.
@@ -116,14 +125,14 @@ fn submenu(ui: &mut egui::Ui, lang: &str, rtl: bool, label: &str, min_width: f32
 fn pipeline(app: &mut DesignApp, ui: &mut egui::Ui, lang: &str) {
     let has_doc = app.session.active().is_some();
 
-    if item(ui, lang, "Master Excel Import & Generate…", has_doc) {
+    if item(ui, lang, "Generate from Excel", has_doc) {
         crate::dock::pubgen::with_state(ui.ctx(), |st| {
             st.dialog_excel_open = true;
         });
         ui.close();
     }
 
-    if item(ui, lang, "Statistical Vector Chart…", has_doc) {
+    if item(ui, lang, "Vector Chart", has_doc) {
         let dlg = Box::new(crate::dock::pubgen::charts::dialog::ChartDialog::new(app, false));
         crate::dock::pubgen::with_state(ui.ctx(), |st| {
             st.chart_dialog = Some(dlg);
@@ -131,21 +140,21 @@ fn pipeline(app: &mut DesignApp, ui: &mut egui::Ui, lang: &str) {
         ui.close();
     }
 
-    if item(ui, lang, "Table of Contents…", has_doc) {
+    if item(ui, lang, "Table of Contents", has_doc) {
         crate::dock::pubgen::with_state(ui.ctx(), |st| {
             st.dialog_toc_open = true;
         });
         ui.close();
     }
 
-    if item(ui, lang, "Publication Cover…", has_doc) {
+    if item(ui, lang, "Publication Cover", has_doc) {
         crate::dock::pubgen::with_state(ui.ctx(), |st| {
             st.dialog_cover_open = true;
         });
         ui.close();
     }
 
-    if item(ui, lang, "Header & Footer Setup…", has_doc) {
+    if item(ui, lang, "Header & Footer Setup", has_doc) {
         crate::dock::pubgen::with_state(ui.ctx(), |st| {
             st.dialog_hf_open = true;
         });
@@ -153,7 +162,7 @@ fn pipeline(app: &mut DesignApp, ui: &mut egui::Ui, lang: &str) {
     }
 
     // Last pipeline step: the QA audit over the finished layout (Pillar 3).
-    if item(ui, lang, "Audit Publication…", has_doc) {
+    if item(ui, lang, "Audit Publication", has_doc) {
         crate::dock::pubgen::with_state(ui.ctx(), |st| {
             st.audit_open = true;
             st.audit_issues = None; // the dialog runs `preflight.pubgen` on first paint
@@ -184,7 +193,7 @@ fn content(app: &mut DesignApp, ui: &mut egui::Ui, lang: &str, rtl: bool) {
     });
 
     submenu(ui, lang, rtl, "Page & Layout Utilities", 280.0, |ui| {
-        if item(ui, lang, "Set Standard BPS Margins (20/20/19/15 mm)", has_doc) {
+        if item_note(ui, lang, "Standard BPS Margins", has_doc, "Margins 20 / 20 / 19 / 15 mm (top, bottom, inside, outside).\nUndo with Ctrl+Z.") {
             let _ = crate::dock::pubgen::execute_set_page_margins(app);
             ui.close();
         }
@@ -307,11 +316,11 @@ fn publication_menu(app: &mut DesignApp, ui: &mut egui::Ui) {
     });
 }
 
-/// The PubGen Tools menu: manual ingest, layout utilities, language mode and AI translation.
+/// The Publication Tools menu: manual ingest, layout utilities, language mode and AI translation.
 fn content_menu(app: &mut DesignApp, ui: &mut egui::Ui) {
     let lang = app.ui.language.clone();
     let rtl = crate::i18n::is_rtl(&lang);
-    crate::menus::menu_button(ui, crate::rtl::widget(ui, crate::i18n::tr(&lang, "PubGen Tools")), |ui| {
+    crate::menus::menu_button(ui, crate::rtl::widget(ui, crate::i18n::tr(&lang, "Publication Tools")), |ui| {
         popup(ui, rtl, 260.0, |ui| content(app, ui, &lang, rtl));
     });
 }
@@ -374,7 +383,7 @@ mod tests {
         crate::theme::install_fonts(&ctx, "en");
         let mut app = app();
         let texts = frame(&ctx, &mut app, egui::vec2(1920.0, 200.0), Vec::new());
-        let order = ["File", "Edit", "Layout", "Type", "Object", "Table", "View", "Window", "Publication", "PubGen Tools", "Shortcut", "Help"];
+        let order = ["File", "Edit", "Layout", "Type", "Object", "Table", "View", "Window", "Publication", "Publication Tools", "Shortcut", "Help"];
         let positions: Vec<Option<usize>> = order.iter().map(|m| texts.iter().position(|t| t == m)).collect();
         for (i, top) in order.iter().enumerate() {
             assert!(positions[i].is_some(), "missing {top} in {texts:?}");

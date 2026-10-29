@@ -62,39 +62,41 @@ Pubgen mengotomatiskan seluruh alur kerja tersebut:
 
 ## 2. Menemukan Pubgen di DesignCraft
 
-Pubgen berada di **bilah menu** DesignCraft. Bila Pubgen terpasang, bilah menu menampilkan empat menu:
+Pubgen berada di **bilah menu**. Bila Pubgen terpasang, bilah menu mempertahankan seluruh menu bawaan
+DesignCraft dan menambahkan tiga menu sebelum **Help**:
 
 ```
-+--------------------------------------------------------------------------+
-|  File    Publication    PubGen Tools    Help                             |
-+--------------------------------------------------------------------------+
++---------------------------------------------------------------------------------------------------+
+|  File  Edit  Layout  Type  Object  Table  View  Window  Publication  Publication Tools  Shortcut  Help |
++---------------------------------------------------------------------------------------------------+
 ```
 
 | Menu | Isinya |
 |---|---|
-| **File** | Menu File bawaan DesignCraft (New, Open, Save, Export, …). |
-| **Publication** | Alur pembuatan publikasi: Master Excel Import & Generate…, Publication Compile Wizard…, Statistical Vector Chart…, Table of Contents…, Publication Cover…, Header & Footer Setup… — lalu **About PubGen…** dan tombol pengalih bilah menu. |
-| **PubGen Tools** | **Manual Ingest & Tables** (Page from CSV…, Table from CSV…), **Page & Layout Utilities** (Set Standard BPS Margins, Page Margins & Renumbering Options…), tanda centang **Dual Language Mode**, dan submenu **AI Translate**. |
-| **Help** | Menu Help bawaan DesignCraft. |
+| **File … Window** | Menu bawaan DesignCraft, tidak berubah. |
+| **Publication** | Alur pembuatan publikasi: Generate from Excel, Vector Chart, Table of Contents, Publication Cover, Header & Footer Setup, Audit Publication. |
+| **Publication Tools** | **Manual Ingest & Tables** (Page from CSV…, Table from CSV…), **Page & Layout Utilities** (Standard BPS Margins, Page Margins & Renumbering Options…), tanda centang **Dual Language Mode**, dan submenu **AI Translate**. |
+| **Shortcut** | Akses cepat ke aksi asli DesignCraft: Export PDF…, Preflight Document, Package…, Place…, New Sample Document. |
+| **Help** | Baris Help bawaan DesignCraft, lalu **About PubGen…** dan tombol pengalih bilah menu. |
 
 Dengan begitu, publikasi lengkap hanya berjarak tiga kunjungan menu:
 
-1. **Publication ▸ Master Excel Import & Generate…** — membaca naskah Excel/CSV dan membangun halamannya.
-2. **Publication ▸ Publication Cover…** — membuat sampul.
-3. **Publication ▸ Table of Contents…** — menyisipkan atau memperbarui Daftar Isi.
+1. **Publication ▸ Generate from Excel** — membaca naskah Excel/CSV dan membangun halamannya.
+2. **Publication ▸ Publication Cover** — membuat sampul.
+3. **Publication ▸ Table of Contents** — menyisipkan atau memperbarui Daftar Isi.
 
-Tindakan editorial lainnya (sebaran satu sisi, halaman kosong, halaman RTF dan gambar, penomoran ulang halaman) dibuka dari **PubGen Tools ▸ Page & Layout Utilities…**, sedangkan jalur manual dari **PubGen Tools ▸ Manual Ingest & Tables**.
+Tindakan editorial lainnya (sebaran satu sisi, halaman kosong, halaman RTF dan gambar, penomoran ulang halaman) dibuka dari **Publication Tools ▸ Page & Layout Utilities…**, sedangkan jalur manual dari **Publication Tools ▸ Manual Ingest & Tables**.
 
 ### Beralih ke menu DesignCraft
-Seluruh tindakan Pubgen juga tersedia di kumpulan menu lengkap DesignCraft, di dalam menu **Pubgen** yang terletak tepat sebelum **Help**. Untuk mengakses sisa fitur DesignCraft — Edit, Layout, Type, Object, View, Window — alihkan bilah menunya:
+Seluruh tindakan Pubgen juga tersedia di kumpulan menu lengkap DesignCraft, di dalam menu **Pubgen** yang terletak tepat sebelum **Help**. Untuk mencapai bilah DesignCraft polos — tanpa tiga menu Pubgen — alihkan bilah menunya:
 
-- **Publication ▸ Show DesignCraft Menus**, atau
-- tombol yang sama di kaki dialog **Publication ▸ About PubGen…**.
+- **Help ▸ Show DesignCraft Menus**, atau
+- tombol yang sama di **Help ▸ About PubGen…**.
 
 Bilah menu kini menampilkan menu lengkap DesignCraft dengan Pubgen disisipkan sebelum Help. Pilih **Pubgen ▸ Show PubGen Menus** untuk kembali. Pengaturan ini berlaku per sesi: aplikasi yang baru dibuka selalu mulai dalam mode Pubgen.
 
 ### Tombol Mode Dwi Bahasa (`Single Lang` / `Dual Lang`)
-Baris **Dual Language Mode** pada menu **PubGen Tools** mencentang atau melepas keluaran dwi bahasa (tanpa centang = Single Lang, default):
+Baris **Dual Language Mode** pada menu **Publication Tools** mencentang atau melepas keluaran dwi bahasa (tanpa centang = Single Lang, default):
 - **Single Lang**: Pembuatan publikasi satu bahasa (monolingual) standar seperti sebelumnya.
 - **Dual Lang**: Menghasilkan publikasi dwi bahasa Indonesia-Inggris sesuai standar publikasi BPS:
   - **Sampul Depan**: Menautkan judul bahasa Inggris ke bingkai `#slot:text:title_en` bila templat menyediakannya, dan bila tidak ke baris judul kedua (`title#2`).
