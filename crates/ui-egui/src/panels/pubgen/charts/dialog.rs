@@ -73,11 +73,90 @@ pub struct ChartDialog {
     pub status: Option<(String, bool)>,
 }
 
+/// Extracts number and clean title from a string like "Tabel 02.03 Jumlah Penduduk..."
+fn extract_num_and_title(s: &str) -> (String, String) {
+    let trimmed = s.trim();
+    let words: Vec<&str> = trimmed.split_whitespace().collect();
+    if words.len() >= 2
+        && (words[0].eq_ignore_ascii_case("tabel")
+            || words[0].eq_ignore_ascii_case("table")
+            || words[0].eq_ignore_ascii_case("grafik")
+            || words[0].eq_ignore_ascii_case("figure"))
+    {
+        let num = words[1].trim_matches(|c: char| !c.is_ascii_digit() && c != '.');
+        if num.chars().any(|c| c.is_ascii_digit()) {
+            let rest = words[2..].join(" ");
+            return (num.to_string(), rest);
+        }
+    }
+    (String::new(), trimmed.to_string())
+}
+
+/// Parses a table title string into (table_number, indonesian_title, english_title).
+pub fn parse_table_source_title(full_text: &str) -> (String, String, Option<String>) {
+    let raw_lines: Vec<&str> = full_text.split(['\n', '\u{2028}']).map(str::trim).filter(|s| !s.is_empty()).collect();
+
+    if raw_lines.len() == 1
+        && let Some((id_part, en_part)) = raw_lines[0].split_once(" / ")
+    {
+        let (num, id_clean) = extract_num_and_title(id_part);
+        let (_, en_clean) = extract_num_and_title(en_part);
+        return (num, id_clean, Some(en_clean));
+    }
+
+    if raw_lines.is_empty() {
+        return (String::new(), String::new(), None);
+    }
+
+    let (p0_num, p0_rest) = extract_num_and_title(raw_lines[0]);
+    if p0_rest.is_empty() && !p0_num.is_empty() && raw_lines.len() >= 2 {
+        let id_clean = raw_lines[1].trim().to_string();
+        let en_clean = if raw_lines.len() >= 3 {
+            let (_, en_rest) = extract_num_and_title(raw_lines[2]);
+            if en_rest.is_empty() && raw_lines.len() >= 4 {
+                Some(raw_lines[3].trim().to_string())
+            } else if !en_rest.is_empty() {
+                Some(en_rest)
+            } else {
+                Some(raw_lines[2].trim().to_string())
+            }
+        } else {
+            None
+        };
+        return (p0_num, id_clean, en_clean);
+    }
+
+    let id_clean = if !p0_rest.is_empty() { p0_rest } else { raw_lines[0].to_string() };
+    let en_clean = if raw_lines.len() >= 2 {
+        let (_, en_rest) = extract_num_and_title(raw_lines[1]);
+        Some(if !en_rest.is_empty() { en_rest } else { raw_lines[1].to_string() })
+    } else {
+        None
+    };
+
+    (p0_num, id_clean, en_clean)
+}
+
+/// Splits a Grafik title into Line 1 ("Grafik XX.XX") and Line 2 ("Judul Data").
+pub fn split_grafik_title(raw: &str) -> (String, String) {
+    let trimmed = raw.trim();
+    if let Some((l1, l2)) = trimmed.split_once('\n') {
+        return (l1.trim().to_string(), l2.trim().to_string());
+    }
+    let words: Vec<&str> = trimmed.split_whitespace().collect();
+    if words.len() >= 3 && words[0].eq_ignore_ascii_case("grafik") && words[1].chars().any(|c| c.is_ascii_digit()) {
+        let line1 = format!("Grafik {}", words[1]);
+        let line2 = words[2..].join(" ");
+        return (line1, line2);
+    }
+    (trimmed.to_string(), String::new())
+}
+
 impl Default for ChartDialog {
     fn default() -> Self {
         Self {
             chart_type: ChartType::BarClustered,
-            title_id: "Grafik 01.01 Pertumbuhan Ekonomi Menurut Sektor".into(),
+            title_id: "Grafik 01.01\nPertumbuhan Ekonomi Menurut Sektor".into(),
             title_en: "Figure 01.01 Economic Growth by Sector".into(),
             category_col: "A".into(),
             series_1_col: "B".into(),
@@ -277,7 +356,7 @@ impl ChartDialog {
             let page = spread.pages.get(page_idx_in_sp).or_else(|| spread.pages.first());
             let rect = if let Some(pg) = page {
                 let m = pg.margin_rect();
-                designcraft_geom::Rect { x0: m.x0, y0: m.y0 + 20.0, x1: m.x1, y1: m.y1 - 10.0 }
+                designcraft_geom::Rect { x0: m.x0, y0: m.y0, x1: m.x1, y1: m.y1 - 10.0 }
             } else {
                 designcraft_geom::Rect { x0: 36.0, y0: 56.0, x1: 559.0, y1: 780.0 }
             };
@@ -293,10 +372,104 @@ impl ChartDialog {
         let count = super::emitter::emit_chart(app, target_sp, &spec, &layout, &[], bilingual)?;
 
         if !self.title_id.is_empty() {
-            let title_line =
-                if bilingual && !self.title_en.is_empty() { format!("{} / {}", self.title_id, self.title_en) } else { self.title_id.clone() };
-            let title_rect = [margin.x0, margin.y0 - 24.0, margin.x1, margin.y0 - 2.0];
-            let _ = super::emitter::emit_text(app, target_sp, title_rect, &title_line, 10.0, true, "center", Some("#1A1A1A"));
+            let (line1, line2) = split_grafik_title(&self.title_id);
+            let id_formatted = if !line2.is_empty() {
+                format!("{line1}\n{line2}")
+            } else {
+                line1.clone()
+            };
+
+            let en_trimmed = self.title_en.trim();
+            let is_bilingual_title = bilingual && !en_trimmed.is_empty();
+
+            let title_text = if is_bilingual_title {
+                format!("{id_formatted}\n{en_trimmed}")
+            } else {
+                id_formatted.clone()
+            };
+
+            let title_h = if is_bilingual_title { 56.0 } else { 44.0 };
+            let title_rect = [margin.x0, margin.y0, margin.x1, margin.y0 + title_h];
+
+            let title_fid = super::emitter::emit_text(
+                app,
+                target_sp,
+                title_rect,
+                &title_text,
+                11.0,
+                true,
+                "center",
+                Some("#1A1A1A"),
+            )?;
+
+            // Format character runs:
+            // Line 1 & Line 2: Bold 11pt
+            // Line 3 (English): Italic 10pt
+            let _ = app.session.edit(|doc, _| {
+                let story_id = if let Some(it) = doc.item_mut(designcraft_doc::ItemId(title_fid))
+                    && let designcraft_doc::Content::Text(tf) = &mut it.content
+                {
+                    tf.options.vertical_justification = designcraft_doc::VerticalJustification::Top;
+                    Some(tf.story)
+                } else {
+                    None
+                };
+
+                if let Some(sid) = story_id && let Some(story) = doc.story_mut(sid) {
+                        for p in &mut story.paras {
+                            p.para.align = Some(designcraft_doc::Align::Center);
+                        }
+                        let id_len = id_formatted.len();
+                        if is_bilingual_title {
+                            let en_len = en_trimmed.len();
+                            story.chars = vec![
+                                designcraft_doc::CharRun {
+                                    len: id_len + 1, // include newline
+                                    format: designcraft_doc::CharFormat {
+                                        over: designcraft_doc::CharAttrs {
+                                            font_family: Some("Arial".into()),
+                                            size: Some(11.0),
+                                            font_style: Some("Bold".into()),
+                                            fill: Some("[Black]".into()),
+                                            ..Default::default()
+                                        },
+                                        ..Default::default()
+                                    },
+                                },
+                                designcraft_doc::CharRun {
+                                    len: en_len,
+                                    format: designcraft_doc::CharFormat {
+                                        over: designcraft_doc::CharAttrs {
+                                            font_family: Some("Arial".into()),
+                                            size: Some(10.0),
+                                            font_style: Some("Italic".into()),
+                                            fill: Some("[Black]".into()),
+                                            ..Default::default()
+                                        },
+                                        ..Default::default()
+                                    },
+                                },
+                            ];
+                        } else {
+                            story.chars = vec![
+                                designcraft_doc::CharRun {
+                                    len: id_len,
+                                    format: designcraft_doc::CharFormat {
+                                        over: designcraft_doc::CharAttrs {
+                                            font_family: Some("Arial".into()),
+                                            size: Some(11.0),
+                                            font_style: Some("Bold".into()),
+                                            fill: Some("[Black]".into()),
+                                            ..Default::default()
+                                        },
+                                        ..Default::default()
+                                    },
+                                },
+                            ];
+                        }
+                    }
+                Ok(serde_json::Value::Null)
+            });
         }
 
         let page_msg = if let Some(p) = target_page_idx {
@@ -434,7 +607,7 @@ impl ChartDialog {
     }
 
     /// Read table from the specified 1-based page number and auto-fill dialog fields.
-    #[allow(clippy::needless_range_loop)]
+    #[allow(clippy::needless_range_loop, clippy::cognitive_complexity)]
     pub fn import_from_table_page(&mut self, app: &DesignApp, page_1_based: usize) -> Result<(), String> {
         let page_idx = page_1_based.saturating_sub(1);
         let target = super::super::ai::detect_table_page_target(app, page_idx).ok_or_else(|| format!("No table found on page {}", page_1_based))?;
@@ -444,55 +617,50 @@ impl ChartDialog {
         let table = story.tables.get(&target.table_id).ok_or("Table not found")?;
 
         // 1. Title recognition from title frame
+        let mut recognized_num = String::new();
+        let mut recognized_id = String::new();
+        let mut recognized_en: Option<String> = None;
+
         if let Some(tfid) = target.title_fid
             && let Some(item) = active.doc.item(designcraft_doc::ItemId(tfid))
             && let Some(tf) = item.text_frame()
             && let Some(tstory) = active.doc.story(tf.story)
         {
-            let full_title = tstory.text.trim();
-            let (id_raw, en_raw) = if let Some((p1, p2)) = full_title.split_once('\n') {
-                (p1.trim(), Some(p2.trim()))
-            } else if let Some((p1, p2)) = full_title.split_once(" / ") {
-                (p1.trim(), Some(p2.trim()))
-            } else {
-                (full_title, None)
-            };
+            let (num, id_clean, en_clean) = parse_table_source_title(&tstory.text);
+            recognized_num = num;
+            recognized_id = id_clean;
+            recognized_en = en_clean;
+        }
 
-            let to_grafik = |s: &str| -> String {
-                let trimmed = s.trim();
-                if let Some(rest) = trimmed.strip_prefix("Tabel ") {
-                    format!("Grafik {rest}")
-                } else if let Some(rest) = trimmed.strip_prefix("tabel ") {
-                    format!("Grafik {rest}")
-                } else if let Some(rest) = trimmed.strip_prefix("Table ") {
-                    format!("Grafik {rest}")
-                } else {
-                    trimmed.to_string()
-                }
-            };
-
-            let to_figure = |s: &str| -> String {
-                let trimmed = s.trim();
-                if let Some(rest) = trimmed.strip_prefix("Table ") {
-                    format!("Figure {rest}")
-                } else if let Some(rest) = trimmed.strip_prefix("table ") {
-                    format!("Figure {rest}")
-                } else if let Some(rest) = trimmed.strip_prefix("Tabel ") {
-                    format!("Figure {rest}")
-                } else {
-                    trimmed.to_string()
-                }
-            };
-
-            self.title_id = to_grafik(id_raw);
-            if let Some(en_part) = en_raw {
-                self.title_en = to_figure(en_part);
-            } else if let (clean, Some(prefix)) = super::super::ai::extract_table_title_parts(id_raw) {
-                let num_part = prefix.split_whitespace().nth(1).unwrap_or("");
-                if !num_part.is_empty() {
-                    self.title_en = format!("Figure {num_part} {clean}");
+        // If table number wasn't found in title frame, fallback to page-based detection
+        if recognized_num.is_empty() {
+            let tables = self.find_available_tables(app, None);
+            if let Some(tbl) = tables.iter().find(|t| t.page_1_based == page_1_based) {
+                recognized_num = tbl.table_num.clone();
+                if recognized_id.is_empty() {
+                    recognized_id = tbl.title.clone();
                 }
             }
+        }
+        if recognized_num.is_empty() {
+            recognized_num = format!("{:02}.01", page_1_based);
+        }
+
+        // Format Title (ID):
+        // [line#1] Grafik XX.XX
+        // [line#2] Judul Sumber Data (table)
+        self.title_id = if !recognized_id.is_empty() {
+            format!("Grafik {}\n{}", recognized_num, recognized_id)
+        } else {
+            format!("Grafik {}", recognized_num)
+        };
+
+        // Format Title (EN):
+        // Figure XX.XX English Title
+        if let Some(en) = recognized_en {
+            self.title_en = format!("Figure {} {}", recognized_num, en);
+        } else if !recognized_id.is_empty() {
+            self.title_en = format!("Figure {} {}", recognized_num, recognized_id);
         }
 
         // 2. Extract 2D cell text
@@ -847,7 +1015,7 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
 
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(crate::i18n::tr(&lang, "Title (ID):")).size(11.0).color(t.text));
-                    ui.add_sized([ui.available_width() - 8.0, 22.0], egui::TextEdit::singleline(&mut dialog.title_id));
+                    ui.add_sized([ui.available_width() - 8.0, 42.0], egui::TextEdit::multiline(&mut dialog.title_id).desired_rows(2));
                 });
 
                 ui.horizontal(|ui| {
@@ -1044,7 +1212,7 @@ mod tests {
         let dlg = ChartDialog::default();
         let spec = dlg.build_spec();
         assert_eq!(spec.chart_type, ChartType::BarClustered);
-        assert_eq!(spec.title_id, "Grafik 01.01 Pertumbuhan Ekonomi Menurut Sektor");
+        assert_eq!(spec.title_id, "Grafik 01.01\nPertumbuhan Ekonomi Menurut Sektor");
         assert_eq!(spec.category_col, "A");
         assert_eq!(spec.series.len(), 2);
         assert_eq!(spec.data_start_row, 2);
@@ -1277,5 +1445,37 @@ mod tests {
         let spec_gauge = dlg.build_spec();
         assert_eq!(spec_gauge.chart_type, ChartType::Gauge);
         assert_eq!(spec_gauge.series.len(), 1, "Gauge spec must have exactly 1 series");
+    }
+
+    #[test]
+    fn test_parse_and_split_table_source_titles() {
+        // Single line table title
+        let (num, id, en) = parse_table_source_title("Tabel 02.03 Jumlah Penduduk Menurut Jenis Kelamin di Karawang Timur, 2025");
+        assert_eq!(num, "02.03");
+        assert_eq!(id, "Jumlah Penduduk Menurut Jenis Kelamin di Karawang Timur, 2025");
+        assert_eq!(en, None);
+
+        // Multiline bilingual table title
+        let raw = "Tabel 02.01\nPiramida Penduduk Kecamatan Karawang Timur, 2025\nFigure 02.01\nPopulation Pyramid of Karawang Timur District, 2025";
+        let (num2, id2, en2) = parse_table_source_title(raw);
+        assert_eq!(num2, "02.01");
+        assert_eq!(id2, "Piramida Penduduk Kecamatan Karawang Timur, 2025");
+        assert_eq!(en2.as_deref(), Some("Population Pyramid of Karawang Timur District, 2025"));
+
+        // Slash-separated bilingual title
+        let raw_slash = "Tabel 02.03 Penduduk / Table 02.03 Population";
+        let (num3, id3, en3) = parse_table_source_title(raw_slash);
+        assert_eq!(num3, "02.03");
+        assert_eq!(id3, "Penduduk");
+        assert_eq!(en3.as_deref(), Some("Population"));
+
+        // Split grafik title tests
+        let (l1, l2) = split_grafik_title("Grafik 02.03\nJumlah Penduduk Menurut Jenis Kelamin");
+        assert_eq!(l1, "Grafik 02.03");
+        assert_eq!(l2, "Jumlah Penduduk Menurut Jenis Kelamin");
+
+        let (g1, g2) = split_grafik_title("Grafik 02.03 Jumlah Penduduk");
+        assert_eq!(g1, "Grafik 02.03");
+        assert_eq!(g2, "Jumlah Penduduk");
     }
 }
