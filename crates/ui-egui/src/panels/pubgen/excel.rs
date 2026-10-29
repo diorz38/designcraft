@@ -1174,8 +1174,17 @@ pub fn resolve_divider_template(tpl_spec: &str) -> String {
     if is_numeric {
         let n: u32 = raw.parse().unwrap_or(2);
         let prefix = format!("{n:03}");
-        for base in ["assets/templates/dividers", "../../assets/templates/dividers", "../assets/templates/dividers"] {
-            let dir = std::path::Path::new(base);
+        let mut bases = vec![
+            std::path::PathBuf::from("assets/templates/dividers"),
+            std::path::PathBuf::from("../../assets/templates/dividers"),
+            std::path::PathBuf::from("../assets/templates/dividers"),
+        ];
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(exe_dir) = exe.parent() {
+                bases.push(exe_dir.join("assets").join("templates").join("dividers"));
+            }
+        }
+        for dir in &bases {
             if let Ok(entries) = std::fs::read_dir(dir) {
                 for entry in entries.flatten() {
                     let fname = entry.file_name().to_string_lossy().to_string();

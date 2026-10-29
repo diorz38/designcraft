@@ -145,6 +145,12 @@ if ($env:CRAFT_FONTS_DIR) {
   }
 }
 
+# Assets: include templates, pubgen glossaries, hyphenation, and icc profiles
+$AssetsSrc = Join-Path $Root 'assets'
+if (Test-Path $AssetsSrc) {
+  Copy-Item -Recurse -Force $AssetsSrc $Portable
+}
+
 # Pubgen samples: include DUAL_LANG and SINGLE_LANG sample files, excluding *.csv and *.zip
 $SamplesSrc = Join-Path $Root 'plan\pubgen\samples'
 $SamplesDest = Join-Path $Portable 'samples'
