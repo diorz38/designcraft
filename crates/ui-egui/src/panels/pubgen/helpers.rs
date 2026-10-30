@@ -611,7 +611,7 @@ pub(crate) fn is_ulasan_type(type_val: &str) -> bool {
     if lower == "ulasan" || lower == "review" || lower == "editorial" || lower == "chapter" {
         return true;
     }
-    if (lower.starts_with('r') || lower.starts_with('b')) && lower[1..].chars().all(|c| c.is_ascii_digit()) {
+    if (lower.starts_with('r') || lower.starts_with('b') || lower.starts_with('u')) && lower[1..].chars().all(|c| c.is_ascii_digit() || c == '_') {
         return true;
     }
     false
@@ -639,5 +639,5 @@ pub(crate) fn is_divider_type(type_val: &str) -> bool {
 }
 
 pub(crate) fn is_chart_type(type_val: &str) -> bool {
-    ["grafik", "graph", "chart", "bagan", "diagram", "peta", "map"].iter().any(|k| type_val.eq_ignore_ascii_case(k))
+    ["grafik", "graph", "chart", "bagan", "diagram", "peta", "map", "gambar"].iter().any(|k| type_val.eq_ignore_ascii_case(k))
 }

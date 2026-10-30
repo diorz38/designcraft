@@ -69,6 +69,10 @@
     "alternating_row_fills": true,
     "horizontal_rules_only": false,
     "default_theme_palette": "bps_teal"
+  },
+  "typography": {
+    "body_font": "Arial",
+    "heading_font": "Arial",
+    "title_font": "Arial Black"
   }
 }
-

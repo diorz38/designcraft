@@ -453,6 +453,7 @@ impl ChartDialog {
                 None
             },
             map_palette_idx: self.map_palette_idx,
+            include_data_table: self.chart_type == ChartType::Line,
         }
     }
 

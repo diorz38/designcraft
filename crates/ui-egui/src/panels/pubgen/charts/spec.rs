@@ -65,7 +65,7 @@ impl ChartType {
             "barclustered" | "bar" | "column" | "batang" => Some(Self::BarClustered),
             "barstacked" | "stacked" | "stackedbar" | "stackedcolumn" => Some(Self::BarStacked),
             "horizontalbar" | "hbar" | "bar_h" | "batanghorizontal" | "ranked" => Some(Self::HorizontalBar),
-            "line" | "garis" | "trend" => Some(Self::Line),
+            "line" | "garis" | "trend" | "linentp" => Some(Self::Line),
             "area" | "filled" | "arealine" => Some(Self::Area),
             "donut" | "doughnut" | "pie" | "donat" | "lingkaran" => Some(Self::Donut),
             "populationpyramid" | "pyramid" | "piramidapenduduk" | "piramida" | "piramid" => Some(Self::PopulationPyramid),
@@ -129,6 +129,16 @@ fn format_with_separator(v: f64, sep: char) -> String {
         out.push('-');
     }
     out.chars().rev().collect()
+}
+
+/// Format a number in Indonesian style with 2 decimal places: dot-separated thousands, comma decimal.
+pub fn format_indonesian_number_2dec(v: f64) -> String {
+    let sign = if v < 0.0 { "-" } else { "" };
+    let abs = v.abs();
+    let int_part = abs.floor() as i64;
+    let frac = ((abs - abs.floor()) * 100.0).round() as i64;
+    let int_s = format_with_separator(int_part as f64, '.');
+    format!("{}{},{:02}", sign, int_s, frac % 100)
 }
 
 /// Format a number in Indonesian style: dot-separated thousands, comma decimal.
@@ -252,13 +262,15 @@ pub struct ChartSpec {
     /// Optional GeoJSON file path or stock map identifier for Map charts.
     pub geojson_path: Option<String>,
     pub map_palette_idx: usize,
+    /// When `true`, renders an embedded tabular data grid directly beneath the plot area.
+    pub include_data_table: bool,
 }
 
 // ---------------------------------------------------------------------------
 // Key constants
 // ---------------------------------------------------------------------------
 
-const CHART_TYPE_KEYS: &[&str] = &["chart_type", "charttype", "chart", "type_chart", "jenis_grafik"];
+const CHART_TYPE_KEYS: &[&str] = &["chart_type", "charttype", "chart", "type_chart", "jenis_grafik", "type"];
 const TITLE_KEYS: &[&str] = &["title", "judul", "title_id", "titleid"];
 const TITLE_EN_KEYS: &[&str] = &["title_en", "titleen", "judul_en", "judulen", "english_title"];
 const CATEGORY_COL_KEYS: &[&str] = &["category_col", "categorycol", "cat_col", "label_col", "kolom_kategori", "x_col"];
@@ -304,7 +316,106 @@ fn series_keys(n: usize) -> (&'static [&'static str], &'static [&'static str], &
 /// - `chart_type` is present but required fields are missing → logs a warning, raster fallback.
 ///
 /// This function never panics.
+/// If a sheet has horizontal tabular chart data (no `category_col` specified, but has a row with
+/// categories like "indeks" and subsequent rows for series like IT, IB, NTP), convert it to standard
+/// vertical chart sheet structure so the rest of the chart engine processes it transparently.
+pub fn normalize_chart_sheet(sheet: &ExcelSheetData) -> ExcelSheetData {
+    let kv = collect_kv(sheet);
+    if lookup(&kv, CATEGORY_COL_KEYS).is_some() {
+        return sheet.clone();
+    }
+
+    let mut header_row_idx = None;
+    for (r_idx, row) in sheet.grid.iter().enumerate() {
+        let non_empty: Vec<&str> = row.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        if non_empty.len() >= 3 {
+            if let Some(next_row) = sheet.grid.get(r_idx + 1) {
+                let numbers_count = next_row.iter().skip(1).filter_map(|c| parse_cell_number(c)).count();
+                if numbers_count >= 2 {
+                    header_row_idx = Some(r_idx);
+                    break;
+                }
+            }
+        }
+    }
+
+    let Some(h_idx) = header_row_idx else {
+        return sheet.clone();
+    };
+
+    let header_row = &sheet.grid[h_idx];
+    let cat_cells: Vec<String> = header_row.iter().skip(1).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+    if cat_cells.is_empty() {
+        return sheet.clone();
+    }
+    let cat_count = cat_cells.len();
+
+    let mut series: Vec<(String, Vec<String>)> = Vec::new();
+    for row in sheet.grid.iter().skip(h_idx + 1) {
+        let label = row.first().map(|s| s.trim().to_string()).unwrap_or_default();
+        if label.is_empty() {
+            continue;
+        }
+        let vals: Vec<String> = row.iter().skip(1).take(cat_count).map(|s| s.trim().to_string()).collect();
+        let num_found = vals.iter().filter_map(|s| parse_cell_number(s)).count();
+        if num_found > 0 {
+            series.push((label, vals));
+        }
+    }
+
+    if series.is_empty() {
+        return sheet.clone();
+    }
+
+    let chart_type_raw = lookup(&kv, CHART_TYPE_KEYS).unwrap_or_else(|| "line".to_string());
+    let title_id = lookup(&kv, TITLE_KEYS).unwrap_or_default();
+    let clean_title_id = title_id.replace("\r\n", " ").replace('\n', " ").replace('\r', " ").split_whitespace().collect::<Vec<_>>().join(" ");
+    let title_en = lookup(&kv, TITLE_EN_KEYS).unwrap_or_default();
+    let clean_title_en = title_en.replace("\r\n", " ").replace('\n', " ").replace('\r', " ").split_whitespace().collect::<Vec<_>>().join(" ");
+
+    let mut new_grid = Vec::new();
+    new_grid.push(vec!["chart_type".to_string(), chart_type_raw]);
+    if !clean_title_id.is_empty() {
+        new_grid.push(vec!["title".to_string(), clean_title_id]);
+    }
+    if !clean_title_en.is_empty() {
+        new_grid.push(vec!["title_en".to_string(), clean_title_en]);
+    }
+    new_grid.push(vec!["category_col".to_string(), "A".to_string()]);
+
+    let col_letters = ["B", "C", "D", "E", "F", "G", "H", "I", "J", "K"];
+    for (i, (s_label, _)) in series.iter().enumerate() {
+        if let Some(&col_let) = col_letters.get(i) {
+            new_grid.push(vec![format!("series_{}_col", i + 1), col_let.to_string()]);
+            new_grid.push(vec![format!("series_{}_label", i + 1), s_label.clone()]);
+        }
+    }
+
+    let data_start_row = new_grid.len() + 4;
+    let data_end_row = data_start_row + cat_count.saturating_sub(1);
+    new_grid.push(vec!["data_start_row".to_string(), data_start_row.to_string()]);
+    new_grid.push(vec!["data_end_row".to_string(), data_end_row.to_string()]);
+
+    let mut table_hdr = vec!["Category".to_string()];
+    for (s_label, _) in &series {
+        table_hdr.push(s_label.clone());
+    }
+    new_grid.push(table_hdr);
+
+    for c_idx in 0..cat_count {
+        let mut d_row = vec![cat_cells.get(c_idx).cloned().unwrap_or_default()];
+        for (_, s_vals) in &series {
+            d_row.push(s_vals.get(c_idx).cloned().unwrap_or_default());
+        }
+        new_grid.push(d_row);
+    }
+
+    ExcelSheetData { name: sheet.name.clone(), grid: new_grid, merges: Vec::new() }
+}
+
 pub fn parse_chart_spec(sheet: &ExcelSheetData) -> Option<ChartSpec> {
+    let normalized = normalize_chart_sheet(sheet);
+    let sheet = &normalized;
     // Build a flat map of all key-value pairs in the sheet (scan every row).
     let kv = collect_kv(sheet);
 
@@ -372,6 +483,12 @@ pub fn parse_chart_spec(sheet: &ExcelSheetData) -> Option<ChartSpec> {
     let max_value_override = lookup(&kv, MAX_VALUE_KEYS).and_then(|s| s.trim().parse::<f64>().ok()).filter(|&v| v > 0.0);
     let geojson_path = lookup(&kv, GEOJSON_KEYS);
 
+    let include_data_table = if chart_type == ChartType::Line {
+        lookup(&kv, &["data_table", "table", "show_table", "tabel"]).map(|s| parse_bool(Some(&s), true)).unwrap_or(true)
+    } else {
+        lookup(&kv, &["data_table", "table", "show_table", "tabel"]).map(|s| parse_bool(Some(&s), false)).unwrap_or(false)
+    };
+
     Some(ChartSpec {
         chart_type,
         title_id,
@@ -387,6 +504,7 @@ pub fn parse_chart_spec(sheet: &ExcelSheetData) -> Option<ChartSpec> {
         max_value_override,
         geojson_path,
         map_palette_idx: 0,
+        include_data_table,
     })
 }
 
@@ -399,6 +517,8 @@ pub fn parse_chart_spec(sheet: &ExcelSheetData) -> Option<ChartSpec> {
 /// Returns `Err(String)` when no data rows could be parsed (the caller surfaces this as a
 /// generation warning and falls back to raster).
 pub fn extract_chart_data(sheet: &ExcelSheetData, spec: &ChartSpec) -> Result<(Vec<String>, Vec<Vec<f64>>), String> {
+    let normalized = normalize_chart_sheet(sheet);
+    let sheet = &normalized;
     // Convert column letters to 0-based indices.
     let cat_col_idx = col_letter_to_index(&spec.category_col).ok_or_else(|| format!("invalid category_col '{}'", spec.category_col))?;
 

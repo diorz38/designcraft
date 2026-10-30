@@ -190,6 +190,10 @@ pub(crate) fn parse_csv_content_with_delim(text: &str, delim: char) -> Vec<Vec<S
 /// Resolve a catalog-relative image: `resolve_catalog_related_file` for each of `exts` in
 /// turn (direct paths are already covered by that helper itself).
 pub(crate) fn resolve_image_file(base: &str, file_str: &str, exts: &[&str]) -> Option<std::path::PathBuf> {
+    let lower = file_str.to_lowercase();
+    if lower.ends_with(".rtf") || lower.ends_with(".csv") || lower.ends_with(".txt") {
+        return None;
+    }
     exts.iter().find_map(|ext| resolve_catalog_related_file(base, file_str, ext))
 }
 

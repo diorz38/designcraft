@@ -284,8 +284,8 @@ pub fn emit_rect(app: &mut DesignApp, spread_idx: usize, rect: [f64; 4], fill: &
     Ok(fid)
 }
 
-/// Emits a styled text frame onto the given spread.
-pub fn emit_text(
+/// Emits a styled text frame onto the given spread with optional font family.
+pub fn emit_text_with_font(
     app: &mut DesignApp,
     spread_idx: usize,
     rect: [f64; 4],
@@ -294,6 +294,7 @@ pub fn emit_text(
     bold: bool,
     align: &str,
     color: Option<&str>,
+    font_family: Option<&str>,
 ) -> Result<u64, String> {
     let res = app
         .run(
@@ -312,12 +313,13 @@ pub fn emit_text(
     let sid = res.get("story").and_then(Value::as_u64);
 
     let swatch_name = if let Some(c) = color { ensure_swatch(app, c)? } else { "[Black]".to_string() };
+    let fam = font_family.unwrap_or("Arial");
 
     if let Some(story_id) = sid {
         let _ = app.session.edit(|doc, _| {
             if let Some(story) = doc.story_mut(designcraft_doc::StoryId(story_id)) {
                 for r in &mut story.chars {
-                    r.format.over.font_family = Some("Arial".into());
+                    r.format.over.font_family = Some(fam.into());
                     r.format.over.size = Some(size);
                     r.format.over.font_style = Some(if bold { "Bold".into() } else { "Regular".into() });
                     r.format.over.fill = Some(swatch_name.clone());
@@ -343,6 +345,20 @@ pub fn emit_text(
     let _ = app.run("object.fill", json!({"ids": [fid], "swatch": "[None]"}));
 
     Ok(fid)
+}
+
+/// Emits a styled text frame onto the given spread (default Arial).
+pub fn emit_text(
+    app: &mut DesignApp,
+    spread_idx: usize,
+    rect: [f64; 4],
+    text: &str,
+    size: f64,
+    bold: bool,
+    align: &str,
+    color: Option<&str>,
+) -> Result<u64, String> {
+    emit_text_with_font(app, spread_idx, rect, text, size, bold, align, color, None)
 }
 
 /// Emits the complete chart layout onto the document spread.
@@ -371,7 +387,8 @@ pub fn emit_chart(
             [(gl.rect[0] - AXIS_LABEL_W - 4.0).max(0.0), gl.rect[1] - 6.0, gl.rect[0] - 4.0, gl.rect[1] + 6.0]
         };
         let align = if is_vertical_grid { "center" } else { "right" };
-        if let Ok(tfid) = emit_text(app, spread_idx, tick_rect, &gl.label, 7.5, false, align, Some("#666666")) {
+        let font = if spec.chart_type == super::spec::ChartType::Line { Some("Lato") } else { None };
+        if let Ok(tfid) = emit_text_with_font(app, spread_idx, tick_rect, &gl.label, 7.0, false, align, Some("#555555"), font) {
             frame_ids.push(tfid);
         }
     }
@@ -409,17 +426,68 @@ pub fn emit_chart(
 
     // 4. Line segments and markers
     for (s_idx, segments) in layout.line_segments.iter().enumerate() {
-        let color = series_color(palette, s_idx);
-        for &seg_rect in segments {
-            let fid = emit_rect(app, spread_idx, seg_rect, color, "[None]", 0.0)?;
-            frame_ids.push(fid);
+        let color = if spec.chart_type == super::spec::ChartType::Line && palette.is_empty() {
+            super::palette::brs_line_series_color(s_idx)
+        } else {
+            series_color(palette, s_idx)
+        };
+        for &seg in segments {
+            let [px, py, cx, cy] = seg;
+            let dx = cx - px;
+            let dy = cy - py;
+            let len = (dx * dx + dy * dy).sqrt();
+            if len > 1e-4 {
+                let half_w = 1.0;
+                let nx = -dy / len * half_w;
+                let ny = dx / len * half_w;
+                let pts = [(px + nx, py + ny), (cx + nx, cy + ny), (cx - nx, cy - ny), (px - nx, py - ny)];
+                if let Ok(fid) = emit_polygon(app, spread_idx, &pts, color, "[None]", 0.0) {
+                    frame_ids.push(fid);
+                }
+            }
         }
     }
     for (s_idx, markers) in layout.line_markers.iter().enumerate() {
-        let color = series_color(palette, s_idx);
+        let color = if spec.chart_type == super::spec::ChartType::Line && palette.is_empty() {
+            super::palette::brs_line_series_color(s_idx)
+        } else {
+            series_color(palette, s_idx)
+        };
         for &m_rect in markers {
-            let fid = emit_rect(app, spread_idx, m_rect, color, "[Paper]", 1.0)?;
-            frame_ids.push(fid);
+            if spec.chart_type == super::spec::ChartType::Line {
+                if s_idx == 0 {
+                    // Square marker
+                    if let Ok(fid) = emit_rect(app, spread_idx, m_rect, color, color, 0.0) {
+                        frame_ids.push(fid);
+                    }
+                } else if s_idx == 1 {
+                    // Circle marker (white center, color border)
+                    let cx = (m_rect[0] + m_rect[2]) / 2.0;
+                    let cy = (m_rect[1] + m_rect[3]) / 2.0;
+                    let r = 2.5;
+                    let pts: Vec<(f64, f64)> = (0..12)
+                        .map(|i| {
+                            let a = i as f64 * std::f64::consts::TAU / 12.0;
+                            (cx + r * a.cos(), cy + r * a.sin())
+                        })
+                        .collect();
+                    if let Ok(fid) = emit_polygon(app, spread_idx, &pts, "#FFFFFF", color, 1.5) {
+                        frame_ids.push(fid);
+                    }
+                } else {
+                    // Diamond marker
+                    let cx = (m_rect[0] + m_rect[2]) / 2.0;
+                    let cy = (m_rect[1] + m_rect[3]) / 2.0;
+                    let r = 2.8;
+                    let pts = [(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)];
+                    if let Ok(fid) = emit_polygon(app, spread_idx, &pts, color, "[None]", 0.0) {
+                        frame_ids.push(fid);
+                    }
+                }
+            } else {
+                let fid = emit_rect(app, spread_idx, m_rect, color, "[Paper]", 1.0)?;
+                frame_ids.push(fid);
+            }
         }
     }
 
@@ -698,7 +766,8 @@ pub fn emit_chart(
         } else {
             (series_color(palette, *s_idx), "center")
         };
-        if let Ok(fid) = emit_text(app, spread_idx, *v_rect, text, 7.5, true, align, Some(color)) {
+        let font = if spec.chart_type == super::spec::ChartType::Line { Some("Lato") } else { None };
+        if let Ok(fid) = emit_text_with_font(app, spread_idx, *v_rect, text, 7.5, true, align, Some(color), font) {
             frame_ids.push(fid);
         }
     }
@@ -752,6 +821,62 @@ pub fn emit_chart(
         }
     }
 
+    // 8b. Data Table
+    if let Some(table) = &layout.data_table {
+        for &line in &table.grid_lines {
+            if let Ok(fid) = emit_rect(app, spread_idx, line, "#666666", "[None]", 0.0) {
+                frame_ids.push(fid);
+            }
+        }
+        for cell in &table.cells {
+            let font = Some("Lato");
+            let color = Some("#111111");
+            let size = if cell.is_header {
+                6.5
+            } else if cell.is_bold {
+                7.0
+            } else {
+                6.5
+            };
+            if let Ok(tfid) = emit_text_with_font(app, spread_idx, cell.rect, &cell.text, size, cell.is_bold, cell.align, color, font) {
+                frame_ids.push(tfid);
+            }
+        }
+        for &(s_idx, m_rect, line) in &table.series_keys {
+            let color = if !palette.is_empty() { series_color(palette, s_idx) } else { super::palette::brs_line_series_color(s_idx) };
+            if let Ok(lfid) = emit_rect(app, spread_idx, line, color, "[None]", 0.0) {
+                frame_ids.push(lfid);
+            }
+            if s_idx == 0 {
+                let _ = emit_rect(app, spread_idx, m_rect, color, color, 0.0).map(|id| frame_ids.push(id));
+            } else if s_idx == 1 {
+                let cx = (m_rect[0] + m_rect[2]) / 2.0;
+                let cy = (m_rect[1] + m_rect[3]) / 2.0;
+                let r = 2.0;
+                let pts: Vec<(f64, f64)> = (0..12)
+                    .map(|i| {
+                        let a = i as f64 * std::f64::consts::TAU / 12.0;
+                        (cx + r * a.cos(), cy + r * a.sin())
+                    })
+                    .collect();
+                let _ = emit_polygon(app, spread_idx, &pts, "#FFFFFF", color, 1.2).map(|id| frame_ids.push(id));
+            } else {
+                let cx = (m_rect[0] + m_rect[2]) / 2.0;
+                let cy = (m_rect[1] + m_rect[3]) / 2.0;
+                let r = 2.2;
+                let pts = [(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)];
+                let _ = emit_polygon(app, spread_idx, &pts, color, "[None]", 0.0).map(|id| frame_ids.push(id));
+            }
+        }
+    }
+
+    // 8c. Bottom Title
+    if let Some((b_rect, b_title)) = &layout.bottom_title {
+        if let Ok(tfid) = emit_text_with_font(app, spread_idx, *b_rect, b_title, 9.5, true, "center", Some("#D97706"), Some("Raleway")) {
+            frame_ids.push(tfid);
+        }
+    }
+
     // 9. Group all emitted frames
     if frame_ids.len() > 1 {
         let _ = app.run("object.group", json!({"ids": frame_ids}));
@@ -793,6 +918,7 @@ mod tests {
             max_value_override: None,
             geojson_path: None,
             map_palette_idx: 0,
+            include_data_table: false,
         }
     }
 

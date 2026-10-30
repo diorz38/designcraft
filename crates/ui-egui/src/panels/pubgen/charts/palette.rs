@@ -21,6 +21,18 @@ pub const BPS_CHART_PALETTE: &[&str] = &[
 ///
 /// If `theme_colors` contains a valid hex at `series_idx`, that is used.
 /// Otherwise, cycles through `BPS_CHART_PALETTE`.
+/// Standard BPS BRS line chart palette (e.g. IT, IB, NTP): Red, Dark Navy, Steel Blue.
+pub const BPS_BRS_LINE_PALETTE: &[&str] = &[
+    "#C00000", // IT: Crimson Red
+    "#002060", // IB: Dark Navy
+    "#418AB3", // NTP: Steel Blue
+    "#0072BC", "#F5871F",
+];
+
+pub fn brs_line_series_color(series_idx: usize) -> &'static str {
+    BPS_BRS_LINE_PALETTE[series_idx % BPS_BRS_LINE_PALETTE.len()]
+}
+
 pub fn series_color(theme_colors: &[String], series_idx: usize) -> &str {
     if let Some(color) = theme_colors.get(series_idx)
         && !color.trim().is_empty()

@@ -459,6 +459,16 @@ fn row_template_slots(
             story.insert("narrative_body".into(), json!(rtf_file.to_string_lossy()));
             rtfs_resolved = 1;
         }
+    } else if type_val.eq_ignore_ascii_case("Image") || type_val.eq_ignore_ascii_case("Graphic") {
+        let note_title = title_val.trim();
+        text.insert("title".into(), json!(note_title));
+        if let Some(file_str) = file_opt
+            && let Some(img_file) = resolve_image_file(&st.card1_path, file_str, &["png", "jpg", "jpeg"])
+        {
+            image.insert("image".into(), json!(img_file.to_string_lossy()));
+            image.insert("photo".into(), json!(img_file.to_string_lossy()));
+            images_resolved = 1;
+        }
     } else if type_val.eq_ignore_ascii_case("Note") || type_val.eq_ignore_ascii_case("G") {
         let note_title = title_val.trim();
         text.insert("title".into(), json!(note_title));
@@ -527,6 +537,478 @@ fn row_template_slots(
     RowSlots { text, story, image, images_resolved, rtfs_resolved }
 }
 
+pub(crate) fn ensure_brs_heading_styles(app: &mut DesignApp) {
+    let _ = app.run("list.define", json!({"name": "BRS", "continueAcrossStories": true}));
+
+    let h1_params = json!({
+        "name": "Heading 1",
+        "chars": {
+            "fontFamily": "Raleway",
+            "fontStyle": "Bold",
+            "size": 13.0
+        },
+        "para": {
+            "listType": "numbers",
+            "listName": "BRS",
+            "listLevel": 1,
+            "numberExpression": "^#.^t",
+            "restartNumbers": true,
+            "restartAfterLevel": 0,
+            "spaceBefore": 12.0,
+            "spaceAfter": 4.0
+        }
+    });
+    if app.run("style.paragraph.edit", h1_params.clone()).is_err() {
+        let _ = app.run("style.paragraph.create", h1_params);
+    }
+
+    let h2_params = json!({
+        "name": "Heading 2",
+        "chars": {
+            "fontFamily": "Raleway",
+            "fontStyle": "Bold",
+            "size": 11.0
+        },
+        "para": {
+            "listType": "numbers",
+            "listName": "BRS",
+            "listLevel": 2,
+            "numberExpression": "^1.^#.^t",
+            "restartNumbers": true,
+            "restartAfterLevel": 0,
+            "spaceBefore": 8.0,
+            "spaceAfter": 3.0
+        }
+    });
+    if app.run("style.paragraph.edit", h2_params.clone()).is_err() {
+        let _ = app.run("style.paragraph.create", h2_params);
+    }
+
+    let title_params = json!({
+        "name": "Title",
+        "chars": {
+            "fontFamily": "Raleway",
+            "fontStyle": "Bold",
+            "size": 14.5
+        },
+        "para": {
+            "spaceBefore": 0.0,
+            "spaceAfter": 6.0
+        }
+    });
+    if app.run("style.paragraph.edit", title_params.clone()).is_err() {
+        let _ = app.run("style.paragraph.create", title_params);
+    }
+}
+
+pub(crate) fn format_brs_narrative_story(app: &mut DesignApp, fid: u64) {
+    let Some(active) = app.session.active() else { return };
+    let Some(it) = active.doc.item(designcraft_doc::ItemId(fid)) else { return };
+    let Some(tf) = it.text_frame() else { return };
+    let sid = tf.story;
+    let Some(story) = active.doc.story(sid) else { return };
+
+    let story_len = story.text.len();
+    if story_len == 0 {
+        return;
+    }
+
+    // Default font Lato
+    let _ = app.run("text.select", json!({"story": sid.0, "anchor": 0, "focus": story_len}));
+    let _ = app.run("type.char", json!({"fontFamily": "Lato", "size": 10.0}));
+
+    // Inspect paragraphs and determine styling without holding borrow during app.run
+    #[derive(Clone, Copy)]
+    enum BHeading {
+        Title,
+        H1,
+        H2,
+    }
+    let mut styling_targets: Vec<(usize, usize, BHeading)> = Vec::new();
+
+    if let Some(active) = app.session.active()
+        && let Some(story) = active.doc.story(sid)
+    {
+        let para_ranges = story.para_ranges();
+        for (i, p) in story.paras.iter().enumerate() {
+            let Some(r) = para_ranges.get(i) else { continue };
+            let p_text = story.text.get(r.clone()).unwrap_or("").trim();
+            if p_text.is_empty() {
+                continue;
+            }
+
+            let is_short_heading = p_text.len() <= 60 && !p_text.ends_with('.');
+
+            let is_title = p.style.eq_ignore_ascii_case("Title")
+                || (is_short_heading && (p_text.starts_with("A. ") || p_text.starts_with("B. ") || p_text.starts_with("C. ")));
+
+            let is_h1 = p.style.eq_ignore_ascii_case("Heading 1")
+                || (is_short_heading
+                    && (p_text == "Nilai Tukar Petani (NTP)"
+                        || p_text.starts_with("Indeks Harga yang Diterima")
+                        || p_text.starts_with("NTP Menurut Subsektor")
+                        || p_text.starts_with("Perbandingan NTP")
+                        || p_text.starts_with("Nilai Tukar Usaha Petani")));
+
+            let is_h2 = p.style.eq_ignore_ascii_case("Heading 2")
+                || (is_short_heading
+                    && (p_text.starts_with("Indeks Harga yang Dibayar")
+                        || p_text.starts_with("NTP Tanaman Pangan")
+                        || p_text.starts_with("NTP Tanaman Hortikultura")
+                        || p_text.starts_with("NTP Tanaman Perkebunan")
+                        || p_text.starts_with("NTP Peternakan")
+                        || p_text.starts_with("NTP Perikanan")));
+
+            if is_title {
+                styling_targets.push((r.start, r.end, BHeading::Title));
+            } else if is_h1 {
+                styling_targets.push((r.start, r.end, BHeading::H1));
+            } else if is_h2 {
+                styling_targets.push((r.start, r.end, BHeading::H2));
+            }
+        }
+    }
+
+    for (start, end, h_kind) in styling_targets {
+        let _ = app.run("text.select", json!({"story": sid.0, "anchor": start, "focus": end}));
+        match h_kind {
+            BHeading::Title => {
+                let _ = app.run("style.paragraph.apply", json!({"name": "Title"}));
+                let _ = app.run("type.char", json!({"fontFamily": "Raleway", "fontStyle": "Bold", "size": 14.5}));
+            }
+            BHeading::H1 => {
+                let _ = app.run("style.paragraph.apply", json!({"name": "Heading 1"}));
+                let _ = app.run("type.char", json!({"fontFamily": "Raleway", "fontStyle": "Bold", "size": 13.0}));
+            }
+            BHeading::H2 => {
+                let _ = app.run("style.paragraph.apply", json!({"name": "Heading 2"}));
+                let _ = app.run("type.char", json!({"fontFamily": "Raleway", "fontStyle": "Bold", "size": 11.0}));
+            }
+        }
+    }
+}
+
+fn set_brs_page_margins(app: &mut DesignApp, page_idx: usize, margins: designcraft_doc::Margins) {
+    let _ = app.session.edit(|doc, _| {
+        if let Some((si, pi)) = doc.page_loc(page_idx) {
+            if let Some(sp) = doc.spreads.get_mut(si) {
+                let sp = std::sync::Arc::make_mut(sp);
+                if let Some(pg) = sp.pages.get_mut(pi) {
+                    pg.margins = margins;
+                    pg.local_margins = true;
+                }
+                sp.relayout();
+            }
+        }
+        Ok(Value::Null)
+    });
+}
+
+fn get_brs_page_metrics(app: &DesignApp, page_idx: usize) -> Result<(designcraft_geom::Rect, designcraft_geom::Rect, usize), String> {
+    let active = app.session.active().ok_or("No active document")?;
+    let (si, pi) = active.doc.page_loc(page_idx).ok_or_else(|| format!("Page {page_idx} not found"))?;
+    let sp = active.doc.spreads.get(si).ok_or("Spread not found")?;
+    let pg = sp.pages.get(pi).ok_or("Page not found")?;
+
+    let page_bounds = pg.bounds();
+
+    let margin = designcraft_geom::Rect {
+        x0: page_bounds.x0 + pg.margins.inside.max(36.0),
+        y0: page_bounds.y0 + pg.margins.top.max(36.0),
+        x1: page_bounds.x1 - pg.margins.outside.max(36.0),
+        y1: page_bounds.y1 - pg.margins.bottom.max(36.0),
+    };
+
+    Ok((margin, page_bounds, si))
+}
+
+fn get_page_items_bottom(app: &DesignApp, page_idx: usize) -> Option<f64> {
+    let active = app.session.active()?;
+    let (si, pi) = active.doc.page_loc(page_idx)?;
+    let sp = active.doc.spreads.get(si)?;
+    let pg = sp.pages.get(pi)?;
+    let pg_bounds = pg.bounds();
+
+    let mut max_y = pg_bounds.y0;
+    let mut found = false;
+    for it in &sp.items {
+        let b = it.bounds();
+        if b.x0 >= pg_bounds.x0 && b.x1 <= pg_bounds.x1 + 10.0 {
+            if b.y1 > max_y {
+                max_y = b.y1;
+                found = true;
+            }
+        }
+    }
+    if found { Some(max_y) } else { None }
+}
+
+fn shrink_frame_height(app: &mut DesignApp, fid: u64, x0: f64, y0: f64, x1: f64, y1: f64) {
+    let _ = app.session.edit(|doc, _| {
+        if let Some(it) = doc.item_mut(designcraft_doc::ItemId(fid)) {
+            it.path = designcraft_geom::shapes::rectangle(designcraft_geom::Rect { x0, y0, x1, y1 });
+        }
+        Ok(Value::Null)
+    });
+}
+
+fn measure_frame_content_height(app: &DesignApp, fid: u64) -> Option<f64> {
+    let active = app.session.active()?;
+    let it = active.doc.item(designcraft_doc::ItemId(fid))?;
+    let tf = it.text_frame()?;
+    let cs = designcraft_compose::compose_story(&active.doc, tf.story, &Default::default());
+    let cf = cs.frames.iter().find(|f| f.frame == designcraft_doc::ItemId(fid))?;
+    Some(cf.content_height)
+}
+
+fn execute_generate_pages_brs(
+    app: &mut DesignApp,
+    st: &PubgenState,
+    slice: &[Vec<String>],
+    doc_margins: designcraft_doc::Margins,
+) -> Result<String, String> {
+    ensure_brs_heading_styles(app);
+
+    let mut generated_count = 0usize;
+    let mut inserted_tables_count = 0usize;
+    let mut inserted_rtfs_count = 0usize;
+    let mut inserted_images_count = 0usize;
+    let mut vector_charts_count = 0usize;
+
+    let (has_back_cover, active_pc) = {
+        let active = app.session.active();
+        let pc = active.as_ref().map(|s| s.doc.page_count()).unwrap_or(0);
+        let bc = active.as_ref().and_then(|s| super::covers::find_back_cover_page(&s.doc));
+        (bc, pc)
+    };
+
+    let mut cur_page_idx = if let Some(bc_idx) = has_back_cover {
+        app.run("layout.pages.insert", json!({"before": bc_idx, "count": 1}))?;
+        bc_idx
+    } else if active_pc > 0 && st.excel_had_cover {
+        app.run("layout.pages.insert", json!({"after": active_pc.saturating_sub(1), "count": 1}))?;
+        active_pc
+    } else if active_pc > 0 {
+        active_pc.saturating_sub(1)
+    } else {
+        app.run("layout.pages.insert", json!({"count": 1}))?;
+        0
+    };
+
+    set_brs_page_margins(app, cur_page_idx, doc_margins);
+
+    let (mut margin, _, mut spread_idx) = get_brs_page_metrics(app, cur_page_idx)?;
+    let mut cur_y = margin.y0;
+    let avail_h = (margin.y1 - margin.y0).max(100.0);
+    let half_page_h = (avail_h * 0.48).clamp(280.0, 370.0);
+    let gap = 12.0;
+
+    let mut last_narrative_fid: Option<u64> = None;
+
+    let file_col = effective_col(st.card1_file_col, &st.card1_headers, &["file", "filename"], 3);
+    let theme_col = effective_col(999, &st.card1_headers, &["theme", "themes", "table_theme", "color", "warna"], 999);
+
+    for row in slice {
+        let type_val = row.get(st.card1_type_col.min(2)).map(String::as_str).unwrap_or("").trim();
+        let num_val = row.get(st.card1_num_col.min(2)).map(String::as_str).unwrap_or("").trim();
+        let title_val = row.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("").trim();
+        let file_val = row.get(file_col).map(String::as_str).unwrap_or("").trim();
+        let theme_val = row.get(theme_col).map(String::as_str).unwrap_or("").trim();
+
+        let is_chart = is_chart_type(type_val) || type_val.eq_ignore_ascii_case("line") || title_val.to_lowercase().starts_with("gambar");
+        let is_table = type_val.eq_ignore_ascii_case("tabel") || type_val.eq_ignore_ascii_case("table") || excel::is_table_sheet_name(file_val);
+        let is_image = type_val.eq_ignore_ascii_case("image")
+            || type_val.eq_ignore_ascii_case("gambar")
+            || file_val.to_lowercase().ends_with(".png")
+            || file_val.to_lowercase().ends_with(".jpg");
+        let is_narrative = !is_chart && !is_table && !is_image;
+
+        if is_chart {
+            // Check if chart fits in remaining page height
+            if cur_y + half_page_h > margin.y1 {
+                // Advance to next page
+                app.run("layout.pages.insert", json!({"after": cur_page_idx, "count": 1}))?;
+                cur_page_idx += 1;
+                set_brs_page_margins(app, cur_page_idx, doc_margins);
+                let metrics = get_brs_page_metrics(app, cur_page_idx)?;
+                margin = metrics.0;
+                spread_idx = metrics.2;
+                cur_y = margin.y0;
+            }
+
+            let chart_margin = designcraft_geom::Rect { x0: margin.x0, y0: cur_y, x1: margin.x1, y1: cur_y + half_page_h };
+
+            let mut rendered = false;
+            let candidate = resolve_catalog_related_file(&st.card1_path, file_val, "csv");
+            if let Some(csv_path) = candidate
+                && let Ok(content) = std::fs::read_to_string(&csv_path)
+            {
+                let delim = detect_delimiter(&content);
+                let grid = parse_csv_content_with_delim(&content, delim);
+                let sheet_data = excel::ExcelSheetData { name: num_val.to_string(), grid, merges: Vec::new() };
+                if let Some(mut chart_spec) = super::charts::spec::parse_chart_spec(&sheet_data) {
+                    chart_spec.include_data_table = true;
+                    if let Ok((cats, vals)) = super::charts::spec::extract_chart_data(&sheet_data, &chart_spec) {
+                        if let Ok(layout) = super::charts::layout::compute_layout(&chart_spec, &cats, &vals, chart_margin, st.bilingual_output) {
+                            let palette = if !theme_val.is_empty() { vec![theme_val.to_string()] } else { Vec::new() };
+                            let _ = super::charts::emitter::emit_chart(app, spread_idx, &chart_spec, &layout, &palette, st.bilingual_output);
+                            rendered = true;
+                            vector_charts_count = vector_charts_count.saturating_add(1);
+                        }
+                    }
+                }
+            }
+
+            if !rendered {
+                let chart_h = 240.0;
+                let r = [margin.x0, cur_y, margin.x1, cur_y + chart_h];
+                let label = if !title_val.is_empty() { title_val } else { "Grafik" };
+                frame_with_font_and_style(app, spread_idx, r, label, "Raleway", 11.0, None);
+            }
+
+            let chart_bottom = get_page_items_bottom(app, cur_page_idx).unwrap_or(cur_y + half_page_h);
+            cur_y = (chart_bottom + gap).min(margin.y1);
+            generated_count = generated_count.saturating_add(1);
+        } else if is_table {
+            let mut matrix: Vec<Vec<String>> = Vec::new();
+            let table_file = resolve_catalog_related_file(&st.card1_path, file_val, "csv");
+            if let Some(ref tf) = table_file
+                && let Ok(content) = std::fs::read_to_string(tf)
+            {
+                let delim = detect_delimiter(&content);
+                matrix = parse_csv_content_with_delim(&content, delim);
+            }
+
+            let est_h = (matrix.len() as f64 * 18.0 + 50.0).clamp(100.0, avail_h);
+            if cur_y + est_h > margin.y1 || (margin.y1 - cur_y < 120.0) {
+                // Jump to next page
+                app.run("layout.pages.insert", json!({"after": cur_page_idx, "count": 1}))?;
+                cur_page_idx += 1;
+                set_brs_page_margins(app, cur_page_idx, doc_margins);
+                let metrics = get_brs_page_metrics(app, cur_page_idx)?;
+                margin = metrics.0;
+                spread_idx = metrics.2;
+                cur_y = margin.y0;
+            }
+
+            // Draw table title if present
+            if !title_val.is_empty() {
+                let title_h = 28.0;
+                let title_rect = [margin.x0, cur_y, margin.x1, cur_y + title_h];
+                frame_with_font_and_style(app, spread_idx, title_rect, title_val, "Raleway", 10.5, None);
+                cur_y += title_h + 4.0;
+            }
+
+            // Insert table
+            if !matrix.is_empty() {
+                let mut table_st = st.clone();
+                if !theme_val.is_empty() {
+                    table_st.card2_theme_override = Some(theme_val.to_string());
+                }
+                if execute_insert_table_matrix(app, &table_st, Some(&matrix), Some(cur_page_idx)).is_ok() {
+                    inserted_tables_count = inserted_tables_count.saturating_add(1);
+                }
+            }
+
+            let tbl_bottom = get_page_items_bottom(app, cur_page_idx).unwrap_or(cur_y + est_h);
+            cur_y = (tbl_bottom + gap).min(margin.y1);
+            generated_count = generated_count.saturating_add(1);
+        } else if is_narrative {
+            let rtf_file = resolve_catalog_related_file(&st.card1_path, file_val, "rtf");
+            if margin.y1 - cur_y < 120.0 {
+                // Jump to next page
+                app.run("layout.pages.insert", json!({"after": cur_page_idx, "count": 1}))?;
+                cur_page_idx += 1;
+                set_brs_page_margins(app, cur_page_idx, doc_margins);
+                let metrics = get_brs_page_metrics(app, cur_page_idx)?;
+                margin = metrics.0;
+                spread_idx = metrics.2;
+                cur_y = margin.y0;
+            }
+
+            let target_rect = [margin.x0, cur_y, margin.x1, margin.y1];
+            if let Ok(res) = app.run(
+                "frame.create",
+                json!({
+                    "spread": spread_idx,
+                    "rect": target_rect,
+                    "content": "text",
+                    "caret": false
+                }),
+            ) && let Some(fid) = res.get("id").and_then(Value::as_u64)
+            {
+                if let Some(ref rf) = rtf_file {
+                    let _ = app.run(
+                        "file.place",
+                        json!({
+                            "path": rf.to_string_lossy().to_string(),
+                            "frame": fid,
+                            "autoflow": false
+                        }),
+                    );
+                    inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
+                }
+
+                // Thread with previous narrative frame if present (appends this frame's text to the continuous story)
+                if let Some(prev_fid) = last_narrative_fid {
+                    let _ = app.session.edit(|doc, _| Ok(doc.thread(designcraft_doc::ItemId(prev_fid), designcraft_doc::ItemId(fid))?));
+                }
+
+                format_brs_narrative_story(app, fid);
+
+                let fit_h = measure_frame_content_height(app, fid).unwrap_or(180.0);
+                let clamped_h = (fit_h + 4.0).min(margin.y1 - cur_y);
+                shrink_frame_height(app, fid, margin.x0, cur_y, margin.x1, cur_y + clamped_h);
+
+                cur_y += clamped_h + gap;
+                last_narrative_fid = Some(fid);
+                generated_count = generated_count.saturating_add(1);
+            }
+        } else if is_image {
+            if margin.y1 - cur_y < 160.0 {
+                // Jump to next page
+                app.run("layout.pages.insert", json!({"after": cur_page_idx, "count": 1}))?;
+                cur_page_idx += 1;
+                set_brs_page_margins(app, cur_page_idx, doc_margins);
+                let metrics = get_brs_page_metrics(app, cur_page_idx)?;
+                margin = metrics.0;
+                spread_idx = metrics.2;
+                cur_y = margin.y0;
+            }
+
+            if let Some(file_str) = Some(file_val).filter(|s| !s.is_empty())
+                && let Some(img_file) = resolve_image_file(&st.card1_path, file_str, &["png", "jpg", "jpeg"])
+            {
+                let img_rect = [margin.x0, cur_y, margin.x1, margin.y1];
+                if let Ok(res) = app.run(
+                    "frame.create",
+                    json!({
+                        "spread": spread_idx,
+                        "rect": img_rect,
+                        "content": "graphic",
+                        "caret": false
+                    }),
+                ) && let Some(fid) = res.get("id").and_then(Value::as_u64)
+                {
+                    let _ = app.run("file.place", json!({"path": img_file.to_string_lossy().to_string(), "frame": fid}));
+                    let _ = app.run("object.fit", json!({"mode": "fitProportionally", "ids": [fid]}));
+                    let _ = app.run("object.fit", json!({"mode": "centerContent", "ids": [fid]}));
+                    inserted_images_count = inserted_images_count.saturating_add(1);
+                }
+            }
+
+            cur_y = margin.y1;
+            generated_count = generated_count.saturating_add(1);
+        }
+    }
+
+    super::covers::ensure_back_cover_at_end(app);
+
+    Ok(format!(
+        "Generated {generated_count} BRS objects ({inserted_tables_count} tables, {vector_charts_count} charts, {inserted_rtfs_count} narratives, {inserted_images_count} images)"
+    ))
+}
+
 pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
     if st.card1_records.is_empty() {
         return Err("No records to generate".into());
@@ -558,6 +1040,10 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
         let active = app.session.active().ok_or("No active document")?;
         detect_document_margins(&active.doc)
     };
+
+    if st.active_profile().id == "bps_brs" {
+        return execute_generate_pages_brs(app, st, slice, doc_margins);
+    }
 
     let file_col = effective_col(st.card1_file_col, &st.card1_headers, &["file", "filename"], 3);
     let template_col = effective_col(st.card1_template_col, &st.card1_headers, &["template"], 4);
@@ -1723,6 +2209,7 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                                         max_value_override: None,
                                         geojson_path: Some(map_info.map_name_or_path.clone()),
                                         map_palette_idx: pal_idx,
+                                        include_data_table: false,
                                     };
                                     // `compute_layout` reserves the title band itself, so the chart
                                     // margin starts at the page margin (no extra title offset).
@@ -4592,6 +5079,7 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
             max_value_override: None,
             geojson_path: None,
             map_palette_idx: 0,
+            include_data_table: false,
         };
         let categories = vec!["Desa A".into()];
         let values = vec![vec![100.0, 80.0]];
@@ -4627,6 +5115,7 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
             max_value_override: None,
             geojson_path: None,
             map_palette_idx: 0,
+            include_data_table: false,
         };
         let categories = vec!["Desa Karanganyar Subang".into()]; // > 12 chars
         let values = vec![vec![100.0]];

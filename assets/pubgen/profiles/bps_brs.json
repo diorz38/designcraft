@@ -19,7 +19,7 @@
     "restart_body_numbering": false,
     "require_chapter_dividers": false,
     "include_inside_cover": false,
-    "include_back_cover": false
+    "include_back_cover": true
   },
   "nomenclature": {
     "chapter_prefix": "",
@@ -41,6 +41,7 @@
   },
   "sheet_routing": {
     "cover_patterns": [
+      "(?i)^cov$",
       "(?i)^cover$",
       "(?i)^sampul$"
     ],
@@ -49,6 +50,8 @@
       "(?i)^section.*"
     ],
     "narrative_patterns": [
+      "(?i)^point$",
+      "(?i)^u\\d+.*",
       "(?i)^brs.*",
       "(?i)^utama.*",
       "(?i)^ringkasan.*",
@@ -56,14 +59,21 @@
       "(?i)^narrative.*"
     ],
     "table_patterns": [
+      "(?i)^t\\d+.*",
       "(?i)^tabel.*",
       "(?i)^table.*",
       "(?i)^\\d+[_.]\\d+.*"
     ],
     "chart_patterns": [
+      "(?i)^c\\d+.*",
       "(?i)^grafik.*",
-      "(?i)^chart.*",
-      "(?i)^c\\d+.*"
+      "(?i)^chart.*"
+    ],
+    "graphic_patterns": [
+      "(?i)^g\\d+.*",
+      "(?i)^gambar.*",
+      "(?i)^image.*",
+      "(?i)^infografik.*"
     ]
   },
   "table_styling": {
@@ -71,6 +81,10 @@
     "alternating_row_fills": true,
     "horizontal_rules_only": false,
     "default_theme_palette": "bps_teal"
+  },
+  "typography": {
+    "body_font": "Lato",
+    "heading_font": "Raleway",
+    "title_font": "Raleway"
   }
 }
-

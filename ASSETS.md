@@ -88,7 +88,7 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `assets/templates/covers/011_prism_diamonds.designcraft` | DesignCraft contributor (authored) | cover template for Cover Style 11 (Prism Diamonds): A4 artboard, a midnight field with a cascade of diamond shapes around a diamond-cut photograph, slot-tagged headline, second headline line, year, volume, metadata, photo and logo frames, embedded preview; embeds the Pubgen sample photo and emblem | CC0-1.0 — **confirm** (embedded sample photo/emblem) | Authored in DesignCraft |
 | `assets/templates/covers/012_quarter_stack.designcraft` | DesignCraft contributor (authored) | cover template for Cover Style 12 (Quarter Stack): A4 artboard, warm paper field, four fanned cards each rounding one corner around the photograph, a chip cascade, slot-tagged headline, second headline line, year, volume, metadata, photo and logo frames, embedded preview; embeds the Pubgen sample photo and emblem | CC0-1.0 — **confirm** (embedded sample photo/emblem) | Authored in DesignCraft |
 | `assets/templates/covers/100_ai_base.designcraft` | DesignCraft contributor (authored) | cover template for the AI Base cover styles (style id 100+): A4 artboard with a full-bleed `#slot:image:background` frame the AI generation fills, an accent band bound to the palette's Accent swatch, and slot-tagged headline, second headline line, year, volume, metadata and logo frames; embeds the Pubgen sample photo and emblem | CC0-1.0 — **confirm** (embedded sample photo/emblem) | Generated from `012_quarter_stack.designcraft` by `plan/pubgen/build_ai_base_template.ps1` (local) |
-| `assets/templates/covers/brs/brs.designcraft` | DesignCraft contributor (authored) | three-spread BRS cover sample (cover, inside, closing): imported layout with cover illustration, closing illustration and QR code embedded as assets | CC0-1.0 — **confirm** (embedded sample illustrations) | Authored in DesignCraft |
+| `assets/templates/covers/brs/brs.designcraft` | DesignCraft contributor (authored) | three-spread BRS cover sample (cover, inside, closing): imported layout with cover and closing illustrations embedded as assets | CC0-1.0 — **confirm** (embedded sample illustrations) | Authored in DesignCraft |
 | `assets/templates/covers_original/000_wave_curves.designcraft` | DesignCraft contributor (authored) | cover template for Cover Style 0 (Wave Curves): A4 artboard, slot-tagged headline, photo and logo frames, embedded preview; embeds the Pubgen sample photo and emblem | CC0-1.0 — **confirm** (embedded sample photo/emblem) | Authored in DesignCraft |
 | `assets/templates/covers_original/001_geometric_medallion.designcraft` | DesignCraft contributor (authored) | cover template for Cover Style 1 (Geometric Medallion): A4 artboard, two-frame headline slots, photo and logo frames; embeds the Pubgen sample photos and emblem | CC0-1.0 — **confirm** (embedded sample photo/emblem) | Authored in DesignCraft |
 | `assets/templates/covers_original/002_folded_origami.designcraft` | DesignCraft contributor (authored) | cover template for Cover Style 2 (Folded Origami): A4 artboard, two-frame headline slots, photo and logo frames; embeds the Pubgen sample photo and emblem | CC0-1.0 — **confirm** (embedded sample photo/emblem) | Authored in DesignCraft |
@@ -216,6 +216,43 @@ backend keeps the same files; hashes and upstream licence notices are retained h
 | `plan/pubgen/samples/thumb/tri_color_bands.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
 | `plan/pubgen/samples/thumb/urban_angle.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
 | `plan/pubgen/samples/thumb/wave_curves.png` | DesignCraft contributors | PubGen GIS/sample data | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/brs/G1.png` | DesignCraft contributors | PubGen BRS sample | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/brs/font/Raleway/Raleway-Italic-VariableFont_wght.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/Raleway-VariableFont_wght.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-Black.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-BlackItalic.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-Bold.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-BoldItalic.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-ExtraBold.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-ExtraBoldItalic.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-ExtraLight.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-ExtraLightItalic.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-Italic.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-Light.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-LightItalic.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-Medium.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-MediumItalic.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-Regular.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-SemiBold.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-SemiBoldItalic.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-Thin.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/Raleway/static/Raleway-ThinItalic.ttf` | Matt McInerney | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/lato/Lato-Black.ttf` | Łukasz Dziedzic | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/lato/Lato-BlackItalic.ttf` | Łukasz Dziedzic | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/lato/Lato-Bold.ttf` | Łukasz Dziedzic | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/lato/Lato-BoldItalic.ttf` | Łukasz Dziedzic | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/lato/Lato-Hairline.ttf` | Łukasz Dziedzic | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/lato/Lato-HairlineItalic.ttf` | Łukasz Dziedzic | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/lato/Lato-Italic.ttf` | Łukasz Dziedzic | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/lato/Lato-Light.ttf` | Łukasz Dziedzic | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/lato/Lato-LightItalic.ttf` | Łukasz Dziedzic | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/font/lato/Lato-Regular.ttf` | Łukasz Dziedzic | Google Fonts | OFL-1.1 | PubGen sample font |
+| `plan/pubgen/samples/brs/qr61.png` | DesignCraft contributors | PubGen BRS sample | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/brs/theme1.png` | DesignCraft contributors | PubGen BRS sample | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/brs/theme2.png` | DesignCraft contributors | PubGen BRS sample | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/brs/yana.jpg` | DesignCraft contributors | PubGen BRS sample | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/images/narasumber.jpg` | DesignCraft contributors | PubGen sample image | CC0-1.0 | PubGen asset |
+| `plan/pubgen/samples/images/page_12_logo_bps.png` | DesignCraft contributors | PubGen sample image | CC0-1.0 | PubGen asset |
 | ssets/pubgen/maps/CILAMAYA_KULON.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |
 | ssets/pubgen/maps/CILAMAYA_KULON.qmd | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock GIS metadata for PubGen |
 | ssets/pubgen/maps/CILAMAYA_KULON_DESA.geojson | DesignCraft contributors / BPS Karawang GIS | BPS open regional data | CC0-1.0 | Stock administrative boundary GeoJSON for PubGen |

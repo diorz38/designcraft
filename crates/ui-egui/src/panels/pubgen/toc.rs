@@ -1435,6 +1435,9 @@ pub(crate) fn generate_toc(app: &mut DesignApp, st: &PubgenState, page: usize, p
 }
 
 pub(crate) fn execute_add_toc(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, String> {
+    if st.active_profile().id == "bps_brs" || st.cover_style == 13 {
+        return Err("Table of Contents is not supported for BPS BRS publications".to_string());
+    }
     if app.session.active().is_none() {
         return Err("No active document".to_string());
     }
@@ -1471,6 +1474,9 @@ pub(crate) fn execute_add_toc(app: &mut DesignApp, st: &mut PubgenState) -> Resu
 /// Rebuild the table of contents on the page in view, keeping the TOC style, title and filter it
 /// was created with. With none on this page it is added, as when the document had none.
 pub(crate) fn execute_rebuild_toc(app: &mut DesignApp, st: &mut PubgenState) -> Result<String, String> {
+    if st.active_profile().id == "bps_brs" || st.cover_style == 13 {
+        return Err("Table of Contents is not supported for BPS BRS publications".to_string());
+    }
     let cur_page = target_page_index(app);
     let Some(sid) = toc_story_on_page(app, cur_page) else {
         return execute_add_toc(app, st);

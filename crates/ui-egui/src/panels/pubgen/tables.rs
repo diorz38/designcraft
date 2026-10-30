@@ -260,7 +260,7 @@ pub(crate) fn execute_insert_table_matrix(
             for it in &spread.items {
                 let b = it.bounds();
                 // Check if item lies on this page horizontally and in header region vertically
-                if b.x0 < page_r.x1 && b.x1 > page_r.x0 && b.y0 < margin.y0 + 260.0 {
+                if b.x0 < page_r.x1 && b.x1 > page_r.x0 && (st.active_profile().id == "bps_brs" || b.y0 < margin.y0 + 260.0) {
                     // Ignore text frames that already contain tables
                     let is_table = it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|st| !st.tables.is_empty());
                     if !is_table && b.y1 > title_bottom {

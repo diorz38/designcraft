@@ -6881,7 +6881,7 @@ pub fn open_toc(app: &mut DesignApp) {
     let d = &st.doc;
     let styles: Vec<&str> = d.styles.paragraph.iter().map(|p| p.name.as_str()).filter(|n| *n != designcraft_doc::NO_PARA_STYLE).collect();
     let char_styles: Vec<&str> = d.styles.character.iter().map(|c| c.name.as_str()).filter(|n| *n != designcraft_doc::NO_CHAR_STYLE).collect();
-    let toc = d.tocs.iter().filter(|t| d.story(t.story).is_some()).last();
+    let toc = d.tocs.iter().rfind(|t| d.story(t.story).is_some());
     let rows: Vec<TocRow> = toc
         .map(|t| {
             t.entries

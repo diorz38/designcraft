@@ -106,7 +106,9 @@ fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
     // 2. Load template document
     let tpl_doc = designcraft_format::load(&tpl_bytes).map_err(|e| bad("template.page.apply", format!("Invalid .designcraft template: {e}")))?;
 
-    let tpl_spread = tpl_doc.spreads.first().ok_or_else(|| bad("template.page.apply", "Template has no spreads"))?;
+    let spread_index = p.get("spread_index").or_else(|| p.get("spread")).and_then(Value::as_u64).unwrap_or(0) as usize;
+    let tpl_spread =
+        tpl_doc.spreads.get(spread_index).ok_or_else(|| bad("template.page.apply", format!("Template spread {spread_index} not found")))?;
     let tpl_page = tpl_spread.pages.first().ok_or_else(|| bad("template.page.apply", "Template has no pages"))?;
     let tpl_w = tpl_page.width;
     let tpl_h = tpl_page.height;
@@ -221,6 +223,13 @@ fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
         for tpl_style in &tpl_doc.styles.paragraph {
             if !d.styles.paragraph.iter().any(|s| s.name == tpl_style.name) {
                 d.styles_mut().paragraph.push(tpl_style.clone());
+            }
+        }
+
+        // Adopt any missing character styles from template
+        for tpl_style in &tpl_doc.styles.character {
+            if !d.styles.character.iter().any(|s| s.name == tpl_style.name) {
+                d.styles_mut().character.push(tpl_style.clone());
             }
         }
 

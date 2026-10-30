@@ -16,6 +16,8 @@ pub struct PubgenProfile {
     pub nomenclature: ProfileNomenclature,
     pub sheet_routing: ProfileSheetRouting,
     pub table_styling: ProfileTableStyling,
+    #[serde(default)]
+    pub typography: ProfileTypography,
 }
 
 impl Default for PubgenProfile {
@@ -172,6 +174,8 @@ pub struct ProfileSheetRouting {
     pub narrative_patterns: Vec<String>,
     pub table_patterns: Vec<String>,
     pub chart_patterns: Vec<String>,
+    #[serde(default)]
+    pub graphic_patterns: Vec<String>,
 }
 
 impl Default for ProfileSheetRouting {
@@ -182,6 +186,7 @@ impl Default for ProfileSheetRouting {
             narrative_patterns: vec!["(?i)^r\\d+.*".to_string(), "(?i)^ulasan.*".to_string()],
             table_patterns: vec!["(?i)^\\d+[_.]\\d+.*".to_string(), "(?i)^tabel.*".to_string(), "(?i)^table.*".to_string()],
             chart_patterns: vec!["(?i)^c\\d+.*".to_string(), "(?i)^chart.*".to_string(), "(?i)^grafik.*".to_string()],
+            graphic_patterns: vec!["(?i)^g\\d+.*".to_string(), "(?i)^gambar.*".to_string(), "(?i)^image.*".to_string()],
         }
     }
 }
@@ -222,6 +227,38 @@ impl ProfileSheetRouting {
 
     pub fn matches_chart(&self, sheet_name: &str) -> bool {
         matches_any_pattern(&self.chart_patterns, sheet_name)
+    }
+
+    pub fn matches_graphic(&self, sheet_name: &str) -> bool {
+        matches_any_pattern(&self.graphic_patterns, sheet_name)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ProfileTypography {
+    #[serde(default = "default_body_font")]
+    pub body_font: String,
+    #[serde(default = "default_heading_font")]
+    pub heading_font: String,
+    #[serde(default = "default_title_font")]
+    pub title_font: String,
+}
+
+fn default_body_font() -> String {
+    "Arial".to_string()
+}
+
+fn default_heading_font() -> String {
+    "Arial".to_string()
+}
+
+fn default_title_font() -> String {
+    "Arial Black".to_string()
+}
+
+impl Default for ProfileTypography {
+    fn default() -> Self {
+        Self { body_font: default_body_font(), heading_font: default_heading_font(), title_font: default_title_font() }
     }
 }
 
@@ -302,6 +339,7 @@ impl ProfileManager {
                 nomenclature: ProfileNomenclature::default(),
                 sheet_routing: ProfileSheetRouting::default(),
                 table_styling: ProfileTableStyling::default(),
+                typography: ProfileTypography::default(),
             },
         }
     }

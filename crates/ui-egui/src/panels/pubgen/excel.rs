@@ -12,6 +12,7 @@ use std::path::Path;
 use zip::ZipArchive;
 
 use super::locale;
+#[allow(clippy::wildcard_imports)]
 use super::*;
 
 /// Parsed worksheet data from an XLSX file.
@@ -44,6 +45,20 @@ pub struct ExcelCoverData {
     pub event_theme: String,
     pub office_address: String,
     pub palette: String,
+    pub release_no: String,
+    pub release_date: String,
+    pub release_month: String,
+    pub point: String,
+    pub qr_code: String,
+    pub pic_name: String,
+    pub pic_photo: String,
+    pub pic_position: String,
+    pub pic_office: String,
+    pub pic_phone: String,
+    pub pic_email: String,
+    pub image_theme1: String,
+    pub image_theme2: String,
+    pub points_body: Vec<String>,
 }
 
 /// Generated CSV data from conversion.
@@ -176,7 +191,16 @@ pub fn detect_profile_from_sheets(sheet_names: &[impl AsRef<str>]) -> &'static s
     for name in sheet_names {
         let s = name.as_ref().trim();
         let lower = s.to_lowercase();
-        if lower.starts_with("brs") || lower.contains("ringkasan") || lower.contains("utama") {
+        if lower.starts_with("brs")
+            || lower.contains("ringkasan")
+            || lower.contains("utama")
+            || lower == "point"
+            || (lower == "cov"
+                && sheet_names.iter().any(|n| {
+                    let nl = n.as_ref().trim().to_lowercase();
+                    nl == "point" || nl.starts_with('u') || nl.starts_with('t')
+                }))
+        {
             return "bps_brs";
         }
         if lower.contains("balancesheet")
@@ -347,9 +371,10 @@ pub fn extract_first_two_digit_number(text: &str) -> Option<String> {
     }
 }
 
-/// Check if a sheet carries Publication Cover values (named `COVER`).
+/// Check if a sheet carries Publication Cover values (named `COVER` or `COV` or `SAMPUL`).
 pub fn is_cover_sheet(sheet_name: &str) -> bool {
-    sheet_name.trim().eq_ignore_ascii_case("cover")
+    let s = sheet_name.trim();
+    s.eq_ignore_ascii_case("cover") || s.eq_ignore_ascii_case("cov") || s.eq_ignore_ascii_case("sampul")
 }
 
 pub fn is_cover_sheet_with_profile(sheet_name: &str, profile: &super::profiles::PubgenProfile) -> bool {
@@ -463,6 +488,19 @@ pub fn parse_cover_sheet(sheet: &ExcelSheetData) -> ExcelCoverData {
             "tabletheme" | "theme" | "tablecolor" | "color" | "colortheme" | "warna" => &mut cover.table_theme,
             "eventtheme" | "themeevent" | "imageback" | "backimage" | "backcover" => &mut cover.event_theme,
             "palette" | "aipalette" | "colorpalette" | "palet" => &mut cover.palette,
+            "no" | "nomor" | "releaseno" | "no_release" | "norelease" => &mut cover.release_no,
+            "date" | "tanggal" | "tgl" => &mut cover.release_date,
+            "month" | "bulan" => &mut cover.release_month,
+            "point" | "poin" | "highlight" => &mut cover.point,
+            "qr" | "qrcode" | "qr_code" => &mut cover.qr_code,
+            "picname" | "pic" | "narasumber" | "nama" => &mut cover.pic_name,
+            "picphoto" | "photo" | "foto" => &mut cover.pic_photo,
+            "position" | "jabatan" => &mut cover.pic_position,
+            "office" | "kantor" => &mut cover.pic_office,
+            "phone" | "telepon" | "telp" => &mut cover.pic_phone,
+            "email" | "surel" => &mut cover.pic_email,
+            "imagetheme1" | "theme1" => &mut cover.image_theme1,
+            "imagetheme2" | "theme2" => &mut cover.image_theme2,
             _ => {
                 // If it is row 3 (0-indexed 2) and title_en isn't set yet:
                 if row_idx == 2 && cover.title_en.is_empty() {
@@ -816,6 +854,15 @@ pub fn parse_rtf_review_sheet_bilingual(
         title_val = extract_field_lenient(row1, "title");
     }
 
+    if title_val.eq_ignore_ascii_case("file")
+        || title_val.eq_ignore_ascii_case("template")
+        || title_val.eq_ignore_ascii_case("divider")
+        || title_val.to_lowercase().ends_with(".rtf")
+    {
+        title_val = String::new();
+    }
+    title_val = title_val.replace("\r\n", " ").replace(['\n', '\r'], " ").split_whitespace().collect::<Vec<_>>().join(" ");
+
     if file_val.is_empty()
         && let Some(row2) = sheet.grid.get(1)
     {
@@ -948,21 +995,22 @@ pub fn is_map_sheet(sheet_name: &str) -> bool {
         return false;
     }
     let lower = s.to_lowercase();
-    if lower.starts_with('m') {
-        let rest = &lower[1..];
+    if let Some(rest) = lower.strip_prefix('m') {
         if rest.chars().all(|c| c.is_ascii_digit() || c == '_') && rest.chars().any(|c| c.is_ascii_digit()) {
             return true;
         }
-        if let Some(r) = rest.strip_prefix("ap_").or_else(|| rest.strip_prefix("ap")) {
-            if r.chars().all(|c| c.is_ascii_digit() || c == '_') && r.chars().any(|c| c.is_ascii_digit()) {
-                return true;
-            }
+        if let Some(r) = rest.strip_prefix("ap_").or_else(|| rest.strip_prefix("ap"))
+            && r.chars().all(|c| c.is_ascii_digit() || c == '_')
+            && r.chars().any(|c| c.is_ascii_digit())
+        {
+            return true;
         }
     }
-    if let Some(rest) = lower.strip_prefix("peta_").or_else(|| lower.strip_prefix("peta")) {
-        if rest.chars().all(|c| c.is_ascii_digit() || c == '_') && rest.chars().any(|c| c.is_ascii_digit()) {
-            return true;
-        }
+    if let Some(rest) = lower.strip_prefix("peta_").or_else(|| lower.strip_prefix("peta"))
+        && rest.chars().all(|c| c.is_ascii_digit() || c == '_')
+        && rest.chars().any(|c| c.is_ascii_digit())
+    {
+        return true;
     }
     false
 }
@@ -1103,7 +1151,8 @@ pub fn parse_note_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String,
         for row in &sheet.grid {
             for cell in row {
                 let c = cell.trim().trim_matches('"');
-                if c.to_lowercase().ends_with(".rtf") {
+                let lower = c.to_lowercase();
+                if lower.ends_with(".rtf") || lower.ends_with(".png") || lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
                     file_val = c.to_string();
                     break;
                 }
@@ -1165,7 +1214,14 @@ pub fn parse_note_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String,
 
     let template_val = extract_template_from_sheet(sheet);
 
-    Some(("Note".to_string(), num_val, title_val, file_val, template_val))
+    let entry_type =
+        if file_val.to_lowercase().ends_with(".png") || file_val.to_lowercase().ends_with(".jpg") || file_val.to_lowercase().ends_with(".jpeg") {
+            "Image".to_string()
+        } else {
+            "Note".to_string()
+        };
+
+    Some((entry_type, num_val, title_val, file_val, template_val))
 }
 
 /// Backward-compatible wrapper for `parse_note_sheet_with_template` returning 4-tuple.
@@ -1196,14 +1252,21 @@ pub fn parse_chart_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String
     let (title_val, file_val) = if let Some(spec) = super::charts::spec::parse_chart_spec(sheet) {
         let t =
             if !spec.title_id.is_empty() { spec.title_id } else { sheet.grid.first().map(|r| extract_field_lenient(r, "title")).unwrap_or_default() };
+        let t_clean = t.replace("\r\n", " ").replace('\n', " ").replace('\r', " ").split_whitespace().collect::<Vec<_>>().join(" ");
         let f = sheet.grid.iter().find_map(|r| extract_field_for_keys(r, &["file", "file_path", "image", "gambar"])).unwrap_or_default();
-        (t, f)
+        (t_clean, f)
     } else {
         let row1 = sheet.grid.first()?;
         let row2 = sheet.grid.get(1);
         let title = extract_field_lenient(row1, "title");
-        let file = row2.map(|r| extract_field_lenient(r, "file")).unwrap_or_default();
-        (title, file)
+        let title_clean = title.replace("\r\n", " ").replace('\n', " ").replace('\r', " ").split_whitespace().collect::<Vec<_>>().join(" ");
+        let file = sheet
+            .grid
+            .iter()
+            .find_map(|r| extract_field_for_keys(r, &["file", "file_path", "image", "gambar"]))
+            .or_else(|| row2.map(|r| extract_field_lenient(r, "file")))
+            .unwrap_or_default();
+        (title_clean, file)
     };
 
     if title_val.is_empty() && file_val.is_empty() {
@@ -1211,17 +1274,22 @@ pub fn parse_chart_sheet_with_template(sheet: &ExcelSheetData) -> Option<(String
     }
 
     let first_word = title_val.split_whitespace().next().unwrap_or("Grafik");
-    let type_val = if ["grafik", "graph", "chart", "bagan", "diagram", "peta", "map"].iter().any(|k| first_word.eq_ignore_ascii_case(k)) {
+    let type_val = if ["grafik", "graph", "chart", "bagan", "diagram", "peta", "map", "gambar"].iter().any(|k| first_word.eq_ignore_ascii_case(k)) {
         first_word.to_string()
     } else {
         "Grafik".to_string()
     };
 
-    let num_val = extract_dotted_number(&title_val).unwrap_or_else(|| {
-        let clean = sheet.name.trim();
-        let stripped = clean.strip_prefix('C').or_else(|| clean.strip_prefix('c')).unwrap_or(clean);
-        stripped.replace('_', ".")
-    });
+    let num_val = extract_dotted_number(&title_val)
+        .or_else(|| {
+            let words: Vec<&str> = title_val.split_whitespace().collect();
+            if words.len() >= 2 && words[1].chars().all(|c| c.is_ascii_digit()) { Some(words[1].to_string()) } else { None }
+        })
+        .unwrap_or_else(|| {
+            let clean = sheet.name.trim();
+            let stripped = clean.strip_prefix('C').or_else(|| clean.strip_prefix('c')).unwrap_or(clean);
+            stripped.replace('_', ".")
+        });
 
     let template_val = extract_template_from_sheet(sheet);
 
@@ -1708,6 +1776,24 @@ pub fn convert_excel_to_csv_data_with_profile(
             continue;
         }
 
+        // Check if sheet is the POINT highlights sheet (used for Page 2 in BRS profile)
+        if sheet_name.eq_ignore_ascii_case("point") {
+            let mut points = Vec::new();
+            for row in &sheet.grid {
+                let text = row.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
+                if !text.is_empty() {
+                    points.push(text);
+                }
+            }
+            if let Some(c) = &mut cover {
+                c.points_body = points.clone();
+            }
+            for bc in &mut batch_covers {
+                bc.points_body = points.clone();
+            }
+            continue;
+        }
+
         // Check if sheet is a DIV divider sheet
         if is_divider_sheet_with_profile(sheet_name, active_prof)
             && let Some((t_val, n_val, title_val, f_val, tpl_val, ten_val)) = parse_divider_sheet_bilingual(sheet)
@@ -1825,7 +1911,7 @@ pub fn convert_excel_to_csv_data_with_profile(
         {
             let chart_theme = extract_theme_from_sheet(sheet);
             let is_vector = super::charts::spec::parse_chart_spec(sheet).is_some();
-            let effective_file = if is_vector {
+            let effective_file = if is_vector || f_val.is_empty() || !f_val.to_lowercase().ends_with(".png") {
                 let filename = format!("{safe_name}.csv");
                 let csv_content = raw_sheet_to_csv(sheet);
                 table_csvs.push((filename.clone(), csv_content));
@@ -1944,6 +2030,8 @@ pub fn convert_excel_to_csv_data_with_profile(
         let (t_val, n_val, title_val, f_val) = parse_catalog_entry(&first_row, &safe_name);
         let tpl_val = extract_template_from_sheet(sheet);
         let tbl_theme = extract_theme_from_sheet(sheet).or_else(|| current_table_theme.clone());
+        let is_chart = is_chart_sheet(sheet_name) || t_val.eq_ignore_ascii_case("line") || title_val.to_lowercase().starts_with("gambar");
+
         entries.push(CatalogEntryItem {
             entry_type: t_val,
             number: n_val,
@@ -1957,8 +2045,11 @@ pub fn convert_excel_to_csv_data_with_profile(
             theme: tbl_theme.clone(),
         });
 
-        // 2. Process table data for individual CSV
-        if let Some(table_csv) = worksheet_to_csv_with_theme(sheet, tbl_theme.as_deref()) {
+        // 2. Process table or chart data for individual CSV
+        if is_chart {
+            let csv_content = raw_sheet_to_csv(sheet);
+            table_csvs.push((format!("{safe_name}.csv"), csv_content));
+        } else if let Some(table_csv) = worksheet_to_csv_with_theme(sheet, tbl_theme.as_deref()) {
             table_csvs.push((format!("{safe_name}.csv"), table_csv));
         }
     }
@@ -2398,6 +2489,7 @@ pub fn execute_convert_excel_with_profile(path: &str, profile: Option<&super::pr
 
 #[cfg(test)]
 mod tests {
+    #[allow(clippy::wildcard_imports)]
     use super::*;
 
     #[test]
@@ -3572,6 +3664,10 @@ pub fn cover_style_index(spec: &str) -> Option<usize> {
     }) {
         return Some(idx);
     }
+    // BRS cover template mapping
+    if want == "brs" || want == "bpsbrs" || want == "beritaresmistatistik" {
+        return Some(13);
+    }
     // AI Base styles (100+): the sheet may say "AI Base: Retro Waves", "AI Retro Waves", or "Retro Waves".
     if let Some(i) = super::ai_cover::AI_PRESETS.iter().position(|p| {
         let n1 = norm(&format!("AI {}", p.name));
@@ -3659,6 +3755,10 @@ pub(crate) fn apply_excel_cover(st: &mut PubgenState, cover: &ExcelCoverData, ba
     if !cover.office_address.trim().is_empty() || !cover.event_theme.trim().is_empty() {
         st.cover_include_inside_back = true;
     }
+    if st.active_profile().id == "bps_brs" || !cover.release_no.is_empty() || !cover.points_body.is_empty() {
+        st.cover_style = 13;
+        st.cover_include_inside_back = false;
+    }
     if !cover.table_theme.trim().is_empty()
         && let Some(th) = parse_table_color_theme(&cover.table_theme)
     {
@@ -3688,6 +3788,7 @@ pub fn execute_excel_to_csvs(st: &mut PubgenState, path: &str) -> Result<String,
     st.excel_source_path = path.to_string();
     st.excel_had_cover = pkg.cover.is_some();
     st.excel_batch_covers = pkg.batch_covers.clone();
+    st.excel_cover = pkg.cover.clone();
     if let Some(cover) = &pkg.cover {
         apply_excel_cover(st, cover, Path::new(path).parent());
     }
@@ -3722,9 +3823,15 @@ pub fn execute_excel_and_generate(app: &mut DesignApp, st: &mut PubgenState, pat
         return Ok(conv_msg);
     }
 
+    let is_brs = st.active_profile().id == "bps_brs" || st.cover_style == 13;
+
     // Ensure an active document exists
     if app.session.active().is_none() {
-        let _ = app.run("file.new", json!({}));
+        if is_brs {
+            let _ = app.run("file.new", json!({"facingPages": false}));
+        } else {
+            let _ = app.run("file.new", json!({}));
+        }
     }
 
     // Apply default options for automatic page and table generation
@@ -3737,24 +3844,37 @@ pub fn execute_excel_and_generate(app: &mut DesignApp, st: &mut PubgenState, pat
 
     let mut cover_res_msg = None;
     if st.excel_had_cover {
-        // The cover pages (front cover and inside cover) go before Page 1. Generating them before the body pages ensures
-        // that all subsequent body pages land on their permanent spreads and page sides (Left vs Right),
-        // preventing spread repagination from flipping inside and outside margins.
-        match execute_generate_front_cover(app, st) {
-            Ok(sname) => {
-                if st.cover_include_inside_back
-                    && let Err(e) = execute_generate_inside_cover(app)
-                {
-                    return Ok(format!("{conv_msg}, but inside cover failed: {e}"));
+        if is_brs {
+            match execute_generate_brs_front_and_point(app, st) {
+                Ok(msg) => {
+                    st.cover_status = Some((msg.clone(), true));
+                    cover_res_msg = Some(msg);
                 }
-                let cover_msg =
-                    if st.cover_include_inside_back { format!("Front Cover & Inside Cover ({sname})") } else { format!("Cover ({sname})") };
-                st.cover_status = Some((cover_msg.clone(), true));
-                cover_res_msg = Some(cover_msg);
+                Err(e) => {
+                    st.cover_status = Some((e.clone(), false));
+                    return Ok(format!("{conv_msg}, but BRS cover failed: {e}"));
+                }
             }
-            Err(e) => {
-                st.cover_status = Some((e.clone(), false));
-                return Ok(format!("{conv_msg}, but cover failed: {e}"));
+        } else {
+            // The cover pages (front cover and inside cover) go before Page 1. Generating them before the body pages ensures
+            // that all subsequent body pages land on their permanent spreads and page sides (Left vs Right),
+            // preventing spread repagination from flipping inside and outside margins.
+            match execute_generate_front_cover(app, st) {
+                Ok(sname) => {
+                    if st.cover_include_inside_back
+                        && let Err(e) = execute_generate_inside_cover(app)
+                    {
+                        return Ok(format!("{conv_msg}, but inside cover failed: {e}"));
+                    }
+                    let cover_msg =
+                        if st.cover_include_inside_back { format!("Front Cover & Inside Cover ({sname})") } else { format!("Cover ({sname})") };
+                    st.cover_status = Some((cover_msg.clone(), true));
+                    cover_res_msg = Some(cover_msg);
+                }
+                Err(e) => {
+                    st.cover_status = Some((e.clone(), false));
+                    return Ok(format!("{conv_msg}, but cover failed: {e}"));
+                }
             }
         }
     }
@@ -3764,8 +3884,12 @@ pub fn execute_excel_and_generate(app: &mut DesignApp, st: &mut PubgenState, pat
     match gen_res {
         Ok(gen_msg) => {
             st.card1_status = Some((gen_msg.clone(), true));
-            if st.excel_had_cover && st.cover_include_inside_back {
-                let _ = execute_generate_back_cover(app, st);
+            if st.excel_had_cover {
+                if is_brs {
+                    let _ = execute_generate_brs_back_cover(app, st);
+                } else if st.cover_include_inside_back {
+                    let _ = execute_generate_back_cover(app, st);
+                }
             }
             ensure_back_cover_at_end(app);
             let count = st.card2_sheet_tables.len();
@@ -3938,6 +4062,7 @@ pub(crate) fn master_excel_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
 #[cfg(test)]
 pub(crate) mod flow_tests {
     use super::super::state::default_cover_title;
+    #[allow(clippy::wildcard_imports)]
     use super::*;
 
     #[test]

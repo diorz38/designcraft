@@ -516,6 +516,9 @@ pub struct PubgenState {
     /// Batch of covers parsed from Excel COVER sheet (when multiple publications/covers exist)
     #[serde(skip)]
     pub excel_batch_covers: Vec<super::excel::ExcelCoverData>,
+    /// Cover parsed from Excel COVER sheet
+    #[serde(skip)]
+    pub excel_cover: Option<super::excel::ExcelCoverData>,
 
     // Card: Header & Footer Template (between Cover and Quick Actions)
     #[serde(default = "default_hf_style")]
@@ -757,6 +760,7 @@ impl Default for PubgenState {
             profile_user_locked: false,
             profile_detected_id: None,
             dialog_profile_customize_open: false,
+            excel_cover: None,
         }
     }
 }
@@ -781,6 +785,10 @@ impl PubgenState {
         }
         if user_locked {
             self.profile_user_locked = true;
+        }
+        if profile.id == "bps_brs" {
+            self.cover_style = 13;
+            self.cover_include_inside_back = false;
         }
         if profile.id == "custom" {
             self.profile_custom = Some(profile);

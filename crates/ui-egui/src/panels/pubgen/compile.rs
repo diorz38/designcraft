@@ -364,18 +364,19 @@ impl CompilePlan {
         // Without a dedicated workbook the first chapter supplies the leading narrative rows; the
         // step is planned anyway and discovers them at compile time.
         steps.push(CompileStep::FrontMatter);
+        let is_brs = self.manifest.profile.as_deref() == Some("bps_brs");
         let toc_at_end = self.manifest.toc.placement == "end";
-        if !toc_at_end && !self.manifest.toc.lists.is_empty() {
+        if !is_brs && !toc_at_end && !self.manifest.toc.lists.is_empty() {
             steps.push(CompileStep::TocPlaceholders);
         }
         steps.extend((0..self.chapters.len()).map(CompileStep::Chapter));
-        if toc_at_end && !self.manifest.toc.lists.is_empty() {
+        if !is_brs && toc_at_end && !self.manifest.toc.lists.is_empty() {
             steps.push(CompileStep::TocPlaceholders);
         }
         if include_back {
             steps.push(CompileStep::BackCover);
         }
-        if !self.manifest.toc.lists.is_empty() {
+        if !is_brs && !self.manifest.toc.lists.is_empty() {
             steps.push(CompileStep::TocFinalize);
         }
         steps.extend([CompileStep::Sections, CompileStep::RunningHeaders, CompileStep::SaveDocument]);
@@ -1319,6 +1320,7 @@ pub(crate) const COVER_STYLES: &[&str] = &[
     "Tri-Color Bands",
     "Prism Diamonds",
     "Quarter Stack",
+    "BPS Berita Resmi Statistik (BRS)",
 ];
 
 pub(crate) const COVER_THEMES: &[&str] = &[

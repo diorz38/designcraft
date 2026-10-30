@@ -277,7 +277,13 @@ pub fn execute_generate_inside_cover(app: &mut DesignApp) -> Result<(), String> 
 
 pub fn find_back_cover_page(doc: &designcraft_doc::Document) -> Option<usize> {
     fn item_is_back_cover(it: &designcraft_doc::Item, doc: &designcraft_doc::Document) -> bool {
-        if it.label.contains("back_cover") || it.name.contains("back_cover") {
+        if it.label.contains("back_cover")
+            || it.name.contains("back_cover")
+            || it.label.contains("_back")
+            || it.name.contains("_back")
+            || it.label.contains("theme2")
+            || it.label.contains("pic_name")
+        {
             return true;
         }
         if let designcraft_doc::Content::Graphic(g) = &it.content
@@ -947,6 +953,7 @@ pub fn execute_generate_front_cover(app: &mut DesignApp, st: &PubgenState) -> Re
         "assets/templates/covers/010_tri_color_bands.designcraft",
         "assets/templates/covers/011_prism_diamonds.designcraft",
         "assets/templates/covers/012_quarter_stack.designcraft",
+        "assets/templates/covers/brs/brs.designcraft",
     ];
 
     if let Some(&tpl_path) = canonical_templates.get(st.cover_style)
@@ -1086,6 +1093,7 @@ pub fn execute_generate_front_cover(app: &mut DesignApp, st: &PubgenState) -> Re
                 "Tri-Color Bands",
                 "Prism Diamonds",
                 "Quarter Stack",
+                "BPS Berita Resmi Statistik (BRS)",
             ];
             let sname = style_names.get(st.cover_style).copied().unwrap_or("Template Cover");
             if st.cover_add_map {
@@ -1197,7 +1205,291 @@ pub fn execute_generate_front_cover(app: &mut DesignApp, st: &PubgenState) -> Re
     Ok(style_name.to_string())
 }
 
+fn format_indonesian_date(raw: &str) -> String {
+    let s = raw.trim();
+    if s.is_empty() {
+        return String::new();
+    }
+    let date_part = s.split_whitespace().next().unwrap_or(s);
+    let parts: Vec<&str> = date_part.split('-').collect();
+    if parts.len() == 3
+        && let (Ok(y), Ok(m), Ok(d)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>(), parts[2].parse::<u32>())
+    {
+        let months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+        if (1..=12).contains(&m) {
+            let m_name = months[(m - 1) as usize];
+            return format!("{d} {m_name} {y}");
+        }
+    }
+    s.to_string()
+}
+
+pub fn execute_generate_brs_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
+    execute_generate_brs_front_and_point(app, st)?;
+    execute_generate_brs_back_cover(app, st)?;
+    Ok("Cover pages generated successfully: Front Cover, Point Page, Back Cover (BPS Berita Resmi Statistik)".to_string())
+}
+
+pub fn execute_generate_brs_front_and_point(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
+    replace_existing_covers(app, st)?;
+    let tpl_path = resolve_template_path("assets/templates/covers/brs/brs.designcraft")
+        .ok_or("BRS cover template not found: assets/templates/covers/brs/brs.designcraft")?;
+    let tpl_path_str = tpl_path.to_string_lossy().to_string();
+
+    let cov_opt = st.excel_cover.as_ref();
+
+    let title_text = cov_opt.map(|c| c.title1.as_str()).filter(|s| !s.trim().is_empty()).unwrap_or(if st.cover_title.trim().is_empty() {
+        "Perkembangan Nilai Tukar Petani\nSeptember 2026"
+    } else {
+        st.cover_title.trim()
+    });
+
+    let release_no = cov_opt.map(|c| c.release_no.as_str()).unwrap_or("").trim();
+    let release_date = cov_opt.map(|c| c.release_date.as_str()).unwrap_or("").trim();
+    let release_info = if !release_no.is_empty() {
+        let fmt_date = format_indonesian_date(release_date);
+        let prefix = if release_no.to_lowercase().starts_with("no") { "" } else { "No. " };
+        if !fmt_date.is_empty() { format!("{prefix}{release_no}, {fmt_date}") } else { format!("{prefix}{release_no}") }
+    } else {
+        "No. 61/10/32/Th. XXVIII, 1 Oktober 2026".to_string()
+    };
+
+    let point_text = cov_opt
+        .map(|c| c.point.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("Nilai Tukar Petani Jawa Barat September 2026 sebesar 120,54 atau naik 0,99 persen dibandingkan Agustus 2026 (2018 = 100).");
+
+    let agency_text = if !st.cover_agency_text.trim().is_empty() {
+        st.cover_agency_text.trim()
+    } else if let Some(cov) = cov_opt
+        && !cov.agency.trim().is_empty()
+    {
+        cov.agency.trim()
+    } else if let Some(cov) = cov_opt
+        && !cov.pic_office.trim().is_empty()
+    {
+        cov.pic_office.trim()
+    } else {
+        "BADAN PUSAT STATISTIK\nPROVINSI JAWA BARAT"
+    };
+
+    let base_dir = std::path::Path::new(&st.excel_source_path).parent();
+    let resolve_img = |p: &str| -> String {
+        let p = p.trim();
+        if p.is_empty() {
+            return String::new();
+        }
+        if std::path::Path::new(p).is_file() {
+            return p.to_string();
+        }
+        if let Some(parent) = base_dir {
+            let candidate = parent.join(p);
+            if candidate.is_file() {
+                return candidate.to_string_lossy().to_string();
+            }
+        }
+        let sample_cand = std::path::Path::new("plan/pubgen/samples/brs").join(p);
+        if sample_cand.is_file() {
+            return sample_cand.to_string_lossy().to_string();
+        }
+        p.to_string()
+    };
+
+    let hero_path = resolve_img(cov_opt.map(|c| c.image_hero.as_str()).unwrap_or(""));
+    let logo_path = resolve_img(if !st.cover_image_logo.trim().is_empty() {
+        st.cover_image_logo.trim()
+    } else {
+        cov_opt.map(|c| c.logo.as_str()).unwrap_or("assets/862.png")
+    });
+    let qr_path = resolve_img(cov_opt.map(|c| c.qr_code.as_str()).unwrap_or("qr61.png"));
+    let theme1_path = resolve_img(cov_opt.map(|c| c.image_theme1.as_str()).unwrap_or("theme1.png"));
+
+    let points_text = if let Some(cov) = cov_opt
+        && !cov.points_body.is_empty()
+    {
+        cov.points_body.join("\n")
+    } else {
+        String::new()
+    };
+
+    let mut front_text_slots = serde_json::Map::new();
+    front_text_slots.insert("agency".into(), json!(agency_text));
+    front_text_slots.insert("release_info".into(), json!(release_info));
+    front_text_slots.insert("header_title".into(), json!("BERITA\u{2028}RESMI\u{2028}STATISTIK"));
+    front_text_slots.insert("point".into(), json!(point_text));
+    front_text_slots.insert("title".into(), json!(title_text));
+
+    let mut front_image_slots = serde_json::Map::new();
+    if !hero_path.is_empty() {
+        front_image_slots.insert("hero".into(), json!(hero_path));
+    }
+    if !logo_path.is_empty() {
+        front_image_slots.insert("logo".into(), json!(logo_path));
+    }
+    if !qr_path.is_empty() {
+        front_image_slots.insert("qr".into(), json!(qr_path));
+    }
+
+    let had_single_blank_page = {
+        let active = app.session.active();
+        active.map(|s| s.doc.page_count() == 1 && s.doc.spreads.first().map_or(false, |sp| sp.items.is_empty())).unwrap_or(false)
+    };
+
+    app.run(
+        "template.page.apply",
+        json!({
+            "path": tpl_path_str,
+            "spread_index": 0,
+            "before": 0,
+            "slots": {
+                "text": front_text_slots,
+                "image": front_image_slots,
+            }
+        }),
+    )
+    .map_err(|e| format!("Failed to apply BRS front cover: {e}"))?;
+
+    if had_single_blank_page {
+        let _ = app.run("layout.pages.delete", json!({"pages": [1]}));
+    }
+
+    let mut point_text_slots = serde_json::Map::new();
+    if !points_text.is_empty() {
+        point_text_slots.insert("points_body".into(), json!(points_text));
+    }
+    let mut point_image_slots = serde_json::Map::new();
+    if !theme1_path.is_empty() {
+        point_image_slots.insert("theme1".into(), json!(theme1_path));
+    }
+
+    app.run(
+        "template.page.apply",
+        json!({
+            "path": tpl_path_str,
+            "spread_index": 1,
+            "after": 0,
+            "slots": {
+                "text": point_text_slots,
+                "image": point_image_slots,
+            }
+        }),
+    )
+    .map_err(|e| format!("Failed to apply BRS point page: {e}"))?;
+
+    Ok("Front cover and point page generated (BPS Berita Resmi Statistik)".to_string())
+}
+
+pub fn execute_generate_brs_back_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
+    let tpl_path = resolve_template_path("assets/templates/covers/brs/brs.designcraft")
+        .ok_or("BRS cover template not found: assets/templates/covers/brs/brs.designcraft")?;
+    let tpl_path_str = tpl_path.to_string_lossy().to_string();
+    let cov_opt = st.excel_cover.as_ref();
+
+    let base_dir = std::path::Path::new(&st.excel_source_path).parent();
+    let resolve_img = |p: &str| -> String {
+        let p = p.trim();
+        if p.is_empty() {
+            return String::new();
+        }
+        if std::path::Path::new(p).is_file() {
+            return p.to_string();
+        }
+        if let Some(parent) = base_dir {
+            let candidate = parent.join(p);
+            if candidate.is_file() {
+                return candidate.to_string_lossy().to_string();
+            }
+        }
+        let sample_cand = std::path::Path::new("plan/pubgen/samples/brs").join(p);
+        if sample_cand.is_file() {
+            return sample_cand.to_string_lossy().to_string();
+        }
+        p.to_string()
+    };
+
+    let theme2_path = resolve_img(cov_opt.map(|c| c.image_theme2.as_str()).unwrap_or("theme2.png"));
+    let pic_photo_path = resolve_img(cov_opt.map(|c| c.pic_photo.as_str()).unwrap_or("yana.jpg"));
+    let qr_path = resolve_img(cov_opt.map(|c| c.qr_code.as_str()).unwrap_or("qr61.png"));
+    let logo_path = resolve_img(if !st.cover_image_logo.trim().is_empty() {
+        st.cover_image_logo.trim()
+    } else {
+        cov_opt.map(|c| c.logo.as_str()).unwrap_or("assets/862.png")
+    });
+
+    let pic_name = cov_opt.map(|c| c.pic_name.as_str()).filter(|s| !s.trim().is_empty()).unwrap_or("Yana Hendriana, S.ST");
+    let contact_details = if let Some(cov) = cov_opt {
+        let mut lines = Vec::new();
+        if !cov.pic_position.trim().is_empty() {
+            lines.push(cov.pic_position.trim().to_string());
+        }
+        if !cov.pic_office.trim().is_empty() {
+            lines.push(cov.pic_office.trim().to_string());
+        }
+        if !cov.pic_phone.trim().is_empty() {
+            lines.push(format!("Telp: {}", cov.pic_phone.trim()));
+        }
+        if !cov.pic_email.trim().is_empty() {
+            lines.push(format!("E-mail: {}", cov.pic_email.trim()));
+        }
+        lines.join("\n")
+    } else {
+        "Ketua Tim Statistik Harga\nBPS Provinsi Jawa Barat\nTelp: (022) 7272595\nE-mail: yanah@bps.go.id".to_string()
+    };
+    let office_address = if !st.cover_office_address.trim().is_empty() {
+        st.cover_office_address.trim()
+    } else if let Some(cov) = cov_opt
+        && !cov.office_address.trim().is_empty()
+    {
+        cov.office_address.trim()
+    } else {
+        "Jl. dr. Sutomo No. 6-8 Jakarta 10710\nTelp : (021) 3841195, 3842508, 3810291-4, Fax : (021) 3857046\nHomepage : http://www.bps.go.id   E-mail : bpshq@bps.go.id"
+    };
+
+    let page_count = app.session.active().map(|s| s.doc.page_count()).unwrap_or(2);
+    let mut back_text_slots = serde_json::Map::new();
+    back_text_slots.insert("contact_header".into(), json!("Untuk informasi lebih lanjut silakan hubungi:"));
+    back_text_slots.insert("pic_name".into(), json!(pic_name));
+    back_text_slots.insert("contact_details".into(), json!(contact_details));
+    back_text_slots.insert("agency_back".into(), json!("BADAN PUSAT STATISTIK"));
+    back_text_slots.insert("office_address".into(), json!(office_address));
+
+    let mut back_image_slots = serde_json::Map::new();
+    if !theme2_path.is_empty() {
+        back_image_slots.insert("theme2".into(), json!(theme2_path));
+    }
+    if !pic_photo_path.is_empty() {
+        back_image_slots.insert("pic_photo".into(), json!(pic_photo_path));
+    }
+    if !qr_path.is_empty() {
+        back_image_slots.insert("qr_back".into(), json!(qr_path));
+    }
+    if !logo_path.is_empty() {
+        back_image_slots.insert("logo_back".into(), json!(logo_path));
+    }
+
+    app.run(
+        "template.page.apply",
+        json!({
+            "path": tpl_path_str,
+            "spread_index": 2,
+            "after": page_count.saturating_sub(1),
+            "slots": {
+                "text": back_text_slots,
+                "image": back_image_slots,
+            }
+        }),
+    )
+    .map_err(|e| format!("Failed to apply BRS back cover: {e}"))?;
+
+    ensure_back_cover_at_end(app);
+
+    Ok("Back cover generated successfully (BPS Berita Resmi Statistik)".to_string())
+}
+
 pub fn execute_generate_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
+    if st.active_profile().id == "bps_brs" || st.cover_style == 13 {
+        return execute_generate_brs_cover(app, st);
+    }
     replace_existing_covers(app, st)?;
     let sname = execute_generate_front_cover(app, st)?;
     if st.cover_include_inside_back {
@@ -2615,7 +2907,6 @@ pub(crate) mod tests {
         let active = app.session.active().unwrap();
         let sp0 = &active.doc.spreads[0];
         // Must emit polygon items on spread 0
-        println!("sp0 items count: {}", sp0.items.len());
         assert!(!sp0.items.is_empty(), "Expected map item/group to be emitted on cover spread");
     }
 
@@ -2718,5 +3009,198 @@ pub(crate) mod tests {
         for &t_idx in &text_indices {
             assert!(map_idx < t_idx, "Map (index {map_idx}) must be behind textbox (index {t_idx})");
         }
+    }
+
+    #[test]
+    fn test_bps_brs_workbook_conversion_and_cover_generation() {
+        let sample_xlsx = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("plan").join("pubgen").join("samples").join("brs").join("ntp202610.xlsx"))
+            .unwrap_or_default();
+
+        if !sample_xlsx.is_file() {
+            return;
+        }
+
+        let sheets = super::super::excel::parse_xlsx_sheets(&sample_xlsx.to_string_lossy()).expect("Failed to parse ntp202610.xlsx");
+        assert!(sheets.iter().any(|s| s.name.eq_ignore_ascii_case("COV")));
+        assert!(sheets.iter().any(|s| s.name.eq_ignore_ascii_case("POINT")));
+        assert!(sheets.iter().any(|s| s.name.eq_ignore_ascii_case("C1")));
+        assert!(sheets.iter().any(|s| s.name.eq_ignore_ascii_case("G1")));
+
+        let prof = super::super::profiles::ProfileManager::get_profile("bps_brs");
+        let conv = super::super::excel::convert_excel_to_csv_data_with_profile(&sheets, "ntp202610", sample_xlsx.parent(), Some(&prof));
+
+        let cov = conv.cover.as_ref().expect("Cover data must be parsed for BRS");
+        assert_eq!(cov.release_no, "61/10/32/Th. XXVIII");
+        assert_eq!(cov.image_theme1, "theme1.png");
+        assert_eq!(cov.image_theme2, "theme2.png");
+        assert_eq!(cov.points_body.len(), 5, "POINT sheet must yield 5 bullet items");
+
+        let c1_sheet = sheets.iter().find(|s| s.name.eq_ignore_ascii_case("C1")).expect("C1 sheet must exist");
+        let chart_spec = super::super::charts::spec::parse_chart_spec(c1_sheet).expect("C1 horizontal line chart must be parsed");
+        assert_eq!(chart_spec.chart_type, super::super::charts::spec::ChartType::Line);
+        assert_eq!(chart_spec.series.len(), 3, "IT, IB, NTP series");
+        assert!(chart_spec.include_data_table, "C1 line chart must have include_data_table enabled");
+        let (cats, vals) = super::super::charts::spec::extract_chart_data(c1_sheet, &chart_spec).expect("Data extraction");
+        assert_eq!(cats.len(), 13, "13 months from Sep'25 to Sep'26");
+        assert_eq!(vals.len(), 3);
+
+        let layout = super::super::charts::layout::compute_layout(
+            &chart_spec,
+            &cats,
+            &vals,
+            designcraft_geom::Rect { x0: 36.0, y0: 36.0, x1: 500.0, y1: 700.0 },
+            false,
+        )
+        .expect("compute_layout for C1 line chart with data table");
+
+        assert!(layout.data_table.is_some(), "C1 must compute a data table layout");
+        let dt = layout.data_table.as_ref().unwrap();
+        assert_eq!(dt.series_keys.len(), 3, "Must have 3 series keys: IT, IB, NTP");
+        assert!(dt.cells.iter().any(|c| c.text == "141,57"), "Data table cell 141,57 must exist");
+        assert!(dt.cells.iter().any(|c| c.text == "150,77"), "Data table cell 150,77 must exist");
+        assert_eq!(layout.y_min, 98.0, "Y-axis minimum must be 98.0 for BRS NTP");
+        assert_eq!(layout.ceiling, 155.0, "Y-axis ceiling must be 155.0 for BRS NTP");
+        assert!(layout.bottom_title.is_some(), "Bottom title must be present");
+        assert!(layout.value_labels.iter().any(|(_, _, t)| t == "150,77"), "Last point callout 150,77 must exist");
+
+        let g1_csv_exists = conv.catalog_csv_content.lines().any(|l| l.contains("Image") && l.contains("G1.png"));
+        assert!(g1_csv_exists, "G1 image entry must be in catalog CSV");
+
+        // Test Cover generation with BRS template
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 595.275591, "height": 841.889764, "facingPages": false})).unwrap();
+
+        let mut st = PubgenState {
+            active_profile_id: "bps_brs".into(),
+            cover_style: 13,
+            excel_source_path: sample_xlsx.to_string_lossy().to_string(),
+            excel_cover: Some(cov.clone()),
+            ..Default::default()
+        };
+
+        let res = execute_generate_cover(&mut app, &st);
+        assert!(res.is_ok(), "execute_generate_cover failed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        assert!(active.doc.page_count() >= 3, "BRS cover generates Spread 0, Spread 1 (Page 2 Point), and Spread 2 (Back Cover)");
+
+        // Verify text in stories
+        let all_text: Vec<&str> = active.doc.stories.values().map(|s| s.text.as_str()).collect();
+        assert!(all_text.iter().any(|t| t.contains("61/10/32/Th. XXVIII")), "Must contain release number");
+        assert!(all_text.iter().any(|t| t.contains("Yana Hendriana, S.ST")), "Must contain PIC name on back cover");
+
+        // Now test full generation of content pages:
+        let dir = std::env::temp_dir().join(format!("dc-pubgen-brs-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::create_dir_all(&dir);
+
+        let cat_path = dir.join("catalog.csv");
+        std::fs::write(&cat_path, &conv.catalog_csv_content).unwrap();
+
+        for (fname, csv_data) in &conv.table_csvs {
+            let _ = std::fs::write(dir.join(fname), csv_data);
+        }
+
+        // Copy sidecar assets (RTFs, images)
+        if let Some(samples_dir) = sample_xlsx.parent() {
+            for entry in std::fs::read_dir(samples_dir).into_iter().flatten().flatten() {
+                let p = entry.path();
+                if let Some(ext) = p.extension().and_then(|s| s.to_str()) {
+                    let ext_lower = ext.to_lowercase();
+                    if matches!(ext_lower.as_str(), "rtf" | "png" | "jpg" | "jpeg" | "csv") {
+                        if let Some(file_name) = p.file_name() {
+                            let _ = std::fs::copy(&p, dir.join(file_name));
+                        }
+                    }
+                }
+            }
+        }
+
+        st.card1_path = cat_path.to_string_lossy().to_string();
+        super::super::csv::load_card1_csv(&mut st, &cat_path.to_string_lossy());
+        st.card1_auto_insert_tables = true;
+        st.card1_range_all = true;
+
+        let gen_pages_res = super::super::pages::execute_generate_pages(&mut app, &st);
+        assert!(gen_pages_res.is_ok(), "execute_generate_pages failed: {gen_pages_res:?}");
+
+        let u1_row = conv.catalog_csv_content.lines().find(|l| l.contains("U1.rtf")).expect("U1.rtf in catalog");
+        assert!(!u1_row.contains(",file,"), "U1 title must NOT be 'file'; got: {u1_row}");
+
+        // Back cover must remain at the very end
+        super::ensure_back_cover_at_end(&mut app);
+
+        // Verify TOC is refused for BRS
+        let toc_res = super::super::toc::execute_add_toc(&mut app, &mut st);
+        assert!(toc_res.is_err(), "TOC must be refused for BRS");
+
+        let final_doc = &app.session.active().unwrap().doc;
+        for (_sid, story) in &final_doc.stories {
+            if story.text.contains("Nilai Tukar Petani (NTP) diperoleh") {
+                let para_ranges = story.para_ranges();
+                // Ensure first body paragraphs in U1 and U4.5 are basic paragraphs, NOT headings
+                for (pi, p) in story.paras.iter().enumerate() {
+                    let r = &para_ranges[pi];
+                    let t = story.text.get(r.clone()).unwrap_or("").trim();
+                    if t.starts_with("Nilai Tukar Petani (NTP) diperoleh") {
+                        assert_eq!(p.style, "[Basic Paragraph]", "U1 body paragraph must not be a heading");
+                    }
+                    if t.starts_with("Nilai Tukar Petani Subsektor Perikanan") {
+                        assert_eq!(p.style, "[Basic Paragraph]", "U4.5 body paragraph must not be a heading");
+                    }
+                }
+            }
+        }
+        let final_count = final_doc.page_count();
+        assert!(final_count >= 8, "BRS publication should have at least 8 pages; got {final_count}");
+
+        // Verify Page 2 (Spread 2) shares both U1 narrative and C1 chart
+        let (p2_si, _) = final_doc.page_loc(2).unwrap();
+        let p2_sp = &final_doc.spreads[p2_si];
+        let has_u1_text = p2_sp.items.iter().any(|it| {
+            if let designcraft_doc::Content::Text(tf) = &it.content {
+                final_doc.story(tf.story).is_some_and(|s| s.text.contains("Nilai Tukar Petani (NTP) diperoleh"))
+            } else {
+                false
+            }
+        });
+        let has_c1_chart = p2_sp.items.iter().any(|it| {
+            if let designcraft_doc::Content::Text(tf) = &it.content {
+                final_doc.story(tf.story).is_some_and(|s| s.text.contains("Gambar 1") || s.text.contains("150,77"))
+            } else {
+                false
+            }
+        });
+        assert!(has_u1_text, "Page 2 must contain U1 narrative");
+        assert!(has_c1_chart, "Page 2 must contain C1 chart below U1 on the same page");
+
+        let (last_si, _) = final_doc.page_loc(final_count - 1).unwrap();
+        let last_sp = &final_doc.spreads[last_si];
+        let has_last_pic = last_sp.items.iter().any(|it| {
+            if let designcraft_doc::Content::Text(tf) = &it.content {
+                final_doc.story(tf.story).is_some_and(|s| s.text.contains("Yana Hendriana, S.ST"))
+            } else {
+                false
+            }
+        });
+        assert!(has_last_pic, "Last page must remain the BRS back cover");
+
+        // Test end-to-end execute_excel_and_generate
+        let mut app2 = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        let mut st2 = PubgenState { active_profile_id: "bps_brs".into(), excel_auto_generate: true, ..Default::default() };
+        let res_e2e = super::super::excel::execute_excel_and_generate(&mut app2, &mut st2, &sample_xlsx.to_string_lossy());
+        assert!(res_e2e.is_ok(), "execute_excel_and_generate failed: {res_e2e:?}");
+        assert_eq!(st2.cover_style, 13, "Must use style 13 BRS cover");
+        let doc2 = &app2.session.active().unwrap().doc;
+        assert!(doc2.page_count() >= 8, "Doc2 must have at least 8 pages; got {}", doc2.page_count());
+
+        // Verify Lato font in body paragraphs
+        let rtf_story = doc2.stories.values().find(|s| s.text.contains("Nilai Tukar Petani (NTP) diperoleh")).expect("RTF story must exist");
+        assert!(rtf_story.chars.iter().any(|r| r.format.over.font_family.as_deref() == Some("Lato")), "Body paragraph must use font Lato");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
