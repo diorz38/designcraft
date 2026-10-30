@@ -38,6 +38,7 @@ log = { workspace = true }
 zip = { workspace = true }
 quick-xml = { workspace = true }
 image = { workspace = true }
+chrono = { workspace = true }
 
 [dev-dependencies]
 # egui 0.37 no longer enables `default_fonts` for library consumers; egui_kittest disables

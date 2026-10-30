@@ -1739,6 +1739,7 @@ dependencies = [
 name = "designcraft-ui-egui"
 version = "0.14.0-pubgen.0.8.0"
 dependencies = [
+ "chrono",
  "craft-dialogs",
  "craft-keymap",
  "craft-prepress",

@@ -1205,23 +1205,127 @@ pub fn execute_generate_front_cover(app: &mut DesignApp, st: &PubgenState) -> Re
     Ok(style_name.to_string())
 }
 
-fn format_indonesian_date(raw: &str) -> String {
+const INDONESIAN_MONTH_NAMES: [&str; 12] = [
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+];
+
+pub fn parse_flexible_date(raw: &str) -> Option<chrono::NaiveDate> {
+    let s = raw.trim();
+    if s.is_empty() {
+        return None;
+    }
+
+    // 1. Try Excel numeric serial date (e.g. "46296", "46296.0", "46266")
+    if let Ok(num) = s.parse::<f64>() {
+        let days = num.floor() as i64;
+        // Excel 1900 date system (accounting for the 1900-02-29 leap-year bug)
+        // Days 1..59: 1899-12-31 base. Days >= 60: 1899-12-30 base.
+        let base = if days >= 60 {
+            chrono::NaiveDate::from_ymd_opt(1899, 12, 30)
+        } else if days > 0 {
+            chrono::NaiveDate::from_ymd_opt(1899, 12, 31)
+        } else {
+            None
+        };
+        if let Some(base_date) = base {
+            if let Some(date) = base_date.checked_add_signed(chrono::Duration::days(days)) {
+                use chrono::Datelike;
+                if (1900..=2100).contains(&date.year()) {
+                    return Some(date);
+                }
+            }
+        }
+    }
+
+    let date_part = s.split_whitespace().next().unwrap_or(s);
+
+    // 2. Try ISO format: "YYYY-MM-DD"
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(date_part, "%Y-%m-%d") {
+        return Some(date);
+    }
+
+    // 3. Try slash formats: "DD/MM/YYYY" or "D/M/YYYY"
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(date_part, "%d/%m/%Y") {
+        return Some(date);
+    }
+
+    // 4. Try dash formats: "DD-MM-YYYY"
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(date_part, "%d-%m-%Y") {
+        return Some(date);
+    }
+
+    None
+}
+
+pub fn format_indonesian_date(raw: &str) -> String {
     let s = raw.trim();
     if s.is_empty() {
         return String::new();
     }
-    let date_part = s.split_whitespace().next().unwrap_or(s);
-    let parts: Vec<&str> = date_part.split('-').collect();
-    if parts.len() == 3
-        && let (Ok(y), Ok(m), Ok(d)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>(), parts[2].parse::<u32>())
-    {
-        let months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-        if (1..=12).contains(&m) {
-            let m_name = months[(m - 1) as usize];
-            return format!("{d} {m_name} {y}");
-        }
+    if let Some(date) = parse_flexible_date(s) {
+        use chrono::Datelike;
+        let day = date.day();
+        let month_idx = (date.month().saturating_sub(1)) as usize;
+        let month_name = INDONESIAN_MONTH_NAMES.get(month_idx).unwrap_or(&"");
+        let year = date.year();
+        return format!("{day} {month_name} {year}");
     }
     s.to_string()
+}
+
+pub fn format_indonesian_month_year(raw: &str) -> String {
+    let s = raw.trim();
+    if s.is_empty() {
+        return String::new();
+    }
+    if let Some(date) = parse_flexible_date(s) {
+        use chrono::Datelike;
+        let month_idx = (date.month().saturating_sub(1)) as usize;
+        let month_name = INDONESIAN_MONTH_NAMES.get(month_idx).unwrap_or(&"");
+        let year = date.year();
+        return format!("{month_name} {year}");
+    }
+
+    // If text already contains month name and/or year, e.g. "September 2026" or "October 2026"
+    let lower = s.to_lowercase();
+    let month_pairs = [
+        (&["januari", "january", "jan"][..], "Januari"),
+        (&["februari", "february", "feb"][..], "Februari"),
+        (&["maret", "march", "mar"][..], "Maret"),
+        (&["april", "apr"][..], "April"),
+        (&["mei", "may"][..], "Mei"),
+        (&["juni", "june", "jun"][..], "Juni"),
+        (&["juli", "july", "jul"][..], "Juli"),
+        (&["agustus", "august", "aug", "agt"][..], "Agustus"),
+        (&["september", "sep"][..], "September"),
+        (&["oktober", "october", "okt", "oct"][..], "Oktober"),
+        (&["november", "nov"][..], "November"),
+        (&["desember", "december", "des", "dec"][..], "Desember"),
+    ];
+
+    let mut found_month = None;
+    for (aliases, id_name) in month_pairs {
+        for alias in aliases {
+            if lower.contains(alias) {
+                found_month = Some(id_name);
+                break;
+            }
+        }
+        if found_month.is_some() {
+            break;
+        }
+    }
+
+    // Look for 4-digit year (1900..=2099)
+    let year_re = regex::Regex::new(r"\b(19\d\d|20\d\d)\b").ok();
+    let found_year = year_re.as_ref().and_then(|re| re.find(s)).map(|m| m.as_str());
+
+    match (found_month, found_year) {
+        (Some(m), Some(y)) => format!("{m} {y}"),
+        (Some(m), None) => m.to_string(),
+        _ => s.to_string(),
+    }
 }
 
 pub fn execute_generate_brs_cover(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
@@ -1238,14 +1342,35 @@ pub fn execute_generate_brs_front_and_point(app: &mut DesignApp, st: &PubgenStat
 
     let cov_opt = st.excel_cover.as_ref();
 
-    let title_text = cov_opt.map(|c| c.title1.as_str()).filter(|s| !s.trim().is_empty()).unwrap_or(if st.cover_title.trim().is_empty() {
-        "Perkembangan Nilai Tukar Petani\nSeptember 2026"
+    let raw_title = cov_opt
+        .map(|c| c.title1.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(if st.cover_title.trim().is_empty() {
+            "Perkembangan Nilai Tukar Petani"
+        } else {
+            st.cover_title.trim()
+        });
+
+    let raw_month = cov_opt
+        .map(|c| c.release_month.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| cov_opt.map(|c| c.release_date.as_str()).filter(|s| !s.trim().is_empty()))
+        .unwrap_or("");
+    let fmt_month = format_indonesian_month_year(raw_month);
+
+    let title_text = if !fmt_month.is_empty() && !raw_title.to_lowercase().contains(&fmt_month.to_lowercase()) {
+        format!("{raw_title} {fmt_month}")
     } else {
-        st.cover_title.trim()
-    });
+        raw_title.to_string()
+    };
 
     let release_no = cov_opt.map(|c| c.release_no.as_str()).unwrap_or("").trim();
-    let release_date = cov_opt.map(|c| c.release_date.as_str()).unwrap_or("").trim();
+    let release_date = cov_opt
+        .map(|c| c.release_date.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| cov_opt.map(|c| c.release_month.as_str()).filter(|s| !s.trim().is_empty()))
+        .unwrap_or("")
+        .trim();
     let release_info = if !release_no.is_empty() {
         let fmt_date = format_indonesian_date(release_date);
         let prefix = if release_no.to_lowercase().starts_with("no") { "" } else { "No. " };
@@ -3090,6 +3215,12 @@ pub(crate) mod tests {
         // Verify text in stories
         let all_text: Vec<&str> = active.doc.stories.values().map(|s| s.text.as_str()).collect();
         assert!(all_text.iter().any(|t| t.contains("61/10/32/Th. XXVIII")), "Must contain release number");
+        assert!(all_text.iter().any(|t| t.contains("1 Oktober 2026")), "Release date must be formatted as '1 Oktober 2026'; got stories: {all_text:?}");
+        assert!(!all_text.iter().any(|t| t.contains("46296")), "Raw Excel date serial 46296 must not be present");
+        assert!(
+            all_text.iter().any(|t| t.contains("Perkembangan Nilai Tukar Petani") && (t.contains("September 2026") || t.contains("Oktober 2026"))),
+            "Cover title must be concatenated with month year; got stories: {all_text:?}"
+        );
         assert!(all_text.iter().any(|t| t.contains("Yana Hendriana, S.ST")), "Must contain PIC name on back cover");
 
         // Now test full generation of content pages:
@@ -3225,5 +3356,22 @@ pub(crate) mod tests {
         assert!(table_count > 0, "Doc2 must contain at least 1 table");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_indonesian_date_and_month_formatting() {
+        // Serial 46296 -> 1 Oktober 2026
+        assert_eq!(super::format_indonesian_date("46296"), "1 Oktober 2026");
+        assert_eq!(super::format_indonesian_date("46296.0"), "1 Oktober 2026");
+        assert_eq!(super::format_indonesian_date("01/10/2026"), "1 Oktober 2026");
+        assert_eq!(super::format_indonesian_date("2026-10-01"), "1 Oktober 2026");
+        assert_eq!(super::format_indonesian_date("1 Oktober 2026"), "1 Oktober 2026");
+
+        // Serial 46266 -> September 2026
+        assert_eq!(super::format_indonesian_month_year("46266"), "September 2026");
+        assert_eq!(super::format_indonesian_month_year("46296"), "Oktober 2026");
+        assert_eq!(super::format_indonesian_month_year("September 2026"), "September 2026");
+        assert_eq!(super::format_indonesian_month_year("October 2026"), "Oktober 2026");
+        assert_eq!(super::format_indonesian_month_year("01/09/2026"), "September 2026");
     }
 }
