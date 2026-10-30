@@ -410,9 +410,9 @@ pub(crate) fn execute_insert_table_matrix_info(
         let _ = app.run("table.options", opts);
     }
 
-    // Step 5: Table Style (if not Horizontal Rules, apply via command first)
-    let style_names = ["Basic Grid", "Corporate Navy", "Minimalist", "Horizontal Rules"];
-    if st.card2_style != 3
+    // Step 5: Table Style (if not Horizontal Rules / BRS6, apply via command first)
+    let style_names = ["Basic Grid", "Corporate Navy", "Minimalist", "Horizontal Rules", "BRS6"];
+    if st.card2_style != 3 && st.card2_style != 4
         && let Some(&style_name) = style_names.get(st.card2_style)
     {
         let border_weight = if st.card2_style == 1 { 2.0 } else { 0.5 };
@@ -437,13 +437,18 @@ pub(crate) fn execute_insert_table_matrix_info(
 
     app.session
         .edit(|doc, _| {
-            let (hf_swatch, rn_swatch) = if !active_theme.is_none() {
-                (ensure_swatch(doc, &active_theme.header_footer), ensure_swatch(doc, &active_theme.row_number))
+            let (hf_swatch, rn_swatch, header_text_swatch, odd_swatch, even_swatch) = if !active_theme.is_none() {
+                let hf = ensure_swatch(doc, &active_theme.header_footer);
+                let rn = ensure_swatch(doc, &active_theme.row_number);
+                let ht = active_theme.header_text_color.as_deref().map(|col| ensure_swatch(doc, col));
+                let odd = active_theme.data_odd_fill.as_deref().map(|col| ensure_swatch(doc, col));
+                let even = active_theme.data_even_fill.as_deref().map(|col| ensure_swatch(doc, col));
+                (hf, rn, ht, odd, even)
             } else {
-                (String::new(), String::new())
+                (String::new(), String::new(), None, None, None)
             };
 
-            if st.card2_style == 3 && !doc.styles.table.iter().any(|s| s.name == "Horizontal Rules") {
+            if (st.card2_style == 3 || st.card2_style == 4) && !doc.styles.table.iter().any(|s| s.name == "Horizontal Rules") {
                 let ts = designcraft_doc::TableStyle {
                     name: "Horizontal Rules".to_string(),
                     border: Some(designcraft_doc::CellStroke::none()),
@@ -600,17 +605,28 @@ pub(crate) fn execute_insert_table_matrix_info(
 
             // One profile font for every cell so tables never fall back to the document default.
             let fam = st.body_font();
+            let base_font_size = 9.0;
+            let table_font_size = if let Some(delta) = active_theme.font_size_delta {
+                (base_font_size + delta as f64).max(6.0)
+            } else if is_brs {
+                8.0
+            } else {
+                base_font_size
+            };
             for r in 0..nr {
                 for c in 0..nc {
                     if let Some(cell) = table.cell_mut(r, c) {
                         let len = cell.text.text.len();
-                        cell.text.format_chars(0..len, |f| f.over.font_family = Some(fam.clone()));
+                        cell.text.format_chars(0..len, |f| {
+                            f.over.font_family = Some(fam.clone());
+                            f.over.size = Some(table_font_size);
+                        });
                     }
                 }
             }
 
-            if st.card2_style == 3 {
-                table.style = "Horizontal Rules".to_string();
+            if st.card2_style == 3 || st.card2_style == 4 {
+                table.style = if st.card2_style == 4 { "BRS6".to_string() } else { "Horizontal Rules".to_string() };
                 table.options.border = designcraft_doc::CellStroke::none();
                 table.options.borders = Default::default();
                 table.options.row_strokes = None;
@@ -790,13 +806,19 @@ pub(crate) fn execute_insert_table_matrix_info(
 
             // Apply Table Color Theme fills
             if !active_theme.is_none() {
-                // 1. Header rows fill
+                // 1. Header rows fill & font color
                 if !hf_swatch.is_empty() && header_rows > 0 {
                     for r in 0..header_rows.min(nr) {
                         for c in 0..nc {
                             if let Some(cell) = table.cell_mut(r, c) {
                                 cell.fill = hf_swatch.clone();
                                 cell.fill_tint = 1.0;
+                                if let Some(ref text_sw) = header_text_swatch {
+                                    let len = cell.text.text.len();
+                                    cell.text.format_chars(0..len, |f| {
+                                        f.over.fill = Some(text_sw.clone());
+                                    });
+                                }
                             }
                         }
                     }
@@ -814,7 +836,24 @@ pub(crate) fn execute_insert_table_matrix_info(
                     }
                 }
 
-                // 3. Footer row fill
+                // 3. Alternating data rows fill (Odd & Even)
+                if let (Some(odd_sw), Some(even_sw)) = (&odd_swatch, &even_swatch) {
+                    for r in data_start..nr {
+                        if footer_enabled && r == nr - 1 {
+                            continue;
+                        }
+                        let data_idx = r - data_start;
+                        let swatch = if data_idx % 2 == 0 { odd_sw } else { even_sw };
+                        for c in 0..nc {
+                            if let Some(cell) = table.cell_mut(r, c) {
+                                cell.fill = swatch.clone();
+                                cell.fill_tint = 1.0;
+                            }
+                        }
+                    }
+                }
+
+                // 4. Footer row fill
                 if !hf_swatch.is_empty() && footer_enabled && nr > data_start + 1 {
                     let footer_row = nr - 1;
                     for c in 0..nc {
@@ -1333,6 +1372,59 @@ pub(crate) mod tests {
 
         let res = execute_insert_table(&mut app, &st);
         assert!(res.is_ok(), "insert_table with Horizontal Rules should succeed: {:?}", res);
+    }
+
+    #[test]
+    fn test_brs6_table_style_and_colors() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let matrix = vec![
+            vec!["Provinsi".into(), "NTP".into(), "Perubahan".into()],
+            vec!["DKI Jakarta".into(), "108.74".into(), "-2.07".into()],
+            vec!["Jawa Barat".into(), "119.36".into(), "0.99".into()],
+            vec!["Jawa Tengah".into(), "115.20".into(), "1.12".into()],
+        ];
+
+        let st = PubgenState {
+            active_profile_id: "bps_brs".into(),
+            card2_matrix: matrix.clone(),
+            card2_col_numbers: true,
+            card2_first_row_header: true,
+            card2_table_footer: false,
+            card2_style: 4, // BRS6
+            card2_color_theme: 4, // BRS6
+            card2_theme_override: Some("BRS6".into()),
+            ..Default::default()
+        };
+
+        let res = execute_insert_table_matrix(&mut app, &st, Some(&matrix), None);
+        assert!(res.is_ok(), "Insert table matrix failed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let story = active.doc.stories.values().find(|s| !s.tables.is_empty()).expect("Table story must exist");
+        let table = story.tables.values().next().expect("Table must exist");
+
+        // Row 0: Header -> fill #D07C38, font color [Paper] (white)
+        let cell_header = table.cell(0, 0).expect("Header cell must exist");
+        assert_eq!(cell_header.fill, "#D07C38", "Header fill must be #D07C38");
+        assert_eq!(cell_header.text.chars[0].format.over.fill.as_deref(), Some("[Paper]"), "Header font color must be [Paper] (white)");
+
+        // Row 1: Col numbers row -> fill #E7CFB5
+        let cell_col_num = table.cell(1, 0).expect("Col num cell must exist");
+        assert_eq!(cell_col_num.fill, "#E7CFB5", "Col number row fill must be #E7CFB5");
+
+        // Row 2: 1st Data row (Odd in 1-based) -> fill #FEF0D2
+        let cell_odd = table.cell(2, 0).expect("Odd data cell must exist");
+        assert_eq!(cell_odd.fill, "#FEF0D2", "Odd data row fill must be #FEF0D2");
+
+        // Row 3: 2nd Data row (Even in 1-based) -> fill #FEF7E9
+        let cell_even = table.cell(3, 0).expect("Even data cell must exist");
+        assert_eq!(cell_even.fill, "#FEF7E9", "Even data row fill must be #FEF7E9");
+
+        // Font size reduced by 1pt: 8.0pt
+        assert_eq!(cell_header.text.chars[0].format.over.size, Some(8.0), "Font size must be 8.0pt (reduced 1pt)");
+        assert_eq!(cell_odd.text.chars[0].format.over.size, Some(8.0), "Font size must be 8.0pt (reduced 1pt)");
     }
 
     #[test]

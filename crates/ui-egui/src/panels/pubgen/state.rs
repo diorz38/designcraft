@@ -800,6 +800,9 @@ impl PubgenState {
             self.cover_include_inside_back = false;
             self.bilingual_output = false;
             self.card2_table_footer = false;
+            self.card2_style = 4;
+            self.card2_color_theme = 4;
+            self.card2_theme_override = Some("BRS6".into());
         }
         if profile.id == "custom" {
             self.profile_custom = Some(profile);

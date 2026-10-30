@@ -7,11 +7,37 @@ use super::*;
 pub(crate) struct TableColorTheme {
     pub header_footer: String,
     pub row_number: String,
+    #[serde(default)]
+    pub header_text_color: Option<String>,
+    #[serde(default)]
+    pub data_odd_fill: Option<String>,
+    #[serde(default)]
+    pub data_even_fill: Option<String>,
+    #[serde(default)]
+    pub font_size_delta: Option<i32>,
 }
 
 impl TableColorTheme {
     pub fn new(header_footer: impl Into<String>, row_number: impl Into<String>) -> Self {
-        Self { header_footer: header_footer.into(), row_number: row_number.into() }
+        Self {
+            header_footer: header_footer.into(),
+            row_number: row_number.into(),
+            header_text_color: None,
+            data_odd_fill: None,
+            data_even_fill: None,
+            font_size_delta: None,
+        }
+    }
+
+    pub fn brs6() -> Self {
+        Self {
+            header_footer: "#D07C38".into(),
+            row_number: "#E7CFB5".into(),
+            header_text_color: Some("[Paper]".into()),
+            data_odd_fill: Some("#FEF0D2".into()),
+            data_even_fill: Some("#FEF7E9".into()),
+            font_size_delta: Some(-1),
+        }
     }
 
     pub fn is_none(&self) -> bool {
@@ -25,6 +51,7 @@ pub const TABLE_COLOR_THEMES: &[(&str, &str, &str)] = &[
     ("#F3D2AF - #F8EADC", "#F3D2AF", "#F8EADC"),
     ("#9E7EB5 - #C4A4DA", "#9E7EB5", "#C4A4DA"),
     ("None", "", ""),
+    ("BRS6 (#D07C38 - #E7CFB5)", "#D07C38", "#E7CFB5"),
 ];
 
 /// Parse a table color theme from string (preset index "0", "1", "2", hex names, or custom pair).
@@ -36,6 +63,9 @@ pub(crate) fn parse_table_color_theme(val: &str) -> Option<TableColorTheme> {
     let lower = s.to_lowercase();
     if lower == "none" || lower == "plain" || lower == "white" || lower == "transparent" {
         return Some(TableColorTheme::new("", ""));
+    }
+    if s == "4" || lower == "brs6" || lower == "brs 6" || lower.contains("d07c3") || lower.contains("d07c38") {
+        return Some(TableColorTheme::brs6());
     }
     if s == "0" || lower.contains("ffcb56") || lower == "gold" || lower == "amber" {
         return Some(TableColorTheme::new("#FFCB56", "#FFE9A9"));
@@ -66,8 +96,16 @@ pub(crate) fn ensure_swatch(doc: &mut designcraft_doc::Document, hex: &str) -> S
     if clean.is_empty() || clean.eq_ignore_ascii_case("none") {
         return String::new();
     }
+    if clean == "[Paper]" || clean.eq_ignore_ascii_case("white") {
+        return "[Paper]".to_string();
+    }
     let formatted = if clean.starts_with('#') { clean.to_string() } else { format!("#{clean}") };
-    let upper = formatted.to_uppercase();
+    let normalized = if formatted.len() == 6 && formatted.starts_with('#') {
+        format!("{formatted}8")
+    } else {
+        formatted
+    };
+    let upper = normalized.to_uppercase();
     if !doc.swatches.iter().any(|s| s.name.eq_ignore_ascii_case(&upper))
         && let Some(col) = designcraft_color::Color::from_hex(&upper)
     {
@@ -91,5 +129,9 @@ pub(crate) mod tests {
         assert_eq!(parse_table_color_theme("none"), Some(TableColorTheme::new("", "")));
         assert_eq!(parse_table_color_theme("plain"), Some(TableColorTheme::new("", "")));
         assert_eq!(parse_table_color_theme("#112233 - #445566"), Some(TableColorTheme::new("#112233", "#445566")));
+        assert_eq!(parse_table_color_theme("BRS6"), Some(TableColorTheme::brs6()));
+        assert_eq!(parse_table_color_theme("brs6"), Some(TableColorTheme::brs6()));
+        assert_eq!(parse_table_color_theme("#d07c3"), Some(TableColorTheme::brs6()));
+        assert_eq!(parse_table_color_theme("#d07c38"), Some(TableColorTheme::brs6()));
     }
 }

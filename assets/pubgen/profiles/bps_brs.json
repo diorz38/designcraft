@@ -82,7 +82,7 @@
     "include_table_footer": false,
     "alternating_row_fills": true,
     "horizontal_rules_only": false,
-    "default_theme_palette": "bps_teal"
+    "default_theme_palette": "BRS6"
   },
   "typography": {
     "body_font": "Lato",

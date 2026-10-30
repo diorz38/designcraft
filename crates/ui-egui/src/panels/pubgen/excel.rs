@@ -3773,6 +3773,9 @@ pub(crate) fn apply_excel_cover(st: &mut PubgenState, cover: &ExcelCoverData, ba
             st.card2_color_theme = 2;
         } else if th.is_none() {
             st.card2_color_theme = 3;
+        } else if th == TableColorTheme::brs6() {
+            st.card2_color_theme = 4;
+            st.card2_style = 4;
         }
         st.card2_theme_override = Some(cover.table_theme.trim().to_string());
     }

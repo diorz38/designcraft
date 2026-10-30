@@ -744,7 +744,7 @@ pub(crate) fn card2_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenSta
     // Table Style Selector
     ui.horizontal(|ui| {
         ui.label(RichText::new("Style:").size(11.0).color(t.text));
-        let styles = ["Basic Grid", "Corporate Navy", "Minimalist", "Horizontal Rules"];
+        let styles = ["Basic Grid", "Corporate Navy", "Minimalist", "Horizontal Rules", "BRS6"];
         let cur = styles.get(st.card2_style).copied().unwrap_or("Basic Grid");
         let combo_w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
         craft_ui::ComboBox::from_id_salt("pubgen_card2_style").selected_text(cur).width(combo_w).show_ui(ui, |ui| {
