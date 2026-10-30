@@ -947,6 +947,7 @@ fn execute_generate_pages_brs(
                 let mut table_st = st.clone();
                 table_st.card2_table_footer = false;
                 table_st.bilingual_output = false;
+                table_st.card2_col_numbers = true;
                 if !theme_val.is_empty() {
                     table_st.card2_theme_override = Some(theme_val.to_string());
                 }

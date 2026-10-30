@@ -371,7 +371,7 @@ mod tests {
 
         let brs = &profiles[1];
         assert_eq!(brs.id, "bps_brs");
-        assert!(!brs.table_styling.include_column_number_row);
+        assert!(brs.table_styling.include_column_number_row);
         assert!(!brs.table_styling.include_table_footer);
         assert!(!brs.structure.bilingual);
         assert!(dda.structure.bilingual);

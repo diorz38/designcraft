@@ -3844,7 +3844,7 @@ pub fn execute_excel_and_generate(app: &mut DesignApp, st: &mut PubgenState, pat
     st.card1_auto_insert_tables = true;
     st.card1_range_all = true;
     st.card2_first_row_header = true;
-    st.card2_col_numbers = st.active_profile().table_styling.include_column_number_row;
+    st.card2_col_numbers = if is_brs { true } else { st.active_profile().table_styling.include_column_number_row };
     st.card2_table_footer = !is_brs && st.active_profile().table_styling.include_table_footer;
     if is_brs {
         st.bilingual_output = false;

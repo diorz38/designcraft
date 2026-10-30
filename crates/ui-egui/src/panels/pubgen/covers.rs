@@ -3196,6 +3196,7 @@ pub(crate) mod tests {
         assert_eq!(st2.cover_style, 13, "Must use style 13 BRS cover");
         assert!(!st2.bilingual_output, "BRS must default to single-language mode");
         assert!(!st2.card2_table_footer, "BRS must default to no table footer");
+        assert!(st2.card2_col_numbers, "BRS must include column numbers row");
         let doc2 = &app2.session.active().unwrap().doc;
         assert!(doc2.page_count() >= 8, "Doc2 must have at least 8 pages; got {}", doc2.page_count());
 
@@ -3213,6 +3214,12 @@ pub(crate) mod tests {
                     !table.rows.iter().any(|r| r.kind == designcraft_doc::RowKind::Footer),
                     "BRS table rows must not be RowKind::Footer"
                 );
+                // Verify column numbers row (1) exists in row 1 with fill #E7CFB5
+                if table.nrows() > 1 {
+                    let col_num_cell = table.cell(1, 0).expect("Col num cell must exist");
+                    assert_eq!(col_num_cell.text.text.trim(), "(1)", "Row 1 must be column number row");
+                    assert_eq!(col_num_cell.fill, "#E7CFB5", "Row 1 must be styled with #E7CFB5");
+                }
             }
         }
         assert!(table_count > 0, "Doc2 must contain at least 1 table");
