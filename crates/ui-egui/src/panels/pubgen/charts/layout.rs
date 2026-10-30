@@ -195,7 +195,16 @@ pub struct ChartLayout {
 }
 
 /// Computes the complete pixel-precise layout for a chart.
-pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[Vec<f64>], margin: Rect, bilingual: bool) -> ChartLayout {
+///
+/// Fails only for `Map` charts whose GeoJSON source cannot be loaded, so callers can
+/// report the problem instead of silently drawing a different map.
+pub fn compute_layout(
+    spec: &ChartSpec,
+    categories: &[String],
+    series_values: &[Vec<f64>],
+    margin: Rect,
+    bilingual: bool,
+) -> Result<ChartLayout, String> {
     let title_h = if bilingual && !spec.title_en.is_empty() {
         56.0
     } else if !spec.title_id.is_empty() {
@@ -412,7 +421,7 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
     }
 
     // Specific chart type layouts
-    match spec.chart_type {
+    Ok(match spec.chart_type {
         ChartType::BarClustered => {
             layout_bar_clustered(spec, categories, series_values, plot_rect, ceiling, bilingual, grid_lines, legend_items, axis_baseline, axis_left)
         }
@@ -430,8 +439,9 @@ pub fn compute_layout(spec: &ChartSpec, categories: &[String], series_values: &[
             layout_population_pyramid(spec, categories, series_values, plot_rect, ceiling, bilingual, legend_items, axis_baseline, axis_left)
         }
         ChartType::Gauge => layout_gauge(spec, categories, series_values, plot_rect, ceiling, bilingual, legend_items, axis_baseline, axis_left),
-        ChartType::Map => compute_map_layout(spec, categories, series_values, plot_rect, bilingual),
-    }
+        // Map charts return above; this arm keeps the match exhaustive.
+        ChartType::Map => return compute_map_layout(spec, categories, series_values, plot_rect, bilingual),
+    })
 }
 
 /// Compute nice rounded ceiling specifically for 4-interval population pyramids.
@@ -1114,22 +1124,23 @@ fn layout_donut(
     }
 }
 
-fn compute_map_layout(spec: &ChartSpec, categories: &[String], series_values: &[Vec<f64>], plot_rect: [f64; 4], bilingual: bool) -> ChartLayout {
-    let geo_map = if let Some(path) = &spec.geojson_path {
-        super::stock_maps::load_chart_geo_map(path).unwrap_or_else(|_| {
-            super::stock_maps::load_chart_geo_map("PANGKALAN").unwrap_or_else(|_| super::geojson::GeoMap {
-                name: "Fallback".into(),
-                bbox: [0.0, 0.0, 1.0, 1.0],
-                features: Vec::new(),
-            })
-        })
-    } else {
-        super::stock_maps::load_chart_geo_map("PANGKALAN").unwrap_or_else(|_| super::geojson::GeoMap {
-            name: "Fallback".into(),
-            bbox: [0.0, 0.0, 1.0, 1.0],
-            features: Vec::new(),
-        })
-    };
+/// Loads the GeoJSON source selected for a Map chart, reporting why it cannot be used.
+fn load_chart_map(spec: &ChartSpec) -> Result<super::geojson::GeoMap, String> {
+    let path = spec.geojson_path.as_deref().map(str::trim).unwrap_or("");
+    if path.is_empty() {
+        return Err("Map chart has no GeoJSON stock map or file selected".into());
+    }
+    super::stock_maps::load_chart_geo_map(path)
+}
+
+fn compute_map_layout(
+    spec: &ChartSpec,
+    categories: &[String],
+    series_values: &[Vec<f64>],
+    plot_rect: [f64; 4],
+    bilingual: bool,
+) -> Result<ChartLayout, String> {
+    let geo_map = load_chart_map(spec)?;
 
     let s_vals = series_values.first().map(Vec::as_slice).unwrap_or(&[]);
     let mut min_val = f64::INFINITY;
@@ -1150,6 +1161,10 @@ fn compute_map_layout(spec: &ChartSpec, categories: &[String], series_values: &[
         max_val = 100.0;
     } else if (max_val - min_val).abs() < 1e-6 {
         max_val = min_val + 1.0;
+    }
+
+    if let Some(override_max) = spec.max_value_override.filter(|v| v.is_finite()) {
+        max_val = max_val.max(override_max);
     }
 
     let (map_rect, legend_rect) = if spec.show_legend {
@@ -1227,7 +1242,7 @@ fn compute_map_layout(spec: &ChartSpec, categories: &[String], series_values: &[
         }
     }
 
-    ChartLayout {
+    Ok(ChartLayout {
         bars: Vec::new(),
         line_markers: Vec::new(),
         line_segments: Vec::new(),
@@ -1244,7 +1259,7 @@ fn compute_map_layout(spec: &ChartSpec, categories: &[String], series_values: &[
         ceiling: max_val,
         map_regions,
         map_legend,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -1284,7 +1299,7 @@ mod tests {
         let categories = vec!["Cat 1".into(), "Cat 2".into(), "Cat 3".into()];
         let values = vec![vec![10.0, 20.0, 30.0], vec![15.0, 25.0, 35.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
 
         assert_eq!(layout.bars.len(), 6);
         let plot_w = layout.plot_rect[2] - layout.plot_rect[0];
@@ -1305,7 +1320,7 @@ mod tests {
         let categories = vec!["A".into(), "B".into()];
         let values = vec![vec![100.0, 200.0], vec![50.0, 100.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
 
         let h_a0 = layout.bars[0].rect[3] - layout.bars[0].rect[1]; // 100
         let h_b0 = layout.bars[2].rect[3] - layout.bars[2].rect[1]; // 200
@@ -1318,7 +1333,7 @@ mod tests {
         let categories = vec!["X".into(), "Y".into()];
         let values = vec![vec![40.0, 80.0], vec![60.0, 120.0]]; // max sum is 200
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
 
         assert!(layout.ceiling >= 200.0);
         for bar in &layout.bars {
@@ -1333,7 +1348,7 @@ mod tests {
         let categories = vec!["Cat A".into(), "Cat B".into()];
         let values = vec![vec![50.0, 100.0], vec![25.0, 75.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
 
         assert_eq!(layout.bars.len(), 4);
         for bar in &layout.bars {
@@ -1348,7 +1363,7 @@ mod tests {
         let categories = vec!["Slice 1".into(), "Slice 2".into(), "Slice 3".into()];
         let values = vec![vec![25.0, 50.0, 25.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
 
         assert_eq!(layout.donut_slices.len(), 3);
         let total_deg: f64 = layout.donut_slices.iter().map(|s| s.sweep_degrees).sum();
@@ -1361,7 +1376,7 @@ mod tests {
         let categories = vec!["Cat".into()];
         let values = vec![vec![100.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
 
         assert_eq!(layout.grid_lines.len(), GRID_LINES);
         let plot_w = layout.plot_rect[2] - layout.plot_rect[0];
@@ -1377,7 +1392,7 @@ mod tests {
         let categories = vec!["Cat".into()];
         let values = vec![vec![10.0], vec![20.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
 
         assert_eq!(layout.legend_items.len(), 2);
         assert_eq!(layout.legend_items[0].label, "Series A");
@@ -1390,7 +1405,7 @@ mod tests {
         let categories = vec!["Cat".into()];
         let values = vec![vec![10.0], vec![20.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), true);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), true).unwrap();
 
         assert_eq!(layout.legend_items[0].label, "Series A / Series A EN");
     }
@@ -1401,7 +1416,7 @@ mod tests {
         let categories = vec!["Short".into(), "A Very Long Category Name".into()];
         let values = vec![vec![10.0, 20.0], vec![30.0, 40.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
 
         assert_eq!(layout.x_tick_labels.len(), 2);
         assert!(!layout.x_tick_labels[0].rotated);
@@ -1415,7 +1430,7 @@ mod tests {
         let values = vec![vec![10.0, 20.0]];
         let margin = sample_margin();
 
-        let layout = compute_layout(&spec, &categories, &values, margin, false);
+        let layout = compute_layout(&spec, &categories, &values, margin, false).unwrap();
 
         assert!(!layout.legend_items.is_empty());
         let first_leg = &layout.legend_items[0];
@@ -1439,7 +1454,7 @@ mod tests {
         let values = vec![vec![10.0, 20.0, 30.0]];
         let margin = sample_margin();
 
-        let layout = compute_layout(&spec, &categories, &values, margin, false);
+        let layout = compute_layout(&spec, &categories, &values, margin, false).unwrap();
 
         assert_eq!(layout.legend_items.len(), 3, "Legend must have 3 items for the 3 categories");
         assert_eq!(layout.legend_items[0].label, "Cat Alpha");
@@ -1466,7 +1481,7 @@ mod tests {
         ];
         let margin = sample_margin();
 
-        let layout = compute_layout(&spec, &categories, &values, margin, false);
+        let layout = compute_layout(&spec, &categories, &values, margin, false).unwrap();
 
         assert_eq!(layout.bars.len(), 6, "Must emit 3 male and 3 female bars");
         let male_bars: Vec<_> = layout.bars.iter().filter(|b| b.series_idx == 0).collect();
@@ -1503,7 +1518,7 @@ mod tests {
         let values = vec![vec![75.0]];
         let margin = sample_margin();
 
-        let layout = compute_layout(&spec, &categories, &values, margin, false);
+        let layout = compute_layout(&spec, &categories, &values, margin, false).unwrap();
 
         assert!(layout.gauge.is_some());
         let g = layout.gauge.as_ref().unwrap();
@@ -1529,5 +1544,43 @@ mod tests {
         assert_eq!(compute_pyramid_ceiling(5500.0), 6000.0);
         assert_eq!(compute_pyramid_ceiling(15500.0), 16000.0);
         assert_eq!(compute_pyramid_ceiling(19500.0), 20000.0);
+    }
+
+    #[test]
+    fn map_layout_matches_village_values_and_honours_max_override() {
+        let mut spec = sample_spec(ChartType::Map);
+        spec.geojson_path = Some("PANGKALAN".into());
+        spec.max_value_override = Some(200.0);
+        let categories = vec!["CINTAASIH".into(), "MULANGSARI".into()];
+        let values = vec![vec![10.0, 20.0]];
+
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
+
+        assert!(!layout.map_regions.is_empty(), "Pangkalan map must produce regions");
+        assert!((layout.ceiling - 200.0).abs() < 1e-9, "max override must raise the map legend ceiling");
+        assert!(
+            layout.map_regions.iter().any(|r| r.value_str == "10"),
+            "village values must be matched and formatted: {:?}",
+            layout.map_regions.iter().map(|r| (&r.name, &r.value_str)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn map_layout_errors_for_unknown_geojson() {
+        let mut spec = sample_spec(ChartType::Map);
+        spec.geojson_path = Some("NO_SUCH_STOCK_MAP".into());
+
+        let res = compute_layout(&spec, &["A".into()], &[vec![1.0]], sample_margin(), false);
+
+        assert!(res.is_err(), "an unknown map must fail instead of silently drawing Pangkalan");
+    }
+
+    #[test]
+    fn map_layout_requires_a_map_source() {
+        let spec = sample_spec(ChartType::Map);
+
+        let res = compute_layout(&spec, &["A".into()], &[vec![1.0]], sample_margin(), false);
+
+        assert!(res.is_err(), "a Map chart without a GeoJSON source must fail");
     }
 }

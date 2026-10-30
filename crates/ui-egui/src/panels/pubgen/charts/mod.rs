@@ -6,7 +6,7 @@
 //! ExcelSheetData (CXX_XX)
 //!   └─ spec::parse_chart_spec()     → ChartSpec   (Phase 1)
 //!   └─ spec::extract_chart_data()   → (categories, series_values)
-//!        └─ layout::compute_layout() → ChartLayout  (Phase 2)
+//!        └─ layout::compute_layout() → Result<ChartLayout, String>  (Phase 2)
 //!             └─ emitter::emit_chart() → frames on spread (Phase 3)
 //! ```
 //!
@@ -37,6 +37,8 @@ pub mod dialog;
 pub mod emitter;
 pub mod geojson;
 pub mod layout;
+#[cfg(test)]
+pub mod map_load_tests;
 pub mod palette;
 pub mod spec;
 pub mod stock_maps;

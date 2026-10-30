@@ -650,7 +650,7 @@ pub fn emit_chart(
                 }
             }
 
-            if (spec.show_value_labels || spec.chart_type == super::spec::ChartType::Map) && !region.name.is_empty() {
+            if spec.show_value_labels && !region.name.is_empty() {
                 let text = if !region.value_str.is_empty() { format!("{}\n{}", region.name, region.value_str) } else { region.name.clone() };
                 let text_color = if let Some((r, g, b)) = super::palette::parse_hex_rgb(&region.color) {
                     let lum = 0.299 * (r as f64) + 0.587 * (g as f64) + 0.114 * (b as f64);
@@ -820,7 +820,7 @@ mod tests {
         ];
         let values = vec![vec![78.5, 82.1, 64.3, 71.0, 75.4, 69.8, 85.2, 60.5]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
         assert!(!layout.map_regions.is_empty(), "Map layout must contain regions");
         assert!(!layout.map_legend.is_empty(), "Map layout must contain legend entries");
 
@@ -838,7 +838,7 @@ mod tests {
         let categories = vec!["Desa A".into(), "Desa B".into(), "Desa C".into()];
         let values = vec![vec![10.0, 20.0, 30.0], vec![15.0, 25.0, 35.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
         let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
 
         assert!(count > 10, "Chart must emit multiple frames: {count}");
@@ -855,7 +855,7 @@ mod tests {
         let categories = vec!["Cat 1".into(), "Cat 2".into()];
         let values = vec![vec![40.0, 80.0], vec![60.0, 120.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
         let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
 
         assert!(count > 0);
@@ -870,7 +870,7 @@ mod tests {
         let categories = vec!["2024".into(), "2025".into(), "2026".into()];
         let values = vec![vec![100.0, 150.0, 200.0], vec![80.0, 120.0, 190.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
         let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
 
         assert!(count > 10);
@@ -883,7 +883,7 @@ mod tests {
         let categories = vec!["Slice 1".into(), "Slice 2".into()];
         let values = vec![vec![40.0, 60.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
         let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
 
         assert!(count > 0);
@@ -896,7 +896,7 @@ mod tests {
         let categories = vec!["A".into(), "B".into()];
         let values = vec![vec![10.0, 20.0], vec![30.0, 40.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
         let _ = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
 
         let active = app.session.active().unwrap();
@@ -912,7 +912,7 @@ mod tests {
         let categories = vec!["A".into()];
         let values = vec![vec![10.0], vec![20.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), true);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), true).unwrap();
         assert_eq!(layout.legend_items.len(), 2);
 
         let _ = emit_chart(&mut app, 0, &spec, &layout, &[], true).unwrap();
@@ -941,7 +941,7 @@ mod tests {
         let categories = vec!["00-04".into(), "05-09".into()];
         let values = vec![vec![500.0, 800.0], vec![480.0, 790.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
         let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
 
         assert!(count >= 30, "Population pyramid must emit bars, labels, ticks, pictograms, and summary frames (got {count})");
@@ -973,7 +973,7 @@ mod tests {
         let categories = vec!["Target".into()];
         let values = vec![vec![60.0]];
 
-        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false);
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
         let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
 
         assert!(count >= 7, "Gauge chart must emit track, value, needle, pivot, readout and subtitle");

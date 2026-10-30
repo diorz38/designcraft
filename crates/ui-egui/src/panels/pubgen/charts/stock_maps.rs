@@ -126,7 +126,7 @@ pub fn list_stock_cover_maps() -> Vec<StockMapEntry> {
 }
 
 /// Loads a `GeoMap` for **Choropleth Map Charts** (expects village-level `*_DESA.geojson`).
-/// Reads from embedded binary data first, with disk fallback.
+/// Reads the real map from disk first, then falls back to compile-time embedded data.
 pub fn load_chart_geo_map(path_or_id: &str) -> Result<GeoMap, String> {
     let trimmed = path_or_id.trim();
     if trimmed.is_empty() {
@@ -144,20 +144,8 @@ pub fn load_chart_geo_map(path_or_id: &str) -> Result<GeoMap, String> {
     let upper_no_suffix = upper.trim_end_matches("_DESA");
     let upper_norm = upper_no_suffix.replace(' ', "_").replace('-', "_");
 
-    // 2. Check compile-time embedded stock maps
-    for m in EMBEDDED_CHART_MAPS {
-        if m.id == upper
-            || m.id == upper_no_suffix
-            || m.id == upper_norm
-            || m.filename.eq_ignore_ascii_case(trimmed)
-            || m.filename.strip_suffix(".geojson").is_some_and(|s| s.eq_ignore_ascii_case(trimmed))
-            || m.display_name.eq_ignore_ascii_case(trimmed)
-        {
-            return GeoMap::from_json_str(m.geojson);
-        }
-    }
-
-    // 3. Fallback to searching disk assets if present
+    // 2. Disk assets first: the real maps on disk must not be shadowed by a
+    //    stale embedded copy baked into an older binary.
     if let Some(dir) = find_maps_dir() {
         let candidate = dir.join(format!("{upper_norm}_DESA.geojson"));
         if candidate.is_file() {
@@ -171,11 +159,24 @@ pub fn load_chart_geo_map(path_or_id: &str) -> Result<GeoMap, String> {
         }
     }
 
+    // 3. Check compile-time embedded stock maps
+    for m in EMBEDDED_CHART_MAPS {
+        if m.id == upper
+            || m.id == upper_no_suffix
+            || m.id == upper_norm
+            || m.filename.eq_ignore_ascii_case(trimmed)
+            || m.filename.strip_suffix(".geojson").is_some_and(|s| s.eq_ignore_ascii_case(trimmed))
+            || m.display_name.eq_ignore_ascii_case(trimmed)
+        {
+            return GeoMap::from_json_str(m.geojson);
+        }
+    }
+
     Err(format!("Stock chart GeoJSON map '{trimmed}' (*_DESA.geojson) not found in embedded maps or on disk"))
 }
 
 /// Loads a `GeoMap` for **Publication Covers** (expects district overview `*.geojson` with `highlight`).
-/// Reads from embedded binary data first, with disk fallback.
+/// Reads the real map from disk first, then falls back to compile-time embedded data.
 pub fn load_cover_geo_map(path_or_id: &str) -> Result<GeoMap, String> {
     let trimmed = path_or_id.trim();
     if trimmed.is_empty() {
@@ -193,20 +194,8 @@ pub fn load_cover_geo_map(path_or_id: &str) -> Result<GeoMap, String> {
     let upper_clean = upper.trim_end_matches("_DESA");
     let upper_norm = upper_clean.replace(' ', "_").replace('-', "_");
 
-    // 2. Check compile-time embedded stock maps
-    for m in EMBEDDED_COVER_MAPS {
-        if m.id == upper
-            || m.id == upper_clean
-            || m.id == upper_norm
-            || m.filename.eq_ignore_ascii_case(trimmed)
-            || m.filename.strip_suffix(".geojson").is_some_and(|s| s.eq_ignore_ascii_case(trimmed))
-            || m.display_name.eq_ignore_ascii_case(trimmed)
-        {
-            return GeoMap::from_json_str(m.geojson);
-        }
-    }
-
-    // 3. Fallback to searching disk assets if present
+    // 2. Disk assets first: the real maps on disk must not be shadowed by a
+    //    stale embedded copy baked into an older binary.
     if let Some(dir) = find_maps_dir() {
         let candidate = dir.join(format!("{upper_norm}.geojson"));
         if candidate.is_file() {
@@ -217,6 +206,19 @@ pub fn load_cover_geo_map(path_or_id: &str) -> Result<GeoMap, String> {
         if cand_plain.is_file() {
             let text = std::fs::read_to_string(&cand_plain).map_err(|e| format!("Failed to read stock cover map '{}': {e}", cand_plain.display()))?;
             return GeoMap::from_json_str(&text);
+        }
+    }
+
+    // 3. Check compile-time embedded stock maps
+    for m in EMBEDDED_COVER_MAPS {
+        if m.id == upper
+            || m.id == upper_clean
+            || m.id == upper_norm
+            || m.filename.eq_ignore_ascii_case(trimmed)
+            || m.filename.strip_suffix(".geojson").is_some_and(|s| s.eq_ignore_ascii_case(trimmed))
+            || m.display_name.eq_ignore_ascii_case(trimmed)
+        {
+            return GeoMap::from_json_str(m.geojson);
         }
     }
 
@@ -249,6 +251,13 @@ mod tests {
             "Expected PANGKALAN in cover stock maps, got: {:?}",
             cover_maps.iter().map(|m| &m.id).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn embedded_chart_maps_parse_without_reading_disk() {
+        let entry = EMBEDDED_CHART_MAPS.iter().find(|m| m.id == "PANGKALAN").expect("PANGKALAN must be embedded");
+        let map = GeoMap::from_json_str(entry.geojson).expect("embedded GeoJSON must parse");
+        assert!(map.features.len() >= 8, "expected all Pangkalan villages, got {}", map.features.len());
     }
 
     #[test]

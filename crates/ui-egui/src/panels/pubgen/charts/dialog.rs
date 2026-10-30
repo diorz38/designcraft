@@ -32,6 +32,55 @@ Tahun,Pertanian,Industri,Jasa
 2024,4.3,5.1,6.2
 2025,4.5,5.4,6.5";
 
+/// Index of the bundled Pangkalan village map in the stock map list.
+///
+/// The stock list is sorted by display name, so index 0 is not Pangkalan; the bundled
+/// village sample data only matches Pangkalan, hence this lookup.
+fn default_map_stock_idx() -> usize {
+    super::stock_maps::list_stock_map_charts().iter().position(|m| m.id == "PANGKALAN").unwrap_or(0)
+}
+
+/// Title text of a chart title frame (a frame whose story starts with Grafik/Figure/Chart).
+fn chart_title_of(doc: &designcraft_doc::Document, it: &designcraft_doc::Item) -> Option<String> {
+    let designcraft_doc::Content::Text(tf) = &it.content else {
+        return None;
+    };
+    let story = doc.story(tf.story)?;
+    let text = story.text.trim();
+    (text.starts_with("Grafik") || text.starts_with("Figure") || text.starts_with("Chart")).then(|| text.to_string())
+}
+
+/// Finds the chart container (group or bare title frame) and its title on a spread.
+///
+/// `selected` prioritises the item the user picked; passing `None` keeps the first chart found.
+fn find_chart_container(
+    doc: &designcraft_doc::Document,
+    spread: &designcraft_doc::Spread,
+    selected: Option<designcraft_doc::ItemId>,
+) -> Option<(u64, String)> {
+    for top in &spread.items {
+        if let Some(sel) = selected {
+            let contains = top.id == sel
+                || match &top.content {
+                    designcraft_doc::Content::Group { items } => items.iter().any(|c| c.id == sel),
+                    _ => false,
+                };
+            if !contains {
+                continue;
+            }
+        }
+        if let Some(title) = chart_title_of(doc, top) {
+            return Some((top.id.0, title));
+        }
+        if let designcraft_doc::Content::Group { items } = &top.content
+            && let Some(title) = items.iter().find_map(|c| chart_title_of(doc, c))
+        {
+            return Some((top.id.0, title));
+        }
+    }
+    None
+}
+
 /// Recognized table on a page available for chart data extraction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AvailableTable {
@@ -212,7 +261,7 @@ impl Default for ChartDialog {
             show_legend: true,
             show_grid: true,
             max_value_override: String::new(),
-            map_stock_idx: 0,
+            map_stock_idx: default_map_stock_idx(),
             map_custom_path: String::new(),
             map_palette_idx: 0,
             raw_data: DEFAULT_SAMPLE_CSV.into(),
@@ -250,34 +299,18 @@ impl ChartDialog {
         }
 
         if edit {
-            // Check if any selected item or spread item is a chart
+            // Prefer the chart containing the selected item, then the first chart on the spread.
+            // A chart is cleared as one container so editing never leaves a duplicate behind.
             if let Some(spread) = active.doc.spreads.get(cur_spread) {
-                // If user selected an item, check that first
-                let target_item = spread.items.iter().find(|it| active.selection.items.contains(&it.id)).or_else(|| {
-                    // Otherwise, look for an item with a Grafik/Figure title
-                    spread.items.iter().find(|it| {
-                        if let designcraft_doc::Content::Text(tf) = &it.content
-                            && let Some(story) = active.doc.story(tf.story)
-                        {
-                            let t = story.text.trim();
-                            return t.starts_with("Grafik") || t.starts_with("Figure");
-                        }
-                        false
-                    })
-                });
-
-                if let Some(it) = target_item {
-                    dlg.editing_item_id = Some(it.id.0);
-                    if let designcraft_doc::Content::Text(tf) = &it.content
-                        && let Some(story) = active.doc.story(tf.story)
-                    {
-                        let full = story.text.trim();
-                        if let Some((id_part, en_part)) = full.split_once(" / ") {
-                            dlg.title_id = id_part.trim().to_string();
-                            dlg.title_en = en_part.trim().to_string();
-                        } else {
-                            dlg.title_id = full.to_string();
-                        }
+                let selected = active.selection.items.first().copied();
+                let found = find_chart_container(&active.doc, spread, selected).or_else(|| find_chart_container(&active.doc, spread, None));
+                if let Some((container_id, full)) = found {
+                    dlg.editing_item_id = Some(container_id);
+                    if let Some((id_part, en_part)) = full.split_once(" / ") {
+                        dlg.title_id = id_part.trim().to_string();
+                        dlg.title_en = en_part.trim().to_string();
+                    } else {
+                        dlg.title_id = full;
                     }
                 }
             }
@@ -288,20 +321,11 @@ impl ChartDialog {
 
     /// Automatically detects category, series, and titles from the CSV header row.
     pub fn auto_detect_columns(&mut self) {
-        let first_line = match self.raw_data.lines().find(|l| !l.trim().is_empty()) {
-            Some(l) => l,
-            None => return,
+        let sheet = self.parse_sheet_data();
+        let Some(header_row) = sheet.grid.first() else {
+            return;
         };
-
-        let sep = if first_line.contains('\t') {
-            '\t'
-        } else if first_line.contains(';') {
-            ';'
-        } else {
-            ','
-        };
-
-        let headers: Vec<String> = first_line.split(sep).map(|c| c.trim().trim_matches('"').trim().to_lowercase()).collect();
+        let headers: Vec<String> = header_row.iter().map(|c| c.trim().to_lowercase()).collect();
 
         for (idx, h) in headers.iter().enumerate() {
             let col_letter = super::spec::index_to_col_letter(idx);
@@ -312,51 +336,60 @@ impl ChartDialog {
             }
         }
 
-        let lines: Vec<&str> = self.raw_data.lines().filter(|l| !l.trim().is_empty()).collect();
-        if lines.len() >= 2 {
-            let row1_cells: Vec<String> = lines[1].split(sep).map(|c| c.trim().trim_matches('"').trim().to_string()).collect();
-
-            if let Some(t_idx) = headers.iter().position(|h| h == "title" || h == "judul") {
-                if let Some(t_val) = row1_cells.get(t_idx) {
-                    if !t_val.is_empty() {
-                        self.title_id = t_val.clone();
-                    }
-                }
+        if let Some(row1_cells) = sheet.grid.get(1) {
+            if let Some(t_idx) = headers.iter().position(|h| h == "title" || h == "judul")
+                && let Some(t_val) = row1_cells.get(t_idx).map(|c| c.trim())
+                && !t_val.is_empty()
+            {
+                self.title_id = t_val.to_string();
             }
-            if let Some(te_idx) = headers.iter().position(|h| h == "title_en" || h == "judul_en") {
-                if let Some(te_val) = row1_cells.get(te_idx) {
-                    if !te_val.is_empty() {
-                        self.title_en = te_val.clone();
-                    }
-                }
+            if let Some(te_idx) = headers.iter().position(|h| h == "title_en" || h == "judul_en")
+                && let Some(te_val) = row1_cells.get(te_idx).map(|c| c.trim())
+                && !te_val.is_empty()
+            {
+                self.title_en = te_val.to_string();
             }
 
             self.data_start_row = 2;
-            self.data_end_row = lines.len();
+            self.data_end_row = sheet.grid.len();
         }
     }
 
     /// Parse the raw CSV/TSV data into `ExcelSheetData`.
     pub fn parse_sheet_data(&self) -> ExcelSheetData {
-        let mut grid = Vec::new();
-        for line in self.raw_data.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            // Auto-detect delimiter: comma, tab, or semicolon
-            let sep = if trimmed.contains('\t') {
-                '\t'
-            } else if trimmed.contains(';') {
-                ';'
-            } else {
-                ','
-            };
-            let row: Vec<String> = trimmed.split(sep).map(|cell| cell.trim().trim_matches('"').trim().to_string()).collect();
-            grid.push(row);
-        }
+        let delim = crate::dock::pubgen::csv::detect_delimiter(&self.raw_data);
+        let grid = crate::dock::pubgen::csv::parse_csv_content_with_delim(&self.raw_data, delim)
+            .into_iter()
+            .map(|row| row.into_iter().map(|cell| cell.trim().to_string()).collect())
+            .collect();
 
         ExcelSheetData { name: "ChartData".into(), grid, merges: Vec::new() }
+    }
+
+    /// Switches the active archetype and normalises options that archetype ignores.
+    pub fn select_chart_type(&mut self, chart_type: ChartType) {
+        self.chart_type = chart_type;
+        // Map charts colour geographic regions by an absolute value (population, index, …),
+        // so a percentage format would mislabel every region and legend step.
+        if chart_type == ChartType::Map {
+            self.value_format = ValueFormat::Number;
+        }
+        self.clamp_to_chart_type();
+    }
+
+    /// Loads the bundled Pangkalan village sample and selects its matching stock map.
+    pub fn load_village_sample(&mut self) {
+        self.raw_data = DEFAULT_VILLAGE_SAMPLE_CSV.to_string();
+        self.category_col = "A".into();
+        self.series_1_col = "D".into();
+        self.series_1_label_id = "Nilai Indeks".into();
+        self.series_1_label_en = "Index Value".into();
+        self.data_start_row = 2;
+        self.data_end_row = 9;
+        self.title_id = "Grafik 01.01 Indeks Pembangunan Desa, 2026".into();
+        self.title_en = "Chart 01.01 Village Development Index, 2026".into();
+        self.map_stock_idx = default_map_stock_idx();
+        self.value_format = ValueFormat::Number;
     }
 
     /// Build the `ChartSpec` from the current dialog parameters.
@@ -369,7 +402,7 @@ impl ChartDialog {
         });
 
         let max_series = match self.chart_type {
-            ChartType::Donut | ChartType::Gauge => 1,
+            ChartType::Donut | ChartType::Gauge | ChartType::Map => 1,
             ChartType::PopulationPyramid => 2,
             _ => 3,
         };
@@ -406,11 +439,15 @@ impl ChartDialog {
             show_grid: self.show_grid,
             max_value_override: max_val,
             geojson_path: if self.chart_type == ChartType::Map {
-                if self.map_stock_idx == 999 && !self.map_custom_path.trim().is_empty() {
-                    Some(self.map_custom_path.clone())
+                let stock_maps = super::stock_maps::list_stock_map_charts();
+                if self.map_stock_idx == 999 {
+                    let custom = self.map_custom_path.trim();
+                    (!custom.is_empty()).then(|| custom.to_string())
                 } else {
-                    let stock_maps = super::stock_maps::list_stock_map_charts();
-                    stock_maps.get(self.map_stock_idx).map(|m| m.path.to_string_lossy().to_string()).or_else(|| Some("PANGKALAN".to_string()))
+                    stock_maps
+                        .get(self.map_stock_idx)
+                        .or_else(|| stock_maps.iter().find(|m| m.id == "PANGKALAN"))
+                        .map(|m| m.path.to_string_lossy().to_string())
                 }
             } else {
                 None
@@ -436,6 +473,13 @@ impl ChartDialog {
         let spec = self.build_spec();
 
         let (categories, series_values) = extract_chart_data(&sheet_data, &spec).map_err(|e| format!("Failed to extract chart data: {e}"))?;
+
+        // Validate the GeoJSON before touching the document, so a bad map path cannot leave
+        // an empty chart page behind.
+        if spec.chart_type == ChartType::Map {
+            let path = spec.geojson_path.as_deref().unwrap_or("");
+            super::stock_maps::load_chart_geo_map(path).map_err(|e| format!("Cannot render map chart: {e}"))?;
+        }
 
         // If insert_on_new_page is enabled and not editing an existing chart,
         // automatically create a new blank page for the chart according to placement mode.
@@ -473,10 +517,17 @@ impl ChartDialog {
             let new_page = ref_page + 1;
             crate::canvas::go_to_page(app, new_page);
             Some(new_page)
-        } else {
+        } else if self.insert_on_new_page {
             let p = self.selected_page;
             crate::canvas::go_to_page(app, p);
             Some(p)
+        } else {
+            // Place on the spread chosen by the Target Spread control.
+            let page = app.session.active().map(|a| a.doc.first_page_of_spread(self.target_spread.min(a.doc.spreads.len().saturating_sub(1))));
+            if let Some(p) = page {
+                crate::canvas::go_to_page(app, p);
+            }
+            None
         };
 
         let (margin, target_sp) = {
@@ -489,7 +540,13 @@ impl ChartDialog {
             let (spread_idx, page_idx_in_sp) = if let Some(p) = target_page_idx {
                 active.doc.page_loc(p).unwrap_or((0, 0))
             } else {
-                (self.target_spread.min(sp_count.saturating_sub(1)), 0)
+                let si = self.target_spread.min(sp_count.saturating_sub(1));
+                // Keep the page the user is on when the chosen spread still contains it.
+                let page_idx = match active.doc.page_loc(self.selected_page) {
+                    Some((selected_si, selected_pi)) if selected_si == si => selected_pi,
+                    _ => 0,
+                };
+                (si, page_idx)
             };
             let spread = active.doc.spreads.get(spread_idx).ok_or("Invalid spread index")?;
             let page = spread.pages.get(page_idx_in_sp).or_else(|| spread.pages.first());
@@ -502,13 +559,30 @@ impl ChartDialog {
             (rect, spread_idx)
         };
 
-        // If editing an existing chart item, clear the old one first
+        // If editing an existing chart container, clear the whole chart (frames + title) first,
+        // otherwise the re-render would leave the previous chart behind.
         if let Some(old_id) = self.editing_item_id {
             let _ = app.run("edit.clear", json!({"ids": [old_id]}));
         }
 
-        let layout = compute_layout(&spec, &categories, &series_values, margin, bilingual);
+        let ids_before: Vec<u64> =
+            app.session.active().and_then(|a| a.doc.spreads.get(target_sp)).map(|s| s.items.iter().map(|it| it.id.0).collect()).unwrap_or_default();
+
+        let layout = compute_layout(&spec, &categories, &series_values, margin, bilingual)?;
         let count = super::emitter::emit_chart(app, target_sp, &spec, &layout, &[], bilingual)?;
+
+        // `emit_chart` groups the emitted frames; keep that group so the title can join it and
+        // a later edit clears the whole chart at once.
+        let chart_group = app.session.active().and_then(|a| {
+            let spread = a.doc.spreads.get(target_sp)?;
+            let new_top: Vec<&std::sync::Arc<designcraft_doc::Item>> = spread.items.iter().filter(|it| !ids_before.contains(&it.id.0)).collect();
+            match new_top.as_slice() {
+                [only] if matches!(only.content, designcraft_doc::Content::Group { .. }) => Some(only.id.0),
+                _ => None,
+            }
+        });
+
+        let mut title_fid = None;
 
         if !self.title_id.is_empty() {
             let (line1, line2) = split_grafik_title(&self.title_id);
@@ -522,13 +596,14 @@ impl ChartDialog {
             let title_h = if is_bilingual_title { 56.0 } else { 44.0 };
             let title_rect = [margin.x0, margin.y0, margin.x1, margin.y0 + title_h];
 
-            let title_fid = super::emitter::emit_text(app, target_sp, title_rect, &title_text, 11.0, true, "center", Some("#1A1A1A"))?;
+            let fid = super::emitter::emit_text(app, target_sp, title_rect, &title_text, 11.0, true, "center", Some("#1A1A1A"))?;
+            title_fid = Some(fid);
 
             // Format character runs:
             // Line 1 & Line 2: Bold 11pt
             // Line 3 (English): Italic 10pt
             let _ = app.session.edit(|doc, _| {
-                let story_id = if let Some(it) = doc.item_mut(designcraft_doc::ItemId(title_fid))
+                let story_id = if let Some(it) = doc.item_mut(designcraft_doc::ItemId(fid))
                     && let designcraft_doc::Content::Text(tf) = &mut it.content
                 {
                     tf.options.vertical_justification = designcraft_doc::VerticalJustification::Top;
@@ -593,6 +668,18 @@ impl ChartDialog {
                 Ok(serde_json::Value::Null)
             });
         }
+
+        // Wrap the chart group and its title in one outer group, and remember it for edits.
+        let mut chart_ids: Vec<u64> = chart_group.into_iter().collect();
+        chart_ids.extend(title_fid);
+        self.editing_item_id = if chart_ids.len() > 1 {
+            match app.run("object.group", json!({"ids": chart_ids})) {
+                Ok(res) => res.get("id").and_then(serde_json::Value::as_u64).or(chart_group).or(title_fid),
+                Err(_) => chart_group.or(title_fid),
+            }
+        } else {
+            chart_group.or(title_fid)
+        };
 
         let page_msg = if let Some(p) = target_page_idx {
             let lbl = app.session.page_label(p);
@@ -930,7 +1017,7 @@ impl ChartDialog {
         // 9. Populate columns and series based on chart type capacity
         self.category_col = "A".into();
         let max_series = match self.chart_type {
-            ChartType::Donut | ChartType::Gauge => 1,
+            ChartType::Donut | ChartType::Gauge | ChartType::Map => 1,
             ChartType::PopulationPyramid => 2,
             _ => 3,
         };
@@ -1161,8 +1248,7 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                         (ChartType::Map, "Map / Choropleth (Peta Tematik)"),
                     ] {
                         if ui.selectable_label(dialog.chart_type == ct, name).clicked() {
-                            dialog.chart_type = ct;
-                            dialog.clamp_to_chart_type();
+                            dialog.select_chart_type(ct);
                         }
                     }
                 });
@@ -1259,15 +1345,7 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                 });
 
                 if ui.button("Load Sample Village CSV (Pangkalan)").clicked() {
-                    dialog.raw_data = DEFAULT_VILLAGE_SAMPLE_CSV.to_string();
-                    dialog.category_col = "A".into();
-                    dialog.series_1_col = "D".into();
-                    dialog.series_1_label_id = "Nilai Indeks".into();
-                    dialog.series_1_label_en = "Index Value".into();
-                    dialog.data_start_row = 2;
-                    dialog.data_end_row = 9;
-                    dialog.title_id = "Grafik 01.01 Indeks Pembangunan Desa, 2026".into();
-                    dialog.title_en = "Chart 01.01 Village Development Index, 2026".into();
+                    dialog.load_village_sample();
                 }
             } else if dialog.chart_type == ChartType::PopulationPyramid {
                 // Series 2 (Female)
@@ -1359,8 +1437,7 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                 ui.label(RichText::new(crate::i18n::tr(&lang, "Data Table (CSV / TSV):")).strong().size(11.5).color(t.text_strong));
                 if ui.small_button(crate::i18n::tr(&lang, "Reset Sample Data")).clicked() {
                     if dialog.chart_type == ChartType::Map {
-                        dialog.raw_data = DEFAULT_VILLAGE_SAMPLE_CSV.to_string();
-                        dialog.auto_detect_columns();
+                        dialog.load_village_sample();
                     } else {
                         dialog.raw_data = DEFAULT_SAMPLE_CSV.to_string();
                         dialog.data_start_row = 2;
@@ -1446,6 +1523,83 @@ mod tests {
         assert!(spec.geojson_path.is_some());
     }
     use super::*;
+
+    #[test]
+    fn test_map_defaults_to_pangkalan_stock_map_and_absolute_values() {
+        let maps = super::super::stock_maps::list_stock_map_charts();
+        let pangkalan = maps.iter().position(|m| m.id == "PANGKALAN").expect("Pangkalan stock map exists");
+
+        let mut dlg = ChartDialog::default();
+        assert_eq!(dlg.map_stock_idx, pangkalan, "default stock map must match the bundled Pangkalan sample");
+
+        dlg.select_chart_type(ChartType::Map);
+        assert_eq!(dlg.value_format, ValueFormat::Number, "Map charts must default to absolute number formatting");
+
+        dlg.load_village_sample();
+        assert_eq!(dlg.map_stock_idx, pangkalan);
+
+        let spec = dlg.build_spec();
+        let path = spec.geojson_path.expect("map path");
+        assert!(path.to_uppercase().contains("PANGKALAN"), "unexpected map path {path}");
+    }
+
+    #[test]
+    fn test_map_chart_unknown_geojson_reports_error() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
+
+        let mut dlg = ChartDialog::default();
+        dlg.select_chart_type(ChartType::Map);
+        dlg.load_village_sample();
+        dlg.map_stock_idx = 999;
+        dlg.map_custom_path = "Z:/pubgen-missing/NOPE.geojson".into();
+        dlg.insert_on_new_page = true;
+
+        let err = dlg.apply_chart(&mut app, true).expect_err("missing GeoJSON must fail loudly");
+        let lower = err.to_lowercase();
+        assert!(lower.contains("geojson") || lower.contains("not found"), "unexpected error: {err}");
+        let active = app.session.active().unwrap();
+        assert!(active.doc.spreads[0].items.is_empty(), "no frames may be emitted when the map cannot load");
+        assert_eq!(active.doc.page_count(), 1, "a failed map must not leave an empty chart page behind");
+    }
+
+    #[test]
+    fn test_editing_chart_clears_the_whole_previous_chart() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
+
+        let mut dlg = ChartDialog::new(&app, false);
+        dlg.select_chart_type(ChartType::Map);
+        dlg.load_village_sample();
+        dlg.insert_on_new_page = false;
+        dlg.apply_chart(&mut app, true).unwrap();
+
+        let top_level_after_first = app.session.active().unwrap().doc.spreads[0].items.len();
+        assert_eq!(top_level_after_first, 1, "chart frames and title must be grouped into one container");
+
+        let mut edit = ChartDialog::new(&app, true);
+        assert!(edit.editing_item_id.is_some(), "edit dialog must find the existing chart container");
+        edit.apply_chart(&mut app, true).unwrap();
+
+        let active = app.session.active().unwrap();
+        let title_count = active.doc.stories.values().filter(|s| s.text.contains("Indeks Pembangunan Desa")).count();
+        assert_eq!(title_count, 1, "editing must not leave a duplicate chart title");
+        assert_eq!(active.doc.spreads[0].items.len(), 1, "editing must replace the chart container, not add another");
+    }
+
+    #[test]
+    fn test_parse_sheet_data_handles_quoted_delimiters() {
+        let mut dlg = ChartDialog::default();
+        dlg.raw_data = "nmdesa;title;title_en;value\n\"DESA A;B\";\"Grafik 01.01; Kota\";\"Chart 01.01; City\";\"1.234,5\"\n".to_string();
+        let sheet = dlg.parse_sheet_data();
+        assert_eq!(sheet.grid.len(), 2);
+        assert_eq!(sheet.grid[1][0], "DESA A;B");
+        assert_eq!(sheet.grid[1][1], "Grafik 01.01; Kota");
+
+        dlg.auto_detect_columns();
+        assert_eq!(dlg.title_id, "Grafik 01.01; Kota");
+        assert_eq!(dlg.title_en, "Chart 01.01; City");
+    }
 
     #[test]
     fn test_chart_dialog_defaults_and_spec_building() {
@@ -1539,6 +1693,34 @@ mod tests {
         let active = app.session.active().unwrap();
         let title_exists = active.doc.stories.values().any(|s| s.text.contains("Updated Title"));
         assert!(title_exists, "Updated chart title must exist in document story");
+    }
+
+    #[test]
+    fn test_map_chart_new_page_manual_flow() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
+
+        // Mimic real UI: ChartDialog::new (insert_on_new_page=true, SelectedPage), sample CSV, Pangkalan stock map
+        let mut dlg = ChartDialog::new(&app, false);
+        dlg.chart_type = ChartType::Map;
+        dlg.raw_data = DEFAULT_VILLAGE_SAMPLE_CSV.to_string();
+        dlg.auto_detect_columns();
+        let maps = super::super::stock_maps::list_stock_map_charts();
+        let pangkalan = maps.iter().position(|m| m.id == "PANGKALAN").expect("Pangkalan stock map exists");
+        dlg.map_stock_idx = pangkalan;
+        assert!(dlg.insert_on_new_page);
+
+        let before = app.session.active().unwrap().doc.page_count();
+        let res = dlg.apply_chart(&mut app, true);
+        assert!(res.is_ok(), "apply_chart failed: {:?}", res);
+        let count = res.unwrap();
+        assert!(count > 0, "must emit vector map objects");
+
+        let active = app.session.active().unwrap();
+        let after = active.doc.page_count();
+        assert!(after > before, "page must be added (before={before} after={after})");
+        let (si, _) = active.doc.page_loc(before).expect("new page loc");
+        assert!(!active.doc.spreads[si].items.is_empty(), "new page spread must contain map chart items");
     }
 
     #[test]
@@ -1813,5 +1995,40 @@ mod tests {
         // The chart page must be placed on page index `last_idx` (right before the back cover)
         let (chart_sp, _) = active.doc.page_loc(last_idx).unwrap();
         assert!(!active.doc.spreads[chart_sp].items.is_empty(), "Spread for page before back cover must contain chart items");
+    }
+
+    #[test]
+    fn test_map_chart_new_page_before_back_cover_flow() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"pages": 4})).unwrap();
+
+        let st = PubgenState::default();
+        crate::dock::pubgen::covers::execute_generate_back_cover(&mut app, &st).unwrap();
+
+        let active0 = app.session.active().unwrap();
+        let initial_pages = active0.doc.page_count();
+        let last_idx = initial_pages - 1;
+
+        let mut dlg = ChartDialog::new(&app, false);
+        dlg.selected_page = last_idx;
+        dlg.placement = ChartPlacement::SelectedPage;
+        dlg.chart_type = ChartType::Map;
+        dlg.raw_data = DEFAULT_VILLAGE_SAMPLE_CSV.to_string();
+        dlg.auto_detect_columns();
+        let maps = super::super::stock_maps::list_stock_map_charts();
+        let pangkalan = maps.iter().position(|m| m.id == "PANGKALAN").expect("Pangkalan stock map exists");
+        dlg.map_stock_idx = pangkalan;
+
+        let res = dlg.apply_chart(&mut app, true);
+        assert!(res.is_ok(), "apply_chart failed: {:?}", res);
+        let count = res.unwrap();
+        assert!(count > 0, "must emit vector map objects");
+
+        let active = app.session.active().unwrap();
+        assert_eq!(active.doc.page_count(), initial_pages + 1);
+        let back_page = crate::dock::pubgen::covers::find_back_cover_page(&active.doc);
+        assert_eq!(back_page, Some(initial_pages), "Back cover must remain last");
+        let (chart_sp, _) = active.doc.page_loc(last_idx).unwrap();
+        assert!(!active.doc.spreads[chart_sp].items.is_empty(), "Spread before back cover must contain map items");
     }
 }

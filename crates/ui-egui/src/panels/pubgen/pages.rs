@@ -1724,15 +1724,22 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                                         geojson_path: Some(map_info.map_name_or_path.clone()),
                                         map_palette_idx: pal_idx,
                                     };
-                                    let chart_margin =
-                                        designcraft_geom::Rect { x0: margin.x0, y0: margin.y0 + title_h + 8.0, x1: margin.x1, y1: margin.y1 };
-                                    let layout = super::charts::layout::compute_layout(
+                                    // `compute_layout` reserves the title band itself, so the chart
+                                    // margin starts at the page margin (no extra title offset).
+                                    let chart_margin = designcraft_geom::Rect { x0: margin.x0, y0: margin.y0, x1: margin.x1, y1: margin.y1 };
+                                    let layout = match super::charts::layout::compute_layout(
                                         &map_spec,
                                         &parsed_data.categories,
                                         &[parsed_data.values],
                                         chart_margin,
                                         st.bilingual_output,
-                                    );
+                                    ) {
+                                        Ok(layout) => layout,
+                                        Err(e) => {
+                                            log::warn!("Vector map chart layout failed: {e}; falling back to raster");
+                                            continue;
+                                        }
+                                    };
                                     let palette = if let Some(th) = &map_info.theme {
                                         vec![th.clone()]
                                     } else if !theme_val.is_empty() {
@@ -1763,10 +1770,20 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                     if let Some(spec) = super::charts::spec::parse_chart_spec(&sheet_data) {
                         match super::charts::spec::extract_chart_data(&sheet_data, &spec) {
                             Ok((categories, series_values)) => {
-                                let chart_margin =
-                                    designcraft_geom::Rect { x0: margin.x0, y0: margin.y0 + title_h + 8.0, x1: margin.x1, y1: margin.y1 };
-                                let layout =
-                                    super::charts::layout::compute_layout(&spec, &categories, &series_values, chart_margin, st.bilingual_output);
+                                let chart_margin = designcraft_geom::Rect { x0: margin.x0, y0: margin.y0, x1: margin.x1, y1: margin.y1 };
+                                let layout = match super::charts::layout::compute_layout(
+                                    &spec,
+                                    &categories,
+                                    &series_values,
+                                    chart_margin,
+                                    st.bilingual_output,
+                                ) {
+                                    Ok(layout) => layout,
+                                    Err(e) => {
+                                        log::warn!("Vector chart layout failed: {e}; falling back to raster");
+                                        continue;
+                                    }
+                                };
                                 let palette = if !theme_val.is_empty() {
                                     vec![theme_val.to_string()]
                                 } else if let Some(ref th) = st.card2_theme_override {
@@ -4580,7 +4597,7 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
         let values = vec![vec![100.0, 80.0]];
         let margin = designcraft_geom::Rect { x0: 36.0, y0: 36.0, x1: 500.0, y1: 700.0 };
 
-        let layout = super::charts::layout::compute_layout(&spec, &categories, &values, margin, true);
+        let layout = super::charts::layout::compute_layout(&spec, &categories, &values, margin, true).unwrap();
         super::charts::emitter::emit_chart(&mut app, 0, &spec, &layout, &[], true).unwrap();
 
         let active = app.session.active().unwrap();
@@ -4615,7 +4632,7 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
         let values = vec![vec![100.0]];
         let margin = designcraft_geom::Rect { x0: 36.0, y0: 36.0, x1: 500.0, y1: 700.0 };
 
-        let layout = super::charts::layout::compute_layout(&spec, &categories, &values, margin, false);
+        let layout = super::charts::layout::compute_layout(&spec, &categories, &values, margin, false).unwrap();
         assert!(layout.x_tick_labels[0].rotated, "Label longer than 12 chars must have rotated flag");
 
         let _ = super::charts::emitter::emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
