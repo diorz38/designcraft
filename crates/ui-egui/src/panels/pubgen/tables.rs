@@ -255,16 +255,35 @@ pub(crate) fn execute_insert_table_matrix(
             let margin = page.margin_rect();
             let page_r = page.bounds();
 
-            // Find bottom-most edge of generated page title / header items on this page
+            // Find bottom-most edge of generated page title / header items on this page.
+            // Template pages: only the table-title slots count — a full-page scan would pick
+            // up the low-placed source slot and push the table below the bottom margin.
+            let slot_title_bottom = spread
+                .items
+                .iter()
+                .filter_map(|it| {
+                    if it.label.starts_with("#slot:text:table_") {
+                        let b = it.bounds();
+                        (b.x0 < page_r.x1 && b.x1 > page_r.x0).then_some(b.y1)
+                    } else {
+                        None
+                    }
+                })
+                .fold(f64::NEG_INFINITY, f64::max);
+
             let mut title_bottom = margin.y0;
-            for it in &spread.items {
-                let b = it.bounds();
-                // Check if item lies on this page horizontally and in header region vertically
-                if b.x0 < page_r.x1 && b.x1 > page_r.x0 && (st.active_profile().id == "bps_brs" || b.y0 < margin.y0 + 260.0) {
-                    // Ignore text frames that already contain tables
-                    let is_table = it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|st| !st.tables.is_empty());
-                    if !is_table && b.y1 > title_bottom {
-                        title_bottom = b.y1;
+            if slot_title_bottom.is_finite() {
+                title_bottom = slot_title_bottom;
+            } else {
+                for it in &spread.items {
+                    let b = it.bounds();
+                    // Check if item lies on this page horizontally and in header region vertically
+                    if b.x0 < page_r.x1 && b.x1 > page_r.x0 && (st.active_profile().id == "bps_brs" || b.y0 < margin.y0 + 260.0) {
+                        // Ignore text frames that already contain tables
+                        let is_table = it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|st| !st.tables.is_empty());
+                        if !is_table && b.y1 > title_bottom {
+                            title_bottom = b.y1;
+                        }
                     }
                 }
             }
@@ -277,7 +296,7 @@ pub(crate) fn execute_insert_table_matrix(
             } else {
                 0.0
             };
-            let gap_below_title = 12.0;
+            let gap_below_title = 6.0;
             let table_y0 = if title_bottom > margin.y0 { title_bottom + gap_below_title } else { margin.y0 };
             let available_h = (margin.y1 - table_y0).max(60.0);
             let max_table_h = if has_footnote { (available_h - note_reserve_h).max(40.0) } else { available_h };
@@ -774,6 +793,8 @@ pub(crate) fn execute_insert_table_matrix(
         .map_err(|e| e.to_string())?;
 
     let mut actual_fn_target = fn_target;
+    let mut below_table_y: Option<f64> = None;
+    let created_spread = created_frame_info.as_ref().map(|(_, si, ..)| *si);
     if let Some((fid, spread_idx, x0, x1, y0, max_h, margin_y1)) = created_frame_info {
         let fit_h = {
             let active = app.session.active().ok_or("No active document")?;
@@ -794,6 +815,8 @@ pub(crate) fn execute_insert_table_matrix(
             let fn_y0 = y0 + fit_h + 8.0;
             let fn_y1 = (fn_y0 + 24.0).min(margin_y1);
             actual_fn_target = Some((spread_idx, [x0, fn_y0, x1, fn_y1]));
+        } else {
+            below_table_y = Some(y0 + fit_h + 6.0);
         }
     }
 
@@ -885,6 +908,7 @@ pub(crate) fn execute_insert_table_matrix(
                         (note_lines.len() as f64 * 16.0 + 8.0).max(20.0)
                     }
                 };
+                below_table_y = Some(fn_rect[1] + fit_note_h + 6.0);
 
                 if let Some(fid) = fn_item_id {
                     let _ = app.session.edit(|doc, _| {
@@ -912,6 +936,26 @@ pub(crate) fn execute_insert_table_matrix(
                 "caret": false
             }),
         );
+        below_table_y = Some(fn_rect[3] + 6.0);
+    }
+
+    // A template page keeps its `#slot:text:source` frame at a fixed low y; slide it
+    // below the inserted table (and any notes) so the table never runs over it.
+    if let (Some(src_y), Some(spread_idx)) = (below_table_y, created_spread) {
+        let src_id = app
+            .session
+            .active()
+            .and_then(|a| a.doc.spreads.get(spread_idx).and_then(|sp| sp.items.iter().find(|it| it.label == "#slot:text:source").map(|it| it.id)));
+        if let Some(src_id) = src_id {
+            let _ = app.session.edit(|doc, _| {
+                if let Some(it) = doc.item_mut(src_id)
+                    && let Some(pb) = it.path.bounds()
+                {
+                    it.path = designcraft_geom::shapes::rectangle(designcraft_geom::Rect::new(pb.x0, src_y, pb.x1, src_y + pb.height()));
+                }
+                Ok(serde_json::Value::Null)
+            });
+        }
     }
 
     let target_msg = match target_page_info {
@@ -1197,9 +1241,9 @@ pub(crate) mod tests {
             .find(|it| it.text_frame().and_then(|tf| active.doc.story(tf.story)).is_some_and(|st| !st.tables.is_empty()))
             .expect("Table item should exist on spread");
 
-        // In preset 0, title row has row_y1 = margin.y0 + 60.0 and gap_below_title = 12.0
-        // The table frame should start at margin.y0 + 60.0 + 12.0 = margin.y0 + 72.0
-        assert_eq!(table_item.bounds().y0, margin.y0 + 72.0);
+        // In preset 0, title row has row_y1 = margin.y0 + 60.0 and gap_below_title = 6.0
+        // The table frame should start at margin.y0 + 60.0 + 6.0 = margin.y0 + 66.0
+        assert_eq!(table_item.bounds().y0, margin.y0 + 66.0);
         assert_eq!(table_item.bounds().x0, margin.x0);
         assert_eq!(table_item.bounds().x1, margin.x1);
     }

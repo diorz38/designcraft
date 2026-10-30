@@ -313,7 +313,7 @@ pub fn emit_text_with_font(
     let sid = res.get("story").and_then(Value::as_u64);
 
     let swatch_name = if let Some(c) = color { ensure_swatch(app, c)? } else { "[Black]".to_string() };
-    let fam = font_family.unwrap_or("Arial");
+    let fam = font_family.unwrap_or("Lato");
 
     if let Some(story_id) = sid {
         let _ = app.session.edit(|doc, _| {
@@ -371,6 +371,7 @@ pub fn emit_chart(
     layout: &ChartLayout,
     palette: &[String],
     bilingual: bool,
+    font: &str,
 ) -> Result<usize, String> {
     let mut frame_ids: Vec<u64> = Vec::new();
 
@@ -387,8 +388,7 @@ pub fn emit_chart(
             [(gl.rect[0] - AXIS_LABEL_W - 4.0).max(0.0), gl.rect[1] - 6.0, gl.rect[0] - 4.0, gl.rect[1] + 6.0]
         };
         let align = if is_vertical_grid { "center" } else { "right" };
-        let font = if spec.chart_type == super::spec::ChartType::Line { Some("Lato") } else { None };
-        if let Ok(tfid) = emit_text_with_font(app, spread_idx, tick_rect, &gl.label, 7.0, false, align, Some("#555555"), font) {
+        if let Ok(tfid) = emit_text_with_font(app, spread_idx, tick_rect, &gl.label, 7.0, false, align, Some("#555555"), Some(font)) {
             frame_ids.push(tfid);
         }
     }
@@ -766,8 +766,7 @@ pub fn emit_chart(
         } else {
             (series_color(palette, *s_idx), "center")
         };
-        let font = if spec.chart_type == super::spec::ChartType::Line { Some("Lato") } else { None };
-        if let Ok(fid) = emit_text_with_font(app, spread_idx, *v_rect, text, 7.5, true, align, Some(color), font) {
+        if let Ok(fid) = emit_text_with_font(app, spread_idx, *v_rect, text, 7.5, true, align, Some(color), Some(font)) {
             frame_ids.push(fid);
         }
     }
@@ -829,7 +828,6 @@ pub fn emit_chart(
             }
         }
         for cell in &table.cells {
-            let font = Some("Lato");
             let color = Some("#111111");
             let size = if cell.is_header {
                 6.5
@@ -838,7 +836,7 @@ pub fn emit_chart(
             } else {
                 6.5
             };
-            if let Ok(tfid) = emit_text_with_font(app, spread_idx, cell.rect, &cell.text, size, cell.is_bold, cell.align, color, font) {
+            if let Ok(tfid) = emit_text_with_font(app, spread_idx, cell.rect, &cell.text, size, cell.is_bold, cell.align, color, Some(font)) {
                 frame_ids.push(tfid);
             }
         }
@@ -872,12 +870,32 @@ pub fn emit_chart(
 
     // 8c. Bottom Title
     if let Some((b_rect, b_title)) = &layout.bottom_title {
-        if let Ok(tfid) = emit_text_with_font(app, spread_idx, *b_rect, b_title, 9.5, true, "center", Some("#D97706"), Some("Raleway")) {
+        if let Ok(tfid) = emit_text_with_font(app, spread_idx, *b_rect, b_title, 9.5, true, "center", Some("#D97706"), Some(font)) {
             frame_ids.push(tfid);
         }
     }
 
-    // 9. Group all emitted frames
+    // 9. One profile font for every chart text element
+    let _ = app.session.edit(|doc, _| {
+        let sids: Vec<designcraft_doc::StoryId> = frame_ids
+            .iter()
+            .filter_map(|&id| {
+                let it = doc.item_mut(designcraft_doc::ItemId(id))?;
+                it.text_frame().map(|tf| tf.story)
+            })
+            .collect();
+        for sid in sids {
+            if let Some(story) = doc.story_mut(sid) {
+                for r in &mut story.chars {
+                    r.format.over.font_family = Some(font.into());
+                }
+                story.rev += 1;
+            }
+        }
+        Ok(Value::Null)
+    });
+
+    // 10. Group all emitted frames
     if frame_ids.len() > 1 {
         let _ = app.run("object.group", json!({"ids": frame_ids}));
     }
@@ -950,7 +968,7 @@ mod tests {
         assert!(!layout.map_regions.is_empty(), "Map layout must contain regions");
         assert!(!layout.map_legend.is_empty(), "Map layout must contain legend entries");
 
-        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
+        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false, "Lato").unwrap();
         assert!(count > 10, "Map chart must emit multiple polygon and legend frames: {count}");
 
         let active = app.session.active().unwrap();
@@ -965,7 +983,7 @@ mod tests {
         let values = vec![vec![10.0, 20.0, 30.0], vec![15.0, 25.0, 35.0]];
 
         let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
-        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
+        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false, "Lato").unwrap();
 
         assert!(count > 10, "Chart must emit multiple frames: {count}");
 
@@ -982,7 +1000,7 @@ mod tests {
         let values = vec![vec![40.0, 80.0], vec![60.0, 120.0]];
 
         let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
-        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
+        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false, "Lato").unwrap();
 
         assert!(count > 0);
         let active = app.session.active().unwrap();
@@ -997,7 +1015,7 @@ mod tests {
         let values = vec![vec![100.0, 150.0, 200.0], vec![80.0, 120.0, 190.0]];
 
         let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
-        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
+        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false, "Lato").unwrap();
 
         assert!(count > 10);
     }
@@ -1010,7 +1028,7 @@ mod tests {
         let values = vec![vec![40.0, 60.0]];
 
         let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
-        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
+        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false, "Lato").unwrap();
 
         assert!(count > 0);
     }
@@ -1023,7 +1041,7 @@ mod tests {
         let values = vec![vec![10.0, 20.0], vec![30.0, 40.0]];
 
         let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
-        let _ = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
+        let _ = emit_chart(&mut app, 0, &spec, &layout, &[], false, "Lato").unwrap();
 
         let active = app.session.active().unwrap();
         // Spreads contain a Group item containing the child frames
@@ -1041,7 +1059,7 @@ mod tests {
         let layout = compute_layout(&spec, &categories, &values, sample_margin(), true).unwrap();
         assert_eq!(layout.legend_items.len(), 2);
 
-        let _ = emit_chart(&mut app, 0, &spec, &layout, &[], true).unwrap();
+        let _ = emit_chart(&mut app, 0, &spec, &layout, &[], true, "Lato").unwrap();
         let active = app.session.active().unwrap();
         assert!(!active.doc.spreads[0].items.is_empty());
 
@@ -1068,7 +1086,7 @@ mod tests {
         let values = vec![vec![500.0, 800.0], vec![480.0, 790.0]];
 
         let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
-        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
+        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false, "Lato").unwrap();
 
         assert!(count >= 30, "Population pyramid must emit bars, labels, ticks, pictograms, and summary frames (got {count})");
 
@@ -1100,7 +1118,7 @@ mod tests {
         let values = vec![vec![60.0]];
 
         let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
-        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
+        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false, "Lato").unwrap();
 
         assert!(count >= 7, "Gauge chart must emit track, value, needle, pivot, readout and subtitle");
     }

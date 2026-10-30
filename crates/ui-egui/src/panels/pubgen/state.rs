@@ -776,6 +776,13 @@ impl PubgenState {
         super::profiles::ProfileManager::get_profile(&self.active_profile_id)
     }
 
+    /// Profile body font for tables, charts and generated text; "Lato" when unset.
+    pub fn body_font(&self) -> String {
+        let f = self.active_profile().typography.body_font;
+        let t = f.trim();
+        if t.is_empty() { "Lato".to_string() } else { t.to_string() }
+    }
+
     /// Sets the active publication profile and synchronizes table styling and numbering flags.
     pub fn apply_profile(&mut self, profile: super::profiles::PubgenProfile, user_locked: bool) {
         self.active_profile_id = profile.id.clone();

@@ -469,7 +469,7 @@ impl ChartDialog {
     }
 
     /// Apply or insert the chart on the active document spread.
-    pub fn apply_chart(&mut self, app: &mut DesignApp, bilingual: bool) -> Result<u64, String> {
+    pub fn apply_chart(&mut self, app: &mut DesignApp, bilingual: bool, font: &str) -> Result<u64, String> {
         let sheet_data = self.parse_sheet_data();
         let spec = self.build_spec();
 
@@ -570,7 +570,7 @@ impl ChartDialog {
             app.session.active().and_then(|a| a.doc.spreads.get(target_sp)).map(|s| s.items.iter().map(|it| it.id.0).collect()).unwrap_or_default();
 
         let layout = compute_layout(&spec, &categories, &series_values, margin, bilingual)?;
-        let count = super::emitter::emit_chart(app, target_sp, &spec, &layout, &[], bilingual)?;
+        let count = super::emitter::emit_chart(app, target_sp, &spec, &layout, &[], bilingual, font)?;
 
         // `emit_chart` groups the emitted frames; keep that group so the title can join it and
         // a later edit clears the whole chart at once.
@@ -597,7 +597,8 @@ impl ChartDialog {
             let title_h = if is_bilingual_title { 56.0 } else { 44.0 };
             let title_rect = [margin.x0, margin.y0, margin.x1, margin.y0 + title_h];
 
-            let fid = super::emitter::emit_text(app, target_sp, title_rect, &title_text, 11.0, true, "center", Some("#1A1A1A"))?;
+            let fid =
+                super::emitter::emit_text_with_font(app, target_sp, title_rect, &title_text, 11.0, true, "center", Some("#1A1A1A"), Some(font))?;
             title_fid = Some(fid);
 
             // Format character runs:
@@ -627,7 +628,7 @@ impl ChartDialog {
                                 len: id_len + 1, // include newline
                                 format: designcraft_doc::CharFormat {
                                     over: designcraft_doc::CharAttrs {
-                                        font_family: Some("Arial".into()),
+                                        font_family: Some(font.into()),
                                         size: Some(11.0),
                                         font_style: Some("Bold".into()),
                                         fill: Some("[Black]".into()),
@@ -640,7 +641,7 @@ impl ChartDialog {
                                 len: en_len,
                                 format: designcraft_doc::CharFormat {
                                     over: designcraft_doc::CharAttrs {
-                                        font_family: Some("Arial".into()),
+                                        font_family: Some(font.into()),
                                         size: Some(10.0),
                                         font_style: Some("Italic".into()),
                                         fill: Some("[Black]".into()),
@@ -655,7 +656,7 @@ impl ChartDialog {
                             len: id_len,
                             format: designcraft_doc::CharFormat {
                                 over: designcraft_doc::CharAttrs {
-                                    font_family: Some("Arial".into()),
+                                    font_family: Some(font.into()),
                                     size: Some(11.0),
                                     font_style: Some("Bold".into()),
                                     fill: Some("[Black]".into()),
@@ -1488,7 +1489,7 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
     });
 
     if apply {
-        if let Err(err) = dialog.apply_chart(app, st.bilingual_output) {
+        if let Err(err) = dialog.apply_chart(app, st.bilingual_output, &st.body_font()) {
             dialog.status = Some((err, false));
         } else {
             close = true;
@@ -1556,7 +1557,7 @@ mod tests {
         dlg.map_custom_path = "Z:/pubgen-missing/NOPE.geojson".into();
         dlg.insert_on_new_page = true;
 
-        let err = dlg.apply_chart(&mut app, true).expect_err("missing GeoJSON must fail loudly");
+        let err = dlg.apply_chart(&mut app, true, "Lato").expect_err("missing GeoJSON must fail loudly");
         let lower = err.to_lowercase();
         assert!(lower.contains("geojson") || lower.contains("not found"), "unexpected error: {err}");
         let active = app.session.active().unwrap();
@@ -1573,14 +1574,14 @@ mod tests {
         dlg.select_chart_type(ChartType::Map);
         dlg.load_village_sample();
         dlg.insert_on_new_page = false;
-        dlg.apply_chart(&mut app, true).unwrap();
+        dlg.apply_chart(&mut app, true, "Lato").unwrap();
 
         let top_level_after_first = app.session.active().unwrap().doc.spreads[0].items.len();
         assert_eq!(top_level_after_first, 1, "chart frames and title must be grouped into one container");
 
         let mut edit = ChartDialog::new(&app, true);
         assert!(edit.editing_item_id.is_some(), "edit dialog must find the existing chart container");
-        edit.apply_chart(&mut app, true).unwrap();
+        edit.apply_chart(&mut app, true, "Lato").unwrap();
 
         let active = app.session.active().unwrap();
         let title_count = active.doc.stories.values().filter(|s| s.text.contains("Indeks Pembangunan Desa")).count();
@@ -1626,7 +1627,7 @@ mod tests {
 
         let mut dlg = ChartDialog::default();
         dlg.insert_on_new_page = false;
-        let res = dlg.apply_chart(&mut app, true);
+        let res = dlg.apply_chart(&mut app, true, "Lato");
         assert!(res.is_ok(), "apply_chart failed: {:?}", res);
         let count = res.unwrap();
         assert!(count > 0, "must emit vector objects");
@@ -1646,7 +1647,7 @@ mod tests {
         dlg.auto_detect_columns();
         dlg.insert_on_new_page = false;
 
-        let res = dlg.apply_chart(&mut app, true);
+        let res = dlg.apply_chart(&mut app, true, "Lato");
         assert!(res.is_ok(), "apply_chart for Map failed: {:?}", res);
         let count = res.unwrap();
         assert!(count > 0, "must emit vector map objects");
@@ -1670,7 +1671,7 @@ mod tests {
         assert_eq!(dlg.title_en, "Figure 03.02 Population");
         dlg.insert_on_new_page = false;
 
-        let res = dlg.apply_chart(&mut app, true);
+        let res = dlg.apply_chart(&mut app, true, "Lato");
         assert!(res.is_ok(), "apply_chart with semicolon failed: {:?}", res);
     }
 
@@ -1681,14 +1682,14 @@ mod tests {
 
         let mut dlg = ChartDialog::default();
         dlg.insert_on_new_page = false;
-        let _ = dlg.apply_chart(&mut app, true).unwrap();
+        let _ = dlg.apply_chart(&mut app, true, "Lato").unwrap();
 
         let initial_items_count = app.session.active().unwrap().doc.spreads[0].items.len();
         assert!(initial_items_count > 0);
 
         // Edit chart
         dlg.title_id = "Grafik 01.01 Updated Title".into();
-        let res = dlg.apply_chart(&mut app, true);
+        let res = dlg.apply_chart(&mut app, true, "Lato");
         assert!(res.is_ok());
 
         let active = app.session.active().unwrap();
@@ -1712,7 +1713,7 @@ mod tests {
         assert!(dlg.insert_on_new_page);
 
         let before = app.session.active().unwrap().doc.page_count();
-        let res = dlg.apply_chart(&mut app, true);
+        let res = dlg.apply_chart(&mut app, true, "Lato");
         assert!(res.is_ok(), "apply_chart failed: {:?}", res);
         let count = res.unwrap();
         assert!(count > 0, "must emit vector map objects");
@@ -1786,7 +1787,7 @@ mod tests {
         assert!(dlg.raw_data.contains("Jumlah,4.09,30.16"));
 
         // 4. Verify applying chart with the imported data succeeds
-        let apply_res = dlg.apply_chart(&mut app, false);
+        let apply_res = dlg.apply_chart(&mut app, false, "Lato");
         assert!(apply_res.is_ok(), "apply_chart with imported data must succeed: {:?}", apply_res);
 
         // 5. Test non-existent page error
@@ -1848,7 +1849,7 @@ mod tests {
         assert_eq!(spec.series.len(), 1, "Donut spec must contain exactly 1 series");
 
         // Verify applying donut chart succeeds
-        let apply_res = dlg.apply_chart(&mut app, false);
+        let apply_res = dlg.apply_chart(&mut app, false, "Lato");
         assert!(apply_res.is_ok(), "apply_chart for donut must succeed: {:?}", apply_res);
     }
 
@@ -1863,7 +1864,7 @@ mod tests {
         let mut dlg = ChartDialog::default();
         dlg.insert_on_new_page = true;
         dlg.import_page = 2; // Insert after page 2 -> new page becomes page 3
-        let res = dlg.apply_chart(&mut app, false);
+        let res = dlg.apply_chart(&mut app, false, "Lato");
         assert!(res.is_ok(), "apply_chart failed: {:?}", res);
 
         let active = app.session.active().unwrap();
@@ -1952,7 +1953,7 @@ mod tests {
         dlg.import_page = 2; // Data was imported from table on page 2!
         dlg.placement = ChartPlacement::SelectedPage;
 
-        let res = dlg.apply_chart(&mut app, false);
+        let res = dlg.apply_chart(&mut app, false, "Lato");
         assert!(res.is_ok(), "apply_chart failed: {:?}", res);
 
         let active = app.session.active().unwrap();
@@ -1983,7 +1984,7 @@ mod tests {
         dlg.import_page = 1; // Table from chapter 1
         dlg.placement = ChartPlacement::SelectedPage;
 
-        let res = dlg.apply_chart(&mut app, false);
+        let res = dlg.apply_chart(&mut app, false, "Lato");
         assert!(res.is_ok(), "apply_chart failed: {:?}", res);
 
         let active = app.session.active().unwrap();
@@ -2020,7 +2021,7 @@ mod tests {
         let pangkalan = maps.iter().position(|m| m.id == "PANGKALAN").expect("Pangkalan stock map exists");
         dlg.map_stock_idx = pangkalan;
 
-        let res = dlg.apply_chart(&mut app, true);
+        let res = dlg.apply_chart(&mut app, true, "Lato");
         assert!(res.is_ok(), "apply_chart failed: {:?}", res);
         let count = res.unwrap();
         assert!(count > 0, "must emit vector map objects");

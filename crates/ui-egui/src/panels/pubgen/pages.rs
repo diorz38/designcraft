@@ -188,6 +188,7 @@ fn post_process_template_applied_page(
     type_val: &str,
 ) -> Option<u64> {
     let mut table_placeholder_id = None;
+    let mut title_slot_ids = Vec::new();
     let mut story_ids_to_tag = Vec::new();
     let mut body_story_ids = Vec::new();
     let mut image_slot_ids = Vec::new();
@@ -218,6 +219,9 @@ fn post_process_template_applied_page(
                         } else if (item.label.contains("title") || item.label.contains("chapter_title"))
                             && let Some(tf) = item.text_frame()
                         {
+                            if item.label.starts_with("#slot:text:table_title") {
+                                title_slot_ids.push(it_id);
+                            }
                             story_ids_to_tag.push(tf.story);
                         } else if item.label.starts_with("#slot:story:")
                             && let Some(tf) = item.text_frame()
@@ -239,6 +243,12 @@ fn post_process_template_applied_page(
                 let _ = app.run("text.select", json!({"story": sid, "anchor": 0, "focus": len}));
                 let _ = app.run("type.char", json!({"size": 22.0, "fontStyle": "Italic", "stroke": "[Black]", "strokeBehindFill": true}));
             }
+        }
+
+        // A wrapped table title must grow its frame (heightOnly) instead of spilling
+        // over the table slot below it.
+        for id in title_slot_ids {
+            let _ = app.run("object.textFrameOptions", json!({"autoSize": "heightOnly", "autoSizeReference": "topLeft", "ids": [id]}));
         }
 
         for img_id in image_slot_ids {
@@ -525,7 +535,8 @@ fn row_template_slots(
                 locale::Locale::Id => id_title,
                 locale::Locale::En => en_title_opt.unwrap_or(id_title),
             };
-            text.insert("table_num".into(), json!(formatted_num));
+            let prof = st.active_profile();
+            text.insert("table_num".into(), json!(format!("{} {}", locale::table_prefix(Some(&prof), st.locale), formatted_num)));
             text.insert("table_kind_en".into(), json!(""));
             text.insert("table_title".into(), json!(table_title_val));
             text.insert("table_title_en".into(), json!(""));
@@ -537,13 +548,13 @@ fn row_template_slots(
     RowSlots { text, story, image, images_resolved, rtfs_resolved }
 }
 
-pub(crate) fn ensure_brs_heading_styles(app: &mut DesignApp) {
+pub(crate) fn ensure_brs_heading_styles(app: &mut DesignApp, font: &str) {
     let _ = app.run("list.define", json!({"name": "BRS", "continueAcrossStories": true}));
 
     let h1_params = json!({
         "name": "Heading 1",
         "chars": {
-            "fontFamily": "Raleway",
+            "fontFamily": font,
             "fontStyle": "Bold",
             "size": 13.0
         },
@@ -565,7 +576,7 @@ pub(crate) fn ensure_brs_heading_styles(app: &mut DesignApp) {
     let h2_params = json!({
         "name": "Heading 2",
         "chars": {
-            "fontFamily": "Raleway",
+            "fontFamily": font,
             "fontStyle": "Bold",
             "size": 11.0
         },
@@ -587,7 +598,7 @@ pub(crate) fn ensure_brs_heading_styles(app: &mut DesignApp) {
     let title_params = json!({
         "name": "Title",
         "chars": {
-            "fontFamily": "Raleway",
+            "fontFamily": font,
             "fontStyle": "Bold",
             "size": 14.5
         },
@@ -601,7 +612,7 @@ pub(crate) fn ensure_brs_heading_styles(app: &mut DesignApp) {
     }
 }
 
-pub(crate) fn format_brs_narrative_story(app: &mut DesignApp, fid: u64) {
+pub(crate) fn format_brs_narrative_story(app: &mut DesignApp, fid: u64, font: &str) {
     let Some(active) = app.session.active() else { return };
     let Some(it) = active.doc.item(designcraft_doc::ItemId(fid)) else { return };
     let Some(tf) = it.text_frame() else { return };
@@ -615,7 +626,7 @@ pub(crate) fn format_brs_narrative_story(app: &mut DesignApp, fid: u64) {
 
     // Default font Lato
     let _ = app.run("text.select", json!({"story": sid.0, "anchor": 0, "focus": story_len}));
-    let _ = app.run("type.char", json!({"fontFamily": "Lato", "size": 10.0}));
+    let _ = app.run("type.char", json!({"fontFamily": font, "size": 10.0}));
 
     // Inspect paragraphs and determine styling without holding borrow during app.run
     #[derive(Clone, Copy)]
@@ -674,15 +685,15 @@ pub(crate) fn format_brs_narrative_story(app: &mut DesignApp, fid: u64) {
         match h_kind {
             BHeading::Title => {
                 let _ = app.run("style.paragraph.apply", json!({"name": "Title"}));
-                let _ = app.run("type.char", json!({"fontFamily": "Raleway", "fontStyle": "Bold", "size": 14.5}));
+                let _ = app.run("type.char", json!({"fontFamily": font, "fontStyle": "Bold", "size": 14.5}));
             }
             BHeading::H1 => {
                 let _ = app.run("style.paragraph.apply", json!({"name": "Heading 1"}));
-                let _ = app.run("type.char", json!({"fontFamily": "Raleway", "fontStyle": "Bold", "size": 13.0}));
+                let _ = app.run("type.char", json!({"fontFamily": font, "fontStyle": "Bold", "size": 13.0}));
             }
             BHeading::H2 => {
                 let _ = app.run("style.paragraph.apply", json!({"name": "Heading 2"}));
-                let _ = app.run("type.char", json!({"fontFamily": "Raleway", "fontStyle": "Bold", "size": 11.0}));
+                let _ = app.run("type.char", json!({"fontFamily": font, "fontStyle": "Bold", "size": 11.0}));
             }
         }
     }
@@ -767,7 +778,8 @@ fn execute_generate_pages_brs(
     slice: &[Vec<String>],
     doc_margins: designcraft_doc::Margins,
 ) -> Result<String, String> {
-    ensure_brs_heading_styles(app);
+    let brs_font = st.body_font();
+    ensure_brs_heading_styles(app, &brs_font);
 
     let mut generated_count = 0usize;
     let mut inserted_tables_count = 0usize;
@@ -851,7 +863,8 @@ fn execute_generate_pages_brs(
                     if let Ok((cats, vals)) = super::charts::spec::extract_chart_data(&sheet_data, &chart_spec) {
                         if let Ok(layout) = super::charts::layout::compute_layout(&chart_spec, &cats, &vals, chart_margin, st.bilingual_output) {
                             let palette = if !theme_val.is_empty() { vec![theme_val.to_string()] } else { Vec::new() };
-                            let _ = super::charts::emitter::emit_chart(app, spread_idx, &chart_spec, &layout, &palette, st.bilingual_output);
+                            let _ =
+                                super::charts::emitter::emit_chart(app, spread_idx, &chart_spec, &layout, &palette, st.bilingual_output, &brs_font);
                             rendered = true;
                             vector_charts_count = vector_charts_count.saturating_add(1);
                         }
@@ -954,7 +967,7 @@ fn execute_generate_pages_brs(
                     let _ = app.session.edit(|doc, _| Ok(doc.thread(designcraft_doc::ItemId(prev_fid), designcraft_doc::ItemId(fid))?));
                 }
 
-                format_brs_narrative_story(app, fid);
+                format_brs_narrative_story(app, fid, &brs_font);
 
                 let fit_h = measure_frame_content_height(app, fid).unwrap_or(180.0);
                 let clamped_h = (fit_h + 4.0).min(margin.y1 - cur_y);
@@ -2238,7 +2251,15 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                                     } else {
                                         Vec::new()
                                     };
-                                    match super::charts::emitter::emit_chart(app, spread_idx, &map_spec, &layout, &palette, st.bilingual_output) {
+                                    match super::charts::emitter::emit_chart(
+                                        app,
+                                        spread_idx,
+                                        &map_spec,
+                                        &layout,
+                                        &palette,
+                                        st.bilingual_output,
+                                        &st.body_font(),
+                                    ) {
                                         Ok(_n) => {
                                             vector_charts_count = vector_charts_count.saturating_add(1);
                                             vector_rendered = true;
@@ -2280,7 +2301,15 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                                 } else {
                                     Vec::new()
                                 };
-                                match super::charts::emitter::emit_chart(app, spread_idx, &spec, &layout, &palette, st.bilingual_output) {
+                                match super::charts::emitter::emit_chart(
+                                    app,
+                                    spread_idx,
+                                    &spec,
+                                    &layout,
+                                    &palette,
+                                    st.bilingual_output,
+                                    &st.body_font(),
+                                ) {
                                     Ok(_n) => {
                                         vector_charts_count = vector_charts_count.saturating_add(1);
                                         vector_rendered = true;
@@ -4925,6 +4954,72 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_brs_template_title_wraps_above_table_and_source_follows() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let tpl = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/templates/data_tables/001_single_table_standard.designcraft");
+        let long_title = "Luas Wilayah Menurut Kabupaten dan Kota serta Kepadatan Penduduk di Provinsi Jawa Barat Tahun 2024";
+        let res = app
+            .run(
+                "template.page.apply",
+                json!({
+                    "path": tpl,
+                    "slots": {"text": {"table_num": "Tabel 1.1", "table_title": long_title, "source": "Sumber: BPS Jawa Barat"}}
+                }),
+            )
+            .unwrap();
+
+        let bounds_by_label = |app: &DesignApp| -> Vec<(String, designcraft_geom::Rect)> {
+            let active = app.session.active().unwrap();
+            let mut out = Vec::new();
+            for sp in &active.doc.spreads {
+                for it in &sp.items {
+                    if !it.label.is_empty() {
+                        out.push((it.label.clone(), it.bounds()));
+                    }
+                }
+            }
+            out
+        };
+
+        let title_h_before = bounds_by_label(&app).iter().find(|(l, _)| l == "#slot:text:table_title").map(|(_, b)| b.height()).unwrap();
+
+        let st = PubgenState::default();
+        let doc_margins = designcraft_doc::Margins::uniform(36.0);
+        let _table_slot = post_process_template_applied_page(&mut app, &st, &res, false, doc_margins, false, long_title, "Tabel");
+
+        let matrix = vec![
+            vec!["Kecamatan".to_string(), "Luas".to_string()],
+            vec!["Karawang Timur".to_string(), "35.2".to_string()],
+            vec!["Sumber".to_string(), ":".to_string(), "BPS".to_string()],
+        ];
+        let cur = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
+        let ins = execute_insert_table_matrix(&mut app, &st, Some(&matrix), Some(cur));
+        assert!(ins.is_ok(), "execute_insert_table_matrix failed: {:?}", ins.err());
+
+        let by_label = bounds_by_label(&app);
+        let title_b = by_label.iter().find(|(l, _)| l == "#slot:text:table_title").map(|(_, b)| *b).unwrap();
+        let src_b = by_label.iter().find(|(l, _)| l == "#slot:text:source").map(|(_, b)| *b).unwrap();
+        let active = app.session.active().unwrap();
+        let tbl_b = active
+            .doc
+            .spreads
+            .iter()
+            .flat_map(|sp| sp.items.iter())
+            .find(|it| it.text_frame().is_some_and(|tf| active.doc.story(tf.story).is_some_and(|s| !s.tables.is_empty())))
+            .map(|it| it.bounds())
+            .unwrap();
+
+        // The wrapped title grew its frame instead of spilling over the table.
+        assert!(title_b.height() > title_h_before + 2.0, "Title frame must grow when the title wraps: {} -> {}", title_h_before, title_b.height());
+        assert!(title_b.y1 < tbl_b.y0, "Wrapped title must sit above the table: title y1 {} vs table y0 {}", title_b.y1, tbl_b.y0);
+        // The template's fixed source slot slid below the inserted table + footnote.
+        assert!(src_b.y0 >= tbl_b.y1, "Source slot must follow the table: src y0 {} vs table y1 {}", src_b.y0, tbl_b.y1);
+        assert!(src_b.y0 < 530.0, "Source slot must move up under a short table, still at {}", src_b.y0);
+    }
+
+    #[test]
     fn test_vector_chart_sheet_renders_vector_and_skips_raster() {
         let dir = tempfile::tempdir().unwrap();
         let chart_csv_path = dir.path().join("C02_01.csv");
@@ -5086,7 +5181,7 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
         let margin = designcraft_geom::Rect { x0: 36.0, y0: 36.0, x1: 500.0, y1: 700.0 };
 
         let layout = super::charts::layout::compute_layout(&spec, &categories, &values, margin, true).unwrap();
-        super::charts::emitter::emit_chart(&mut app, 0, &spec, &layout, &[], true).unwrap();
+        super::charts::emitter::emit_chart(&mut app, 0, &spec, &layout, &[], true, "Lato").unwrap();
 
         let active = app.session.active().unwrap();
         let leg_story = active.doc.stories.values().find(|s| s.text.contains("Laki-laki / Male")).expect("Legend story must exist");
@@ -5124,7 +5219,7 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
         let layout = super::charts::layout::compute_layout(&spec, &categories, &values, margin, false).unwrap();
         assert!(layout.x_tick_labels[0].rotated, "Label longer than 12 chars must have rotated flag");
 
-        let _ = super::charts::emitter::emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
+        let _ = super::charts::emitter::emit_chart(&mut app, 0, &spec, &layout, &[], false, "Lato").unwrap();
         let active = app.session.active().unwrap();
         // Item should have rotation applied
         let mut all_items: Vec<std::sync::Arc<designcraft_doc::Item>> = Vec::new();
