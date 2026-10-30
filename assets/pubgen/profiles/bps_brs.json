@@ -19,7 +19,8 @@
     "restart_body_numbering": false,
     "require_chapter_dividers": false,
     "include_inside_cover": false,
-    "include_back_cover": true
+    "include_back_cover": true,
+    "bilingual": false
   },
   "nomenclature": {
     "chapter_prefix": "",

@@ -3194,6 +3194,8 @@ pub(crate) mod tests {
         let res_e2e = super::super::excel::execute_excel_and_generate(&mut app2, &mut st2, &sample_xlsx.to_string_lossy());
         assert!(res_e2e.is_ok(), "execute_excel_and_generate failed: {res_e2e:?}");
         assert_eq!(st2.cover_style, 13, "Must use style 13 BRS cover");
+        assert!(!st2.bilingual_output, "BRS must default to single-language mode");
+        assert!(!st2.card2_table_footer, "BRS must default to no table footer");
         let doc2 = &app2.session.active().unwrap().doc;
         assert!(doc2.page_count() >= 8, "Doc2 must have at least 8 pages; got {}", doc2.page_count());
 

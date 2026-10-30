@@ -105,6 +105,8 @@ pub struct ProfileStructure {
     pub require_chapter_dividers: bool,
     pub include_inside_cover: bool,
     pub include_back_cover: bool,
+    #[serde(default = "default_true")]
+    pub bilingual: bool,
 }
 
 impl Default for ProfileStructure {
@@ -116,6 +118,7 @@ impl Default for ProfileStructure {
             require_chapter_dividers: true,
             include_inside_cover: true,
             include_back_cover: true,
+            bilingual: true,
         }
     }
 }
@@ -370,6 +373,8 @@ mod tests {
         assert_eq!(brs.id, "bps_brs");
         assert!(!brs.table_styling.include_column_number_row);
         assert!(!brs.table_styling.include_table_footer);
+        assert!(!brs.structure.bilingual);
+        assert!(dda.structure.bilingual);
         assert!(!brs.geometry.facing_pages);
         assert_eq!(brs.geometry.margins_mm.top, 18.0);
 

@@ -788,6 +788,7 @@ impl PubgenState {
         self.active_profile_id = profile.id.clone();
         self.card2_col_numbers = profile.table_styling.include_column_number_row;
         self.card2_table_footer = profile.table_styling.include_table_footer;
+        self.bilingual_output = profile.structure.bilingual;
         if profile.table_styling.horizontal_rules_only {
             self.card2_style = 3;
         }
@@ -797,6 +798,8 @@ impl PubgenState {
         if profile.id == "bps_brs" {
             self.cover_style = 13;
             self.cover_include_inside_back = false;
+            self.bilingual_output = false;
+            self.card2_table_footer = false;
         }
         if profile.id == "custom" {
             self.profile_custom = Some(profile);

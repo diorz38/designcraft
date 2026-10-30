@@ -3759,6 +3759,8 @@ pub(crate) fn apply_excel_cover(st: &mut PubgenState, cover: &ExcelCoverData, ba
     if st.active_profile().id == "bps_brs" || !cover.release_no.is_empty() || !cover.points_body.is_empty() {
         st.cover_style = 13;
         st.cover_include_inside_back = false;
+        st.bilingual_output = false;
+        st.card2_table_footer = false;
     }
     if !cover.table_theme.trim().is_empty()
         && let Some(th) = parse_table_color_theme(&cover.table_theme)
@@ -3839,8 +3841,11 @@ pub fn execute_excel_and_generate(app: &mut DesignApp, st: &mut PubgenState, pat
     st.card1_auto_insert_tables = true;
     st.card1_range_all = true;
     st.card2_first_row_header = true;
-    st.card2_col_numbers = true;
-    st.card2_table_footer = true;
+    st.card2_col_numbers = st.active_profile().table_styling.include_column_number_row;
+    st.card2_table_footer = !is_brs && st.active_profile().table_styling.include_table_footer;
+    if is_brs {
+        st.bilingual_output = false;
+    }
     st.card2_row_conditions = true;
 
     let mut cover_res_msg = None;
