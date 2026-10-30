@@ -726,6 +726,8 @@ Buka pembuat grafik dari **Publication ▸ Vector Chart** (`Ctrl+Shift+V`), bari
 | Gauge | `gauge`, `speedometer`, `dial`, `alatukur` | satu metrik terhadap target |
 | Peta choropleth | `map`, `choropleth`, `peta`, `geomap`, `thematicmap` | nilai menurut wilayah |
 
+Grafik donat memuat hingga dua seri — satu cincin per seri (misalnya dua tahun) — dengan pita periode di bawah tiap cincin, persentase dua desimal berkoma, dan garis penunjuk ke label di luar irisan kecil.
+
 ### Yang ditanyakan dialog grafik
 
 1. **Import from Table** — pilih tabel yang sudah ada di dokumen (daftar berisi `Tabel 01.01 — … (Page N)`), pilih halamannya, lalu tekan **Auto-fill** untuk membaca kategori, seri, dan label dari tabel itu.

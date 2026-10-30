@@ -827,6 +827,8 @@ Open the chart builder from **Publication ▸ Vector Chart** (`Ctrl+Shift+V`), t
 | Gauge | `gauge`, `speedometer`, `dial`, `alatukur` | one metric against a target |
 | Choropleth map | `map`, `choropleth`, `peta`, `geomap`, `thematicmap` | values by area |
 
+Donut charts fit up to two series — one ring per series (for example two years) — with a period band under each ring, two-decimal comma percentages, and elbow leader lines to labels placed outside small slices.
+
 ### What the chart dialog asks for
 
 1. **Import from Table** — pick a table already in the document (the dropdown lists `Tabel 01.01 — … (Page N)`), choose the page, then press **Auto-fill** to read the categories, series and labels from that table.

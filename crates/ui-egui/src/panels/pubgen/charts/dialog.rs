@@ -402,8 +402,8 @@ impl ChartDialog {
         });
 
         let max_series = match self.chart_type {
-            ChartType::Donut | ChartType::Gauge | ChartType::Map => 1,
-            ChartType::PopulationPyramid => 2,
+            ChartType::Gauge | ChartType::Map => 1,
+            ChartType::Donut | ChartType::PopulationPyramid => 2,
             _ => 3,
         };
 
@@ -458,10 +458,10 @@ impl ChartDialog {
 
     /// Adjust series and row count to fit the active chart archetype's capacity.
     pub fn clamp_to_chart_type(&mut self) {
-        if self.chart_type == ChartType::Donut || self.chart_type == ChartType::Gauge || self.chart_type == ChartType::Map {
+        if self.chart_type == ChartType::Gauge || self.chart_type == ChartType::Map {
             self.series_2_enabled = false;
             self.series_3_enabled = false;
-        } else if self.chart_type == ChartType::PopulationPyramid {
+        } else if self.chart_type == ChartType::Donut || self.chart_type == ChartType::PopulationPyramid {
             self.series_2_enabled = true;
             self.series_3_enabled = false;
         }
@@ -1017,8 +1017,8 @@ impl ChartDialog {
         // 9. Populate columns and series based on chart type capacity
         self.category_col = "A".into();
         let max_series = match self.chart_type {
-            ChartType::Donut | ChartType::Gauge | ChartType::Map => 1,
-            ChartType::PopulationPyramid => 2,
+            ChartType::Gauge | ChartType::Map => 1,
+            ChartType::Donut | ChartType::PopulationPyramid => 2,
             _ => 3,
         };
 
@@ -1043,7 +1043,19 @@ impl ChartDialog {
         let remaining_cols: Vec<usize> = numeric_cols.iter().copied().filter(|&c| c != col1).collect();
 
         if max_series >= 2 && !remaining_cols.is_empty() {
-            let col2 = remaining_cols[0];
+            // A second donut ring pairs best with the next percentage column (e.g. last year).
+            let col2 = if self.chart_type == ChartType::Donut {
+                remaining_cols
+                    .iter()
+                    .copied()
+                    .find(|&c| {
+                        let h = col_headers[c].0.to_lowercase();
+                        h.contains('%') || h.contains("persen") || h.contains("percentage")
+                    })
+                    .unwrap_or(remaining_cols[0])
+            } else {
+                remaining_cols[0]
+            };
             self.series_2_enabled = true;
             self.series_2_col = index_to_col_letter(col2);
             self.series_2_label_id = col_headers[col2].0.clone();
@@ -1089,7 +1101,8 @@ impl ChartDialog {
         }
 
         let type_note = if self.chart_type == ChartType::Donut {
-            format!("fitted to 1 series '{}', {} slices", self.series_1_label_id, self.data_end_row - self.data_start_row + 1)
+            let rings = if self.series_2_enabled { 2 } else { 1 };
+            format!("fitted to {rings} series, {} slices", self.data_end_row - self.data_start_row + 1)
         } else {
             format!("{} series columns: {}", numeric_cols.len(), numeric_cols.iter().map(|&c| index_to_col_letter(c)).collect::<Vec<_>>().join(", "))
         };
@@ -1290,9 +1303,22 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
             });
 
             // Series 2 & 3 (hidden or customized for specialized archetypes)
-            if dialog.chart_type == ChartType::Donut || dialog.chart_type == ChartType::Gauge {
+            if dialog.chart_type == ChartType::Gauge {
+                ui.label(RichText::new(crate::i18n::tr(&lang, "ℹ Gauge charts only fit 1 category and 1 data series.")).size(10.5).color(t.text_dim));
+            } else if dialog.chart_type == ChartType::Donut {
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut dialog.series_2_enabled, "Series 2 (second ring):");
+                    if dialog.series_2_enabled {
+                        ui.label(RichText::new("Col:").size(10.5).color(t.text_dim));
+                        ui.add_sized([30.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_col));
+                        ui.label(RichText::new("Label (ID):").size(10.5).color(t.text_dim));
+                        ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_id));
+                        ui.label(RichText::new("Label (EN):").size(10.5).color(t.text_dim));
+                        ui.add_sized([100.0, 20.0], egui::TextEdit::singleline(&mut dialog.series_2_label_en));
+                    }
+                });
                 ui.label(
-                    RichText::new(crate::i18n::tr(&lang, "ℹ Donut and Gauge charts only fit 1 category and 1 data series."))
+                    RichText::new(crate::i18n::tr(&lang, "ℹ Donut charts fit up to 2 data series: one ring per series, e.g. two years."))
                         .size(10.5)
                         .color(t.text_dim),
                 );
@@ -1795,7 +1821,7 @@ mod tests {
     }
 
     #[test]
-    fn test_import_from_table_page_donut_fits_single_series() {
+    fn test_import_from_table_page_donut_fits_two_series() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
         app.run("file.new", json!({"width": 595.28, "height": 841.89})).unwrap();
 
@@ -1833,18 +1859,20 @@ mod tests {
         let res = dlg.import_from_table_page(&app, 1);
         assert!(res.is_ok(), "import_from_table_page failed for donut: {:?}", res);
 
-        // Donut must only fit 1 series, and smartly select the percentage column (Col C)
+        // Donut fits up to 2 series: percentage column (C) first, then the remaining numeric column (B).
         assert_eq!(dlg.category_col, "A");
         assert_eq!(dlg.series_1_col, "C", "Donut should prefer percentage column for part-to-whole");
         assert!(dlg.series_1_label_id.contains("Persentase"));
-        assert!(!dlg.series_2_enabled, "Series 2 must be disabled for Donut chart");
+        assert!(dlg.series_2_enabled, "Series 2 must be enabled for a second donut ring");
+        assert_eq!(dlg.series_2_col, "B");
+        assert!(dlg.series_2_label_id.contains("Luas Area"));
         assert!(!dlg.series_3_enabled, "Series 3 must be disabled for Donut chart");
         assert_eq!(dlg.value_format, ValueFormat::Percent);
 
-        // Verify build_spec produces only 1 series
+        // Verify build_spec produces 2 series
         let spec = dlg.build_spec();
         assert_eq!(spec.chart_type, ChartType::Donut);
-        assert_eq!(spec.series.len(), 1, "Donut spec must contain exactly 1 series");
+        assert_eq!(spec.series.len(), 2, "Donut spec must contain 2 series (one ring each)");
 
         // Verify applying donut chart succeeds
         let apply_res = dlg.apply_chart(&mut app, false);
