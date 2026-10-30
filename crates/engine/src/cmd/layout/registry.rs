@@ -29,10 +29,17 @@ pub fn specs() -> Vec<CommandSpec> {
                 let n = st.doc.page_count();
                 // An `after` past the last page appends, which `insert_after_u64_max_appends_at_the_end`
                 // pins deliberately.
-                let after = p.get("after").and_then(Value::as_u64).map(|v| usize::try_from(v).unwrap_or(usize::MAX)).unwrap_or(n.saturating_sub(1));
+                let after = if let Some(a) = p.get("after").and_then(Value::as_u64) {
+                    Some(usize::try_from(a).unwrap_or(usize::MAX))
+                } else if let Some(b) = p.get("before").and_then(Value::as_u64) {
+                    let b_idx = usize::try_from(b).unwrap_or(0);
+                    if b_idx == 0 { None } else { Some(b_idx - 1) }
+                } else {
+                    Some(n.saturating_sub(1))
+                };
                 let parent = parent_ref(ID, &st.doc, p.get("parent"))?.unwrap_or_else(|| st.doc.parents.first().map(|x| x.id));
                 s.edit(|d, _| {
-                    let ids = d.insert_pages(Some(after), count, parent)?;
+                    let ids = d.insert_pages(after, count, parent)?;
                     Ok(json!({"pages": ids.len(), "total": d.page_count()}))
                 })
             }

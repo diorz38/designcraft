@@ -815,8 +815,6 @@ fn execute_generate_pages_brs(
     let half_page_h = (avail_h * 0.48).clamp(280.0, 370.0);
     let gap = 12.0;
 
-    let mut last_narrative_fid: Option<u64> = None;
-
     let file_col = effective_col(st.card1_file_col, &st.card1_headers, &["file", "filename"], 3);
     let theme_col = effective_col(999, &st.card1_headers, &["theme", "themes", "table_theme", "color", "warna"], 999);
 
@@ -906,15 +904,13 @@ fn execute_generate_pages_brs(
 
             // Draw table title if present
             if !title_val.is_empty() {
-                let full_title = if !num_val.is_empty()
-                    && !title_val.to_lowercase().starts_with("tabel")
-                    && !title_val.to_lowercase().starts_with("table")
-                {
-                    let pfx = locale::table_prefix(Some(&st.active_profile()), st.locale);
-                    format!("{pfx} {num_val}    {title_val}")
-                } else {
-                    title_val.to_string()
-                };
+                let full_title =
+                    if !num_val.is_empty() && !title_val.to_lowercase().starts_with("tabel") && !title_val.to_lowercase().starts_with("table") {
+                        let pfx = locale::table_prefix(Some(&st.active_profile()), st.locale);
+                        format!("{pfx} {num_val}    {title_val}")
+                    } else {
+                        title_val.to_string()
+                    };
                 let title_h = 16.0;
                 let title_rect = [margin.x0, cur_y, margin.x1, cur_y + title_h];
                 if let Some(sid) = frame_with_font_full(app, spread_idx, title_rect, &full_title, &brs_font, Some("Bold"), 10.5, None) {
@@ -926,16 +922,20 @@ fn execute_generate_pages_brs(
                         None
                     };
                     if let Some(hex) = theme_hex.filter(|h| !h.is_empty()) {
-                        let swatch_name = app.session.edit(|doc, _| {
-                            Ok(serde_json::Value::String(ensure_swatch(doc, &hex)))
-                        }).ok().and_then(|v| v.as_str().map(|s| s.to_string()));
+                        let swatch_name = app
+                            .session
+                            .edit(|doc, _| Ok(serde_json::Value::String(ensure_swatch(doc, &hex))))
+                            .ok()
+                            .and_then(|v| v.as_str().map(|s| s.to_string()));
                         if let Some(swatch) = swatch_name {
                             let text_len = full_title.len() as u64;
                             let _ = app.run("text.select", json!({"story": sid, "anchor": 0, "focus": text_len}));
                             let _ = app.run("type.char", json!({"fill": swatch}));
                         }
                     }
-                    if let Some(fid) = app.session.active().and_then(|a| a.doc.story(designcraft_doc::StoryId(sid)).and_then(|s| s.frames.first().copied())) {
+                    if let Some(fid) =
+                        app.session.active().and_then(|a| a.doc.story(designcraft_doc::StoryId(sid)).and_then(|s| s.frames.first().copied()))
+                    {
                         let _ = app.run("object.textFrameOptions", json!({"autoSize": "heightOnly", "autoSizeReference": "topLeft", "ids": [fid.0]}));
                         let _ = app.run("object.fit", json!({"mode": "fitFrameToContent", "axis": "height", "ids": [fid.0]}));
                     }
@@ -1001,11 +1001,6 @@ fn execute_generate_pages_brs(
                     inserted_rtfs_count = inserted_rtfs_count.saturating_add(1);
                 }
 
-                // Thread with previous narrative frame if present (appends this frame's text to the continuous story)
-                if let Some(prev_fid) = last_narrative_fid {
-                    let _ = app.session.edit(|doc, _| Ok(doc.thread(designcraft_doc::ItemId(prev_fid), designcraft_doc::ItemId(fid))?));
-                }
-
                 format_brs_narrative_story(app, fid, &brs_font);
 
                 let fit_h = measure_frame_content_height(app, fid).unwrap_or(180.0);
@@ -1013,7 +1008,6 @@ fn execute_generate_pages_brs(
                 shrink_frame_height(app, fid, margin.x0, cur_y, margin.x1, cur_y + clamped_h);
 
                 cur_y += clamped_h + gap;
-                last_narrative_fid = Some(fid);
                 generated_count = generated_count.saturating_add(1);
             }
         } else if is_image {
@@ -5385,11 +5379,7 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
         let dir = tempfile::tempdir().unwrap();
 
         // Generate BRS front cover, point page, and back cover first
-        let st_cover = PubgenState {
-            active_profile_id: "bps_brs".into(),
-            cover_style: 13,
-            ..Default::default()
-        };
+        let st_cover = PubgenState { active_profile_id: "bps_brs".into(), cover_style: 13, ..Default::default() };
         super::covers::execute_generate_brs_cover(&mut app, &st_cover).unwrap();
         let pages_with_covers = app.session.active().unwrap().doc.page_count();
         assert!(pages_with_covers >= 3);
@@ -5478,9 +5468,7 @@ Narrative;3;Catatan Akhir;narrative3.rtf\n";
         assert!(frames1.len() >= 2, "Table 1 must have at least 2 threaded frames, got {}", frames1.len());
         assert!(frames2.len() >= 2, "Table 2 must have at least 2 threaded frames, got {}", frames2.len());
 
-        let page_of = |fid: designcraft_doc::ItemId| -> usize {
-            doc.page_of_item(fid).unwrap()
-        };
+        let page_of = |fid: designcraft_doc::ItemId| -> usize { doc.page_of_item(fid).unwrap() };
 
         let p1_start = page_of(frames1[0]);
         let p1_cont = page_of(frames1[1]);

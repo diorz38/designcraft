@@ -1205,10 +1205,8 @@ pub fn execute_generate_front_cover(app: &mut DesignApp, st: &PubgenState) -> Re
     Ok(style_name.to_string())
 }
 
-const INDONESIAN_MONTH_NAMES: [&str; 12] = [
-    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-    "Juli", "Agustus", "September", "Oktober", "November", "Desember",
-];
+const INDONESIAN_MONTH_NAMES: [&str; 12] =
+    ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
 pub fn parse_flexible_date(raw: &str) -> Option<chrono::NaiveDate> {
     let s = raw.trim();
@@ -1342,14 +1340,11 @@ pub fn execute_generate_brs_front_and_point(app: &mut DesignApp, st: &PubgenStat
 
     let cov_opt = st.excel_cover.as_ref();
 
-    let raw_title = cov_opt
-        .map(|c| c.title1.as_str())
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or(if st.cover_title.trim().is_empty() {
-            "Perkembangan Nilai Tukar Petani"
-        } else {
-            st.cover_title.trim()
-        });
+    let raw_title = cov_opt.map(|c| c.title1.as_str()).filter(|s| !s.trim().is_empty()).unwrap_or(if st.cover_title.trim().is_empty() {
+        "Perkembangan Nilai Tukar Petani"
+    } else {
+        st.cover_title.trim()
+    });
 
     let raw_month = cov_opt
         .map(|c| c.release_month.as_str())
@@ -3215,7 +3210,10 @@ pub(crate) mod tests {
         // Verify text in stories
         let all_text: Vec<&str> = active.doc.stories.values().map(|s| s.text.as_str()).collect();
         assert!(all_text.iter().any(|t| t.contains("61/10/32/Th. XXVIII")), "Must contain release number");
-        assert!(all_text.iter().any(|t| t.contains("1 Oktober 2026")), "Release date must be formatted as '1 Oktober 2026'; got stories: {all_text:?}");
+        assert!(
+            all_text.iter().any(|t| t.contains("1 Oktober 2026")),
+            "Release date must be formatted as '1 Oktober 2026'; got stories: {all_text:?}"
+        );
         assert!(!all_text.iter().any(|t| t.contains("46296")), "Raw Excel date serial 46296 must not be present");
         assert!(
             all_text.iter().any(|t| t.contains("Perkembangan Nilai Tukar Petani") && (t.contains("September 2026") || t.contains("Oktober 2026"))),
@@ -3285,6 +3283,8 @@ pub(crate) mod tests {
                 }
             }
         }
+        let has_u6 = final_doc.stories.values().any(|s| s.text.contains("Nilai Tukar Usaha") || s.text.contains("NTUP"));
+        assert!(has_u6, "BRS publication must contain U6 narrative text (NTUP)");
         let final_count = final_doc.page_count();
         assert!(final_count >= 8, "BRS publication should have at least 8 pages; got {final_count}");
 
@@ -3341,10 +3341,7 @@ pub(crate) mod tests {
             for table in story.tables.values() {
                 table_count += 1;
                 assert_eq!(table.footer_rows(), 0, "BRS table must have 0 footer rows");
-                assert!(
-                    !table.rows.iter().any(|r| r.kind == designcraft_doc::RowKind::Footer),
-                    "BRS table rows must not be RowKind::Footer"
-                );
+                assert!(!table.rows.iter().any(|r| r.kind == designcraft_doc::RowKind::Footer), "BRS table rows must not be RowKind::Footer");
                 // Verify column numbers row (1) exists in row 1 with fill #E7CFB5
                 if table.nrows() > 1 {
                     let col_num_cell = table.cell(1, 0).expect("Col num cell must exist");

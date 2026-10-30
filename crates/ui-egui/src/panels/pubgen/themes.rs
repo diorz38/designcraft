@@ -100,11 +100,7 @@ pub(crate) fn ensure_swatch(doc: &mut designcraft_doc::Document, hex: &str) -> S
         return "[Paper]".to_string();
     }
     let formatted = if clean.starts_with('#') { clean.to_string() } else { format!("#{clean}") };
-    let normalized = if formatted.len() == 6 && formatted.starts_with('#') {
-        format!("{formatted}8")
-    } else {
-        formatted
-    };
+    let normalized = if formatted.len() == 6 && formatted.starts_with('#') { format!("{formatted}8") } else { formatted };
     let upper = normalized.to_uppercase();
     if !doc.swatches.iter().any(|s| s.name.eq_ignore_ascii_case(&upper))
         && let Some(col) = designcraft_color::Color::from_hex(&upper)

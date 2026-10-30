@@ -412,7 +412,8 @@ pub(crate) fn execute_insert_table_matrix_info(
 
     // Step 5: Table Style (if not Horizontal Rules / BRS6, apply via command first)
     let style_names = ["Basic Grid", "Corporate Navy", "Minimalist", "Horizontal Rules", "BRS6"];
-    if st.card2_style != 3 && st.card2_style != 4
+    if st.card2_style != 3
+        && st.card2_style != 4
         && let Some(&style_name) = style_names.get(st.card2_style)
     {
         let border_weight = if st.card2_style == 1 { 2.0 } else { 0.5 };
@@ -1052,11 +1053,7 @@ pub(crate) fn execute_insert_table_matrix_info(
     };
     let fid = created_frame_info
         .map(|(fid, ..)| fid)
-        .or_else(|| {
-            app.session
-                .active()
-                .and_then(|a| a.doc.story(designcraft_doc::StoryId(story_id)).and_then(|s| s.frames.first().copied()))
-        })
+        .or_else(|| app.session.active().and_then(|a| a.doc.story(designcraft_doc::StoryId(story_id)).and_then(|s| s.frames.first().copied())))
         .ok_or("No frame created for table")?;
 
     Ok(TableInsertOutput {
@@ -1392,7 +1389,7 @@ pub(crate) mod tests {
             card2_col_numbers: true,
             card2_first_row_header: true,
             card2_table_footer: false,
-            card2_style: 4, // BRS6
+            card2_style: 4,       // BRS6
             card2_color_theme: 4, // BRS6
             card2_theme_override: Some("BRS6".into()),
             ..Default::default()

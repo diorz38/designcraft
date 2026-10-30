@@ -273,7 +273,7 @@ fn default_true() -> bool {
 pub struct ProfileTableStyling {
     pub include_column_number_row: bool, // (1) (2) (3) row
     #[serde(default = "default_true")]
-    pub include_table_footer: bool,      // Footer row (Jumlah / Total)
+    pub include_table_footer: bool, // Footer row (Jumlah / Total)
     pub alternating_row_fills: bool,     // Zebra striping
     pub horizontal_rules_only: bool,     // Minimalist / APA style (no vertical rules)
     pub default_theme_palette: String,   // "bps_teal", "corporate_navy", "monochrome"
