@@ -1332,7 +1332,7 @@ pub fn execute_generate_brs_front_and_point(app: &mut DesignApp, st: &PubgenStat
 
     let had_single_blank_page = {
         let active = app.session.active();
-        active.map(|s| s.doc.page_count() == 1 && s.doc.spreads.first().map_or(false, |sp| sp.items.is_empty())).unwrap_or(false)
+        active.map(|s| s.doc.page_count() == 1 && s.doc.spreads.first().is_some_and(|sp| sp.items.is_empty())).unwrap_or(false)
     };
 
     app.run(
@@ -3138,7 +3138,7 @@ pub(crate) mod tests {
         assert!(toc_res.is_err(), "TOC must be refused for BRS");
 
         let final_doc = &app.session.active().unwrap().doc;
-        for (_sid, story) in &final_doc.stories {
+        for story in final_doc.stories.values() {
             if story.text.contains("Nilai Tukar Petani (NTP) diperoleh") {
                 let para_ranges = story.para_ranges();
                 // Ensure first body paragraphs in U1 and U4.5 are basic paragraphs, NOT headings
@@ -3200,6 +3200,20 @@ pub(crate) mod tests {
         // Verify Lato font in body paragraphs
         let rtf_story = doc2.stories.values().find(|s| s.text.contains("Nilai Tukar Petani (NTP) diperoleh")).expect("RTF story must exist");
         assert!(rtf_story.chars.iter().any(|r| r.format.over.font_family.as_deref() == Some("Lato")), "Body paragraph must use font Lato");
+
+        // Verify all BRS tables have no footer rows and no RowKind::Footer
+        let mut table_count = 0usize;
+        for story in doc2.stories.values() {
+            for table in story.tables.values() {
+                table_count += 1;
+                assert_eq!(table.footer_rows(), 0, "BRS table must have 0 footer rows");
+                assert!(
+                    !table.rows.iter().any(|r| r.kind == designcraft_doc::RowKind::Footer),
+                    "BRS table rows must not be RowKind::Footer"
+                );
+            }
+        }
+        assert!(table_count > 0, "Doc2 must contain at least 1 table");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

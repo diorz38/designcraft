@@ -338,7 +338,7 @@ pub fn body(app: &mut DesignApp, ui: &mut Ui, d: &mut Dialog) {
         let templates = d.fields.get("templates").and_then(Value::as_array);
         if let Some(tpls) = templates {
             let cur_label = if current_preset.is_empty() { "Custom" } else { &current_preset };
-            egui::ComboBox::from_id_salt("hf_dialog_preset").selected_text(cur_label).width(180.0).show_ui(ui, |ui| {
+            craft_ui::ComboBox::from_id_salt("hf_dialog_preset").selected_text(cur_label).width(180.0).show_ui(ui, |ui| {
                 for t in tpls {
                     if let Some(name) = t.get("name").and_then(Value::as_str)
                         && ui.selectable_label(current_preset == name, name).clicked()
@@ -406,7 +406,7 @@ pub fn body(app: &mut DesignApp, ui: &mut Ui, d: &mut Dialog) {
                 } else {
                     format!("Section {}", cur_sec + 1)
                 };
-                egui::ComboBox::from_id_salt("hf_section").selected_text(label).width(180.0).show_ui(ui, |ui| {
+                craft_ui::ComboBox::from_id_salt("hf_section").selected_text(label).width(180.0).show_ui(ui, |ui| {
                     for (i, s) in sections.iter().enumerate() {
                         let p = s.get("prefix").and_then(Value::as_str).unwrap_or("");
                         let st = s.get("start").and_then(Value::as_u64).unwrap_or(0);
@@ -448,7 +448,7 @@ pub fn body(app: &mut DesignApp, ui: &mut Ui, d: &mut Dialog) {
             caption(ui, rtl, tr("Paragraph Style:"));
             let cur_style = d.s("style");
             let pstyles = d.fields.get("paragraphStyles").and_then(Value::as_array).cloned().unwrap_or_default();
-            egui::ComboBox::from_id_salt("hf_style").selected_text(&cur_style).width(160.0).show_ui(ui, |ui| {
+            craft_ui::ComboBox::from_id_salt("hf_style").selected_text(&cur_style).width(160.0).show_ui(ui, |ui| {
                 if ui.selectable_label(cur_style == "[Basic Paragraph]", "[Basic Paragraph]").clicked() {
                     d.fields.insert("style".into(), json!("[Basic Paragraph]"));
                     d.fields.insert("preset".into(), json!("custom"));

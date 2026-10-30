@@ -5,6 +5,20 @@
 //! the control channel ([`control`]) share that entry point.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
+#![allow(
+    clippy::collapsible_if,
+    clippy::wildcard_imports,
+    clippy::too_many_arguments,
+    clippy::cognitive_complexity,
+    clippy::collapsible_str_replace,
+    clippy::doc_lazy_continuation,
+    clippy::needless_borrow,
+    clippy::derivable_impls,
+    clippy::for_kv_map,
+    clippy::field_reassign_with_default,
+    clippy::bool_assert_comparison,
+    clippy::approx_constant
+)]
 
 pub mod about;
 pub mod canvas;

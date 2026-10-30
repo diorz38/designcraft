@@ -245,7 +245,7 @@ pub(crate) fn ai_cover_options_pane(app: &mut DesignApp, ui: &mut egui::Ui, st: 
         let palettes = preset.palettes;
         let cur = palettes.get(st.cover_ai_palette).map(|p| p.name).unwrap_or(palettes[0].name);
         let prev = st.cover_ai_palette;
-        egui::ComboBox::from_id_salt("pubgen_cover_ai_palette").selected_text(cur).width(150.0).show_ui(ui, |ui| {
+        craft_ui::ComboBox::from_id_salt("pubgen_cover_ai_palette").selected_text(cur).width(150.0).show_ui(ui, |ui| {
             for (idx, p) in palettes.iter().enumerate() {
                 ui.selectable_value(&mut st.cover_ai_palette, idx, p.name);
             }

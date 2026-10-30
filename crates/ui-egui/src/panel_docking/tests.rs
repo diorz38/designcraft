@@ -846,6 +846,7 @@ fn default_workspaces_are_the_canvas_beside_an_end_dock() {
     assert_eq!(outer.groups[0].panels, default_tabs);
     assert!(icons.iconic);
     let groups: Vec<Vec<&str>> = icons.groups.iter().map(|g| g.panels.iter().map(String::as_str).collect()).collect();
+    #[allow(unused_mut)]
     let mut expected: Vec<Vec<&str>> = ICON_GROUPS.iter().map(|g| g.to_vec()).collect();
     #[cfg(feature = "pubgen")]
     expected.push(vec!["pubgen"]);

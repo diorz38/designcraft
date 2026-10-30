@@ -45,6 +45,7 @@
 //!   its paths, text and images, each cut to the clip in force.
 //! - Unknown elements are ignored; nothing is preserved opaquely for round-trip yet.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+#![allow(clippy::wildcard_imports, clippy::cognitive_complexity)]
 
 mod arabic;
 mod cjk;

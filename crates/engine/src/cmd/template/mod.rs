@@ -91,6 +91,7 @@ fn default_image_fit(key: &str) -> &'static str {
     }
 }
 
+#[allow(clippy::cognitive_complexity)]
 fn apply_template_page(s: &mut Session, p: &Value) -> Result<Value> {
     // 1. Resolve template bytes
     let tpl_bytes = if let Some(path_str) = p.get("path").and_then(Value::as_str) {

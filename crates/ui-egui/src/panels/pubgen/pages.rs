@@ -906,15 +906,46 @@ fn execute_generate_pages_brs(
 
             // Draw table title if present
             if !title_val.is_empty() {
-                let title_h = 28.0;
+                let full_title = if !num_val.is_empty()
+                    && !title_val.to_lowercase().starts_with("tabel")
+                    && !title_val.to_lowercase().starts_with("table")
+                {
+                    let pfx = locale::table_prefix(Some(&st.active_profile()), st.locale);
+                    format!("{pfx} {num_val}    {title_val}")
+                } else {
+                    title_val.to_string()
+                };
+                let title_h = 16.0;
                 let title_rect = [margin.x0, cur_y, margin.x1, cur_y + title_h];
-                frame_with_font_and_style(app, spread_idx, title_rect, title_val, &brs_font, 10.5, None);
-                cur_y += title_h + 4.0;
+                if let Some(sid) = frame_with_font_full(app, spread_idx, title_rect, &full_title, &brs_font, Some("Bold"), 10.5, None) {
+                    let theme_hex = if !theme_val.is_empty() {
+                        parse_table_color_theme(theme_val).map(|t| t.header_footer)
+                    } else if let Some(override_th) = &st.card2_theme_override {
+                        parse_table_color_theme(override_th).map(|t| t.header_footer)
+                    } else {
+                        None
+                    };
+                    if let Some(hex) = theme_hex.filter(|h| !h.is_empty()) {
+                        let swatch_name = app.session.edit(|doc, _| {
+                            Ok(serde_json::Value::String(ensure_swatch(doc, &hex)))
+                        }).ok().and_then(|v| v.as_str().map(|s| s.to_string()));
+                        if let Some(swatch) = swatch_name {
+                            let text_len = full_title.len() as u64;
+                            let _ = app.run("text.select", json!({"story": sid, "anchor": 0, "focus": text_len}));
+                            let _ = app.run("type.char", json!({"fill": swatch}));
+                        }
+                    }
+                    if let Some(fid) = app.session.active().and_then(|a| a.doc.story(designcraft_doc::StoryId(sid)).and_then(|s| s.frames.first().copied())) {
+                        let _ = app.run("object.textFrameOptions", json!({"autoSize": "heightOnly", "autoSizeReference": "topLeft", "ids": [fid.0]}));
+                        let _ = app.run("object.fit", json!({"mode": "fitFrameToContent", "axis": "height", "ids": [fid.0]}));
+                    }
+                }
             }
 
             // Insert table
             if !matrix.is_empty() {
                 let mut table_st = st.clone();
+                table_st.card2_table_footer = false;
                 if !theme_val.is_empty() {
                     table_st.card2_theme_override = Some(theme_val.to_string());
                 }
@@ -5425,7 +5456,7 @@ Narrative;3;Catatan Akhir;narrative3.rtf\n";
         let mut t1_story_id = None;
         let mut t2_story_id = None;
         for (sid, story) in &doc.stories {
-            for (_tid, table) in &story.tables {
+            for table in story.tables.values() {
                 let cell_0 = table.cell(0, 0).map(|c| c.text.text.clone());
                 let cell_1 = table.cell(1, 0).map(|c| c.text.text.clone());
                 if cell_0.as_deref().unwrap_or("").contains("Kecamatan") || cell_1.as_deref().unwrap_or("").contains("Kecamatan") {

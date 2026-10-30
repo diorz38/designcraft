@@ -310,6 +310,7 @@ fn used_styles(defs: Vec<StyleDef>, st: &Story) -> Vec<ImportedStyle> {
     defs.into_iter().map(|d| d.style).filter(|s| s.name != designcraft_doc::story::BASIC_PARAGRAPH && want.contains(&s.name)).collect()
 }
 
+#[allow(clippy::cognitive_complexity)]
 pub fn import(bytes: &[u8]) -> Result<Imported, ImportError> {
     let src = String::from_utf8_lossy(bytes);
     if !src.trim_start().starts_with("{\\rtf") {

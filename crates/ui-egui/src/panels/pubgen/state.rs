@@ -787,6 +787,7 @@ impl PubgenState {
     pub fn apply_profile(&mut self, profile: super::profiles::PubgenProfile, user_locked: bool) {
         self.active_profile_id = profile.id.clone();
         self.card2_col_numbers = profile.table_styling.include_column_number_row;
+        self.card2_table_footer = profile.table_styling.include_table_footer;
         if profile.table_styling.horizontal_rules_only {
             self.card2_style = 3;
         }

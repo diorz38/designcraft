@@ -162,7 +162,7 @@ pub(crate) fn card_header_footer_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &
         let combo_w = (ui.available_width() - 80.0).clamp(110.0, 200.0);
         let mut picked_template: Option<Value> = None;
 
-        let combo = egui::ComboBox::from_id_salt("pubgen_hf_style").selected_text(&cur_style).width(combo_w).show_ui(ui, |ui| {
+        let combo = craft_ui::ComboBox::from_id_salt("pubgen_hf_style").selected_text(&cur_style).width(combo_w).show_ui(ui, |ui| {
             for tpl in &templates {
                 let name = tpl.get("name").and_then(Value::as_str).unwrap_or("Template");
                 let is_builtin = tpl.get("builtIn").and_then(Value::as_bool).unwrap_or(false);
@@ -222,7 +222,7 @@ pub(crate) fn card_header_footer_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &
         ui.label(RichText::new("Sided:").size(11.0).color(t.text));
         let sided_options = ["Double-sided", "Single-sided"];
         let cur_s = sided_options.get(st.hf_sided).copied().unwrap_or("Double-sided");
-        egui::ComboBox::from_id_salt("pubgen_hf_sided").selected_text(cur_s).width(95.0).show_ui(ui, |ui| {
+        craft_ui::ComboBox::from_id_salt("pubgen_hf_sided").selected_text(cur_s).width(95.0).show_ui(ui, |ui| {
             ui.selectable_value(&mut st.hf_sided, 0, "Double-sided");
             ui.selectable_value(&mut st.hf_sided, 1, "Single-sided");
         });
@@ -246,7 +246,7 @@ pub(crate) fn card_header_footer_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &
             .unwrap_or((1, Vec::new()));
         let scope_options = ["All Pages", "Section", "Pages"];
         let cur_scope = scope_options.get(st.hf_scope).copied().unwrap_or("All Pages");
-        egui::ComboBox::from_id_salt("pubgen_hf_scope").selected_text(cur_scope).width(85.0).show_ui(ui, |ui| {
+        craft_ui::ComboBox::from_id_salt("pubgen_hf_scope").selected_text(cur_scope).width(85.0).show_ui(ui, |ui| {
             ui.selectable_value(&mut st.hf_scope, 0, "All Pages");
             ui.selectable_value(&mut st.hf_scope, 1, "Section");
             ui.selectable_value(&mut st.hf_scope, 2, "Pages");
@@ -262,7 +262,7 @@ pub(crate) fn card_header_footer_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &
                 let cur_sec = sections
                     .get(st.hf_scope_section)
                     .map_or_else(|| format!("Section {}", st.hf_scope_section + 1), |s| sec_label(st.hf_scope_section, s));
-                egui::ComboBox::from_id_salt("pubgen_hf_scope_section").selected_text(cur_sec).width(130.0).show_ui(ui, |ui| {
+                craft_ui::ComboBox::from_id_salt("pubgen_hf_scope_section").selected_text(cur_sec).width(130.0).show_ui(ui, |ui| {
                     for (i, s) in sections.iter().enumerate() {
                         if ui.selectable_label(st.hf_scope_section == i, sec_label(i, s)).clicked() {
                             st.hf_scope_section = i;

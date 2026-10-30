@@ -391,6 +391,7 @@ fn parse_scope(p: &Value, cmd: &str) -> Result<Option<HfScope>> {
 }
 
 /// Applies header/footer frames and scope.
+#[allow(clippy::cognitive_complexity)]
 fn apply(s: &mut Session, p: &Value) -> Result<Value> {
     const CMD: &str = "layout.headerFooter.apply";
 
@@ -1047,6 +1048,7 @@ fn remove_optional_item(d: &mut Document, item_id: Option<ItemId>) {
 }
 
 /// Synchronizes a text frame item on the parent spread: updates existing or creates new.
+#[allow(clippy::too_many_arguments)]
 fn sync_text_frame(
     d: &mut Document,
     existing_id: Option<ItemId>,

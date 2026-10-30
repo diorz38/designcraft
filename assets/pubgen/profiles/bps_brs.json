@@ -78,6 +78,7 @@
   },
   "table_styling": {
     "include_column_number_row": false,
+    "include_table_footer": false,
     "alternating_row_fills": true,
     "horizontal_rules_only": false,
     "default_theme_palette": "bps_teal"

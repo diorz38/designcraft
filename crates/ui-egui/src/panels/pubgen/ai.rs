@@ -149,7 +149,7 @@ fn groq_pane(app: &mut DesignApp, st: &mut PubgenState, dialog: &mut AiSetupDial
         if dialog.groq_models.is_empty() {
             ui.add(egui::TextEdit::singleline(&mut dialog.groq_model).hint_text("e.g. openai/gpt-oss-20b").desired_width(220.0));
         } else {
-            egui::ComboBox::from_id_salt("pubgen_ai_groq_model")
+            craft_ui::ComboBox::from_id_salt("pubgen_ai_groq_model")
                 .selected_text(if dialog.groq_model.is_empty() { "Pick a model" } else { dialog.groq_model.as_str() })
                 .width(280.0)
                 .show_ui(ui, |ui| {

@@ -1837,7 +1837,7 @@ fn render_new_project_cover_tab(app: &mut DesignApp, ui: &mut Ui, dialog: &mut N
         ui.label(RichText::new("Cover style:").size(11.0).color(t.text));
         let cur_name = cover_style_label(dialog.cover_style);
         let combo_w = (ui.available_width() - 10.0).clamp(120.0, 240.0);
-        egui::ComboBox::from_id_salt("new_proj_cover_style").selected_text(cur_name).width(combo_w).show_ui(ui, |ui| {
+        craft_ui::ComboBox::from_id_salt("new_proj_cover_style").selected_text(cur_name).width(combo_w).show_ui(ui, |ui| {
             for (idx, name) in COVER_STYLES.iter().enumerate() {
                 ui.selectable_value(&mut dialog.cover_style, idx, *name);
             }
@@ -1854,7 +1854,7 @@ fn render_new_project_cover_tab(app: &mut DesignApp, ui: &mut Ui, dialog: &mut N
         ui.label(RichText::new("Color theme:").size(11.0).color(t.text));
         let cur_theme = COVER_THEMES.get(dialog.cover_theme_preset).copied().unwrap_or("Classic BPS (Blue/Gold)");
         let combo_w = (ui.available_width() - 10.0).clamp(120.0, 240.0);
-        egui::ComboBox::from_id_salt("new_proj_cover_theme").selected_text(cur_theme).width(combo_w).show_ui(ui, |ui| {
+        craft_ui::ComboBox::from_id_salt("new_proj_cover_theme").selected_text(cur_theme).width(combo_w).show_ui(ui, |ui| {
             for (idx, name) in COVER_THEMES.iter().enumerate() {
                 ui.selectable_value(&mut dialog.cover_theme_preset, idx, *name);
             }
@@ -1919,7 +1919,7 @@ fn render_new_project_toc_tab(ui: &mut Ui, dialog: &mut NewProjectDialog, t: &To
     ui.horizontal(|ui| {
         ui.label(RichText::new("Front matter format:").size(11.0).color(t.text));
         let cur = NUMBERING_STYLES.iter().find(|(k, _)| *k == dialog.pagination_front_format).map(|(_, l)| *l).unwrap_or("Lower Roman");
-        egui::ComboBox::from_id_salt("new_proj_fm_fmt").selected_text(cur).width(160.0).show_ui(ui, |ui| {
+        craft_ui::ComboBox::from_id_salt("new_proj_fm_fmt").selected_text(cur).width(160.0).show_ui(ui, |ui| {
             for (val, label) in NUMBERING_STYLES {
                 ui.selectable_value(&mut dialog.pagination_front_format, (*val).into(), *label);
             }
@@ -1929,7 +1929,7 @@ fn render_new_project_toc_tab(ui: &mut Ui, dialog: &mut NewProjectDialog, t: &To
     ui.horizontal(|ui| {
         ui.label(RichText::new("Body format:").size(11.0).color(t.text));
         let cur = NUMBERING_STYLES.iter().find(|(k, _)| *k == dialog.pagination_body_format).map(|(_, l)| *l).unwrap_or("Arabic");
-        egui::ComboBox::from_id_salt("new_proj_body_fmt").selected_text(cur).width(160.0).show_ui(ui, |ui| {
+        craft_ui::ComboBox::from_id_salt("new_proj_body_fmt").selected_text(cur).width(160.0).show_ui(ui, |ui| {
             for (val, label) in NUMBERING_STYLES {
                 ui.selectable_value(&mut dialog.pagination_body_format, (*val).into(), *label);
             }
@@ -1943,7 +1943,7 @@ fn render_new_project_toc_tab(ui: &mut Ui, dialog: &mut NewProjectDialog, t: &To
     ui.horizontal(|ui| {
         ui.label(RichText::new("Preset:").size(11.0).color(t.text));
         let presets = ["book", "standard", "minimal"];
-        egui::ComboBox::from_id_salt("new_proj_hf_preset").selected_text(&dialog.header_footer_preset).width(120.0).show_ui(ui, |ui| {
+        craft_ui::ComboBox::from_id_salt("new_proj_hf_preset").selected_text(&dialog.header_footer_preset).width(120.0).show_ui(ui, |ui| {
             for p in presets {
                 ui.selectable_value(&mut dialog.header_footer_preset, p.into(), p);
             }

@@ -262,9 +262,15 @@ impl Default for ProfileTypography {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ProfileTableStyling {
     pub include_column_number_row: bool, // (1) (2) (3) row
+    #[serde(default = "default_true")]
+    pub include_table_footer: bool,      // Footer row (Jumlah / Total)
     pub alternating_row_fills: bool,     // Zebra striping
     pub horizontal_rules_only: bool,     // Minimalist / APA style (no vertical rules)
     pub default_theme_palette: String,   // "bps_teal", "corporate_navy", "monochrome"
@@ -274,6 +280,7 @@ impl Default for ProfileTableStyling {
     fn default() -> Self {
         Self {
             include_column_number_row: true,
+            include_table_footer: true,
             alternating_row_fills: true,
             horizontal_rules_only: false,
             default_theme_palette: "bps_teal".to_string(),
@@ -362,6 +369,7 @@ mod tests {
         let brs = &profiles[1];
         assert_eq!(brs.id, "bps_brs");
         assert!(!brs.table_styling.include_column_number_row);
+        assert!(!brs.table_styling.include_table_footer);
         assert!(!brs.geometry.facing_pages);
         assert_eq!(brs.geometry.margins_mm.top, 18.0);
 

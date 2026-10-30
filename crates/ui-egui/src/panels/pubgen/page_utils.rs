@@ -440,7 +440,7 @@ pub(crate) fn page_utilities_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubge
         ui.add(egui::DragValue::new(&mut st.card3_renumber_start).range(1..=9999).prefix("Start: "));
         let styles = ["1, 2, 3…", "i, ii, iii…", "I, II, III…"];
         let cur_style = styles.get(st.card3_renumber_style).copied().unwrap_or("1, 2, 3…");
-        egui::ComboBox::from_id_salt("pubgen_renumber_style").selected_text(cur_style).width(80.0).show_ui(ui, |ui| {
+        craft_ui::ComboBox::from_id_salt("pubgen_renumber_style").selected_text(cur_style).width(80.0).show_ui(ui, |ui| {
             for (idx, s) in styles.iter().enumerate() {
                 ui.selectable_value(&mut st.card3_renumber_style, idx, *s);
             }

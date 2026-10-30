@@ -591,7 +591,7 @@ pub(crate) fn card1_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenSta
         ];
         let cur = presets.get(st.card1_preset).copied().unwrap_or("1 Row · 3 Columns");
         let combo_w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
-        egui::ComboBox::from_id_salt("pubgen_card1_preset").selected_text(cur).width(combo_w).show_ui(ui, |ui| {
+        craft_ui::ComboBox::from_id_salt("pubgen_card1_preset").selected_text(cur).width(combo_w).show_ui(ui, |ui| {
             for (i, p) in presets.iter().enumerate() {
                 ui.selectable_value(&mut st.card1_preset, i, *p);
             }
@@ -667,7 +667,7 @@ pub(crate) fn card2_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenSta
                 .and_then(|p| std::path::Path::new(p).file_name().map(|n| n.to_string_lossy().to_string()))
                 .unwrap_or_else(|| "Select sheet".into());
             let combo_w = (ui.available_width() - 4.0).clamp(100.0, 240.0);
-            egui::ComboBox::from_id_salt("pubgen_card2_sheet_selector").selected_text(cur_name).width(combo_w).show_ui(ui, |ui| {
+            craft_ui::ComboBox::from_id_salt("pubgen_card2_sheet_selector").selected_text(cur_name).width(combo_w).show_ui(ui, |ui| {
                 for (idx, p) in st.card2_sheet_tables.iter().enumerate() {
                     let name = std::path::Path::new(p).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| p.clone());
                     let is_sel = idx == st.card2_sheet_idx;
@@ -747,7 +747,7 @@ pub(crate) fn card2_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenSta
         let styles = ["Basic Grid", "Corporate Navy", "Minimalist", "Horizontal Rules"];
         let cur = styles.get(st.card2_style).copied().unwrap_or("Basic Grid");
         let combo_w = (ui.available_width() - 4.0).clamp(80.0, 180.0);
-        egui::ComboBox::from_id_salt("pubgen_card2_style").selected_text(cur).width(combo_w).show_ui(ui, |ui| {
+        craft_ui::ComboBox::from_id_salt("pubgen_card2_style").selected_text(cur).width(combo_w).show_ui(ui, |ui| {
             for (i, s) in styles.iter().enumerate() {
                 ui.selectable_value(&mut st.card2_style, i, *s);
             }
@@ -760,7 +760,7 @@ pub(crate) fn card2_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenSta
         let cur = TABLE_COLOR_THEMES.get(st.card2_color_theme).map(|(name, _, _)| *name).unwrap_or("#FFCB56 - #FFE9A9");
         let combo_w = (ui.available_width() - 4.0).clamp(80.0, 200.0);
         let prev_theme = st.card2_color_theme;
-        egui::ComboBox::from_id_salt("pubgen_card2_theme").selected_text(cur).width(combo_w).show_ui(ui, |ui| {
+        craft_ui::ComboBox::from_id_salt("pubgen_card2_theme").selected_text(cur).width(combo_w).show_ui(ui, |ui| {
             for (i, (name, _, _)) in TABLE_COLOR_THEMES.iter().enumerate() {
                 ui.selectable_value(&mut st.card2_color_theme, i, *name);
             }
@@ -837,7 +837,7 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
         // The dock can be as narrow as 220 pt: the dropdown takes what the row has left.
         let combo_w = (ui.available_width() - 80.0).clamp(110.0, 200.0);
         let prev_style = st.cover_style;
-        let combo = egui::ComboBox::from_id_salt("pubgen_cover_style").selected_text(cur_style.as_str()).width(combo_w).show_ui(ui, |ui| {
+        let combo = craft_ui::ComboBox::from_id_salt("pubgen_cover_style").selected_text(cur_style.as_str()).width(combo_w).show_ui(ui, |ui| {
             for (idx, s) in styles.iter().enumerate() {
                 let resp = ui.selectable_value(&mut st.cover_style, idx, *s);
                 resp.on_hover_ui(|ui| {
@@ -951,7 +951,7 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
         let cur_theme = themes.get(st.cover_theme_preset).copied().unwrap_or("Classic BPS (Blue/Gold)");
         let prev_theme = st.cover_theme_preset;
         let combo_w = (ui.available_width() - 56.0).clamp(110.0, 220.0);
-        egui::ComboBox::from_id_salt("pubgen_cover_theme").selected_text(cur_theme).width(combo_w).show_ui(ui, |ui| {
+        craft_ui::ComboBox::from_id_salt("pubgen_cover_theme").selected_text(cur_theme).width(combo_w).show_ui(ui, |ui| {
             for (idx, th) in themes.iter().enumerate() {
                 ui.selectable_value(&mut st.cover_theme_preset, idx, *th);
             }
@@ -1052,7 +1052,7 @@ pub(crate) fn card_cover_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut Pubg
     ui.horizontal(|ui| {
         let code_types = ["ISSN", "ISBN"];
         let cur_ct = code_types.get(st.cover_code_type).copied().unwrap_or("ISSN");
-        egui::ComboBox::from_id_salt("pubgen_cover_code_type").selected_text(cur_ct).width(70.0).show_ui(ui, |ui| {
+        craft_ui::ComboBox::from_id_salt("pubgen_cover_code_type").selected_text(cur_ct).width(70.0).show_ui(ui, |ui| {
             for (idx, ct) in code_types.iter().enumerate() {
                 ui.selectable_value(&mut st.cover_code_type, idx, *ct);
             }
@@ -1439,7 +1439,7 @@ pub(crate) fn card_toc_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
         let cur = TOC_KINDS.get(st.toc_kind).copied().unwrap_or(TOC_KINDS[0]);
         let tip = "TOC Entry: every page whose title carries the TOC tag style, plus the narrative pages\nTOC Table: only pages whose first text box starts with \"Tabel\" or \"Table\"\nTOC Chart: only pages whose first text box starts with \"Grafik\" or \"Chart\"\nTOC Paragraph: the narrative pages (the GXX and RXX sheets) with their Heading 1 and Heading 2 paragraphs nested under them";
         let before = st.toc_kind;
-        egui::ComboBox::from_id_salt("pubgen_toc_kind")
+        craft_ui::ComboBox::from_id_salt("pubgen_toc_kind")
             .selected_text(cur)
             .width(110.0)
             .show_ui(ui, |ui| {
@@ -1462,7 +1462,7 @@ pub(crate) fn card_toc_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState
         let layouts = ["Standard", "TablePage"];
         let cur_layout = layouts.get(st.toc_layout_style).copied().unwrap_or("Standard");
         let tip_layout = "Standard: 'Tabel 4.2.1 Title ......... 36'\nTablePage: BPS statistical catalog layout with 'Tabel / halaman' header, standalone number column, and hanging indent";
-        egui::ComboBox::from_id_salt("pubgen_toc_layout_style")
+        craft_ui::ComboBox::from_id_salt("pubgen_toc_layout_style")
             .selected_text(cur_layout)
             .width(110.0)
             .show_ui(ui, |ui| {

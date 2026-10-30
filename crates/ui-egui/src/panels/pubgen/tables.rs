@@ -321,7 +321,7 @@ pub(crate) fn execute_insert_table_matrix_info(
             } else {
                 0.0
             };
-            let gap_below_title = 6.0;
+            let gap_below_title = if st.active_profile().id == "bps_brs" { 2.0 } else { 6.0 };
             let table_y0 = if title_bottom > margin.y0 { title_bottom + gap_below_title } else { margin.y0 };
             let available_h = (margin.y1 - table_y0).max(60.0);
             let max_table_h = if has_footnote { (available_h - note_reserve_h).max(40.0) } else { available_h };
@@ -396,7 +396,9 @@ pub(crate) fn execute_insert_table_matrix_info(
     } else {
         0
     };
-    let footer_rows_count = if st.card2_table_footer && rows_count > header_rows_count + 1 { 1 } else { 0 };
+    let is_brs = st.active_profile().id == "bps_brs";
+    let footer_enabled = !is_brs && st.card2_table_footer && st.active_profile().table_styling.include_table_footer;
+    let footer_rows_count = if footer_enabled && rows_count > header_rows_count + 1 { 1 } else { 0 };
     if header_rows_count > 0 || footer_rows_count > 0 {
         let mut opts = json!({});
         if header_rows_count > 0 {
@@ -711,7 +713,7 @@ pub(crate) fn execute_insert_table_matrix_info(
                     }
 
                     // Table footer row rules (if checked)
-                    if st.card2_table_footer && nr > header_rows + 1 {
+                    if footer_enabled && nr > header_rows + 1 {
                         let footer_row = nr.saturating_sub(1);
                         for c in 0..nc {
                             if let Some(cell) = table.cell_mut(footer_row, c) {
@@ -779,7 +781,7 @@ pub(crate) fn execute_insert_table_matrix_info(
                 }
             }
 
-            if st.card2_table_footer
+            if footer_enabled
                 && table.nrows() > header_rows_count + 1
                 && let Some(r) = table.rows.last_mut()
             {
@@ -813,7 +815,7 @@ pub(crate) fn execute_insert_table_matrix_info(
                 }
 
                 // 3. Footer row fill
-                if !hf_swatch.is_empty() && st.card2_table_footer && nr > data_start + 1 {
+                if !hf_swatch.is_empty() && footer_enabled && nr > data_start + 1 {
                     let footer_row = nr - 1;
                     for c in 0..nc {
                         if let Some(cell) = table.cell_mut(footer_row, c) {
