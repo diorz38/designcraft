@@ -170,11 +170,21 @@ table_frame.bounds().y0` di `tables.rs` test module.
 
 ## Urutan implementasi yang disarankan
 
-1. **#3** — 1 baris, risiko nol, verifikasi cepat.
-2. **#4** — terisolasi di `tables.rs` + `post_process_template_applied_page`.
-3. **#1** — plumb font profil ke emitter + sel tabel + JSON profil.
-4. **#2** — butuh refactor kecil return value `execute_insert_table_matrix`.
-   Paling besar; kerjakan terakhir.
+1. **#3** — 1 baris, risiko nol, verifikasi cepat. [SELESAI]
+2. **#4** — terisolasi di `tables.rs` + `post_process_template_applied_page`. [SELESAI]
+3. **#1** — plumb font profil ke emitter + sel tabel + JSON profil. [SELESAI]
+4. **#2** — butuh refactor return value `execute_insert_table_matrix` dan threading overset langsung setelah halaman asal. [SELESAI]
+
+## Status Implementasi (2026-10-30)
+
+- **Fix #3 (Kicker Tabel)**: Selesai di `crates/ui-egui/src/panels/pubgen/pages.rs`. Non-bilingual prefix menggunakan `locale::table_prefix`.
+- **Fix #4 (Judul auto-grow & posisi tabel/source)**: Selesai di `crates/ui-egui/src/panels/pubgen/pages.rs` dan `tables.rs`. Judul auto-grow via `autoSize: heightOnly`, gap judul-ke-tabel 6pt, slot source frame bergeser ke bawah tabel.
+- **Fix #1 (Konsistensi Font Profil)**: Selesai. `bps_brs.json` di-set ke "Lato" untuk `body_font`, `heading_font`, dan `title_font`. Plumbed ke chart emitter, chart dialog, dan sel tabel via `st.body_font()`.
+- **Fix #2 (Multi-page Table Overset Threading)**:
+  - Selesai di `crates/ui-egui/src/panels/pubgen/tables.rs` dan `pages.rs`.
+  - Menggantikan `autoflow` dengan threading deterministik: `layout.pages.insert {"after": *cur_page_idx, "count": 1}`, `text.thread {"from": last_fid, "autoflow": false}`, memperbarui cursor halaman (`*cur_page_idx += 1`), dan `object.fit {"mode": "fitFrameToContent", "axis": "height"}` pada fragmen terakhir.
+  - Halaman lanjutan tabel disisipkan tepat setelah halaman awal tabel. Konten berikutnya digenerate setelah kelanjutan tabel selesai, sehingga tabel kedua tidak melompat ke halaman belakang (misalnya hal 10) dan tidak tumpang tindih.
+  - Regression test: `test_brs_two_multipage_tables_thread_consecutively_without_jumping_or_overlapping` di `pages.rs` memverifikasi 2 tabel multi-halaman beruntun di-thread secara konsisten pada halaman 4->5 dan 7->8 tanpa overlapping.
 
 ## File yang disentuh
 

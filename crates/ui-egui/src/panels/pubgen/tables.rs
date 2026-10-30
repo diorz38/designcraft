@@ -2,8 +2,23 @@
 
 use super::*;
 
+#[derive(Debug, Clone)]
+pub(crate) struct TableInsertOutput {
+    pub message: String,
+    pub story_id: designcraft_doc::StoryId,
+    pub frame_id: designcraft_doc::ItemId,
+    pub page_idx: usize,
+}
+
 pub(crate) fn execute_insert_table(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
-    execute_insert_table_matrix(app, st, None, None)
+    let doc_margins = {
+        let active = app.session.active().ok_or("No active document")?;
+        page_utils::detect_document_margins(&active.doc)
+    };
+    let info = execute_insert_table_matrix_info(app, st, None, None)?;
+    let mut cur_page = info.page_idx;
+    thread_overset_table(app, &mut cur_page, info.story_id, info.frame_id, doc_margins);
+    Ok(info.message)
 }
 
 /// One table cell of the tab-delimited text `table.convertFromText` reads. A paragraph break would
@@ -21,13 +36,23 @@ pub(crate) fn table_cell_text(cell: &str) -> String {
     out
 }
 
-#[allow(clippy::needless_range_loop)]
+#[allow(dead_code)]
 pub(crate) fn execute_insert_table_matrix(
     app: &mut DesignApp,
     st: &PubgenState,
     matrix_override: Option<&[Vec<String>]>,
     target_page_override: Option<usize>,
 ) -> Result<String, String> {
+    execute_insert_table_matrix_info(app, st, matrix_override, target_page_override).map(|o| o.message)
+}
+
+#[allow(clippy::needless_range_loop)]
+pub(crate) fn execute_insert_table_matrix_info(
+    app: &mut DesignApp,
+    st: &PubgenState,
+    matrix_override: Option<&[Vec<String>]>,
+    target_page_override: Option<usize>,
+) -> Result<TableInsertOutput, String> {
     let source_matrix = matrix_override.unwrap_or(&st.card2_matrix);
     if source_matrix.is_empty() {
         return Err("No tabular data to insert".into());
@@ -571,6 +596,17 @@ pub(crate) fn execute_insert_table_matrix(
                 }
             }
 
+            // One profile font for every cell so tables never fall back to the document default.
+            let fam = st.body_font();
+            for r in 0..nr {
+                for c in 0..nc {
+                    if let Some(cell) = table.cell_mut(r, c) {
+                        let len = cell.text.text.len();
+                        cell.text.format_chars(0..len, |f| f.over.font_family = Some(fam.clone()));
+                    }
+                }
+            }
+
             if st.card2_style == 3 {
                 table.style = "Horizontal Rules".to_string();
                 table.options.border = designcraft_doc::CellStroke::none();
@@ -973,7 +1009,109 @@ pub(crate) fn execute_insert_table_matrix(
     } else {
         ""
     };
-    Ok(format!("Inserted table{target_msg} ({total_rows} rows × {cols_count} cols){fn_msg}"))
+    let fid = created_frame_info
+        .map(|(fid, ..)| fid)
+        .or_else(|| {
+            app.session
+                .active()
+                .and_then(|a| a.doc.story(designcraft_doc::StoryId(story_id)).and_then(|s| s.frames.first().copied()))
+        })
+        .ok_or("No frame created for table")?;
+
+    Ok(TableInsertOutput {
+        message: format!("Inserted table{target_msg} ({total_rows} rows × {cols_count} cols){fn_msg}"),
+        story_id: designcraft_doc::StoryId(story_id),
+        frame_id: fid,
+        page_idx: target_page_info.unwrap_or(cur_page),
+    })
+}
+
+/// Thread any table story that oversets its frame onto freshly inserted continuation pages
+/// immediately following `cur_page_idx`. The caller's `cur_page_idx` is advanced so subsequent
+/// content is placed after the table continuation, never colliding with other items or jumping
+/// to the end of the document.
+pub(crate) fn thread_overset_table(
+    app: &mut DesignApp,
+    cur_page_idx: &mut usize,
+    sid: designcraft_doc::StoryId,
+    first_fid: designcraft_doc::ItemId,
+    doc_margins: designcraft_doc::Margins,
+) -> usize {
+    let mut added_pages = 0usize;
+    let mut last_fid = first_fid.0;
+
+    for _ in 0..50 {
+        if !story_is_overset(app, sid) {
+            break;
+        }
+
+        // 1. Insert 1 page immediately AFTER cur_page_idx
+        let insert_res = app.run("layout.pages.insert", json!({"after": *cur_page_idx, "count": 1}));
+        if insert_res.is_err() {
+            break;
+        }
+        *cur_page_idx += 1;
+        added_pages += 1;
+
+        // 2. Set margins of the newly inserted page to doc_margins
+        let new_page_idx = *cur_page_idx;
+        let _ = app.session.edit(|doc, _| {
+            if let Some((si, pi)) = doc.page_loc(new_page_idx)
+                && let Some(sp) = doc.spreads.get_mut(si)
+            {
+                let sp = std::sync::Arc::make_mut(sp);
+                if let Some(pg) = sp.pages.get_mut(pi) {
+                    pg.margins = doc_margins;
+                    pg.local_margins = true;
+                }
+                sp.relayout();
+            }
+            Ok(serde_json::Value::Null)
+        });
+
+        // 3. Get margin rectangle and spread index of the new page
+        let (margin_rect, spread_idx) = {
+            let active = app.session.active();
+            if let Some(active) = active
+                && let Some((si, pi)) = active.doc.page_loc(new_page_idx)
+                && let Some(spread) = active.doc.spreads.get(si)
+                && let Some(page) = spread.pages.get(pi)
+            {
+                (page.margin_rect(), si)
+            } else {
+                break;
+            }
+        };
+
+        // 4. Thread from last_fid to a new frame on the new page
+        let thread_res = app.run(
+            "text.thread",
+            json!({
+                "from": last_fid,
+                "spread": spread_idx,
+                "rect": [margin_rect.x0, margin_rect.y0, margin_rect.x1, margin_rect.y1],
+                "autoflow": false,
+            }),
+        );
+
+        match thread_res {
+            Ok(val) => {
+                if let Some(to_fid) = val.get("to").and_then(Value::as_u64) {
+                    last_fid = to_fid;
+                } else {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+
+    if added_pages > 0 {
+        // Fit the final continuation frame to its content height
+        let _ = app.run("object.fit", json!({"mode": "fitFrameToContent", "axis": "height", "ids": [last_fid]}));
+    }
+
+    added_pages
 }
 
 pub(crate) fn to_proper_case(s: &str) -> String {
@@ -2503,6 +2641,17 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         let fmt_desc = cell_0_2.text.char_format_of(desc_byte);
         let desc_style = fmt_desc.over.font_style.as_deref().unwrap_or("");
         assert!(desc_style.contains("Italic"), "Line 2 English text 'Description' must be italic, got: {desc_style}");
+
+        // One profile font for every cell
+        let fam = st.body_font();
+        for (r, c, pos) in [(0usize, 0usize, 0usize), (1, 2, 0), (0, 2, desc_byte)] {
+            let cell = table.cell(r, c).unwrap();
+            assert_eq!(
+                cell.text.char_format_of(pos).over.font_family.as_deref(),
+                Some(fam.as_str()),
+                "Cell ({r},{c}) must use the profile body font"
+            );
+        }
     }
 
     #[test]
@@ -2549,5 +2698,47 @@ JUMLAH / TOTAL;100,00;113;100,00;181";
         assert_eq!(table.cell(1, 0).unwrap().fill, "#C4A4DA");
         assert_eq!(table.cell(2, 0).unwrap().fill, designcraft_color::swatch::NONE);
         assert_eq!(table.cell(3, 0).unwrap().fill, "#9E7EB5");
+    }
+
+    #[test]
+    fn test_execute_insert_table_automatically_threads_long_table() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        let mut matrix = vec![vec!["Kecamatan".into(), "Luas".into()]];
+        for i in 0..300 {
+            matrix.push(vec![format!("Kecamatan {i}"), format!("{}", i * 7)]);
+        }
+        let st = PubgenState {
+            card2_matrix: matrix,
+            card2_first_row_header: true,
+            card2_col_numbers: false,
+            card2_table_footer: false,
+            card2_placement: 1,
+            card2_style: 3,
+            ..Default::default()
+        };
+        let res = execute_insert_table(&mut app, &st);
+        assert!(res.is_ok(), "insert failed: {:?}", res.err());
+
+        let sid = {
+            let a = app.session.active().unwrap();
+            let mut found = None;
+            'outer: for sp in &a.doc.spreads {
+                for it in &sp.items {
+                    if let Some(tf) = it.text_frame()
+                        && a.doc.story(tf.story).is_some_and(|s| !s.tables.is_empty())
+                    {
+                        found = Some(tf.story);
+                        break 'outer;
+                    }
+                }
+            }
+            found.unwrap()
+        };
+
+        assert!(!story_is_overset(&app, sid), "Table must fit after automatically threading onto continuation pages");
+        let pages_after = app.session.active().unwrap().doc.page_count();
+        assert!(pages_after > 1, "Continuation pages must be added: {pages_after}");
     }
 }

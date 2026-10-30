@@ -876,7 +876,7 @@ fn execute_generate_pages_brs(
                 let chart_h = 240.0;
                 let r = [margin.x0, cur_y, margin.x1, cur_y + chart_h];
                 let label = if !title_val.is_empty() { title_val } else { "Grafik" };
-                frame_with_font_and_style(app, spread_idx, r, label, "Raleway", 11.0, None);
+                frame_with_font_and_style(app, spread_idx, r, label, &brs_font, 11.0, None);
             }
 
             let chart_bottom = get_page_items_bottom(app, cur_page_idx).unwrap_or(cur_y + half_page_h);
@@ -908,7 +908,7 @@ fn execute_generate_pages_brs(
             if !title_val.is_empty() {
                 let title_h = 28.0;
                 let title_rect = [margin.x0, cur_y, margin.x1, cur_y + title_h];
-                frame_with_font_and_style(app, spread_idx, title_rect, title_val, "Raleway", 10.5, None);
+                frame_with_font_and_style(app, spread_idx, title_rect, title_val, &brs_font, 10.5, None);
                 cur_y += title_h + 4.0;
             }
 
@@ -918,7 +918,13 @@ fn execute_generate_pages_brs(
                 if !theme_val.is_empty() {
                     table_st.card2_theme_override = Some(theme_val.to_string());
                 }
-                if execute_insert_table_matrix(app, &table_st, Some(&matrix), Some(cur_page_idx)).is_ok() {
+                if let Ok(info) = execute_insert_table_matrix_info(app, &table_st, Some(&matrix), Some(cur_page_idx)) {
+                    let added = thread_overset_table(app, &mut cur_page_idx, info.story_id, info.frame_id, doc_margins);
+                    if added > 0 {
+                        let metrics = get_brs_page_metrics(app, cur_page_idx)?;
+                        margin = metrics.0;
+                        spread_idx = metrics.2;
+                    }
                     inserted_tables_count = inserted_tables_count.saturating_add(1);
                 }
             }
@@ -1201,12 +1207,17 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                             } else {
                                 tbl_matrix
                             };
-                            let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
+                            let mut cur_page_idx = applied_info
+                                .get("page")
+                                .and_then(Value::as_u64)
+                                .map(|p| p as usize)
+                                .unwrap_or_else(|| app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0));
                             let mut table_st = st.clone();
                             if !theme_val.is_empty() {
                                 table_st.card2_theme_override = Some(theme_val.to_string());
                             }
-                            if execute_insert_table_matrix(app, &table_st, Some(&display_matrix), Some(cur_page_idx)).is_ok() {
+                            if let Ok(info) = execute_insert_table_matrix_info(app, &table_st, Some(&display_matrix), Some(cur_page_idx)) {
+                                thread_overset_table(app, &mut cur_page_idx, info.story_id, info.frame_id, doc_margins);
                                 inserted_tables_count = inserted_tables_count.saturating_add(1);
                             }
                         }
@@ -2748,12 +2759,13 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                         } else {
                             tbl_matrix
                         };
-                        let cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
+                        let mut cur_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
                         let mut table_st = st.clone();
                         if !theme_val.is_empty() {
                             table_st.card2_theme_override = Some(theme_val.to_string());
                         }
-                        if execute_insert_table_matrix(app, &table_st, Some(&display_matrix), Some(cur_page_idx)).is_ok() {
+                        if let Ok(info) = execute_insert_table_matrix_info(app, &table_st, Some(&display_matrix), Some(cur_page_idx)) {
+                            thread_overset_table(app, &mut cur_page_idx, info.story_id, info.frame_id, doc_margins);
                             inserted_tables_count = inserted_tables_count.saturating_add(1);
                         }
                     }
@@ -5330,5 +5342,133 @@ Grafik,01.01,Grafik 01.01 Pertumbuhan Ekonomi,C01_01.csv\n";
         let s_lines: Vec<&str> = s_text.lines().collect();
         assert_eq!(s_lines[0], "SUKATANI", "Line 1 of map label must be nmdesa: {:?}", s_lines);
         assert_eq!(s_lines[1], "19.561", "Line 2 of map label must be formatted value: {:?}", s_lines);
+    }
+
+    #[test]
+    fn test_brs_two_multipage_tables_thread_consecutively_without_jumping_or_overlapping() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"facingPages": false})).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+
+        // Generate BRS front cover, point page, and back cover first
+        let st_cover = PubgenState {
+            active_profile_id: "bps_brs".into(),
+            cover_style: 13,
+            ..Default::default()
+        };
+        super::covers::execute_generate_brs_cover(&mut app, &st_cover).unwrap();
+        let pages_with_covers = app.session.active().unwrap().doc.page_count();
+        assert!(pages_with_covers >= 3);
+        let back_cover_page_initial = super::covers::find_back_cover_page(&app.session.active().unwrap().doc).unwrap();
+        assert_eq!(back_cover_page_initial, pages_with_covers - 1);
+
+        // Create 2 CSV tables with 150 rows each (so each table oversets a single page)
+        let t1_path = dir.path().join("t1.csv");
+        let mut t1_csv = String::from("Kecamatan;Luas\n");
+        for i in 0..150 {
+            t1_csv.push_str(&format!("Kecamatan {i};{}\n", i * 10));
+        }
+        std::fs::write(&t1_path, t1_csv).unwrap();
+
+        let t2_path = dir.path().join("t2.csv");
+        let mut t2_csv = String::from("Komoditas;Produksi\n");
+        for i in 0..150 {
+            t2_csv.push_str(&format!("Komoditas {i};{}\n", i * 25));
+        }
+        std::fs::write(&t2_path, t2_csv).unwrap();
+
+        // Catalog: Narrative 1, Table 1 (overset), Narrative 2, Table 2 (overset), Narrative 3
+        let cat_path = dir.path().join("catalog.csv");
+        let cat_csv = "type;number;title;file\n\
+Narrative;1;Perkembangan Perekonomian;narrative1.rtf\n\
+Tabel;1;Tabel 1 Luas Wilayah;t1.csv\n\
+Narrative;2;Perkembangan Produksi;narrative2.rtf\n\
+Tabel;2;Tabel 2 Produksi Komoditas;t2.csv\n\
+Narrative;3;Catatan Akhir;narrative3.rtf\n";
+        std::fs::write(&cat_path, cat_csv).unwrap();
+
+        let n1_path = dir.path().join("narrative1.rtf");
+        std::fs::write(&n1_path, r#"{\rtf1\ansi Paragraph 1}"#).unwrap();
+        let n2_path = dir.path().join("narrative2.rtf");
+        std::fs::write(&n2_path, r#"{\rtf1\ansi Paragraph 2}"#).unwrap();
+        let n3_path = dir.path().join("narrative3.rtf");
+        std::fs::write(&n3_path, r#"{\rtf1\ansi Paragraph 3}"#).unwrap();
+
+        let st = PubgenState {
+            active_profile_id: "bps_brs".into(),
+            card1_path: cat_path.to_string_lossy().to_string(),
+            card1_records: vec![
+                vec!["Narrative".into(), "1".into(), "Perkembangan Perekonomian".into(), "narrative1.rtf".into()],
+                vec!["Tabel".into(), "1".into(), "Tabel 1 Luas Wilayah".into(), "t1.csv".into()],
+                vec!["Narrative".into(), "2".into(), "Perkembangan Produksi".into(), "narrative2.rtf".into()],
+                vec!["Tabel".into(), "2".into(), "Tabel 2 Produksi Komoditas".into(), "t2.csv".into()],
+                vec!["Narrative".into(), "3".into(), "Catatan Akhir".into(), "narrative3.rtf".into()],
+            ],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "file".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_file_col: 3,
+            card1_range_all: true,
+            card1_auto_insert_tables: true,
+            ..Default::default()
+        };
+
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "Page generation failed: {res:?}");
+
+        let active = app.session.active().unwrap();
+        let doc = &active.doc;
+
+        // Locate Table 1 and Table 2 stories and their frames
+        let mut t1_story_id = None;
+        let mut t2_story_id = None;
+        for (sid, story) in &doc.stories {
+            for (_tid, table) in &story.tables {
+                let cell_0 = table.cell(0, 0).map(|c| c.text.text.clone());
+                let cell_1 = table.cell(1, 0).map(|c| c.text.text.clone());
+                if cell_0.as_deref().unwrap_or("").contains("Kecamatan") || cell_1.as_deref().unwrap_or("").contains("Kecamatan") {
+                    t1_story_id = Some(*sid);
+                } else if cell_0.as_deref().unwrap_or("").contains("Komoditas") || cell_1.as_deref().unwrap_or("").contains("Komoditas") {
+                    t2_story_id = Some(*sid);
+                }
+            }
+        }
+
+        let sid1 = t1_story_id.expect("Table 1 story must exist");
+        let sid2 = t2_story_id.expect("Table 2 story must exist");
+
+        let frames1 = &doc.story(sid1).unwrap().frames;
+        let frames2 = &doc.story(sid2).unwrap().frames;
+
+        assert!(frames1.len() >= 2, "Table 1 must have at least 2 threaded frames, got {}", frames1.len());
+        assert!(frames2.len() >= 2, "Table 2 must have at least 2 threaded frames, got {}", frames2.len());
+
+        let page_of = |fid: designcraft_doc::ItemId| -> usize {
+            doc.page_of_item(fid).unwrap()
+        };
+
+        let p1_start = page_of(frames1[0]);
+        let p1_cont = page_of(frames1[1]);
+        let p2_start = page_of(frames2[0]);
+        let p2_cont = page_of(frames2[1]);
+
+        // Table 1 continuation must be on the page immediately following its start!
+        assert_eq!(p1_cont, p1_start + 1, "Table 1 continuation must be immediately after start page: start={}, cont={}", p1_start, p1_cont);
+
+        // Table 2 must start AFTER Table 1 has finished!
+        assert!(p2_start > p1_cont, "Table 2 must start after Table 1 continuation: t1_cont={}, t2_start={}", p1_cont, p2_start);
+
+        // Table 2 continuation must be immediately after Table 2's start page!
+        assert_eq!(p2_cont, p2_start + 1, "Table 2 continuation must be immediately after Table 2 start: start={}, cont={}", p2_start, p2_cont);
+
+        // Table 1 and Table 2 must NOT overlap on the same continuation page!
+        assert_ne!(p1_cont, p2_cont, "Table 1 continuation and Table 2 continuation must NOT be on the same page!");
+
+        // Back cover must still be the last page!
+        let total_pages = doc.page_count();
+        let back_page = super::covers::find_back_cover_page(doc).expect("Back cover must exist");
+        assert_eq!(back_page, total_pages - 1, "Back cover must be the very last page");
     }
 }
