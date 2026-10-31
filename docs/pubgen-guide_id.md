@@ -63,6 +63,7 @@
     - [Tutorial 3: Memformat Tabel Statistik Kompleks dari Excel](#tutorial-3-memformat-tabel-statistik-kompleks-dari-excel)
     - [Tutorial 4: Mengompilasi Seluruh Publikasi dari Satu Manifest](#tutorial-4-mengompilasi-seluruh-publikasi-dari-satu-manifest)
 15. [Tanya Jawab (FAQ) & Panduan Mengatasi Kendala](#15-tanya-jawab-faq--panduan-mengatasi-kendala)
+16. [Yang Baru di Build Ini (0.15.2-pubgen.0.8.2)](#16-yang-baru-di-build-ini-0152-pubgen082)
 ## 1. Apa itu Pubgen?
 
 **Pubgen** (*Publication Generator*) adalah modul otomasi tata letak yang terpasang langsung di dalam DesignCraft.
@@ -158,6 +159,7 @@ Selain sampul depan, **Add Inside cover and Back Cover** menyisipkan sampul dala
 ### Ikhtisar & Posisi Halaman
 - **Selalu Menjadi Halaman Depan**: Saat tombol **Generate Cover Page** diklik, Pubgen secara otomatis menyisipkan halaman baru persis sebelum Halaman 1 dan mengarahkan tampilan kanvas ke sampul tersebut. Halaman isi yang sudah ada sebelumnya tidak akan rusak atau bergeser keliru.
 - **Skala Otomatis yang Presisi**: Baik dokumen Anda berukuran **A4**, **A5**, maupun **B5**, seluruh elemen vektor, bentuk poligon, jarak bingkai, dan ukuran huruf akan disesuaikan secara proporsional.
+- **Sampul Belakang di Halaman Kiri**: saat **Facing Pages** aktif, sampul belakang menempati halaman kiri (verso) pada spread-nya sendiri sehingga buku jadi terbuka dan tertutup simetris; sampul yang seharusnya jatuh di halaman kanan didahului satu halaman kosong (berlaku untuk sampul belakang generik maupun BRS, dan alur BRS melaporkan galatnya alih-alih menelannya).
 
 ---
 
@@ -383,6 +385,7 @@ Anda dapat menentukan gaya dan palet AI langsung pada lembar Excel:
 ### Pratinjau Thumbnail Hover
 - Di bawah menu pilihan gaya, terdapat tombol pil cepat untuk seluruh 13 gaya vektor korporat ditambah 3 gaya AI Base.
 - Cukup **arahkan kursor tetikus (hover)** ke salah satu pil (atau klik ikon mata `👁` di samping menu). Jendela melayang (*tooltip*) akan langsung menampilkan thumbnail foto sampul yang sesungguhnya beresolusi tinggi, sehingga Anda dapat memilih desain dengan yakin sebelum membuatnya.
+- **Gambar thumbnail ditemukan di mana saja**: daftar pratinjau memindai seluruh gambar di folder gambar aplikasi dan folder thumbnail pengguna, bukan sekumpulan nama berkas tetap, sehingga PNG atau JPG pratinjau buatan Anda sendiri ikut tampil.
 
 ---
 
@@ -603,6 +606,13 @@ Memilih **TOC Table** atau **TOC Chart** akan mengisi kolom Judul secara otomati
 Anda tetap bisa mengubahnya. Penyaring ini tersimpan di dalam dokumen, sehingga **Rebuild TOC** dan menu
 *Layout ▸ Update Table of Contents* tetap mempertahankannya.
 
+**Create PDF Bookmarks** (dialog Daftar Isi): gaya paragraf yang disertakan dalam daftar menjadi level
+outline, sehingga PDF hasil ekspor memiliki daftar isi yang bisa diklik di samping titik-titik pemandu.
+**Rebuild TOC** memperbarui outline itu di posisi semula dan mempertahankan bookmark yang Anda tambahkan
+secara manual sebelum maupun sesudahnya; mematikan opsi ini hanya menghapus bookmark buatan Pubgen. TOC
+baru aktif secara default, sedangkan skrip hanya mendapatkannya bila `toc.generate` diberi
+`createBookmarks: true`.
+
 **TOC Paragraph** adalah daftar bertingkat khas sebuah publikasi: halaman naratif (prakata dari lembar `GXX` dan
 ulasan bab dari lembar `RXX`) di tingkat pertama, lalu paragraf `Heading 1` dan `Heading 2` dari isi setiap bab di
 bawahnya. Tidak ada halaman lain — tabel, grafik, pembatas, maupun keterangan publikasi — yang ikut terdaftar.
@@ -778,6 +788,15 @@ Grafik terindeks otomatis: halaman grafik vektor muncul di **Daftar Grafik** sep
 - **Warna** — primary, accent, dark, rule, dan text.
 - **Save As New Template…** menyimpan pengaturan saat ini sebagai templat baru; tombol hapus menghapus templat kustom.
 - **Apply Header & Footer** menerapkannya ke dokumen; **Remove from Document** menghapusnya.
+
+**Halaman BRS, sejak 0.15.2-pubgen.0.8.2:**
+- Teks footer tetap tercetak meski warna swatch-nya tersimpan dengan penulisan heksadesimal berbeda
+  (`#f68839` vs `#F68839`); run yang warnanya tidak menunjuk swatch mana pun dicetak hitam, bukan
+  menghilang (`[None]` tetap tanpa warna).
+- Nomor halaman berjalan menempel di margin dalam (sisi punggung), sejajar dengan teks footer, dan tetap
+  tercetak meski margin tersebut lebih sempit daripada bingkai nomornya.
+- Galat sampul belakang, facing pages, dan `layout.headerFooter.apply` yang muncul saat menghasilkan
+  keluaran BRS kini masuk ke log, tidak lagi ditelan.
 
 Publication Compiler dapat menerapkan preset untuk Anda: `"headerFooter": { "preset": "book", "scope": "body" }` (§10).
 
@@ -1055,5 +1074,31 @@ Untuk buku tahunan dengan delapan sampai dua belas buku kerja bab, compiler meng
 **J:** Gunakan **File ▸ Export PDF…**. Anda dapat memilih PDF/X-4, PDF/X-1a:2003, atau PDF/A-2b, mengatur CMYK dan tinta spot, bleed dengan tanda crop dan bleed, kompresi gambar, serta keluaran 300 ppi untuk percetakan offset. Langkah PDF di compiler masih ekspor biasa; preset Print dan Web khusus Pubgen belum tersedia, jadi gunakan dialog ini untuk berkas PDF/X-4.
 
 ---
+
+---
+
+## 16. Yang Baru di Build Ini (0.15.2-pubgen.0.8.2)
+
+1. **Teks footer BRS tercetak kembali**: warna footer dicocokkan ke swatch berdasarkan nama, apa pun
+   bentuk heksadesimalnya, dan run yang warnanya tidak menunjuk swatch mana pun dicetak hitam, bukan
+   menghilang.
+2. **Sampul belakang jatuh di halaman kiri**: dengan Facing Pages aktif, sampul belakang menempati
+   halaman verso pada spread-nya sendiri sehingga buku jadi terbuka dan tertutup simetris; sampul yang
+   seharusnya di halaman kanan didahului satu halaman kosong. Alur generate BRS juga melaporkan galat
+   sampul belakang, facing pages, dan `layout.headerFooter.apply`, tidak lagi menelannya.
+3. **Nomor halaman BRS berada di margin dalam**, melewati tepi margin sisi punggung dan sejajar dengan
+   teks footer, serta tetap tercetak meski margin lebih sempit daripada bingkainya.
+4. **Thumbnail sampul menemukan gambarnya**: pratinjau memindai seluruh folder thumbnail aplikasi dan
+   folder pengguna, bukan hanya nama berkas tetap.
+5. **Disinkronkan dengan `main` DesignCraft hulu (v0.15.2, 995 commit)**: Create PDF Bookmarks pada TOC
+   yang diperbarui di tempat, Color Picker baru dengan eyedropper, preferensi aplikasi **Units &
+   Increments** (`defaultUnits`) untuk dokumen baru, dan dialog konversi tabel hulu — tanpa
+   melepas fitur Pubgen mana pun (TOC majemuk, entri bab dan pasangan BPS, templat header/footer,
+   sampul, thumbnail).
+
+Dirilis sebagai tag `v0.15.2-pubgen.0.8.2` (`pubgen-0.8.X`); build portable Windows x64 diterbitkan
+sebagai **DesignCraft 0.15.2-pubgen.0.8.2 - Windows x64 Portable** di halaman rilis GitHub. Gerbang
+mutu pada commit yang ditandai: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D
+warnings` dan `cargo test --workspace` (3770 tes) semuanya bersih.
 
 *DesignCraft Publication Generator (Pubgen) — Dirancang untuk Kecepatan, Keindahan, dan Ketepatan Tata Letak Statistik.*

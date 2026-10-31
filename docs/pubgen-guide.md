@@ -63,6 +63,7 @@
     - [Tutorial 3: Formatting Complex Statistical Tables from Excel](#tutorial-3-formatting-complex-statistical-tables-from-excel)
     - [Tutorial 4: Compiling a Whole Publication from One Manifest](#tutorial-4-compiling-a-whole-publication-from-one-manifest)
 15. [Frequently Asked Questions & Troubleshooting](#15-frequently-asked-questions--troubleshooting)
+16. [What’s New in This Build (0.15.2-pubgen.0.8.2)](#16-whats-new-in-this-build-0152-pubgen082)
 ## 1. What is Pubgen?
 
 **Pubgen** (Publication Generator) is an automated layout engine built directly into DesignCraft.
@@ -181,6 +182,7 @@ Beyond the front cover, **Add Inside cover and Back Cover** inserts a greyscale 
 ### Overview & Position
 - **Always Page 1 (Front Cover)**: When you click **Generate Cover Page**, Pubgen automatically inserts a new page before the existing Page 1 and navigates to it. Your existing layout and content are preserved.
 - **Proportional Scaling**: Whether your document is **A4**, **A5**, or **B5**, all polygons, frames, and typography scale proportionally (`sx`, `sy`, `s_avg`) so the layout always looks balanced.
+- **Back Cover on a Left Page**: with Facing Pages on, the back cover sits on a left (verso) page of its own spread, mirroring the front cover on page 1; a cover that would land on a right page gains one blank page first (both the generic and the BRS back cover, and the BRS run reports any error instead of swallowing it).
 
 ---
 
@@ -405,6 +407,7 @@ You can specify AI Base styles directly in your Excel workbook:
 ### Hover Thumbnail Previews
 - **Quick Preview Pills**: Under the style dropdown, you will see quick-switch pills for all 13 vector corporate styles plus the 3 AI Base styles.
 - **Hover to Preview**: Simply move your mouse over any pill (or click the small eye icon `👁` next to the dropdown). A floating tooltip instantly displays the actual rendered cover thumbnail so you can choose your favorite look before generating.
+- **Thumbnail images found anywhere**: the preview lists every image in the app image folder and the per-user thumbnail folder instead of a fixed set of filenames, so your own preview PNGs and JPGs show up.
 
 ---
 
@@ -695,6 +698,12 @@ Pubgen scans your document's text frames and builds a Table of Contents with pag
 Picking **TOC Table** or **TOC Chart** fills the Title field for you and centres the title line; you can still edit
 the title. The filter is stored in the document, so **Rebuild TOC** and *Layout ▸ Update Table of Contents* keep it.
 
+**Create PDF Bookmarks** (Table of Contents dialog): the paragraph styles included in the list become
+outline levels, so the exported PDF carries a clickable outline beside the leader dots. **Rebuild TOC**
+refreshes that outline in its previous place, keeping bookmarks you added by hand before and after it;
+turning the option off removes only the generated bookmarks. A new TOC starts with it on, and a script
+passes `toc.generate {createBookmarks: true}` to get one.
+
 **TOC Paragraph** is the nested list of a publication: the narrative pages (the front matter from the `GXX`
 sheets and the chapter reviews from the `RXX` sheets) at the first level, the `Heading 1` and `Heading 2`
 paragraphs of their bodies below them. No other page — a table, a chart, a divider or a publication note —
@@ -879,6 +888,15 @@ Charts are indexed automatically: a vector chart page appears in **Daftar Grafik
 - **Colours** — primary, accent, dark, rule and text.
 - **Save As New Template…** stores the current setup under a name for reuse; the bin button deletes a custom template.
 - **Apply Header & Footer** writes it to the document; **Remove from Document** clears it.
+
+**BRS pages, since 0.15.2-pubgen.0.8.2:**
+- Footer text paints even when its colour swatch is stored with a different hex casing
+  (`#f68839` vs `#F68839`); a run whose fill names no swatch prints black instead of vanishing
+  (`[None]` stays unpainted).
+- The running page number hugs the inner (spine-side) margin, level with the footer text, and stays
+  on the page even when that margin is narrower than the number frame.
+- Back-cover, facing-pages and `layout.headerFooter.apply` errors raised while generating BRS
+  output now reach the log instead of being swallowed.
 
 The Publication Compiler can apply a preset for you: `"headerFooter": { "preset": "book", "scope": "body" }` (§10).
 
@@ -1152,5 +1170,30 @@ For a yearbook with eight to twelve chapter workbooks, the compiler replaces the
 **A:** Use **File ▸ Export PDF…**. You can choose PDF/X-4, PDF/X-1a:2003 or PDF/A-2b, set CMYK and spot inks, bleed with crop and bleed marks, image compression and 300 ppi output for commercial offset printing.
 
 ---
+
+---
+
+## 16. What’s New in This Build (0.15.2-pubgen.0.8.2)
+
+1. **BRS footer text prints again**: the footer colour matches its swatch by name whatever the hex
+   casing, and a run whose fill names no swatch prints black instead of disappearing.
+2. **Back cover lands on a left page**: with Facing Pages on, the back cover takes a verso page of its
+   own spread, so the finished book opens and closes symmetrically; a would-be right-hand cover gains
+   one blank page first. The BRS generate flow also reports back-cover, facing-pages and
+   `layout.headerFooter.apply` errors instead of swallowing them.
+3. **BRS page number sits in the inner margin**, past the spine-side margin edge and level with the
+   footer text, and stays on the page when the margin is narrower than its frame.
+4. **Cover thumbnails find their images**: the preview scans the app and per-user thumbnail folders
+   instead of fixed filenames.
+5. **Synced with upstream DesignCraft `main` (v0.15.2, 995 commits)**: TOC Create PDF Bookmarks
+   regenerated in place, the redesigned Color Picker with eyedropper, application **Units &
+   Increments** (`defaultUnits`) for new documents, and the upstream table convert dialogs — with
+   every Pubgen feature kept (plural tables of contents, BPS chapter and paired entries,
+   header/footer templates, covers, thumbnails).
+
+Ships as tag `v0.15.2-pubgen.0.8.2` (`pubgen-0.8.X`); the Windows x64 portable build is published as
+**DesignCraft 0.15.2-pubgen.0.8.2 - Windows x64 Portable** on the GitHub releases page. Quality gates
+on the tagged commit: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` and
+`cargo test --workspace` (3770 tests) all clean.
 
 *DesignCraft Publication Generator (Pubgen) — Engineered for Speed, Elegance, and Precision.*
