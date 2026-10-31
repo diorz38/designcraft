@@ -551,13 +551,32 @@ fn row_template_slots(
 pub(crate) fn ensure_brs_heading_styles(app: &mut DesignApp, font: &str) {
     let _ = app.run("list.define", json!({"name": "BRS", "continueAcrossStories": true}));
 
-    let h1_params = json!({
-        "name": "Heading 1",
-        "chars": {
+    // BRS accent for Title / Heading 1 / Heading 2, as a document swatch (char fills name one).
+    let accent = app
+        .session
+        .edit(|doc, _| {
+            let name = ensure_swatch(doc, "#f68839");
+            // Swatch lookup is case-sensitive: keep the document's exact spelling.
+            let exact = doc.swatches.iter().find(|s| s.name.eq_ignore_ascii_case(&name)).map(|s| s.name.clone()).unwrap_or(name);
+            Ok(serde_json::Value::String(exact))
+        })
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string));
+    let heading_chars = |size: f64| {
+        let mut chars = json!({
             "fontFamily": font,
             "fontStyle": "Bold",
-            "size": 13.0
-        },
+            "size": size
+        });
+        if let Some(fill) = &accent {
+            chars["fill"] = json!(fill);
+        }
+        chars
+    };
+
+    let h1_params = json!({
+        "name": "Heading 1",
+        "chars": heading_chars(13.0),
         "para": {
             "listType": "numbers",
             "listName": "BRS",
@@ -575,11 +594,7 @@ pub(crate) fn ensure_brs_heading_styles(app: &mut DesignApp, font: &str) {
 
     let h2_params = json!({
         "name": "Heading 2",
-        "chars": {
-            "fontFamily": font,
-            "fontStyle": "Bold",
-            "size": 11.0
-        },
+        "chars": heading_chars(11.0),
         "para": {
             "listType": "numbers",
             "listName": "BRS",
@@ -597,11 +612,7 @@ pub(crate) fn ensure_brs_heading_styles(app: &mut DesignApp, font: &str) {
 
     let title_params = json!({
         "name": "Title",
-        "chars": {
-            "fontFamily": font,
-            "fontStyle": "Bold",
-            "size": 14.5
-        },
+        "chars": heading_chars(14.5),
         "para": {
             "spaceBefore": 0.0,
             "spaceAfter": 6.0
@@ -1428,12 +1439,12 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                     Ok(serde_json::Value::Null)
                 });
 
-                let (pw, ph, spread_idx) = {
+                let (pw, ph, spread_idx, page_x) = {
                     let active = app.session.active().ok_or("No active document")?;
                     let (si, pi) = active.doc.page_loc(cur_page_idx).ok_or("Page loc missing")?;
                     let spread = active.doc.spreads.get(si).ok_or("Spread missing")?;
                     let page = spread.pages.get(pi).ok_or("Page missing")?;
-                    (page.width, page.height, si)
+                    (page.width, page.height, si, page.bounds().x0)
                 };
 
                 let (first_word, digit_num, rest_text) = excel::split_divider_title(title_val);
@@ -1498,7 +1509,27 @@ pub(crate) fn execute_generate_pages(app: &mut DesignApp, st: &PubgenState) -> R
                 let row_tpl_lower = row_tpl_spec.to_lowercase();
                 let style_choice = if row_tpl_lower.contains("simple") || row_tpl_lower.contains("001") { 1 } else { 2 };
 
-                divider_art::generate_divider(app, div_vals, style_choice)?;
+                let before_ids: std::collections::HashSet<u64> = app
+                    .session
+                    .active()
+                    .and_then(|a| a.doc.spreads.get(spread_idx))
+                    .map(|sp| sp.items.iter().map(|it| it.id.0).collect())
+                    .unwrap_or_default();
+                let div_res = divider_art::generate_divider(app, div_vals, style_choice);
+                // The procedural art is authored page-local (x from 0): shift it onto the
+                // divider page when that page is the right-hand page of a facing spread.
+                if page_x.abs() > 0.01 {
+                    let new_ids: Vec<u64> = app
+                        .session
+                        .active()
+                        .and_then(|a| a.doc.spreads.get(spread_idx))
+                        .map(|sp| sp.items.iter().filter(|it| !before_ids.contains(&it.id.0)).map(|it| it.id.0).collect())
+                        .unwrap_or_default();
+                    if !new_ids.is_empty() {
+                        let _ = app.run("transform.move", json!({"ids": new_ids, "dx": page_x, "dy": 0.0, "content": true}));
+                    }
+                }
+                div_res?;
                 if img_str.is_some() {
                     inserted_images_count = inserted_images_count.saturating_add(1);
                 }
@@ -5623,5 +5654,53 @@ Narrative;3;Catatan Akhir;narrative3.rtf\n";
             margin.x1,
             bounds.x1 - margins.inside
         );
+    }
+
+    #[test]
+    fn test_brs_title_and_headings_use_the_accent_color() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({})).unwrap();
+
+        ensure_brs_heading_styles(&mut app, "Lato");
+
+        let active = app.session.active().unwrap();
+        for name in ["Title", "Heading 1", "Heading 2"] {
+            let style = active.doc.styles.para(name).unwrap();
+            assert_eq!(style.chars.fill.as_deref(), Some("#F68839"), "{name} fill");
+        }
+    }
+
+    #[test]
+    fn test_procedural_divider_art_stays_on_its_right_page() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"facingPages": true, "pages": 2})).unwrap();
+
+        // A missing template forces the procedural divider art (portable builds without assets).
+        let st = PubgenState {
+            card1_records: vec![vec!["Divider".into(), "01".into(), "BAB 01 GEOGRAFI".into(), "nope/missing.designcraft".into()]],
+            card1_headers: vec!["type".into(), "number".into(), "title".into(), "template".into()],
+            card1_type_col: 0,
+            card1_num_col: 1,
+            card1_title_col: 2,
+            card1_template_col: 3,
+            card1_template_path: "nope/missing.designcraft".into(),
+            card1_range_all: true,
+            ..Default::default()
+        };
+        let res = execute_generate_pages(&mut app, &st);
+        assert!(res.is_ok(), "{res:?}");
+
+        let active = app.session.active().unwrap();
+        let doc = &active.doc;
+        let last = doc.page_count() - 1;
+        let (si, pi) = doc.page_loc(last).unwrap();
+        let page = doc.spreads[si].pages[pi].bounds();
+        assert_eq!(doc.spreads[si].pages[pi].side, designcraft_doc::PageSide::Right, "the appended page is a right page");
+        assert!(page.x0 > 1.0, "a right page of a facing spread starts after the left page: {page:?}");
+        assert!(!doc.spreads[si].items.is_empty(), "the divider art must exist");
+        for it in &doc.spreads[si].items {
+            let b = it.bounds();
+            assert!(b.x0 >= page.x0 - 0.5 && b.x1 <= page.x1 + 0.5, "divider art {:?} must stay on its right page {page:?}, got {b:?}", it.id);
+        }
     }
 }
