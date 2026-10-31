@@ -860,6 +860,8 @@ show_value_labels true
 
 Other accepted keys: `data_start_row` / `data_end_row`, `max_value`, `show_legend`, `show_grid`, `geojson`. Series 2 and 3 use the same `series_N_col` / `series_N_label` / `series_N_label_en` pattern. Without a `chart_type` the sheet is placed as a picture, exactly as before.
 
+In the dialog's **Data Table (CSV / TSV)** section, **Preview** shows the rows as an Excel-like grid with a row-number gutter (header rows, those before `data_start_row`, are unnumbered); **Edit** switches back to the raw CSV editor. Both views read the same data.
+
 Charts are indexed automatically: a vector chart page appears in **Daftar Grafik** / *List of Charts* like any other figure. Map pages can also feed a decorative map overlay behind the cover text and logo.
 
 ---

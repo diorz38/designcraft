@@ -759,6 +759,8 @@ show_value_labels true
 
 Kunci lain yang diterima: `data_start_row` / `data_end_row`, `max_value`, `show_legend`, `show_grid`, `geojson`. Seri 2 dan 3 memakai pola `series_N_col` / `series_N_label` / `series_N_label_en`. Tanpa `chart_type`, sheet ditempatkan sebagai gambar seperti sebelumnya.
 
+Di bagian **Data Table (CSV / TSV)** pada dialog, **Preview** menampilkan baris sebagai grid mirip Excel dengan kolom nomor baris (baris header, yaitu sebelum `data_start_row`, tanpa nomor); **Edit** kembali ke editor CSV mentah. Kedua tampilan membaca data yang sama.
+
 Grafik terindeks otomatis: halaman grafik vektor muncul di **Daftar Grafik** seperti gambar lainnya. Halaman peta juga bisa menjadi lapisan peta dekoratif di belakang teks dan logo sampul.
 
 ---

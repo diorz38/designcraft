@@ -32,6 +32,13 @@ Tahun,Pertanian,Industri,Jasa
 2024,4.3,5.1,6.2
 2025,4.5,5.4,6.5";
 
+/// Row-number gutter value for the CSV preview: `None` on header rows (before the first
+/// data row), `Some(1..)` on data rows, so the header gets no Excel-style row number.
+fn csv_preview_row_number(row: usize, data_start_row: usize) -> Option<usize> {
+    let header_rows = data_start_row.saturating_sub(1);
+    row.checked_sub(header_rows).map(|v| v + 1)
+}
+
 /// Index of the bundled Pangkalan village map in the stock map list.
 ///
 /// The stock list is sorted by display name, so index 0 is not Pangkalan; the bundled
@@ -141,6 +148,8 @@ pub struct ChartDialog {
     pub map_palette_idx: usize,
     /// Editable raw CSV/TSV tabular data.
     pub raw_data: String,
+    /// Whether the data section shows the read-only grid preview (`true`) or the CSV editor.
+    pub csv_grid_preview: bool,
     /// Target spread index where the chart will be placed.
     pub target_spread: usize,
     /// 0-based page number that was active/selected when dialog opened.
@@ -265,6 +274,7 @@ impl Default for ChartDialog {
             map_custom_path: String::new(),
             map_palette_idx: 0,
             raw_data: DEFAULT_SAMPLE_CSV.into(),
+            csv_grid_preview: true,
             target_spread: 0,
             selected_page: 0,
             import_page: 1,
@@ -1477,7 +1487,44 @@ pub fn chart_dialog_ui(app: &mut DesignApp, ctx: &egui::Context, st: &mut Pubgen
                 }
             });
 
-            ui.add(egui::TextEdit::multiline(&mut dialog.raw_data).code_editor().desired_rows(6).desired_width(f32::INFINITY));
+            // Preview (Excel-like grid) or edit (raw CSV); both read the same `raw_data`.
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut dialog.csv_grid_preview, true, crate::i18n::tr(&lang, "Preview"));
+                ui.selectable_value(&mut dialog.csv_grid_preview, false, crate::i18n::tr(&lang, "Edit"));
+            });
+
+            if dialog.csv_grid_preview {
+                // Monospace grid with a row-number gutter: header rows (before `data_start_row`)
+                // show no number; data rows count from 1.
+                let sheet = dialog.parse_sheet_data();
+                if !sheet.grid.is_empty() {
+                    egui::ScrollArea::both().id_salt("pubgen_chart_csv_preview").max_height(170.0).show(ui, |ui| {
+                        egui::Grid::new("pubgen_chart_csv_preview_grid").striped(true).spacing([12.0, 2.0]).show(ui, |ui| {
+                            for (r, row) in sheet.grid.iter().enumerate() {
+                                let row_number = csv_preview_row_number(r, dialog.data_start_row);
+                                let is_data = row_number.is_some();
+                                ui.label(
+                                    RichText::new(row_number.map(|n| n.to_string()).unwrap_or_default()).monospace().size(10.5).color(t.text_dim),
+                                );
+                                for (c, cell) in row.iter().enumerate() {
+                                    let text = RichText::new(cell).monospace().size(10.5);
+                                    let text = if !is_data {
+                                        text.strong().color(t.text_strong)
+                                    } else if c == 0 {
+                                        text.strong().color(t.text)
+                                    } else {
+                                        text.color(t.text)
+                                    };
+                                    ui.label(text);
+                                }
+                                ui.end_row();
+                            }
+                        });
+                    });
+                }
+            } else {
+                ui.add(egui::TextEdit::multiline(&mut dialog.raw_data).code_editor().desired_rows(6).desired_width(f32::INFINITY));
+            }
 
             if let Some(active) = app.session.active() {
                 let total_sp = active.doc.spreads.len();
@@ -2060,5 +2107,15 @@ mod tests {
         assert_eq!(back_page, Some(initial_pages), "Back cover must remain last");
         let (chart_sp, _) = active.doc.page_loc(last_idx).unwrap();
         assert!(!active.doc.spreads[chart_sp].items.is_empty(), "Spread before back cover must contain map items");
+    }
+
+    #[test]
+    fn csv_preview_row_numbers_skip_header_rows() {
+        assert_eq!(csv_preview_row_number(0, 2), None, "header row gets no number");
+        assert_eq!(csv_preview_row_number(1, 2), Some(1), "first data row is 1");
+        assert_eq!(csv_preview_row_number(4, 2), Some(4));
+        assert_eq!(csv_preview_row_number(0, 1), Some(1), "no header rows");
+        assert_eq!(csv_preview_row_number(0, 0), Some(1), "data_start_row 0 is treated as 1");
+        assert_eq!(csv_preview_row_number(0, 99), None, "start beyond the sheet");
     }
 }
