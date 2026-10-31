@@ -31,11 +31,11 @@ impl TableColorTheme {
 
     pub fn brs6() -> Self {
         Self {
-            header_footer: "#D07C38".into(),
-            row_number: "#E7CFB5".into(),
+            header_footer: "#F58838".into(),
+            row_number: "#FBBF91".into(),
             header_text_color: Some("[Paper]".into()),
             data_odd_fill: Some("#FEF0D2".into()),
-            data_even_fill: Some("#FEF7E9".into()),
+            data_even_fill: Some("#FEF7E8".into()),
             font_size_delta: Some(-1),
         }
     }
@@ -51,7 +51,7 @@ pub const TABLE_COLOR_THEMES: &[(&str, &str, &str)] = &[
     ("#F3D2AF - #F8EADC", "#F3D2AF", "#F8EADC"),
     ("#9E7EB5 - #C4A4DA", "#9E7EB5", "#C4A4DA"),
     ("None", "", ""),
-    ("BRS6 (#D07C38 - #E7CFB5)", "#D07C38", "#E7CFB5"),
+    ("BRS6 (#F58838 - #FBBF91)", "#F58838", "#FBBF91"),
 ];
 
 /// Parse a table color theme from string (preset index "0", "1", "2", hex names, or custom pair).
@@ -64,7 +64,14 @@ pub(crate) fn parse_table_color_theme(val: &str) -> Option<TableColorTheme> {
     if lower == "none" || lower == "plain" || lower == "white" || lower == "transparent" {
         return Some(TableColorTheme::new("", ""));
     }
-    if s == "4" || lower == "brs6" || lower == "brs 6" || lower.contains("d07c3") || lower.contains("d07c38") {
+    if s == "4"
+        || lower == "brs6"
+        || lower == "brs 6"
+        || lower.contains("f58838")
+        || lower.contains("fbbf91")
+        || lower.contains("d07c3")
+        || lower.contains("d07c38")
+    {
         return Some(TableColorTheme::brs6());
     }
     if s == "0" || lower.contains("ffcb56") || lower == "gold" || lower == "amber" {
@@ -129,5 +136,16 @@ pub(crate) mod tests {
         assert_eq!(parse_table_color_theme("brs6"), Some(TableColorTheme::brs6()));
         assert_eq!(parse_table_color_theme("#d07c3"), Some(TableColorTheme::brs6()));
         assert_eq!(parse_table_color_theme("#d07c38"), Some(TableColorTheme::brs6()));
+        assert_eq!(parse_table_color_theme("#f58838"), Some(TableColorTheme::brs6()));
+        assert_eq!(parse_table_color_theme("#FBBF91"), Some(TableColorTheme::brs6()));
+    }
+
+    #[test]
+    fn brs6_palette_matches_the_published_style() {
+        let th = TableColorTheme::brs6();
+        assert_eq!(th.header_footer, "#F58838");
+        assert_eq!(th.row_number, "#FBBF91");
+        assert_eq!(th.data_odd_fill.as_deref(), Some("#FEF0D2"));
+        assert_eq!(th.data_even_fill.as_deref(), Some("#FEF7E8"));
     }
 }

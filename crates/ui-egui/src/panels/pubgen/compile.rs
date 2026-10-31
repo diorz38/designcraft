@@ -1257,6 +1257,11 @@ pub(crate) fn compile_project(app: &mut DesignApp, p: &Value) -> Result<Value, S
     }
     ensure_output_not_open(app, &plan)?;
     remember_manifest(app, &path)?;
+    let bilingual = plan.manifest.bilingual;
+    if let Some(ctx) = app.egui_ctx.clone() {
+        super::with_state(&ctx, |st| st.bilingual_output = bilingual);
+        ctx.request_repaint();
+    }
     let sync = p.get("sync").and_then(Value::as_bool).unwrap_or(true);
     if sync || app.egui_ctx.is_none() {
         let mut job = CompileJob::new(plan);
@@ -1274,6 +1279,7 @@ pub(crate) fn compile_project(app: &mut DesignApp, p: &Value) -> Result<Value, S
     st.compile_manifest_path = path.clone();
     st.compile_checked = path.clone();
     st.compile_summary = plan.summary_line();
+    st.bilingual_output = bilingual;
     st.compile_status = Some(("Compiling…".into(), true));
     st.compile_job = Some(Box::new(CompileJob::new(plan)));
     if let Some(ctx) = &app.egui_ctx {
@@ -1281,6 +1287,52 @@ pub(crate) fn compile_project(app: &mut DesignApp, p: &Value) -> Result<Value, S
         ctx.request_repaint();
     }
     Ok(serde_json::json!({"started": true, "path": path}))
+}
+
+/// The `pubgen.openProject` UI command: read an existing `pubgen_project.json` and load it into the
+/// Publication Compiler without building. `path` defaults to the manifest last opened; without one
+/// it asks for the file (the panel's Open... does the same).
+pub(crate) fn open_project(app: &mut DesignApp, p: &Value) -> Result<Value, String> {
+    let path = p.get("path").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).or_else(|| {
+        let remembered = app.session.prefs.pubgen_project_path.trim();
+        (!remembered.is_empty()).then(|| remembered.to_string())
+    });
+    let Some(path) = path else {
+        ask_for_manifest(app);
+        return Ok(serde_json::json!({"dialog": "pubgenProject", "open": true}));
+    };
+    if path.chars().count() > MAX_PATH_CHARS {
+        return Err("path: too long".into());
+    }
+    let plan = CompilePlan::load(Path::new(&path))?;
+    remember_manifest(app, &path)?;
+    let summary = plan.summary_line();
+    if let Some(ctx) = app.egui_ctx.clone() {
+        super::with_state(&ctx, |st| {
+            st.compile_manifest_path = path.clone();
+            st.compile_checked = path.clone();
+            st.compile_summary = summary.clone();
+            st.bilingual_output = plan.manifest.bilingual;
+        });
+        ctx.request_repaint();
+    }
+    Ok(serde_json::json!({"manifest": path, "summary": summary, "chapters": plan.manifest.chapters.len()}))
+}
+
+/// Ask for a `pubgen_project.json` and hand the pick to the Publication Compiler.
+fn ask_for_manifest(app: &mut DesignApp) {
+    let ctx = app.egui_ctx.clone();
+    let _ = app.ask_open("pubgenProject", crate::app::file_dialogs::Bound::App, move |_app, path| {
+        if let Some(ctx) = &ctx {
+            super::with_state(ctx, |st| {
+                st.compile_manifest_path = path;
+                st.compile_checked.clear();
+                st.compile_summary.clear();
+            });
+            ctx.request_repaint();
+        }
+        Ok(Value::Null)
+    });
 }
 
 /// Advance a frame-stepped compile by one step. The panel calls this once per frame.
@@ -1557,6 +1609,12 @@ impl NewProjectDialog {
     }
 }
 
+/// A new-project dialog that inherits the active profile's language mode: a BPS BRS panel is
+/// single-language, so it must not create a bilingual manifest by default.
+fn new_project_dialog_for(st: &PubgenState) -> NewProjectDialog {
+    NewProjectDialog { bilingual: st.bilingual_output, ..Default::default() }
+}
+
 /// The Publication card at the top of the Pubgen panel.
 pub(crate) fn compile_card_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenState, t: &Tokens) {
     let lang = app.ui.language.clone();
@@ -1590,7 +1648,7 @@ pub(crate) fn compile_card_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
             });
         }
         if outline_button(ui, crate::i18n::tr(&lang, "New…"), 46.0).clicked() {
-            st.compile_new_dialog = Some(Box::new(NewProjectDialog::default()));
+            st.compile_new_dialog = Some(Box::new(new_project_dialog_for(st)));
         }
     });
 
@@ -1614,7 +1672,7 @@ pub(crate) fn compile_card_ui(app: &mut DesignApp, ui: &mut Ui, st: &mut PubgenS
                 .on_hover_text(crate::i18n::tr(&lang, "Open the project builder form to create a new pubgen_project.json"))
                 .clicked()
             {
-                st.compile_new_dialog = Some(Box::new(NewProjectDialog::default()));
+                st.compile_new_dialog = Some(Box::new(new_project_dialog_for(st)));
             }
         });
         ui.add_space(2.0);
@@ -2019,6 +2077,7 @@ pub(crate) fn compile_new_project_dialog_ui(app: &mut DesignApp, ui: &mut Ui, st
                 st.compile_manifest_path = path_str.clone();
                 st.compile_checked.clear();
                 st.compile_summary.clear();
+                st.bilingual_output = dialog.bilingual;
                 let _ = remember_manifest(app, &path_str);
                 if save_and_compile {
                     start_compile(app, &path_str, st);
@@ -2049,7 +2108,8 @@ fn start_compile(app: &mut DesignApp, path: &str, st: &mut PubgenState) {
             st.compile_manifest_path = path.to_string();
             st.compile_checked = path.to_string();
             st.compile_summary = summary;
-            st.compile_status = Some(("Compiling…".into(), true));
+            st.bilingual_output = plan.manifest.bilingual;
+            st.compile_status = Some(("Compiling...".into(), true));
             st.compile_job = Some(Box::new(CompileJob::new(plan)));
         }
         Err(e) => st.compile_status = Some((e, false)),
@@ -2566,6 +2626,59 @@ mod tests {
         let path = dir.join("missing.json");
         let error = compile_project(&mut app, &serde_json::json!({"path": path.to_string_lossy()})).unwrap_err();
         assert!(error.contains("missing.json"), "{error}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_open_project_command_is_registered() {
+        let entry = crate::menus::UI_COMMANDS.iter().find(|c| c.0 == "pubgen.openProject");
+        let (_, label, _, params) = entry.expect("pubgen.openProject must be a UI command");
+        assert_eq!(*label, "Open Publication Project...");
+        assert!(params.contains("path"), "params doc names `path`: {params}");
+    }
+
+    #[test]
+    fn open_project_reads_a_manifest_into_the_panel() {
+        let dir = temp_dir("open-project");
+        workbook(&dir, "a.xlsx");
+        let manifest_path = dir.join("pubgen_project.json");
+        std::fs::write(&manifest_path, r#"{"publicationTitle":"Demo","chapters":[{"chapter":1,"path":"a.xlsx"}]}"#).unwrap();
+
+        let ctx = egui::Context::default();
+        let mut app = app();
+        app.egui_ctx = Some(ctx.clone());
+        let report = open_project(&mut app, &serde_json::json!({"path": manifest_path.to_string_lossy()})).unwrap();
+        assert_eq!(report["chapters"], 1);
+
+        let (path, summary) = crate::dock::pubgen::with_state(&ctx, |st| (st.compile_manifest_path.clone(), st.compile_summary.clone()));
+        assert_eq!(path, manifest_path.to_string_lossy());
+        assert!(summary.contains("Demo"), "summary names the publication: {summary}");
+        assert!(app.session.prefs.pubgen_project_path.ends_with("pubgen_project.json"), "path remembered: {}", app.session.prefs.pubgen_project_path);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn new_project_dialog_inherits_the_profile_language_mode() {
+        let single = PubgenState { bilingual_output: false, ..Default::default() };
+        assert!(!new_project_dialog_for(&single).bilingual, "BPS BRS (single language) creates a single-language manifest");
+        let dual = PubgenState { bilingual_output: true, ..Default::default() };
+        assert!(new_project_dialog_for(&dual).bilingual, "a dual-language publication keeps the box checked");
+    }
+
+    #[test]
+    fn compiling_a_single_language_manifest_unchecks_dual_language() {
+        let dir = temp_dir("compile-bilingual");
+        workbook(&dir, "a.xlsx");
+        let manifest_path = dir.join("pubgen_project.json");
+        std::fs::write(&manifest_path, r#"{"bilingual":false,"chapters":[{"chapter":1,"path":"a.xlsx"}]}"#).unwrap();
+
+        let ctx = egui::Context::default();
+        let mut app = app();
+        app.egui_ctx = Some(ctx.clone());
+        crate::dock::pubgen::with_state(&ctx, |st| st.bilingual_output = true);
+
+        compile_project(&mut app, &serde_json::json!({"path": manifest_path.to_string_lossy(), "sync": false})).unwrap();
+        assert!(!crate::dock::pubgen::with_state(&ctx, |st| st.bilingual_output), "the menu follows the manifest's single-language setting");
         std::fs::remove_dir_all(&dir).ok();
     }
 

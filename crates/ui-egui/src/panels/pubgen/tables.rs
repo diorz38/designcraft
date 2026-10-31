@@ -1402,22 +1402,22 @@ pub(crate) mod tests {
         let story = active.doc.stories.values().find(|s| !s.tables.is_empty()).expect("Table story must exist");
         let table = story.tables.values().next().expect("Table must exist");
 
-        // Row 0: Header -> fill #D07C38, font color [Paper] (white)
+        // Row 0: Header -> fill #F58838, font color [Paper] (white)
         let cell_header = table.cell(0, 0).expect("Header cell must exist");
-        assert_eq!(cell_header.fill, "#D07C38", "Header fill must be #D07C38");
+        assert_eq!(cell_header.fill, "#F58838", "Header fill must be #F58838");
         assert_eq!(cell_header.text.chars[0].format.over.fill.as_deref(), Some("[Paper]"), "Header font color must be [Paper] (white)");
 
-        // Row 1: Col numbers row -> fill #E7CFB5
+        // Row 1: Col numbers row -> fill #FBBF91
         let cell_col_num = table.cell(1, 0).expect("Col num cell must exist");
-        assert_eq!(cell_col_num.fill, "#E7CFB5", "Col number row fill must be #E7CFB5");
+        assert_eq!(cell_col_num.fill, "#FBBF91", "Col number row fill must be #FBBF91");
 
         // Row 2: 1st Data row (Odd in 1-based) -> fill #FEF0D2
         let cell_odd = table.cell(2, 0).expect("Odd data cell must exist");
         assert_eq!(cell_odd.fill, "#FEF0D2", "Odd data row fill must be #FEF0D2");
 
-        // Row 3: 2nd Data row (Even in 1-based) -> fill #FEF7E9
+        // Row 3: 2nd Data row (Even in 1-based) -> fill #FEF7E8
         let cell_even = table.cell(3, 0).expect("Even data cell must exist");
-        assert_eq!(cell_even.fill, "#FEF7E9", "Even data row fill must be #FEF7E9");
+        assert_eq!(cell_even.fill, "#FEF7E8", "Even data row fill must be #FEF7E8");
 
         // Font size reduced by 1pt: 8.0pt
         assert_eq!(cell_header.text.chars[0].format.over.size, Some(8.0), "Font size must be 8.0pt (reduced 1pt)");

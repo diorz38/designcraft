@@ -36,7 +36,7 @@ pub mod charts;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod compile;
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) use compile::{compile_card_ui, compile_project, poll_compile_job};
+pub(crate) use compile::{compile_card_ui, compile_project, open_project, poll_compile_job};
 mod cover_art;
 mod covers;
 mod csv;

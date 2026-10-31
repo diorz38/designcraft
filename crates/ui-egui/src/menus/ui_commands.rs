@@ -81,6 +81,13 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.exportPdf", "Export PDF…", None, "{path?, …file.exportPdf options} — asks for a path when none is given"),
     #[cfg(feature = "pubgen")]
     (
+        "pubgen.openProject",
+        "Open Publication Project...",
+        None,
+        "{path? (default: the manifest last opened)} — read an existing pubgen_project.json, validate it and load its summary into the Publication Compiler without building",
+    ),
+    #[cfg(feature = "pubgen")]
+    (
         "pubgen.compileProject",
         "Compile Publication",
         Some("Ctrl+Shift+B"),

@@ -121,6 +121,7 @@ fn pipeline(app: &mut DesignApp, ui: &mut egui::Ui) {
     let (compiling, covering) = crate::dock::pubgen::with_state(ui.ctx(), |st| (st.compile_job.is_some(), st.cover_job.is_some()));
     let items: Vec<crate::menus::Item> = [
         "pubgen.generateFromExcel",
+        "pubgen.openProject",
         "pubgen.compileProject",
         "pubgen.profileCustomize",
         "pubgen.vectorChart",
@@ -496,6 +497,34 @@ mod tests {
             st.bilingual_output = false;
         });
         assert!(content(&mut app).iter().any(|t| t.contains("Dual Language Mode") && !t.contains("✓")), "single after the toggle, unchecked");
+    }
+
+    /// Picking the BPS BRS profile turns dual-language off, so the menu row loses its checkmark.
+    #[test]
+    fn applying_the_brs_profile_unchecks_the_dual_language_row() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx, "en");
+        let mut app = app();
+        app.egui_ctx = Some(ctx.clone());
+        crate::dock::pubgen::with_state(&ctx, |st| st.bilingual_output = true);
+        let content = |app: &mut DesignApp| {
+            let lang = app.ui.language.clone();
+            let input =
+                egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), ..Default::default() };
+            let mut output = ctx.run_ui(input, |ui| content(app, ui, &lang, false));
+            output.textures_delta.clear();
+            collect_texts(&output.shapes)
+        };
+        assert!(content(&mut app).iter().any(|t| t.contains("✓") && t.contains("Dual Language Mode")), "seeded bilingual: checked");
+
+        let _ = crate::menus::run::run_ui(&mut app, "pubgen.selectProfile", &serde_json::json!({"id": "bps_brs"}));
+
+        let is_bilingual = crate::dock::pubgen::with_state(&ctx, |st| st.bilingual_output);
+        assert!(!is_bilingual, "BRS profile is single-language");
+        assert!(
+            content(&mut app).iter().any(|t| t.contains("Dual Language Mode") && !t.contains("✓")),
+            "dual-language row is unchecked after the BRS profile"
+        );
     }
 
     /// A row whose background job runs carries a ● marker (the audit's P1-6).

@@ -3342,11 +3342,11 @@ pub(crate) mod tests {
                 table_count += 1;
                 assert_eq!(table.footer_rows(), 0, "BRS table must have 0 footer rows");
                 assert!(!table.rows.iter().any(|r| r.kind == designcraft_doc::RowKind::Footer), "BRS table rows must not be RowKind::Footer");
-                // Verify column numbers row (1) exists in row 1 with fill #E7CFB5
+                // Verify column numbers row (1) exists in row 1 with fill #FBBF91
                 if table.nrows() > 1 {
                     let col_num_cell = table.cell(1, 0).expect("Col num cell must exist");
                     assert_eq!(col_num_cell.text.text.trim(), "(1)", "Row 1 must be column number row");
-                    assert_eq!(col_num_cell.fill, "#E7CFB5", "Row 1 must be styled with #E7CFB5");
+                    assert_eq!(col_num_cell.fill, "#FBBF91", "Row 1 must be styled with #FBBF91");
                 }
             }
         }
