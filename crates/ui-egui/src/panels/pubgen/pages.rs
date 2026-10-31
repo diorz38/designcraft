@@ -722,11 +722,12 @@ fn get_brs_page_metrics(app: &DesignApp, page_idx: usize) -> Result<(designcraft
     let pg = sp.pages.get(pi).ok_or("Page not found")?;
 
     let page_bounds = pg.bounds();
+    let (l_margin, r_margin) = pg.left_right_margins();
 
     let margin = designcraft_geom::Rect {
-        x0: page_bounds.x0 + pg.margins.inside.max(36.0),
+        x0: page_bounds.x0 + l_margin.max(36.0),
         y0: page_bounds.y0 + pg.margins.top.max(36.0),
-        x1: page_bounds.x1 - pg.margins.outside.max(36.0),
+        x1: page_bounds.x1 - r_margin.max(36.0),
         y1: page_bounds.y1 - pg.margins.bottom.max(36.0),
     };
 
@@ -5491,5 +5492,48 @@ Narrative;3;Catatan Akhir;narrative3.rtf\n";
         let total_pages = doc.page_count();
         let back_page = super::covers::find_back_cover_page(doc).expect("Back cover must exist");
         assert_eq!(back_page, total_pages - 1, "Back cover must be the very last page");
+    }
+
+    #[test]
+    fn test_brs_page_metrics_mirror_inside_outside_on_left_page() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"facingPages": true})).unwrap();
+        app.run("layout.pages.insert", json!({"count": 4})).unwrap();
+
+        let left_idx = {
+            let active = app.session.active().unwrap();
+            (0..active.doc.page_count())
+                .find(|&i| {
+                    active.doc.page_loc(i).map(|(si, pi)| active.doc.spreads[si].pages[pi].side == designcraft_doc::PageSide::Left).unwrap_or(false)
+                })
+                .expect("facing-pages document must contain a left page")
+        };
+
+        let margins = designcraft_doc::Margins { top: 50.0, bottom: 50.0, inside: 60.0, outside: 40.0 };
+        let _ = app.session.edit(|doc, _| {
+            if let Some((si, pi)) = doc.page_loc(left_idx) {
+                let sp = std::sync::Arc::make_mut(&mut doc.spreads[si]);
+                if let Some(pg) = sp.pages.get_mut(pi) {
+                    pg.margins = margins;
+                    pg.local_margins = true;
+                }
+                sp.relayout();
+            }
+            Ok(Value::Null)
+        });
+
+        let (margin, bounds, _) = get_brs_page_metrics(&app, left_idx).unwrap();
+        assert!(
+            (margin.x0 - (bounds.x0 + margins.outside)).abs() < 0.01,
+            "left page x0 must use the outside margin: got {}, expected {}",
+            margin.x0,
+            bounds.x0 + margins.outside
+        );
+        assert!(
+            (margin.x1 - (bounds.x1 - margins.inside)).abs() < 0.01,
+            "left page x1 must use the inside margin: got {}, expected {}",
+            margin.x1,
+            bounds.x1 - margins.inside
+        );
     }
 }
