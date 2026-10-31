@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use crate::DesignApp;
 
-use super::layout::{AXIS_LABEL_W, ChartLayout};
+use super::layout::{AXIS_LABEL_W, ChartLayout, DONUT_BAND_H};
 use super::palette::series_color;
 use super::spec::{ChartSpec, format_indonesian_number};
 
@@ -247,6 +247,19 @@ pub fn emit_group_pictogram(app: &mut DesignApp, spread_idx: usize, rect: [f64; 
     }
 
     Ok(ids)
+}
+
+/// Emits a straight graphic line between two points with the given stroke.
+pub fn emit_line(app: &mut DesignApp, spread_idx: usize, a: (f64, f64), b: (f64, f64), color: &str, weight: f64) -> Result<u64, String> {
+    let res =
+        app.run("line.create", json!({"spread": spread_idx, "a": [a.0, a.1], "b": [b.0, b.1]})).map_err(|e| format!("line.create failed: {e}"))?;
+    let fid = res.get("id").and_then(Value::as_u64).ok_or_else(|| "line.create returned no id".to_string())?;
+
+    let swatch = ensure_swatch(app, color)?;
+    let _ = app.run("object.stroke", json!({"ids": [fid], "swatch": swatch}));
+    let _ = app.run("object.strokeWeight", json!({"ids": [fid], "weight": weight}));
+
+    Ok(fid)
 }
 
 /// Emits a single rectangle frame onto the given spread.
@@ -491,17 +504,45 @@ pub fn emit_chart(
         }
     }
 
-    // 5. Donut slices
+    // 5. Donut rings: period bands, slice polygons, elbow leaders, then labels.
+    let ring_count = layout.donut_slices.iter().map(|s| s.ring_idx + 1).max().unwrap_or(0);
+    if spec.chart_type == super::spec::ChartType::Donut && ring_count > 1 {
+        let plot = layout.plot_rect;
+        let slot_w = (plot[2] - plot[0]) / ring_count as f64;
+        let y0 = plot[3] - DONUT_BAND_H;
+        for i in 0..ring_count {
+            let x0 = plot[0] + i as f64 * slot_w + 4.0;
+            let x1 = plot[0] + (i + 1) as f64 * slot_w - 4.0;
+            if let Ok(bid) = emit_rect(app, spread_idx, [x0, y0, x1, plot[3]], "#FAF5EF", "[None]", 0.0) {
+                frame_ids.push(bid);
+            }
+            let label = spec.series.get(i).map(|s| s.display_label(bilingual)).unwrap_or_default();
+            let band_rect = [x0, y0 + 2.0, x1, plot[3] - 2.0];
+            if let Ok(tid) = emit_text(app, spread_idx, band_rect, &label, 9.5, true, "center", Some("#1A1A1A")) {
+                frame_ids.push(tid);
+            }
+        }
+    }
+
     for slice in &layout.donut_slices {
         let color = series_color(palette, slice.series_idx);
         let fid = emit_polygon(app, spread_idx, &slice.points, color, "#FFFFFF", 1.5)?;
         frame_ids.push(fid);
-
-        if !slice.value_label.is_empty() {
-            let lbl_text = format!("{}\n{}", slice.label, slice.value_label);
-            if let Ok(tfid) = emit_text(app, spread_idx, slice.label_rect, &lbl_text, 8.0, true, "center", Some("#333333")) {
-                frame_ids.push(tfid);
+    }
+    for slice in &layout.donut_slices {
+        for pair in slice.leader.windows(2) {
+            if let Ok(lid) = emit_line(app, spread_idx, pair[0], pair[1], "#333333", 0.6) {
+                frame_ids.push(lid);
             }
+        }
+    }
+    for slice in &layout.donut_slices {
+        if slice.value_label.is_empty() {
+            continue;
+        }
+        let lbl_text = format!("{}\n{}", slice.label, slice.value_label);
+        if let Ok(tfid) = emit_text(app, spread_idx, slice.label_rect, &lbl_text, 8.0, true, slice.align, Some("#333333")) {
+            frame_ids.push(tfid);
         }
     }
 
@@ -1031,6 +1072,19 @@ mod tests {
         let count = emit_chart(&mut app, 0, &spec, &layout, &[], false, "Lato").unwrap();
 
         assert!(count > 0);
+    }
+
+    #[test]
+    fn donut_multi_ring_emits_leaders_and_bands() {
+        let mut app = test_app();
+        let spec = sample_spec(ChartType::Donut);
+        let categories = vec!["Industri".into(), "Migas".into(), "Pertambangan".into(), "Lainnya".into()];
+        let values = vec![vec![98.71, 0.56, 0.72, 0.01], vec![98.55, 0.63, 0.81, 0.01]];
+
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
+        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
+
+        assert!(count > layout.donut_slices.len(), "leaders, labels and period bands add frames");
     }
 
     #[test]

@@ -29,6 +29,12 @@ pub const BAR_SERIES_GAP: f64 = 0.05;
 pub const GRID_LINES: usize = 5;
 /// Maximum character count for X-axis label before rotation is triggered.
 pub const MAX_LABEL_CHARS: usize = 12;
+/// Height of the period band under each donut ring (points).
+pub const DONUT_BAND_H: f64 = 18.0;
+/// Slice percentage at or above which the label sits inside the ring hole.
+const DONUT_INSIDE_PCT: f64 = 60.0;
+/// Minimum vertical gap between stacked outside donut labels (points).
+const DONUT_LABEL_GAP: f64 = 22.0;
 
 /// A single bar rectangle on the chart.
 #[derive(Debug, Clone, PartialEq)]
@@ -87,10 +93,16 @@ pub struct DonutSlice {
     pub label: String,
     /// Formatted percentage or value string.
     pub value_label: String,
-    /// Series / color index.
+    /// Category / color index.
     pub series_idx: usize,
+    /// Ring index (one ring per data series).
+    pub ring_idx: usize,
     /// Sweep angle in degrees (0.0 .. 360.0).
     pub sweep_degrees: f64,
+    /// Elbow leader polyline from the slice edge to the outside label; empty when the label is inside.
+    pub leader: Vec<(f64, f64)>,
+    /// Text alignment inside `label_rect`: `"left"`, `"right"`, or `"center"`.
+    pub align: &'static str,
 }
 
 /// Summary metrics box displayed at the bottom of a Population Pyramid.
@@ -1289,53 +1301,138 @@ fn layout_donut(
     axis_baseline: [f64; 4],
     axis_left: [f64; 4],
 ) -> ChartLayout {
-    let mut donut_slices = Vec::new();
-    let s_vals = series_values.first().map(Vec::as_slice).unwrap_or(&[]);
-    let sum_vals: f64 = s_vals.iter().copied().sum();
-    let total = if sum_vals > 0.0 { sum_vals } else { 1.0 };
+    let mut donut_slices: Vec<DonutSlice> = Vec::new();
 
+    let ring_count = series_values.len().max(1);
     let plot_w = plot_rect[2] - plot_rect[0];
     let plot_h = plot_rect[3] - plot_rect[1];
-    let cx = (plot_rect[0] + plot_rect[2]) / 2.0;
-    let cy = (plot_rect[1] + plot_rect[3]) / 2.0;
-    let outer_r = (plot_w.min(plot_h) / 2.0 * 0.70).max(20.0);
-    let inner_r = outer_r * 0.52;
+    let slot_w = plot_w / ring_count as f64;
+    let band_h = if ring_count > 1 { DONUT_BAND_H } else { 0.0 };
+    let ring_h = (plot_h - band_h).max(20.0);
+    let plot_cx = (plot_rect[0] + plot_rect[2]) / 2.0;
 
-    let mut cur_angle = 0.0f64;
+    for (ring_idx, s_vals) in series_values.iter().enumerate() {
+        let slot_x0 = plot_rect[0] + ring_idx as f64 * slot_w;
+        let slot_x1 = slot_x0 + slot_w;
+        let cx = (slot_x0 + slot_x1) / 2.0;
+        let cy = plot_rect[1] + ring_h / 2.0;
+        let radius_frac = if ring_count > 1 { 0.25 } else { 0.32 };
+        let outer_r = (slot_w * radius_frac).min(ring_h * 0.42).max(12.0);
+        let inner_r = outer_r * 0.52;
 
-    for (idx, &val) in s_vals.iter().enumerate() {
-        let cat = categories.get(idx).cloned().unwrap_or_else(|| format!("Item {}", idx + 1));
-        let sweep = if total > 0.0 { (val / total) * 360.0 } else { 0.0 };
-        let pct = if total > 0.0 { (val / total) * 100.0 } else { 0.0 };
-        let val_lbl = format!("{:.1}%", pct);
+        let sum_vals: f64 = s_vals.iter().filter(|v| v.is_finite() && **v > 0.0).copied().sum();
+        let total = if sum_vals > 0.0 { sum_vals } else { 1.0 };
 
-        // Generate curved annular sector polygon points starting from 12 o'clock (-90 degrees)
-        let a0 = (cur_angle - 90.0).to_radians();
-        let a1 = (cur_angle + sweep - 90.0).to_radians();
-        let steps = (sweep.ceil() as usize / 3).clamp(8, 64);
+        let mut cur_angle = 0.0f64;
+        let mut mids: Vec<f64> = Vec::with_capacity(s_vals.len());
+        let ring_start = donut_slices.len();
 
-        let mut points = Vec::with_capacity(steps * 2 + 2);
-        // Outer arc (forward)
-        for step in 0..=steps {
-            let t = a0 + (step as f64 / steps as f64) * (a1 - a0);
-            points.push((cx + outer_r * t.cos(), cy + outer_r * t.sin()));
+        for (idx, &val) in s_vals.iter().enumerate() {
+            let cat = categories.get(idx).cloned().unwrap_or_else(|| format!("Item {}", idx + 1));
+            let valid = val.is_finite() && val > 0.0;
+            let sweep = if valid { (val / total) * 360.0 } else { 0.0 };
+            let pct = if valid { (val / total) * 100.0 } else { 0.0 };
+            let val_lbl = format!("{:.2}%", pct).replace('.', ",");
+
+            // Generate curved annular sector polygon points starting from 12 o'clock (-90 degrees)
+            let a0 = (cur_angle - 90.0).to_radians();
+            let a1 = (cur_angle + sweep - 90.0).to_radians();
+            let steps = (sweep.ceil() as usize / 3).clamp(8, 64);
+
+            let mut points = Vec::with_capacity(steps * 2 + 2);
+            // Outer arc (forward)
+            for step in 0..=steps {
+                let t = a0 + (step as f64 / steps as f64) * (a1 - a0);
+                points.push((cx + outer_r * t.cos(), cy + outer_r * t.sin()));
+            }
+            // Inner arc (reverse)
+            for step in (0..=steps).rev() {
+                let t = a0 + (step as f64 / steps as f64) * (a1 - a0);
+                points.push((cx + inner_r * t.cos(), cy + inner_r * t.sin()));
+            }
+
+            let mid_deg = cur_angle + sweep / 2.0 - 90.0;
+            let mid_angle = mid_deg.to_radians();
+            mids.push(mid_deg);
+
+            let inside = pct >= DONUT_INSIDE_PCT;
+            let align = if inside {
+                "center"
+            } else if mid_angle.cos() >= 0.0 {
+                "left"
+            } else {
+                "right"
+            };
+            // Big slices label inside the hole, on the side facing the chart centre;
+            // small slices are placed in the outer gutters below.
+            let label_rect = if inside {
+                let sign = if cx <= plot_cx { 1.0 } else { -1.0 };
+                let lx = cx + sign * inner_r * 0.30;
+                [lx - inner_r * 0.65, cy - 11.0, lx + inner_r * 0.65, cy + 11.0]
+            } else {
+                [0.0, 0.0, 0.0, 0.0]
+            };
+
+            donut_slices.push(DonutSlice {
+                points,
+                label_rect,
+                label: cat,
+                value_label: val_lbl,
+                series_idx: idx,
+                ring_idx,
+                sweep_degrees: sweep,
+                leader: Vec::new(),
+                align,
+            });
+
+            cur_angle += sweep;
         }
-        // Inner arc (reverse)
-        for step in (0..=steps).rev() {
-            let t = a0 + (step as f64 / steps as f64) * (a1 - a0);
-            points.push((cx + inner_r * t.cos(), cy + inner_r * t.sin()));
+
+        // Stack the outside labels per side so tiny slices never overlap, then build
+        // a two-segment elbow leader from the arc to each label.
+        for right_side in [false, true] {
+            let mut group: Vec<(usize, f64)> = (ring_start..donut_slices.len())
+                .filter(|&i| donut_slices[i].align == if right_side { "left" } else { "right" })
+                .map(|i| (i, cy + (outer_r + 10.0) * mids[i - ring_start].to_radians().sin()))
+                .collect();
+            group.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            let top = plot_rect[1] + 12.0;
+            let bottom = (plot_rect[1] + ring_h - 12.0).max(top);
+            let mut ys: Vec<f64> = Vec::with_capacity(group.len());
+            let mut prev = f64::NEG_INFINITY;
+            for (_, desired) in &group {
+                let y = desired.max(top).max(prev + DONUT_LABEL_GAP);
+                ys.push(y);
+                prev = y;
+            }
+            if let Some(&last) = ys.last() {
+                let overflow = last - bottom;
+                if overflow > 0.0 {
+                    for y in &mut ys {
+                        *y -= overflow;
+                    }
+                }
+            }
+
+            for (k, &(slice_idx, _)) in group.iter().enumerate() {
+                let y = ys.get(k).copied().unwrap_or(top).max(top);
+                let rect = if right_side {
+                    let x0 = (cx + outer_r + 6.0).min(slot_x1 - 26.0);
+                    [x0, y - 10.0, slot_x1 - 2.0, y + 10.0]
+                } else {
+                    let x1 = (cx - outer_r - 6.0).max(slot_x0 + 26.0);
+                    [slot_x0 + 2.0, y - 10.0, x1, y + 10.0]
+                };
+                let mid = mids.get(slice_idx - ring_start).copied().unwrap_or(-90.0).to_radians();
+                let p0 = (cx + outer_r * mid.cos(), cy + outer_r * mid.sin());
+                let (elbow_x, edge_x) = if right_side { (rect[0] - 6.0, rect[0]) } else { (rect[2] + 6.0, rect[2]) };
+                if let Some(slice) = donut_slices.get_mut(slice_idx) {
+                    slice.label_rect = rect;
+                    slice.leader = vec![p0, (elbow_x, y), (edge_x, y)];
+                }
+            }
         }
-
-        // Callout label positioned outside the slice arc
-        let mid_angle = (cur_angle + sweep / 2.0 - 90.0).to_radians();
-        let callout_r = outer_r + 20.0;
-        let lx = cx + callout_r * mid_angle.cos();
-        let ly = cy + callout_r * mid_angle.sin();
-        let label_rect = [lx - 35.0, ly - 9.0, lx + 35.0, ly + 9.0];
-
-        donut_slices.push(DonutSlice { points, label_rect, label: cat, value_label: val_lbl, series_idx: idx, sweep_degrees: sweep });
-
-        cur_angle += sweep;
     }
 
     ChartLayout {
@@ -1609,6 +1706,42 @@ mod tests {
         assert_eq!(layout.donut_slices.len(), 3);
         let total_deg: f64 = layout.donut_slices.iter().map(|s| s.sweep_degrees).sum();
         assert!((total_deg - 360.0).abs() < 1e-4, "Donut slices must sum to 360 degrees: {total_deg}");
+    }
+
+    #[test]
+    fn donut_multi_series_creates_one_ring_per_series() {
+        let spec = sample_spec(ChartType::Donut);
+        let categories = vec!["Industri".into(), "Migas".into(), "Pertambangan".into(), "Lainnya".into()];
+        let values = vec![vec![98.71, 0.56, 0.72, 0.01], vec![98.55, 0.63, 0.81, 0.01]];
+
+        let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
+
+        assert_eq!(layout.donut_slices.len(), 8, "2 rings x 4 categories");
+        for ring in 0..2 {
+            let total: f64 = layout.donut_slices.iter().filter(|s| s.ring_idx == ring).map(|s| s.sweep_degrees).sum();
+            assert!((total - 360.0).abs() < 1e-4, "ring {ring} must sweep 360 degrees: {total}");
+        }
+
+        let big = &layout.donut_slices[0];
+        assert_eq!(big.value_label, "98,71%", "percent uses two decimals and a comma");
+        assert_eq!(big.align, "center", "big slice label sits inside the hole");
+        assert!(big.leader.is_empty());
+
+        let tiny = layout.donut_slices.iter().find(|s| s.value_label == "0,01%").expect("tiny slice");
+        assert!(tiny.leader.len() >= 2, "outside labels carry an elbow leader");
+        assert!(tiny.align == "left" || tiny.align == "right");
+
+        // Outside labels on each side must not overlap vertically.
+        for ring in 0..2 {
+            for align in ["left", "right"] {
+                let mut rects: Vec<[f64; 4]> =
+                    layout.donut_slices.iter().filter(|s| s.ring_idx == ring && s.align == align).map(|s| s.label_rect).collect();
+                rects.sort_by(|a, b| a[1].partial_cmp(&b[1]).unwrap_or(std::cmp::Ordering::Equal));
+                for pair in rects.windows(2) {
+                    assert!(pair[1][1] >= pair[0][3] - 1e-6, "donut labels overlap: {:?} and {:?}", pair[0], pair[1]);
+                }
+            }
+        }
     }
 
     #[test]
