@@ -250,6 +250,9 @@ pub struct Prefs {
     pub recent_files: Vec<String>,
     /// Preferences › File Handling › Number of Recent Items to Display (0 keeps no list).
     pub recent_files_max: u32,
+    /// Preferences › Units & Increments with no document open: new documents start
+    /// with these, as InDesign's application defaults. A document keeps its own once made.
+    pub default_units: DefaultUnits,
     /// Saved Header/Footer templates (Layout ▸ Header/Footer… & Pubgen).
     pub header_footer_templates: Vec<designcraft_doc::HeaderFooterTemplate>,
     /// Pubgen AI translation (docs/plans/2026-10-22-offline-ai-translation-pubgen.md):
@@ -319,6 +322,58 @@ pub fn default_autocorrect() -> Vec<(String, String)> {
     .collect()
 }
 
+/// Units & Increments for new documents (Preferences with no document open), in the keys
+/// `document.preferences` uses.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DefaultUnits {
+    pub horizontal_units: designcraft_geom::Unit,
+    pub vertical_units: designcraft_geom::Unit,
+    pub ruler_origin: designcraft_doc::RulerOrigin,
+    /// Cursor Key, in points.
+    pub keyboard_increment: f64,
+    /// Kerning/Tracking, in 1/1000 em.
+    pub kerning_increment: f64,
+}
+
+impl Default for DefaultUnits {
+    /// A new document's own settings.
+    fn default() -> Self {
+        let d = designcraft_doc::DocSettings::default();
+        DefaultUnits {
+            horizontal_units: designcraft_geom::Unit::Picas,
+            vertical_units: designcraft_geom::Unit::Picas,
+            ruler_origin: d.ruler_origin,
+            keyboard_increment: d.keyboard_increment,
+            kerning_increment: d.kerning_increment,
+        }
+    }
+}
+
+impl DefaultUnits {
+    /// Gives a new document these defaults. Unless it was made from a preset (whose units are its
+    /// own), its vertical ruler follows the preference while it keeps the default horizontal
+    /// units (units picked in New Document set both rulers).
+    pub fn apply(&self, settings: &mut designcraft_doc::DocSettings, preset: bool) {
+        if !preset && settings.horizontal_units == self.horizontal_units {
+            settings.vertical_units = self.vertical_units;
+        }
+        settings.ruler_origin = self.ruler_origin;
+        settings.keyboard_increment = self.keyboard_increment;
+        settings.kerning_increment = self.kerning_increment;
+    }
+
+    /// Refuses increments that aren't finite and positive (at most 1000).
+    pub fn check(&self) -> std::result::Result<(), String> {
+        for (name, v) in [("keyboardIncrement", self.keyboard_increment), ("kerningIncrement", self.kerning_increment)] {
+            if !(v.is_finite() && v > 0.0 && v <= 1000.0) {
+                return Err(format!("`defaultUnits.{name}` must be more than 0 and at most 1000"));
+            }
+        }
+        Ok(())
+    }
+}
+
 impl Default for Prefs {
     fn default() -> Self {
         Prefs {
@@ -349,6 +404,7 @@ impl Default for Prefs {
             link_text_files: false,
             recent_files: Vec::new(),
             recent_files_max: 20,
+            default_units: DefaultUnits::default(),
             header_footer_templates: Vec::new(),
             translation_model_dir: String::new(),
             translation_model_id: String::from("nllb600-int8"),
