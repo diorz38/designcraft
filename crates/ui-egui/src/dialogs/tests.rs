@@ -4537,7 +4537,7 @@ fn toc_bookmarks_checkbox_sets_and_reopens_the_persisted_option() {
     let labels = dialog_frame(&mut app, &ctx, screen, vec![]);
     visible_label(&labels, screen, "Create PDF Bookmarks");
     confirm(&mut app).unwrap();
-    assert!(app.session.doc().unwrap().doc.toc.as_ref().unwrap().create_bookmarks);
+    assert!(app.session.doc().unwrap().doc.tocs.first().unwrap().create_bookmarks);
     assert!(!app.session.doc().unwrap().doc.bookmarks.is_empty());
     open_toc(&mut app);
     for _ in 0..3 {

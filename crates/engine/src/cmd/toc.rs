@@ -574,9 +574,30 @@ fn fill(d: &mut Document, toc: &Toc, width: Option<f64>) -> Result<usize> {
             st.format_paras(r.start..r.start, |f| *f = ParaFormat { style: name.clone(), ..Default::default() });
         }
     }
+    // The outline this table of contents generated is replaced in place, so manual
+    // bookmarks keep their order around it.
+    let insertion = d.bookmarks.iter().position(|b| b.generated_by_toc).unwrap_or(d.bookmarks.len());
+    d.bookmarks.retain(|b| !b.generated_by_toc);
+    if toc.create_bookmarks {
+        d.bookmarks.splice(insertion..insertion, bookmarks(&found));
+    }
     Ok(found.len())
 }
 
+/// Nested PDF outline for the entries: a page destination per entry, children strictly
+/// below their parent level.
+fn bookmarks(found: &[Found]) -> Vec<designcraft_doc::Bookmark> {
+    /// Descendants until the next sibling or ancestor entry.
+    fn children(iter: &mut std::iter::Peekable<std::slice::Iter<Found>>, parent: u8) -> Vec<designcraft_doc::Bookmark> {
+        let mut out = Vec::new();
+        while iter.peek().is_some_and(|f| f.level > parent) {
+            let Some(f) = iter.next() else { break };
+            out.push(designcraft_doc::Bookmark { name: f.text.clone(), page: f.key.0, children: children(iter, f.level), generated_by_toc: true });
+        }
+        out
+    }
+    children(&mut found.iter().peekable(), 0)
+}
 fn generate(s: &mut Session, p: &Value) -> Result<Value> {
     let entries = entries_param(p)?;
     if entries.is_empty() {
@@ -599,6 +620,12 @@ fn generate(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let page = p.get("page").and_then(Value::as_u64).map_or(Some(0), |n| usize::try_from(n.max(1) - 1).ok());
     let page = page.ok_or_else(|| bad("toc.generate", "no such page"))?;
+    // createBookmarks generates a nested PDF outline; without it the table of
+    // contents being replaced on the target page keeps its own setting.
+    let create_bookmarks = match p.get("createBookmarks") {
+        Some(v) => v.as_bool().ok_or_else(|| bad("toc.generate", "createBookmarks must be a boolean"))?,
+        None => s.doc()?.doc.toc_on_page(page).is_some_and(|t| t.create_bookmarks),
+    };
     s.edit(|d, sel| {
         for e in &entries {
             para_style_exists(d, &e.style)?;
@@ -621,7 +648,7 @@ fn generate(s: &mut Session, p: &Value) -> Result<Value> {
                 (sid, w)
             }
         };
-        let toc = Toc { story, title: title.clone(), entries: entries.clone(), page_numbers, title_style: title_style.clone() };
+        let toc = Toc { story, title: title.clone(), entries: entries.clone(), page_numbers, title_style: title_style.clone(), create_bookmarks };
         let n = fill(d, &toc, width)?;
         // The list keeps one entry per story, most recently generated last; tables whose story is
         // gone are dropped.

@@ -2234,6 +2234,7 @@ fn the_table_menu_follows_indesigns_order() {
         "Convert Table to Text…",
         "-",
         "Cell Options >",
+        "Table Options >",
         "-",
         "Insert >",
         "Delete >",

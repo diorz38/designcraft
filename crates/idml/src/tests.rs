@@ -4596,7 +4596,7 @@ const TOC_STORY: &str = r#"<idPkg:Story xmlns:idPkg="http://ns.adobe.com/AdobeIn
 #[test]
 fn toc_style_entries_read_id_prefixed_separators_and_styles() {
     let d = import_idml(&fixture_with_table_styles(TOC_STYLES, TOC_STORY)).unwrap();
-    let toc = d.toc.as_ref().expect("the story's TOC style is imported");
+    let toc = d.tocs.first().expect("the story's TOC style is imported");
     let entry = toc.entries.iter().find(|e| e.style == "Heading 1").unwrap();
     assert_eq!(entry.separator.as_deref(), Some("\u{E006}"), "right-indent tabs must not become ordinary tab stops");
     assert_eq!(entry.entry_style.as_deref(), Some("TOC/TOC body text"));
@@ -4623,7 +4623,7 @@ fn toc_style_entries_fall_back_on_malformed_and_unsupported_values() {
         .replace(r#"TitleStyle="ParagraphStyle/TOC%3aTOC Header""#, r#"TitleStyle="ParagraphStyle/Missing""#);
     let d = import_idml(&fixture_with_table_styles(&styles, TOC_STORY)).unwrap();
     d.check().unwrap();
-    let toc = d.toc.as_ref().expect("the TOC style is still imported");
+    let toc = d.tocs.first().expect("the TOC style is still imported");
     assert_eq!(toc.title_style, None, "a title style the document lacks is dropped");
     assert_eq!(toc.entries.len(), 3, "an entry without a style name is skipped: {:?}", toc.entries);
     let e1 = &toc.entries[0];
@@ -4659,7 +4659,7 @@ fn toc_style_references_in_indented_properties_resolve() {
     <",
         );
     let d = import_idml(&fixture_with_table_styles(&styles, TOC_STORY)).unwrap();
-    let entry = d.toc.as_ref().unwrap().entries.iter().find(|e| e.style == "Heading 1").unwrap();
+    let entry = d.tocs.first().unwrap().entries.iter().find(|e| e.style == "Heading 1").unwrap();
     assert_eq!(entry.entry_style.as_deref(), Some("TOC/TOC body text"));
     assert_eq!(entry.page_number_style.as_deref(), Some("TOC Page Number"));
 }

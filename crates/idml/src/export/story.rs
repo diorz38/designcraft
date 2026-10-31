@@ -190,6 +190,31 @@ impl<'a> Ex<'a> {
     }
 
     /// `ParagraphStyleRange`s of a story (or a table cell's story).
+    // cross-reference source's text: what generates it, text typed over it, its page
+    // numbers as InDesign's live cross-reference page number, so generated text reads back.
+    fn xref_content(&mut self, c: &mut El, x: &designcraft_doc::CrossRef) {
+        let t = match &x.text {
+            Some(t) => t.clone(),
+            None => self.d.generated_xref_text(x.target, &x.format).unwrap_or_else(|| "??".into()),
+        };
+        let page = x.page.clone().unwrap_or_else(|| "?".into());
+        for (n, part) in t.split(designcraft_doc::xref::PAGE_NUM_BLOCK).enumerate() {
+            if n > 0 {
+                c.push(
+                    El::new("TextVariableInstance")
+                        .attr("Self", self.fresh())
+                        .attr("Name", "<?AID 001b?>TV XRefPageNumber")
+                        .attr("ResultText", &page)
+                        .attr("AssociatedTextVariable", "dTextVariablen<?AID 001b?>TV XRefPageNumber"),
+                );
+            }
+            if !part.is_empty() {
+                let mut content = El::new("Content");
+                content.children.push(Node::Text(part.to_string()));
+                c.push(content);
+            }
+        }
+    }
     pub(super) fn story_paras(&mut self, s: &Story) -> Vec<El> {
         let mut paras = Vec::new();
         let ranges = s.para_ranges();
@@ -370,14 +395,8 @@ impl<'a> Ex<'a> {
                         if let Some(x) = s.xrefs.get(k) {
                             let me = self.fresh();
                             let fmt = self.d.xref_formats.iter().position(|ff| ff.name == x.format).map_or("n".to_string(), xref_format_self);
-                            let text = self.d.xref_values(x.target).map_or("??".into(), |mut v| {
-                                v.page = "?".into();
-                                designcraft_doc::xref::expand(self.d.xref_format(&x.format).map_or("<fullPara />", |ff| ff.definition.as_str()), &v)
-                            });
                             let mut c = self.csr_el(&f);
-                            let mut content = El::new("Content");
-                            content.children.push(Node::Text(text));
-                            c.push(content);
+                            self.xref_content(&mut c, x);
                             let mut src = El::new("CrossReferenceSource")
                                 .attr("Self", &me)
                                 .attr("AppliedFormat", fmt)

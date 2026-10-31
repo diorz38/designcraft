@@ -133,7 +133,13 @@ impl<'r> Importer<'r> {
     pub(super) fn text_variable(&mut self, e: &El) {
         use designcraft_doc::vars::{TextVariable, Use, VAR_MAX, VarKind};
         let ty = e.get("VariableType").unwrap_or("");
-        // Cross-reference internals; export writes its own.
+        // Cross-reference internals; export writes its own. Their page numbers are recognised
+        // inside cross-reference text.
+        if ty == "XrefPageNumberType"
+            && let Some(id) = e.get("Self")
+        {
+            self.xref_page_vars.insert(id.to_string());
+        }
         if ty.is_empty() || ty.starts_with("Xref") {
             return;
         }
@@ -304,21 +310,23 @@ impl<'r> Importer<'r> {
         self.footnote_options = o;
     }
 
-    /// The tables of contents: the TOC styles stories are generated from (`AppliedTOCStyle`), with
-    /// their entries. Styles the document doesn't have fall back to the generated TOC styles.
+    /// The table of contents: the TOC style a story is generated from (`AppliedTOCStyle`), with
+    /// its entries. Styles the document doesn't have fall back to the generated TOC styles.
     pub(super) fn tocs_of(&self, top: &[El]) -> Vec<designcraft_doc::Toc> {
         use designcraft_doc::{TocEntry, TocPageNumber};
-        let known = |r: Option<&str>| r.map(|r| self.para_style_ref(r)).filter(|n| self.styles.para(n).is_some());
-        // Character styles the document has; [None] is stored as no style.
-        let known_chars = |r: Option<&str>| {
-            r.map(|r| self.char_style_ref(r)).filter(|n| n != designcraft_doc::NO_CHAR_STYLE && self.styles.char_style(n).is_some())
-        };
         let mut tocs = Vec::new();
-        for ts in top.iter().filter(|e| e.local() == "TOCStyle") {
-            let Some(id) = ts.get("Self") else { continue };
-            let Some(story_el) = top.iter().find(|e| e.local() == "Story" && e.get("AppliedTOCStyle") == Some(id)) else { continue };
-            let Some(&story) = story_el.get("Self").and_then(|s| self.story_ids.get(s)) else { continue };
-
+        for (ts, story) in top.iter().filter(|e| e.local() == "TOCStyle").filter_map(|ts| {
+            let id = ts.get("Self")?;
+            let story = top.iter().find(|e| e.local() == "Story" && e.get("AppliedTOCStyle") == Some(id))?;
+            Some((ts, *self.story_ids.get(story.get("Self")?)?))
+        }) {
+            // Property children are element text: formatting whitespace around a reference is dropped
+            // unless the reference as written names a style.
+            let known = |r: Option<&str>| r.map(|r| self.listed_para_style_ref(r)).filter(|n| self.styles.para(n).is_some());
+            // Character styles the document has; [None] is stored as no style.
+            let known_chars = |r: Option<&str>| {
+                r.map(|r| self.listed_char_style_ref(r)).filter(|n| n != designcraft_doc::NO_CHAR_STYLE && self.styles.char_style(n).is_some())
+            };
             let entries: Vec<TocEntry> = ts
                 .elements()
                 .filter(|e| e.local() == "TOCStyleEntry")
@@ -334,9 +342,10 @@ impl<'r> Importer<'r> {
                         _ => TocPageNumber::After,
                     };
                     let separator = e.get("Separator").map(crate::names::toc_separator_in).filter(|s| s != "\t" && s.chars().count() <= 64);
-                    let entry_style = known(e.get("FormatStyle")).filter(|n| *n != format!("TOC Level {level}"));
-                    let page_number_style = known_chars(e.get("PageNumberStyle"));
-                    let separator_style = known_chars(e.get("SeparatorStyle"));
+                    // InDesign writes these as `Properties` children; attributes are read too.
+                    let entry_style = known(e.prop("FormatStyle").as_deref()).filter(|n| *n != format!("TOC Level {level}"));
+                    let page_number_style = known_chars(e.prop("PageNumberStyle").as_deref());
+                    let separator_style = known_chars(e.prop("SeparatorStyle").as_deref());
                     let sort = e.get("Sort").is_some_and(|v| v.trim() == "true");
                     Some(TocEntry {
                         style,
@@ -360,10 +369,8 @@ impl<'r> Importer<'r> {
             }
             let title: String = ts.get("Title").unwrap_or("").chars().filter(|c| !matches!(c, '\n' | '\r' | '\u{2029}')).take(1024).collect();
             let title_style = known(ts.get("TitleStyle")).filter(|n| n != "TOC Title");
-            tocs.push(designcraft_doc::Toc { story, title, entries, page_numbers: true, title_style });
-            if tocs.len() >= designcraft_doc::MAX_TOCS {
-                break;
-            }
+            let create_bookmarks = ts.get("CreateBookmarks").or_else(|| ts.get("CreatePdfBookmarks")) == Some("true");
+            tocs.push(designcraft_doc::Toc { story, title, entries, page_numbers: true, title_style, create_bookmarks });
         }
         tocs
     }

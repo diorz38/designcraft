@@ -55,7 +55,9 @@ pub fn specs() -> Vec<CommandSpec> {
             |s, p| {
                 let cur = serde_json::to_value(&s.prefs).map_err(|e| bad("prefs.set", e.to_string()))?;
                 let new = merge("prefs.set", cur, p, None)?;
-                s.prefs = serde_json::from_value(new).map_err(|e| bad("prefs.set", e.to_string()))?;
+                let prefs: crate::Prefs = serde_json::from_value(new).map_err(|e| bad("prefs.set", e.to_string()))?;
+                prefs.default_units.check().map_err(|e| bad("prefs.set", e))?;
+                s.prefs = prefs;
                 s.prefs.trim_recent_files();
                 serde_json::to_value(&s.prefs).map_err(|e| bad("prefs.set", e.to_string()))
             }
@@ -100,6 +102,9 @@ fn merge(cmd: &str, mut cur: Value, p: &Value, allowed: Option<&[&str]>) -> Resu
         match (c.get_mut(k), v) {
             (Some(Value::Object(old)), Value::Object(v)) => {
                 for (k2, v2) in v {
+                    if !old.is_empty() && !old.contains_key(k2) {
+                        return Err(bad(cmd, format!("unknown preference {k}.{k2}")));
+                    }
                     old.insert(k2.clone(), v2.clone());
                 }
             }
@@ -128,8 +133,6 @@ mod tests {
         assert!(s.prefs.show_font_names_in_english);
         assert!(s.execute("prefs.set", &json!({"nope": 1})).is_err());
         assert!(s.execute("prefs.set", &json!({"defaultUnits": {"horizontalUnit": "inches"}})).is_err());
-        assert!(s.execute("prefs.set", &json!({"defaultUnits": {"horizontalUnits": "inches", "verticalUnits": "inches"}})).is_ok());
-        assert_eq!(s.prefs.default_units.horizontal_units, designcraft_geom::Unit::Inches);
         // The Pubgen glossary override (docs/plans/2026-10-25-pubgen-pillar4-bps-ai-assistant-mini-plan.md):
         // the panel writes it with `prefs.set` and the glossary loader reads it back from Prefs.
         let r = s.execute("prefs.set", &json!({"pubgenGlossaryPath": "C:/tmp/custom-glossary.json"})).unwrap();

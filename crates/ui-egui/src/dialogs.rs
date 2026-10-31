@@ -575,7 +575,7 @@ mod color_theme_tests {
         }
         let separator = format!(" {} ", designcraft_doc::story::RIGHT_INDENT_TAB);
         let d = &app.session.doc().unwrap().doc;
-        let toc = d.toc.as_ref().unwrap();
+        let toc = d.tocs.first().unwrap();
         assert_eq!(toc.entries[0].separator.as_deref(), Some(separator.as_str()));
         assert!(d.story(toc.story).unwrap().text.contains(&separator));
         app.run("toc.update", json!({})).unwrap();
