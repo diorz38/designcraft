@@ -2474,6 +2474,53 @@ mod tests {
         assert!(job.body_start.unwrap() > 2);
     }
 
+    /// A BRS compile writes the footer preset onto the pages' parent; keeping the back cover on a
+    /// left page is covered in `covers` and the BRS end-to-end test.
+    #[test]
+    fn a_brs_compile_writes_the_footer_onto_the_pages() {
+        let dir = temp_dir("brs-diag");
+        let mut manifest: ProjectManifest = serde_json::from_value(serde_json::json!({
+            "publicationTitle": "BRS Diag",
+            "document": {"preset": "A4", "facingPages": true},
+            "cover": {"style": 13, "includeInside": false, "includeBack": true},
+            "toc": {"lists": []},
+            "headerFooter": {"preset": "hf-brs"},
+            "build": {"exportPdf": false},
+        }))
+        .unwrap();
+        manifest.chapters = vec![ChapterSpec { chapter: 1, path: workbook(&dir, "chapter1.xlsx"), title: String::new() }];
+        let mut plan = CompilePlan::from_manifest(&dir.join("project.json"), manifest).unwrap();
+        plan.chapters[0].source = ChapterSource::Catalog {
+            catalog: catalog(
+                &dir,
+                "chapter1",
+                "Div,01,Geografi,
+Tabel,01.01,Luas,
+Grafik,01.02,Kepadatan,
+",
+            ),
+            tables: Vec::new(),
+        };
+        let mut app = app();
+        let mut job = CompileJob::new(plan);
+        job.run_all(&mut app).unwrap();
+        let active = app.session.active().unwrap();
+        let doc = &active.doc;
+
+        let hf = doc.header_footer.as_ref().ok_or("the compile applies the footer preset").unwrap();
+        assert_eq!(hf.preset, "hf-brs");
+        let text = hf
+            .footer_items
+            .left
+            .and_then(|id| doc.item(id))
+            .and_then(|it| it.text_frame())
+            .and_then(|tf| doc.story(tf.story))
+            .map(|s| s.text.clone());
+        assert!(text.as_deref().is_some_and(|t| !t.trim().is_empty()), "the left footer carries text: {text:?}");
+        let parent = hf.parent.unwrap();
+        assert!((0..doc.page_count()).any(|i| doc.page(i).is_some_and(|p| p.parent == Some(parent))), "the footer parent reaches the pages");
+    }
+
     #[test]
     fn a_failed_compile_writes_no_document() {
         let dir = temp_dir("failed");

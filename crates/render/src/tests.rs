@@ -487,6 +487,26 @@ fn missing_fonts_are_highlighted_on_screen_only() {
     assert!(p[0] > 240 && p[1] < 200, "pink on screen: {p:?}");
 }
 
+/// A run whose fill names no swatch (a renamed or deleted swatch, a stale hex) still prints, in
+/// black; only a run set to [None] is unpainted.
+#[test]
+fn text_with_an_unknown_fill_swatch_prints_black_instead_of_vanishing() {
+    let ink = |fill: &str| {
+        let mut d = Document::new(&NewDocument::default());
+        let lid = d.default_layer();
+        let (_, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(36.0, 36.0, 336.0, 100.0), lid, "Visible", ParaFormat::default()).unwrap();
+        d.story_mut(sid).unwrap().format_chars(0..7, |f| f.over.fill = Some(fill.into()));
+        let cache = Cache::new();
+        let mut r = Renderer::new();
+        r.threads = 0;
+        let img = r.render_page(&d, &cache, 0, 1.0, false, &RenderOptions::default()).unwrap();
+        (36..200).flat_map(|x| (36..80).map(move |y| (x, y))).filter(|&(x, y)| img.pixel(x, y)[0] < 100).count()
+    };
+    assert!(ink("No Such Swatch") > 50, "unknown swatch still prints");
+    assert!(ink("#f68839") > 50, "a hex that no swatch is named after still prints");
+    assert_eq!(ink(designcraft_color::swatch::NONE), 0, "[None] stays unpainted");
+}
+
 #[test]
 fn table_edges_paint_gap_colour_between_dashes_and_stripes() {
     let mut d = Document::new(&NewDocument::default());

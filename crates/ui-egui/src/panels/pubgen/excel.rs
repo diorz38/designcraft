@@ -3899,9 +3899,9 @@ pub fn execute_excel_and_generate(app: &mut DesignApp, st: &mut PubgenState, pat
             st.card1_status = Some((gen_msg.clone(), true));
             if st.excel_had_cover {
                 if is_brs {
-                    let _ = execute_generate_brs_back_cover(app, st);
+                    execute_generate_brs_back_cover(app, st)?;
                 } else if st.cover_include_inside_back {
-                    let _ = execute_generate_back_cover(app, st);
+                    execute_generate_back_cover(app, st)?;
                 }
             }
             ensure_back_cover_at_end(app);
@@ -3915,7 +3915,7 @@ pub fn execute_excel_and_generate(app: &mut DesignApp, st: &mut PubgenState, pat
                 st.hf_footer_single = "{title}\n{nopub}".into();
                 st.hf_footer_left = "{title}\n{nopub}".into();
                 st.hf_footer_right = "{title}\n{nopub}".into();
-                let _ = super::header_footer::execute_apply_header_footer(app, st);
+                super::header_footer::execute_apply_header_footer(app, st)?;
             }
             let count = st.card2_sheet_tables.len();
             if let Some(cover_msg) = cover_res_msg {

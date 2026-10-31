@@ -17,46 +17,184 @@ pub(crate) fn adjust_hex(hex: &str, factor: f32) -> String {
     format!("#{r2:02x}{g2:02x}{b2:02x}")
 }
 
+/// Image files a style thumbnail may use.
+const THUMB_IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
+
+/// The folder a user's own thumbnails persist in, so replacing a PNG survives restarts and
+/// updates: override it with `DESIGNCRAFT_PUBGEN_THUMBS`, otherwise it is the per-user data
+/// folder (`%APPDATA%\DesignCraft\PubgenThumbs`, `~/Library/Application Support/...` on macOS,
+/// `$XDG_DATA_HOME` on Linux).
+pub(crate) fn user_thumbs_dir() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    if cfg!(target_os = "macos") {
+        return home.map(|h| h.join("Library/Application Support/DesignCraft/PubgenThumbs"));
+    }
+    if cfg!(target_os = "windows") {
+        return std::env::var_os("APPDATA")
+            .map(std::path::PathBuf::from)
+            .or_else(|| home.map(|h| h.join("AppData/Roaming")))
+            .map(|a| a.join("DesignCraft").join("PubgenThumbs"));
+    }
+    std::env::var_os("XDG_DATA_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| home.map(|h| h.join(".local/share")))
+        .map(|d| d.join("designcraft/pubgen-thumbs"))
+}
+
+/// The folders scanned for thumbnails, highest priority first; the first folder holding a style's
+/// image wins. Relative sample folders are anchored to the crate too, so the app finds them from
+/// any working directory.
+fn thumb_dirs() -> Vec<std::path::PathBuf> {
+    let legacy = ["plan/pubgen/samples/thumb", "samples/thumb", "outputs"];
+    let mut dirs = Vec::new();
+    if let Some(d) = std::env::var_os("DESIGNCRAFT_PUBGEN_THUMBS") {
+        dirs.push(std::path::PathBuf::from(d));
+    }
+    if let Some(dir) = user_thumbs_dir() {
+        // Made once so the folder is there to drop a replacement into.
+        static READY: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+        READY.get_or_init(|| {
+            let _ = std::fs::create_dir_all(&dir);
+        });
+        dirs.push(dir);
+    }
+    dirs.extend(legacy.iter().map(std::path::PathBuf::from));
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+    dirs.extend(legacy.iter().map(|rel| root.join(rel)));
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        dirs.extend(legacy.iter().map(|rel| dir.join(rel)));
+        dirs.push(dir.join("pubgen/thumbs"));
+    }
+    dirs
+}
+
+/// Lower-case letters and digits only, so `Wave_Curves`, `wave curves` and `wave-curves` agree.
+fn slug(name: &str) -> String {
+    name.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect()
+}
+
+/// The built-in styles' display labels, which are also alias file names. The compiler that holds
+/// them is native-only; on the web there are no files to name, so the list is empty.
+#[cfg(not(target_arch = "wasm32"))]
+fn style_labels() -> &'static [&'static str] {
+    super::compile::COVER_STYLES
+}
+#[cfg(target_arch = "wasm32")]
+fn style_labels() -> &'static [&'static str] {
+    &[]
+}
+
+/// A cover style the app can show: a built-in style (every index below the AI base) or an AI preset.
+fn ai_style_indices() -> std::ops::Range<usize> {
+    super::ai_cover::AI_STYLE_BASE..super::ai_cover::AI_STYLE_BASE + super::ai_cover::AI_PRESETS.len()
+}
+
+fn valid_cover_style(style: usize) -> bool {
+    style < super::ai_cover::AI_STYLE_BASE || ai_style_indices().contains(&style)
+}
+
+fn cover_style_indices() -> impl Iterator<Item = usize> {
+    (0..super::ai_cover::AI_STYLE_BASE).chain(ai_style_indices())
+}
+
+/// The names a style's thumbnail may be filed under: the sample names it shipped with, plus its
+/// `COVER_STYLES` label.
+fn style_aliases(style: usize) -> impl Iterator<Item = &'static str> {
+    let samples: &[&'static str] = match style {
+        0 => &["wave_curves", "karawang_timur_cover_2026"],
+        1 => &["geometric_medallion", "karawang_timur_geometric_cover"],
+        2 => &["folded_origami", "karawang_timur_origami_cover"],
+        3 => &["chevron_medallion", "karawang_timur_chevron_cover"],
+        4 => &["karawang_timur_hexagon_cover", "honeycomb_hexagon"],
+        5 => &["corporate_headline", "karawang_timur_corporate_cover"],
+        6 => &["diagonal_arrow", "karawang_timur_diagonal_cover"],
+        7 => &["modern_horizon", "karawang_timur_modern_horizon_cover"],
+        8 => &["business_report", "karawang_timur_business_cover"],
+        s if s >= super::ai_cover::AI_STYLE_BASE => &["ai_base", "ai_base_template"],
+        _ => &[],
+    };
+    samples.iter().copied().chain(style_labels().get(style).copied())
+}
+
+/// The style a thumbnail file name shows, and how strongly: a numeric prefix (`0_`, `style0`) is
+/// explicit, then an exact alias, then the longest alias the name starts with or contains.
+fn style_thumb_match(name: &str) -> Option<(usize, u32)> {
+    let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
+    let s = slug(stem);
+    let digits: String = s.chars().take_while(char::is_ascii_digit).collect();
+    let prefix_style = digits.parse::<usize>().ok().filter(|_| stem.chars().nth(digits.len()).is_some_and(|c| !c.is_alphanumeric()));
+    if let Some(style) = prefix_style.filter(|s| valid_cover_style(*s)) {
+        return Some((style, 1000));
+    }
+    if let Some(style) = s.strip_prefix("style").and_then(|rest| rest.parse::<usize>().ok()).filter(|s| valid_cover_style(*s)) {
+        return Some((style, 900));
+    }
+    let mut best: Option<(usize, u32)> = None;
+    for style in cover_style_indices() {
+        for alias in style_aliases(style) {
+            let a = slug(alias);
+            let rank = if a.is_empty() {
+                0
+            } else if s == a {
+                300
+            } else if s.starts_with(&a) {
+                200
+            } else if s.contains(&a) {
+                100
+            } else {
+                0
+            };
+            let score = rank + a.len().min(99) as u32;
+            if rank > 0 && best.is_none_or(|(_, best_score)| score > best_score) {
+                best = Some((style, score));
+            }
+        }
+    }
+    best
+}
+
+fn is_thumb_image(path: &std::path::Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| THUMB_IMAGE_EXTS.iter().any(|ext| e.eq_ignore_ascii_case(ext)))
+}
+
+/// The thumbnail file for a style: the first folder with a match wins, and inside it the strongest
+/// match, so dropping `3_my_cover.png` next to `chevron_medallion.png` overrides the sample.
+fn thumb_path(style_idx: usize) -> Option<std::path::PathBuf> {
+    thumb_path_in(&thumb_dirs(), style_idx)
+}
+
+fn thumb_path_in(dirs: &[std::path::PathBuf], style_idx: usize) -> Option<std::path::PathBuf> {
+    for dir in dirs {
+        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        let mut files: Vec<std::path::PathBuf> = entries.flatten().map(|entry| entry.path()).filter(|path| is_thumb_image(path)).collect();
+        files.sort();
+        let mut best: Option<(u32, std::path::PathBuf)> = None;
+        for file in files {
+            let Some(name) = file.file_name().and_then(|name| name.to_str()) else { continue };
+            let Some((style, score)) = style_thumb_match(name) else { continue };
+            if style == style_idx && best.as_ref().is_none_or(|(best_score, _)| score > *best_score) {
+                best = Some((score, file));
+            }
+        }
+        if let Some((_, path)) = best {
+            return Some(path);
+        }
+    }
+    None
+}
+
 fn style_thumbnail_texture(ctx: &egui::Context, style_idx: usize) -> Option<egui::TextureHandle> {
-    let key = egui::Id::unique(("pubgen_cover_style_thumbnail_tex", style_idx));
+    // Keyed by the file's identity as well as the style: a replaced or regenerated PNG reloads on
+    // the next hover, an unchanged one stays cached.
+    let path = thumb_path(style_idx)?;
+    let meta = std::fs::metadata(&path).ok()?;
+    let key = egui::Id::unique(("pubgen_cover_style_thumbnail_tex", style_idx, path.clone(), meta.len(), meta.modified().ok()));
     if let Some(tex) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(key)) {
         return Some(tex);
     }
-    let (primary_name, alt_name) = match style_idx {
-        0 => ("wave_curves.png", "karawang_timur_cover_2026.png"),
-        1 => ("geometric_medallion.png", "karawang_timur_geometric_cover.png"),
-        2 => ("folded_origami.png", "karawang_timur_origami_cover.png"),
-        3 => ("chevron_medallion.png", "karawang_timur_chevron_cover.png"),
-        4 => ("karawang_timur_hexagon_cover.png", "honeycomb_hexagon.png"),
-        5 => ("corporate_headline.png", "karawang_timur_corporate_cover.png"),
-        6 => ("diagonal_arrow.png", "karawang_timur_diagonal_cover.png"),
-        7 => ("modern_horizon.png", "karawang_timur_modern_horizon_cover.png"),
-        8 => ("business_report.png", "karawang_timur_business_cover.png"),
-        9 => ("urban_angle.png", "urban_angle.png"),
-        10 => ("tri_color_bands.png", "tri_color_bands.png"),
-        11 => ("prism_diamonds.png", "prism_diamonds.png"),
-        12 => ("quarter_stack.png", "quarter_stack.png"),
-        s if s >= super::ai_cover::AI_STYLE_BASE => ("ai_base.png", "ai_base_template.png"),
-        _ => return None,
-    };
-    let candidates = [
-        format!("plan/pubgen/samples/thumb/{primary_name}"),
-        format!("samples/thumb/{primary_name}"),
-        format!("outputs/{primary_name}"),
-        format!("outputs/{alt_name}"),
-        primary_name.to_string(),
-        alt_name.to_string(),
-        format!("../outputs/{primary_name}"),
-        format!("../outputs/{alt_name}"),
-    ];
-    let mut bytes = None;
-    for cand in &candidates {
-        if let Ok(b) = std::fs::read(cand) {
-            bytes = Some(b);
-            break;
-        }
-    }
-    let bytes = bytes?;
+    let bytes = std::fs::read(&path).ok()?;
     let pm = designcraft_render::decode_pixmap_page(&bytes, 0)?;
     let ci = egui::ColorImage::from_rgba_premultiplied([pm.width() as usize, pm.height() as usize], pm.data_as_u8_slice());
     let fitted = crate::widgets::fit_texture(ci, 300);
@@ -616,4 +754,93 @@ pub(crate) fn show_style_thumbnail_tooltip(ui: &mut Ui, style_idx: usize, name: 
         ui.add_space(3.0);
         ui.label(RichText::new(desc).size(10.0).color(t.text_dim));
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn style_of(name: &str) -> Option<usize> {
+        style_thumb_match(name).map(|(style, _)| style)
+    }
+
+    /// Every sample PNG that ships in `plan/pubgen/samples/thumb` still finds its style.
+    #[test]
+    fn sample_thumbnails_find_their_style() {
+        for (name, style) in [
+            ("wave_curves.png", 0),
+            ("geometric_medallion.png", 1),
+            ("folded_origami.png", 2),
+            ("chevron_medallion.png", 3),
+            ("honeycomb_hexagon.png", 4),
+            ("karawang_timur_hexagon_cover.png", 4),
+            ("corporate_headline.png", 5),
+            ("diagonal_arrow.png", 6),
+            ("modern_horizon.png", 7),
+            ("business_report.png", 8),
+            ("urban_angle.png", 9),
+            ("tri_color_bands.png", 10),
+            ("prism_diamonds.png", 11),
+            ("quarter_stack.png", 12),
+            ("ai_base.png", super::super::ai_cover::AI_STYLE_BASE),
+            ("ai_base_template.png", super::super::ai_cover::AI_STYLE_BASE),
+        ] {
+            assert_eq!(style_of(name), Some(style), "{name}");
+        }
+    }
+
+    /// A name the user makes up still lands: a numeric prefix, a style label, or spaces/case.
+    #[test]
+    fn user_file_names_pick_a_style() {
+        assert_eq!(style_of("03_my_cover.png"), Some(3));
+        assert_eq!(style_of("style7.jpg"), Some(7));
+        assert_eq!(style_of("BPS Berita Resmi Statistik (BRS).png"), Some(13));
+        assert_eq!(style_of("quarter-stack.webp"), Some(12));
+        assert_eq!(style_of("photo_of_the_office.png"), None);
+    }
+
+    /// A numeric prefix outranks an alias, so `4_wave_curves.png` is honeycomb, not wave.
+    #[test]
+    fn a_numeric_prefix_outranks_an_alias() {
+        let prefix = style_thumb_match("4_wave_curves.png");
+        let alias = style_thumb_match("wave_curves.png");
+        assert_eq!(prefix.map(|(style, _)| style), Some(4));
+        assert!(prefix.is_some_and(|(_, score)| alias.is_some_and(|(_, alias_score)| score > alias_score)));
+    }
+
+    /// Folders are searched in order, an explicit name beats the sample it sits next to, and a
+    /// folder without the style falls through to the next one.
+    #[test]
+    fn a_renamed_thumbnail_overrides_the_sample_in_the_same_folder() {
+        let root = std::env::temp_dir().join(format!("designcraft-thumb-{}", std::process::id()));
+        let first = root.join("first");
+        let second = root.join("second");
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(std::fs::create_dir_all(&first).is_ok() && std::fs::create_dir_all(&second).is_ok());
+        let sample = first.join("chevron_medallion.png");
+        let renamed = first.join("03_mine.png");
+        let elsewhere = second.join("5_corporate.png");
+        for path in [&sample, &renamed, &elsewhere] {
+            assert!(std::fs::write(path, b"").is_ok());
+        }
+
+        assert_eq!(thumb_path_in(&[first.clone(), second.clone()], 3), Some(renamed));
+        assert_eq!(thumb_path_in(&[first.clone(), second.clone()], 5), Some(elsewhere));
+        assert_eq!(thumb_path_in(&[first], 0), None, "no file, so the painted fallback shows");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The checked-in samples still resolve through the folder itself (they are local-only, so a
+    /// checkout without `plan/` skips this).
+    #[test]
+    fn the_repo_sample_folder_is_found() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plan/pubgen/samples/thumb");
+        if !dir.is_dir() {
+            return;
+        }
+        for (style, name) in [(0, "wave_curves.png"), (8, "business_report.png"), (12, "quarter_stack.png")] {
+            let found = thumb_path_in(std::slice::from_ref(&dir), style);
+            assert!(found.as_deref().and_then(|p| p.file_name()).and_then(|n| n.to_str()) == Some(name), "{style}");
+        }
+    }
 }

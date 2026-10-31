@@ -507,6 +507,26 @@ pub fn resolve_agency_swatch(doc: &mut designcraft_doc::Document, color_spec: &s
     ensure_swatch(doc, clean)
 }
 
+/// A facing document keeps the back cover on a left (verso) page of a spread of its own, mirroring
+/// the front cover on page 1. A cover that lands on a right page (sharing the spread after the last
+/// body page) is shifted onto the left by one blank page inserted before it.
+fn ensure_back_cover_on_left(app: &mut DesignApp) -> Result<(), String> {
+    for _ in 0..2 {
+        let state = app.session.active().filter(|s| s.doc.settings.facing_pages).and_then(|s| {
+            let doc = &s.doc;
+            let last = doc.page_count().checked_sub(1)?;
+            Some((last, doc.page(last)?.side, doc.page_loc(last).is_some_and(|(si, _)| doc.spreads[si].pages.len() == 1)))
+        });
+        let Some((last, side, alone)) = state else { return Ok(()) };
+        if side == designcraft_doc::PageSide::Left && alone || last == 0 {
+            return Ok(());
+        }
+        app.run("layout.pages.insert", json!({ "after": last - 1, "count": 1 }))
+            .map_err(|e| format!("Failed to add the blank page before the back cover: {e}"))?;
+    }
+    Ok(())
+}
+
 pub fn execute_generate_back_cover(app: &mut DesignApp, st: &PubgenState) -> Result<(), String> {
     let branding = {
         let active = app.session.active().ok_or("No active document")?;
@@ -525,6 +545,7 @@ pub fn execute_generate_back_cover(app: &mut DesignApp, st: &PubgenState) -> Res
         .map_err(|e| format!("Failed to duplicate cover spread for back cover: {e}"))?;
 
     ensure_back_cover_at_end(app);
+    ensure_back_cover_on_left(app)?;
 
     let last_page_idx = app.session.active().map(|s| s.doc.page_count().saturating_sub(1)).unwrap_or(0);
     let (back_si, back_pi) = {
@@ -1621,6 +1642,7 @@ pub fn execute_generate_brs_back_cover(app: &mut DesignApp, st: &PubgenState) ->
     .map_err(|e| format!("Failed to apply BRS back cover: {e}"))?;
 
     ensure_back_cover_at_end(app);
+    ensure_back_cover_on_left(app)?;
 
     Ok("Back cover generated successfully (BPS Berita Resmi Statistik)".to_string())
 }
@@ -2627,6 +2649,27 @@ pub(crate) mod tests {
         }
     }
 
+    /// A facing document keeps the back cover on the left (verso) page of a spread of its own, as
+    /// page 1 keeps the front cover on the right.
+    #[test]
+    fn the_back_cover_lands_on_a_left_page_of_its_own_spread() {
+        for pages in 2..=6usize {
+            let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({ "preset": "A4", "pages": pages, "facingPages": true })).unwrap();
+            let st = PubgenState::default();
+            execute_generate_back_cover(&mut app, &st).unwrap();
+            let active = app.session.active().unwrap();
+            let doc = &active.doc;
+            let last = doc.page_count() - 1;
+            assert_eq!(doc.page(last).map(|p| p.side), Some(designcraft_doc::PageSide::Left), "{pages} pages: the back cover is page {}", last + 1);
+            assert_eq!(
+                doc.page_loc(last).map(|(si, _)| doc.spreads[si].pages.len()),
+                Some(1),
+                "{pages} pages: the back cover has a spread of its own"
+            );
+        }
+    }
+
     #[test]
     fn test_cover_include_inside_and_back_cover_generation() {
         let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
@@ -3344,6 +3387,14 @@ pub(crate) mod tests {
         let mut st2 = PubgenState { active_profile_id: "bps_brs".into(), excel_auto_generate: true, ..Default::default() };
         let res_e2e = super::super::excel::execute_excel_and_generate(&mut app2, &mut st2, &sample_xlsx.to_string_lossy());
         assert!(res_e2e.is_ok(), "execute_excel_and_generate failed: {res_e2e:?}");
+
+        // The generated publication keeps the back cover on the left page of its own spread.
+        let e2e_doc = &app2.session.active().unwrap().doc;
+        let back = find_back_cover_page(e2e_doc).expect("a back cover page");
+        assert_eq!(e2e_doc.page(back).map(|p| p.side), Some(designcraft_doc::PageSide::Left), "the back cover is page {} and a left page", back + 1);
+        assert_eq!(e2e_doc.page_loc(back).map(|(si, _)| e2e_doc.spreads[si].pages.len()), Some(1), "the back cover has a spread of its own");
+        let hf = e2e_doc.header_footer.as_ref().expect("the BRS footer preset is applied");
+        assert_eq!(hf.preset, "hf-brs");
         assert_eq!(st2.cover_style, 13, "Must use style 13 BRS cover");
         assert!(!st2.bilingual_output, "BRS must default to single-language mode");
         assert!(!st2.card2_table_footer, "BRS must default to no table footer");
@@ -3354,6 +3405,17 @@ pub(crate) mod tests {
         assert_eq!(hf.preset, "hf-brs");
         assert_eq!(hf.colors.primary, "#f68839");
         assert_eq!(hf.colors.text_color, "#f68839");
+        // The footer text paints: each run's fill names a swatch that resolves, in the BRS orange.
+        let footer = doc2
+            .item(hf.footer_items.left.expect("a left footer frame"))
+            .and_then(|it| it.text_frame())
+            .and_then(|tf| doc2.story(tf.story))
+            .expect("the footer frame has a story");
+        for run in &footer.chars {
+            let fill = run.format.over.fill.clone().unwrap_or_default();
+            let Some(color) = doc2.resolve_color(&fill, 1.0) else { panic!("footer run fill {fill:?} names no swatch") };
+            assert_eq!(color.to_hex(), "#f68839", "the footer text is BRS orange");
+        }
         let hf_parent = hf.parent.expect("parent spread id");
         let parent_idx = doc2.parent_index(hf_parent).expect("parent idx");
         let parent_sp = &doc2.parents[parent_idx];

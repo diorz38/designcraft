@@ -29,10 +29,15 @@ enum TextPaint {
 
 impl TextPaint {
     fn of(doc: &designcraft_doc::Document, swatch: &str, tint: f32) -> Option<Self> {
+        if swatch == designcraft_color::swatch::NONE {
+            return None;
+        }
         if designcraft_color::swatch::resolve_gradient(&doc.swatches, swatch).is_some() {
             return Some(TextPaint::Gradient(designcraft_doc::Fill { swatch: swatch.into(), tint, ..designcraft_doc::Fill::none() }));
         }
-        doc.resolve_color(swatch, tint).map(|c| TextPaint::Solid(color_of(&c, 1.0)))
+        // A name no swatch answers to (a renamed or deleted swatch, a stale hex) still prints, in
+        // black: text that cannot be painted must not disappear from the page.
+        Some(TextPaint::Solid(color_of(&doc.resolve_color(swatch, tint).unwrap_or(designcraft_color::Color::BLACK), 1.0)))
     }
 
     /// Make this the context's paint; a gradient runs across `area` (text space).

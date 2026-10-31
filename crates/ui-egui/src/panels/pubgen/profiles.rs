@@ -378,7 +378,7 @@ mod tests {
         assert!(!brs.table_styling.include_table_footer);
         assert!(!brs.structure.bilingual);
         assert!(dda.structure.bilingual);
-        assert!(!brs.geometry.facing_pages);
+        assert!(brs.geometry.facing_pages, "BPS/BRS print recto-verso");
         assert_eq!(brs.geometry.margins_mm.top, 18.0);
 
         let corp = &profiles[2];

@@ -539,7 +539,7 @@ pub(crate) fn card_header_footer_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &
 pub fn execute_apply_header_footer(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
     // If double-sided is requested and facingPages is currently false, ensure facingPages is true
     if st.hf_sided == 0 && app.session.active().is_some_and(|s| !s.doc.settings.facing_pages) {
-        let _ = app.run("layout.documentSetup", json!({ "facingPages": true }));
+        app.run("layout.documentSetup", json!({ "facingPages": true })).map_err(|e| format!("Failed to switch the document to facing pages: {e}"))?;
     }
 
     let is_brs = st.hf_style.eq_ignore_ascii_case("hf-brs") || st.active_profile().id == "bps_brs";

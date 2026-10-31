@@ -43,7 +43,10 @@ const ALLOWED: &[(&str, &str)] = &[
         "`screenshot` reads back the PNG the connected app just wrote. Connected mode cannot be combined with the roots (the CLI refuses the pair), and the app's own engine checks the path it writes",
     ),
     ("ui-egui/src/panels/pubgen/widgets.rs", "Pubgen panel chrome loads the optional PubGen logo image next to the app on first paint"),
-    ("ui-egui/src/panels/pubgen/tables.rs", "Pubgen table tests probe for the sample CSV fixtures the panel ships"),
+    (
+        "ui-egui/src/panels/pubgen/charts/stock_maps.rs",
+        "Pubgen stock charts read the GeoJSON map and cover-map files the user picks next to the workbook; a missing map leaves the chart's own outline",
+    ),
     (
         "ui-egui/src/panels/pubgen/excel.rs",
         "Pubgen Excel importer reads user-selected workbook files and writes converted CSV/ZIP files chosen via file picker",
@@ -56,7 +59,10 @@ const ALLOWED: &[(&str, &str)] = &[
     ("ui-egui/src/panels/pubgen/helpers.rs", "Pubgen helpers probe candidate asset/template files next to the user-chosen workbook"),
     ("ui-egui/src/panels/pubgen/pages.rs", "Pubgen page generation reads user-picked CSV/RTF files and template assets next to the workbook"),
     ("ui-egui/src/panels/pubgen/covers.rs", "Pubgen cover engines resolve user-picked cover images and template assets next to the workbook"),
-    ("ui-egui/src/panels/pubgen/thumbnails.rs", "Pubgen style thumbnails read the sample cover image the user configured for the style preview"),
+    (
+        "ui-egui/src/panels/pubgen/thumbnails.rs",
+        "Pubgen style thumbnails list the cover-image folders next to the app and the per-user thumbnail folder, and read the image whose name matches the style",
+    ),
     ("ui-egui/src/panels/pubgen/page_utils.rs", "Pubgen page utilities probe the user-picked RTF/image files placed onto a page"),
     ("engine/src/cmd/template/catalog.rs", "scans local template directories to discover canonical page templates and their previews"),
     ("engine/src/cmd/template/mod.rs", "reads template .designcraft document files to apply layout and styles to document pages"),

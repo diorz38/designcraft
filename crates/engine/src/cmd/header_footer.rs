@@ -301,8 +301,10 @@ fn resolve_or_create_swatch(d: &mut Document, prefix: &str, color_str: &str) -> 
     if trimmed.is_empty() {
         return designcraft_color::swatch::BLACK.to_string();
     }
-    if d.swatches.iter().any(|s| s.name.eq_ignore_ascii_case(trimmed)) {
-        return trimmed.to_string();
+    if let Some(s) = d.swatches.iter().find(|s| s.name.eq_ignore_ascii_case(trimmed)) {
+        // The stored name's own casing: runs reference a swatch by exact name, so returning the
+        // caller's spelling ("#f68839" for a swatch named "#F68839") paints nothing at all.
+        return s.name.clone();
     }
     if let Some(c) = designcraft_color::Color::from_hex(trimmed) {
         let name = format!("{prefix}-{}", c.to_hex().trim_start_matches('#'));
@@ -872,8 +874,8 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
                     let gap = 8.0;
                     let f_top = lf_rect.y0;
                     let f_h = 28.0;
-                    let text_rect = Rect::new(lf_rect.x0, f_top, lf_rect.x1 - folio_w - gap, f_top + f_h);
-                    let folio_rect = Rect::new(lf_rect.x1 - folio_w, f_top, lf_rect.x1, f_top + f_h);
+                    let text_rect = Rect::new(lf_rect.x0, f_top, lf_rect.x1, f_top + f_h);
+                    let folio_rect = brs_folio_rect(&left_pg, f_top, f_h, folio_w, gap);
 
                     hf.footer_items.left = sync_styled_text_frame(
                         d,
@@ -964,8 +966,8 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
                     let gap = 8.0;
                     let f_top = rf_rect.y0;
                     let f_h = 28.0;
-                    let folio_rect = Rect::new(rf_rect.x0, f_top, rf_rect.x0 + folio_w, f_top + f_h);
-                    let text_rect = Rect::new(rf_rect.x0 + folio_w + gap, f_top, rf_rect.x1, f_top + f_h);
+                    let folio_rect = brs_folio_rect(&right_pg, f_top, f_h, folio_w, gap);
+                    let text_rect = Rect::new(rf_rect.x0, f_top, rf_rect.x1, f_top + f_h);
 
                     let folio_text = format!("{}", story::PAGE_NUMBER);
                     hf.folio_items.right = sync_styled_text_frame(
@@ -1190,6 +1192,20 @@ fn detect_doc_geometry(d: &Document, target_pages: &[usize], explicit_margins: O
 
     // 5. Default fallback
     (1, 12.0, Margins::uniform(36.0))
+}
+
+/// The BRS page number sits alone past the inner (spine-side) margin edge, level with the
+/// footer text that ends at the margin: the frame starts a `gap' past the edge, out in the margin
+/// band the footer text never enters. A margin narrower than the frame keeps it on the page.
+fn brs_folio_rect(page: &Page, y0: f64, height: f64, width: f64, gap: f64) -> Rect {
+    let (left_m, right_m) = page.left_right_margins();
+    let past_edge = match page.side {
+        PageSide::Left => page.x + page.width - right_m + gap,
+        _ => page.x + left_m - gap - width,
+    };
+    let x0 = past_edge.clamp(page.x + 1.0, (page.x + page.width - 2.0).max(page.x + 1.0));
+    let x1 = (x0 + width).min(page.x + page.width - 1.0).max(x0 + 1.0);
+    Rect::new(x0, y0, x1, y0 + height)
 }
 
 /// Calculates header rect, footer rect, header rule line, footer rule line, and top accent bar rect coordinates for a given parent page.
@@ -1851,19 +1867,27 @@ mod tests {
         let right_text_b = doc.item(right_text_id).unwrap().bounds();
         let right_folio_b = doc.item(right_folio_id).unwrap().bounds();
 
-        // Left page (verso): text is on the left, folio is on the right
-        assert!(left_text_b.x1 < left_folio_b.x0, "left page: text ({}) must be left of folio ({})", left_text_b.x1, left_folio_b.x0);
+        let parent_idx = doc.parent_index(hf.parent.unwrap()).unwrap();
+        let parent_spread = &doc.parents[parent_idx];
+        assert_eq!(parent_spread.pages.len(), 2);
 
-        // Right page (recto): folio is on the left, text is on the right
-        assert!(right_folio_b.x1 < right_text_b.x0, "right page: folio ({}) must be left of text ({})", right_folio_b.x1, right_text_b.x0);
+        // The folio sits alone past the inner (spine-side) margin edge, beyond the footer text.
+        let left_pg = &parent_spread.pages[0];
+        let left_inner_edge = left_pg.x + left_pg.width - left_pg.left_right_margins().1;
+        assert!(left_text_b.x1 <= left_inner_edge, "left page: text ({}) ends at the margin ({})", left_text_b.x1, left_inner_edge);
+        assert!(left_folio_b.x0 > left_inner_edge, "left page: folio ({}) starts past the margin ({})", left_folio_b.x0, left_inner_edge);
+        assert!(left_folio_b.x1 <= left_pg.x + left_pg.width, "left page: folio ({}) must stay on the page", left_folio_b.x1);
+
+        let right_pg = &parent_spread.pages[1];
+        let right_inner_edge = right_pg.x + right_pg.left_right_margins().0;
+        assert!(right_folio_b.x1 < right_inner_edge, "right page: folio ({}) ends before the margin ({})", right_folio_b.x1, right_inner_edge);
+        assert!(right_text_b.x0 >= right_inner_edge, "right page: text ({}) starts at the margin ({})", right_text_b.x0, right_inner_edge);
+        assert!(right_folio_b.x0 >= right_pg.x, "right page: folio ({}) must stay on the page", right_folio_b.x0);
 
         // Verify folio content is the page marker
         let left_folio_story = doc.story(doc.item(left_folio_id).unwrap().text_frame().unwrap().story).unwrap();
         assert_eq!(left_folio_story.text, format!("{}", story::PAGE_NUMBER));
 
-        let parent_idx = doc.parent_index(hf.parent.unwrap()).unwrap();
-        let parent_spread = &doc.parents[parent_idx];
-        assert_eq!(parent_spread.pages.len(), 2);
         assert_eq!(parent_spread.page_at_x(left_text_b.center().x), Some(0));
         assert_eq!(parent_spread.page_at_x(left_folio_b.center().x), Some(0));
         assert_eq!(parent_spread.page_at_x(right_text_b.center().x), Some(1));
@@ -1890,5 +1914,69 @@ mod tests {
         assert!(doc_after.item(left_folio_id).is_none());
         assert!(doc_after.item(right_text_id).is_none());
         assert!(doc_after.item(right_folio_id).is_none());
+    }
+
+    /// A text colour that names an existing swatch in another case still paints: the runs take the
+    /// swatch's own name, because a run resolves its fill by exact name.
+    #[test]
+    fn a_text_colour_takes_the_case_of_the_swatch_it_names() {
+        let mut s = session_with_doc(true, 4);
+        s.edit(|d, _| {
+            d.swatches.push(designcraft_color::swatch::Swatch::color("#F68839", designcraft_color::Color::rgb8(246, 136, 57)));
+            Ok(serde_json::Value::Null)
+        })
+        .unwrap();
+        s.execute("layout.headerFooter.apply", &json!({ "preset": "hf-brs", "scope": "all", "colors": { "textColor": "#f68839" } })).unwrap();
+
+        let doc = &s.doc().unwrap().doc;
+        let hf = doc.header_footer.as_ref().expect("the preset is stored");
+        for id in [hf.footer_items.left, hf.footer_items.right, hf.folio_items.left, hf.folio_items.right].into_iter().flatten() {
+            let story = doc.item(id).and_then(|it| it.text_frame()).and_then(|tf| doc.story(tf.story)).expect("the footer frame has a story");
+            for run in &story.chars {
+                let fill = run.format.over.fill.clone().unwrap_or_default();
+                assert!(doc.resolve_color(&fill, 1.0).is_some(), "run fill {fill:?} names no swatch");
+            }
+        }
+    }
+
+    /// A margin narrower than the folio frame keeps the page number on the page: it is clamped to
+    /// the trim edge rather than placed beyond it.
+    #[test]
+    fn a_folio_frame_out_in_a_narrow_margin_stays_on_the_page() {
+        let mut s = session_with_doc(true, 4);
+        s.execute("layout.headerFooter.apply", &json!({ "preset": "hf-brs", "scope": "all", "margins": 6.0 })).unwrap();
+
+        let doc = &s.doc().unwrap().doc;
+        let hf = doc.header_footer.as_ref().expect("the preset is stored");
+        let parent_idx = doc.parent_index(hf.parent.expect("the footer has a parent")).expect("the parent exists");
+        let page_width = doc.parents[parent_idx].pages.first().map_or(0.0, |p| p.width);
+        for id in [hf.folio_items.left, hf.folio_items.right].into_iter().flatten() {
+            let b = doc.item(id).expect("the folio frame exists").bounds();
+            let page = doc.parents[parent_idx]
+                .page_at_x(b.center().x)
+                .and_then(|i| doc.parents[parent_idx].pages.get(i))
+                .expect("the folio sits on a parent page");
+            assert!(b.x0 >= page.x && b.x1 <= page.x + page_width, "folio {b:?} stays inside the page starting at {} of width {page_width}", page.x);
+        }
+    }
+
+    /// Applying the preset alone (the compiler's path, which passes no texts) still writes a
+    /// footer: the tokens fall back to their variable names rather than leaving a frame empty.
+    #[test]
+    fn a_brs_preset_without_texts_still_writes_its_footer() {
+        let mut s = session_with_doc(true, 6);
+        s.execute("layout.headerFooter.apply", &json!({ "preset": "hf-brs", "scope": "all" })).unwrap();
+        let doc = &s.doc().unwrap().doc;
+        let hf = doc.header_footer.as_ref().expect("the preset is stored");
+        let text_of = |id: Option<designcraft_doc::ItemId>| {
+            id.and_then(|i| doc.item(i)).and_then(|it| it.text_frame()).and_then(|tf| doc.story(tf.story)).map(|st| st.text.clone())
+        };
+        for (side, id) in [("left", hf.footer_items.left), ("right", hf.footer_items.right)] {
+            let text = text_of(id);
+            assert!(text.as_deref().is_some_and(|t| !t.trim().is_empty()), "the {side} footer carries text: {text:?}");
+        }
+        assert_eq!(text_of(hf.folio_items.left), Some(story::PAGE_NUMBER.to_string()), "the left folio is the page number");
+        let parent = hf.parent.expect("a parent spread");
+        assert!((0..doc.page_count()).all(|i| doc.page(i).and_then(|p| p.parent) == Some(parent)), "every page shows the footer parent");
     }
 }
