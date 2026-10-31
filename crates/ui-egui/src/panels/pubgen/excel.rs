@@ -38,6 +38,7 @@ pub struct ExcelCoverData {
     pub catalogue: String,
     pub code: String,
     pub agency: String,
+    pub pub_office: String,
     pub image_hero: String,
     pub image_landscape: String,
     pub logo: String,
@@ -481,6 +482,7 @@ pub fn parse_cover_sheet(sheet: &ExcelSheetData) -> ExcelCoverData {
             "nocatalogue" | "catalogue" | "catalog" | "katalog" => &mut cover.catalogue,
             "issn" | "isbn" | "code" => &mut cover.code,
             "officename" | "agency" | "lembaga" => &mut cover.agency,
+            "puboffice" | "kantorpublikasi" => &mut cover.pub_office,
             "image1" | "imagehero" | "image" => &mut cover.image_hero,
             "imagelanscape" | "imagelandscape" | "landscape" => &mut cover.image_landscape,
             "officelogo" | "logo" => &mut cover.logo,
@@ -3726,7 +3728,9 @@ pub(crate) fn apply_excel_cover(st: &mut PubgenState, cover: &ExcelCoverData, ba
     if !cover.code.trim().is_empty() {
         st.cover_code_num = cover.code.trim().to_string();
     }
-    if !cover.agency.trim().is_empty() {
+    if !cover.pub_office.trim().is_empty() {
+        st.cover_agency_text = cover.pub_office.trim().to_string();
+    } else if !cover.agency.trim().is_empty() {
         st.cover_agency_text = cover.agency.trim().to_string();
     }
 
@@ -3834,7 +3838,7 @@ pub fn execute_excel_and_generate(app: &mut DesignApp, st: &mut PubgenState, pat
     // Ensure an active document exists
     if app.session.active().is_none() {
         if is_brs {
-            let _ = app.run("file.new", json!({"facingPages": false}));
+            let _ = app.run("file.new", json!({"facingPages": true}));
         } else {
             let _ = app.run("file.new", json!({}));
         }
@@ -3901,6 +3905,18 @@ pub fn execute_excel_and_generate(app: &mut DesignApp, st: &mut PubgenState, pat
                 }
             }
             ensure_back_cover_at_end(app);
+            if is_brs {
+                st.hf_style = "hf-brs".into();
+                st.hf_sided = 0;
+                st.hf_scope = 0;
+                st.hf_header_single.clear();
+                st.hf_header_left.clear();
+                st.hf_header_right.clear();
+                st.hf_footer_single = "{title}\n{nopub}".into();
+                st.hf_footer_left = "{title}\n{nopub}".into();
+                st.hf_footer_right = "{title}\n{nopub}".into();
+                let _ = super::header_footer::execute_apply_header_footer(app, st);
+            }
             let count = st.card2_sheet_tables.len();
             if let Some(cover_msg) = cover_res_msg {
                 return Ok(format!("Converted {count} sheets & auto-generated pages + cover ({gen_msg}; {cover_msg})!"));

@@ -219,6 +219,32 @@ impl HeaderFooterTemplate {
                     text_color: "[Black]".into(),
                 },
             },
+            Self {
+                name: "hf-brs".into(),
+                description: "BPS Berita Resmi Statistik running footer with publication title, release number, and prominent folio.".into(),
+                sided: Sided::Double,
+                header_offset: 24.0,
+                footer_offset: 24.0,
+                header: SidedText::default(),
+                footer: SidedText { single: "{title}\n{nopub}".into(), left: "{title}\n{nopub}".into(), right: "{title}\n{nopub}".into() },
+                style: "[Basic Paragraph]".into(),
+                objects: HeaderFooterObjects {
+                    header_rule: false,
+                    header_rule_weight: 0.5,
+                    footer_rule: false,
+                    footer_rule_weight: 0.5,
+                    top_accent_bar: false,
+                    top_accent_bar_height: 4.0,
+                    top_accent_bar_bleed: true,
+                },
+                colors: HeaderFooterColors {
+                    primary: "#f68839".into(),
+                    accent: "#fbbf91".into(),
+                    dark: "#122647".into(),
+                    rule_color: "#f68839".into(),
+                    text_color: "#f68839".into(),
+                },
+            },
         ]
     }
 
@@ -242,6 +268,7 @@ impl HeaderFooterTemplate {
             rule_items: SidedItems::default(),
             accent_bar_items: SidedItems::default(),
             footer_rule_items: SidedItems::default(),
+            folio_items: SidedItems::default(),
         }
     }
 }
@@ -294,6 +321,9 @@ pub struct HeaderFooter {
     /// Generated footer rule ItemIds.
     #[serde(default)]
     pub footer_rule_items: SidedItems,
+    /// Generated folio frame ItemIds (e.g. for hf-brs template).
+    #[serde(default)]
+    pub folio_items: SidedItems,
 }
 
 impl HeaderFooter {
@@ -342,6 +372,7 @@ mod tests {
             rule_items: SidedItems { single: None, left: Some(ItemId(104)), right: Some(ItemId(105)) },
             accent_bar_items: SidedItems::default(),
             footer_rule_items: SidedItems::default(),
+            folio_items: SidedItems::default(),
         };
 
         let json = serde_json::to_string(&hf).unwrap();
@@ -373,6 +404,7 @@ mod tests {
             rule_items: SidedItems::default(),
             accent_bar_items: SidedItems::default(),
             footer_rule_items: SidedItems::default(),
+            folio_items: SidedItems::default(),
         };
 
         let json = serde_json::to_string(&hf).unwrap();
@@ -411,6 +443,7 @@ mod tests {
             rule_items: SidedItems::default(),
             accent_bar_items: SidedItems::default(),
             footer_rule_items: SidedItems::default(),
+            folio_items: SidedItems::default(),
         });
         assert!(doc.check().is_ok());
     }
@@ -418,11 +451,14 @@ mod tests {
     #[test]
     fn built_in_templates_serde_roundtrip() {
         let templates = HeaderFooterTemplate::built_in_templates();
-        assert_eq!(templates.len(), 3);
+        assert_eq!(templates.len(), 4);
         assert_eq!(templates[0].name, "Modern Minimal");
         assert_eq!(templates[1].name, "Editorial Book");
         assert_eq!(templates[2].name, "Corporate Report");
         assert!(templates[2].objects.top_accent_bar);
+        assert_eq!(templates[3].name, "hf-brs");
+        assert_eq!(templates[3].sided, Sided::Double);
+        assert!(!templates[3].objects.header_rule);
 
         let json = serde_json::to_string(&templates).unwrap();
         let de: Vec<HeaderFooterTemplate> = serde_json::from_str(&json).unwrap();

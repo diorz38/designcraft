@@ -5,7 +5,7 @@
   "sector": "BpsOfficial",
   "geometry": {
     "page_size": "A4",
-    "facing_pages": false,
+    "facing_pages": true,
     "margins_mm": {
       "top": 18.0,
       "bottom": 18.0,
@@ -20,7 +20,8 @@
     "require_chapter_dividers": false,
     "include_inside_cover": false,
     "include_back_cover": true,
-    "bilingual": false
+    "bilingual": false,
+    "header_footer_preset": "hf-brs"
   },
   "nomenclature": {
     "chapter_prefix": "",

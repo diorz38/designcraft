@@ -2,9 +2,70 @@
 
 use super::*;
 
+/// Resolves title and release number lines for BRS publication running headers.
+pub fn resolve_brs_header_texts(st: &PubgenState) -> (String, String) {
+    let cov_opt = st.excel_cover.as_ref();
+    let raw_title = cov_opt.map(|c| c.title1.as_str()).filter(|s| !s.trim().is_empty()).unwrap_or(if st.cover_title.trim().is_empty() {
+        "Perkembangan Nilai Tukar Petani"
+    } else {
+        st.cover_title.trim()
+    });
+    let raw_month = cov_opt
+        .map(|c| c.release_month.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| cov_opt.map(|c| c.release_date.as_str()).filter(|s| !s.trim().is_empty()))
+        .unwrap_or("");
+    let fmt_month = super::covers::format_indonesian_month_year(raw_month);
+
+    let title_line = if !fmt_month.is_empty() && !raw_title.to_lowercase().contains(&fmt_month.to_lowercase()) {
+        let trimmed = raw_title.trim_end_matches(',').trim();
+        format!("{trimmed}, {fmt_month}")
+    } else {
+        raw_title.to_string()
+    };
+
+    let release_no = cov_opt.map(|c| c.release_no.as_str()).unwrap_or("").trim();
+    let release_date = cov_opt
+        .map(|c| c.release_date.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| cov_opt.map(|c| c.release_month.as_str()).filter(|s| !s.trim().is_empty()))
+        .unwrap_or("")
+        .trim();
+    let release_info = if !release_no.is_empty() {
+        let fmt_date = super::covers::format_indonesian_date(release_date);
+        let prefix = if release_no.to_lowercase().starts_with("no") { "" } else { "No. " };
+        if !fmt_date.is_empty() { format!("{prefix}{release_no}, {fmt_date}") } else { format!("{prefix}{release_no}") }
+    } else {
+        "No. 61/10/32/Th. XXVIII, 1 Oktober 2026".to_string()
+    };
+
+    let nopub_line = if release_info.to_uppercase().starts_with("BRS") { release_info } else { format!("BRS {release_info}") };
+
+    (title_line, nopub_line)
+}
+
 fn load_hf_template_to_state(st: &mut PubgenState, tpl: &Value) {
     if let Some(name) = tpl.get("name").and_then(Value::as_str) {
         st.hf_style = name.to_string();
+        if name.eq_ignore_ascii_case("hf-brs") || name.eq_ignore_ascii_case("brs") {
+            st.hf_sided = 0;
+            st.hf_header_offset = tpl.get("headerOffset").and_then(Value::as_f64).unwrap_or(24.0);
+            st.hf_footer_offset = tpl.get("footerOffset").and_then(Value::as_f64).unwrap_or(24.0);
+            let (title, nopub) = resolve_brs_header_texts(st);
+            let combined = format!("{title}\n{nopub}");
+            st.hf_header_single.clear();
+            st.hf_header_left.clear();
+            st.hf_header_right.clear();
+            st.hf_footer_single = combined.clone();
+            st.hf_footer_left = combined.clone();
+            st.hf_footer_right = combined;
+            st.hf_header_rule = false;
+            st.hf_footer_rule = false;
+            st.hf_top_accent_bar = false;
+            st.hf_color_primary = "#f68839".to_string();
+            st.hf_color_text = "#f68839".to_string();
+            return;
+        }
     }
     if let Some(sided) = tpl.get("sided").and_then(Value::as_str) {
         st.hf_sided = if sided.eq_ignore_ascii_case("single") { 1 } else { 0 };
@@ -52,6 +113,52 @@ fn show_hf_preview_tooltip(ui: &mut Ui, st: &PubgenState, name: &str, t: &Tokens
         // Page background
         ui.painter().rect_filled(rect, 3.0, Color32::from_rgb(250, 250, 250));
         ui.painter().rect_stroke(rect, 3.0, egui::Stroke::new(1.0, Color32::from_rgb(200, 200, 200)), egui::StrokeKind::Outside);
+
+        if name.eq_ignore_ascii_case("hf-brs") || name.eq_ignore_ascii_case("brs") {
+            let spine_x = rect.center().x;
+            ui.painter().line_segment([pos2(spine_x, rect.min.y), pos2(spine_x, rect.max.y)], egui::Stroke::new(1.0, Color32::from_gray(210)));
+
+            let brs_orange = Color32::from_rgb(245, 136, 56);
+            let footer_y = rect.max.y - 20.0;
+
+            // Faint body lines on both pages
+            let top_body_y = rect.min.y + 14.0;
+            for i in 0..5 {
+                let by = top_body_y + (i as f32) * 8.0;
+                ui.painter().line_segment([pos2(rect.min.x + 8.0, by), pos2(spine_x - 8.0, by)], egui::Stroke::new(1.0, Color32::from_gray(230)));
+                ui.painter().line_segment([pos2(spine_x + 8.0, by), pos2(rect.max.x - 8.0, by)], egui::Stroke::new(1.0, Color32::from_gray(230)));
+            }
+
+            // Verso (Left page): 2-line text on left (right-aligned), large folio on right in footer
+            let left_text_x = spine_x - 32.0;
+            ui.painter().text(
+                pos2(left_text_x, footer_y),
+                egui::Align2::RIGHT_TOP,
+                "Title Line\nRelease No",
+                egui::FontId::proportional(7.0),
+                t.text_dim,
+            );
+            ui.painter().text(pos2(spine_x - 10.0, footer_y - 2.0), egui::Align2::RIGHT_TOP, "9", egui::FontId::proportional(16.0), brs_orange);
+
+            // Recto (Right page): large folio on left, 2-line text on right (left-aligned) in footer
+            ui.painter().text(pos2(spine_x + 10.0, footer_y - 2.0), egui::Align2::LEFT_TOP, "10", egui::FontId::proportional(16.0), brs_orange);
+            let right_text_x = spine_x + 32.0;
+            ui.painter().text(
+                pos2(right_text_x, footer_y),
+                egui::Align2::LEFT_TOP,
+                "Title Line\nRelease No",
+                egui::FontId::proportional(7.0),
+                t.text_dim,
+            );
+
+            ui.add_space(3.0);
+            ui.label(
+                RichText::new("BPS Berita Resmi Statistik running footer with prominent folios and two-line metadata (blank header).")
+                    .size(10.0)
+                    .color(t.text_dim),
+            );
+            return;
+        }
 
         let parse_color = |s: &str, def: Color32| {
             if let Some(c) = designcraft_color::Color::from_hex(s) {
@@ -162,9 +269,13 @@ pub(crate) fn card_header_footer_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &
         let combo_w = (ui.available_width() - 80.0).clamp(110.0, 200.0);
         let mut picked_template: Option<Value> = None;
 
+        let is_brs_active = st.active_profile().id == "bps_brs";
         let combo = craft_ui::ComboBox::from_id_salt("pubgen_hf_style").selected_text(&cur_style).width(combo_w).show_ui(ui, |ui| {
             for tpl in &templates {
                 let name = tpl.get("name").and_then(Value::as_str).unwrap_or("Template");
+                if name.eq_ignore_ascii_case("hf-brs") && !is_brs_active && !cur_style.eq_ignore_ascii_case("hf-brs") {
+                    continue;
+                }
                 let is_builtin = tpl.get("builtIn").and_then(Value::as_bool).unwrap_or(false);
                 let label = if is_builtin { name.to_string() } else { format!("{name} ★") };
                 let is_selected = cur_style == name;
@@ -426,6 +537,13 @@ pub(crate) fn card_header_footer_body_ui(app: &mut DesignApp, ui: &mut Ui, st: &
 }
 
 pub fn execute_apply_header_footer(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
+    // If double-sided is requested and facingPages is currently false, ensure facingPages is true
+    if st.hf_sided == 0 && app.session.active().is_some_and(|s| !s.doc.settings.facing_pages) {
+        let _ = app.run("layout.documentSetup", json!({ "facingPages": true }));
+    }
+
+    let is_brs = st.hf_style.eq_ignore_ascii_case("hf-brs") || st.active_profile().id == "bps_brs";
+
     // Same shapes the Header/Footer… dialog sends: "all", {"section": 0-based index}, {"range": [first, last]}.
     let scope = match st.hf_scope {
         1 => json!({ "section": st.hf_scope_section }),
@@ -434,8 +552,83 @@ pub fn execute_apply_header_footer(app: &mut DesignApp, st: &PubgenState) -> Res
             let end = (st.hf_scope_end as u64).max(start);
             json!({ "range": [start, end] })
         }
-        _ => json!("all"),
+        _ => {
+            // For BRS, running headers should not land on cover (page 1) or back cover (last page)
+            if is_brs {
+                if let Some(active) = app.session.active() {
+                    let total = active.doc.page_count();
+                    if total > 1 {
+                        let has_bc = super::covers::find_back_cover_page(&active.doc).is_some();
+                        let last = if has_bc && total > 2 { total - 1 } else { total };
+                        json!({ "range": [2, last as u64] })
+                    } else {
+                        json!("all")
+                    }
+                } else {
+                    json!("all")
+                }
+            } else {
+                json!("all")
+            }
+        }
     };
+
+    let (brs_title, brs_nopub) = resolve_brs_header_texts(st);
+    if is_brs {
+        let _ = app.session.edit(|doc, _| {
+            if let Some(pos) = doc.text_variables.iter().position(|v| v.name == "Title") {
+                doc.text_variables[pos].kind = designcraft_doc::vars::VarKind::Custom { text: brs_title.clone() };
+            } else {
+                doc.text_variables
+                    .push(designcraft_doc::vars::TextVariable::new("Title", designcraft_doc::vars::VarKind::Custom { text: brs_title.clone() }));
+            }
+            if let Some(pos) = doc.text_variables.iter().position(|v| v.name == "Release No") {
+                doc.text_variables[pos].kind = designcraft_doc::vars::VarKind::Custom { text: brs_nopub.clone() };
+            } else {
+                doc.text_variables
+                    .push(designcraft_doc::vars::TextVariable::new("Release No", designcraft_doc::vars::VarKind::Custom { text: brs_nopub.clone() }));
+            }
+            Ok(serde_json::Value::Null)
+        });
+    }
+
+    let expand_brs_vars = |text: &str, is_footer: bool| -> String {
+        let mut s = text.to_string();
+        if (s.is_empty() || s == "{page}") && is_brs && is_footer {
+            return format!("{brs_title}\n{brs_nopub}");
+        }
+        if s.contains("{title}") {
+            s = s.replace("{title}", &brs_title);
+        }
+        if s.contains("{nopub}") {
+            s = s.replace("{nopub}", &brs_nopub);
+        }
+        if s.contains("{releaseNo}") {
+            s = s.replace("{releaseNo}", &brs_nopub);
+        }
+        s
+    };
+
+    let header_single = if is_brs && (st.hf_header_single == "{title}\n{nopub}" || st.hf_header_single.is_empty()) {
+        String::new()
+    } else {
+        expand_brs_vars(&st.hf_header_single, false)
+    };
+    let header_left = if is_brs && (st.hf_header_left == "{title}\n{nopub}" || st.hf_header_left.is_empty()) {
+        String::new()
+    } else {
+        expand_brs_vars(&st.hf_header_left, false)
+    };
+    let header_right = if is_brs && (st.hf_header_right == "{title}\n{nopub}" || st.hf_header_right.is_empty()) {
+        String::new()
+    } else {
+        expand_brs_vars(&st.hf_header_right, false)
+    };
+
+    let footer_single = expand_brs_vars(&st.hf_footer_single, true);
+    let footer_left = expand_brs_vars(&st.hf_footer_left, true);
+    let footer_right = expand_brs_vars(&st.hf_footer_right, true);
+
     let mut params = json!({
         "preset": st.hf_style,
         "sided": if st.hf_sided == 1 { "single" } else { "double" },
@@ -443,14 +636,14 @@ pub fn execute_apply_header_footer(app: &mut DesignApp, st: &PubgenState) -> Res
         "headerOffset": st.hf_header_offset,
         "footerOffset": st.hf_footer_offset,
         "header": {
-            "single": st.hf_header_single,
-            "left": st.hf_header_left,
-            "right": st.hf_header_right,
+            "single": header_single,
+            "left": header_left,
+            "right": header_right,
         },
         "footer": {
-            "single": st.hf_footer_single,
-            "left": st.hf_footer_left,
-            "right": st.hf_footer_right,
+            "single": footer_single,
+            "left": footer_left,
+            "right": footer_right,
         },
         "objects": {
             "headerRule": st.hf_header_rule,
@@ -699,5 +892,70 @@ pub(crate) mod tests {
         assert!(!st.hf_top_accent_bar_bleed);
         assert_eq!(st.hf_color_primary, "#334455");
         assert_eq!(st.hf_color_accent, "#ffaa00");
+    }
+
+    #[test]
+    fn test_resolve_brs_header_texts() {
+        let mut st = PubgenState::default();
+        st.cover_title.clear();
+        let (def_title, def_nopub) = resolve_brs_header_texts(&st);
+        assert_eq!(def_title, "Perkembangan Nilai Tukar Petani");
+        assert_eq!(def_nopub, "BRS No. 61/10/32/Th. XXVIII, 1 Oktober 2026");
+
+        st.excel_cover = Some(super::excel::ExcelCoverData {
+            title1: "Perkembangan Nilai Tukar Petani Jawa Barat".into(),
+            release_month: "September 2026".into(),
+            release_no: "61/10/32/Th. XXVIII".into(),
+            release_date: "1 Oktober 2026".into(),
+            ..Default::default()
+        });
+
+        let (title, nopub) = resolve_brs_header_texts(&st);
+        assert_eq!(title, "Perkembangan Nilai Tukar Petani Jawa Barat, September 2026");
+        assert_eq!(nopub, "BRS No. 61/10/32/Th. XXVIII, 1 Oktober 2026");
+    }
+
+    #[test]
+    fn test_execute_apply_hf_brs_facing_pages_and_scope() {
+        let mut app = DesignApp::new(designcraft_engine::Session::new(), crate::Services::default());
+        // Initially single pages (facingPages: false) with 4 pages
+        app.run("file.new", json!({ "facingPages": false, "pages": 4 })).unwrap();
+        assert!(!app.session.active().unwrap().doc.settings.facing_pages);
+
+        let mut st = PubgenState {
+            hf_style: "hf-brs".into(),
+            hf_sided: 0,
+            hf_scope: 0, // All Pages -> should auto-scope to body pages [2, 4]
+            ..Default::default()
+        };
+        st.excel_cover = Some(super::excel::ExcelCoverData {
+            title1: "Perkembangan Nilai Tukar Petani Jawa Barat".into(),
+            release_month: "September 2026".into(),
+            release_no: "61/10/32/Th. XXVIII".into(),
+            release_date: "1 Oktober 2026".into(),
+            ..Default::default()
+        });
+
+        let res = execute_apply_header_footer(&mut app, &st);
+        assert!(res.is_ok(), "apply hf-brs should succeed: {res:?}");
+
+        let doc = &app.session.active().unwrap().doc;
+        // Verify facing_pages was automatically enabled
+        assert!(doc.settings.facing_pages, "facing pages should be enabled for double-sided BRS");
+
+        let hf = doc.header_footer.as_ref().expect("header_footer present");
+        assert_eq!(hf.preset, "hf-brs");
+        assert_eq!(hf.sided, designcraft_doc::Sided::Double);
+        assert_eq!(hf.scope, designcraft_doc::HfScope::Range { first: 2, last: 4 });
+
+        // Header is blank
+        assert!(hf.header_items.left.is_none(), "left header is blank");
+        assert!(hf.header_items.right.is_none(), "right header is blank");
+
+        // Footer text and folio items are generated for verso and recto
+        assert!(hf.footer_items.left.is_some(), "left footer text item exists");
+        assert!(hf.footer_items.right.is_some(), "right footer text item exists");
+        assert!(hf.folio_items.left.is_some(), "left folio item exists");
+        assert!(hf.folio_items.right.is_some(), "right folio item exists");
     }
 }

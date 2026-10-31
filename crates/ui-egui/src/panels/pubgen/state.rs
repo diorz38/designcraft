@@ -795,6 +795,9 @@ impl PubgenState {
         if user_locked {
             self.profile_user_locked = true;
         }
+        if let Some(ref hf_preset) = profile.structure.header_footer_preset {
+            self.hf_style = hf_preset.clone();
+        }
         if profile.id == "bps_brs" {
             self.cover_style = 13;
             self.cover_include_inside_back = false;
@@ -804,6 +807,21 @@ impl PubgenState {
             self.card2_style = 4;
             self.card2_color_theme = 4;
             self.card2_theme_override = Some("BRS6".into());
+            self.hf_style = "hf-brs".into();
+            self.hf_sided = 0;
+            self.hf_header_offset = 24.0;
+            self.hf_footer_offset = 24.0;
+            self.hf_header_single = String::new();
+            self.hf_header_left = String::new();
+            self.hf_header_right = String::new();
+            self.hf_footer_single = "{title}\n{nopub}".into();
+            self.hf_footer_left = "{title}\n{nopub}".into();
+            self.hf_footer_right = "{title}\n{nopub}".into();
+            self.hf_header_rule = false;
+            self.hf_footer_rule = false;
+            self.hf_top_accent_bar = false;
+            self.hf_color_primary = "#f68839".into();
+            self.hf_color_text = "#f68839".into();
         }
         if profile.id == "custom" {
             self.profile_custom = Some(profile);

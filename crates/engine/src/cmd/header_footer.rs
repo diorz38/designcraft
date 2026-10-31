@@ -99,6 +99,7 @@ pub fn preset_spec(preset: &str) -> Option<HeaderFooter> {
             rule_items: SidedItems::default(),
             accent_bar_items: SidedItems::default(),
             footer_rule_items: SidedItems::default(),
+            folio_items: SidedItems::default(),
         }),
         "book" => Some(HeaderFooter {
             preset: "book".into(),
@@ -126,6 +127,7 @@ pub fn preset_spec(preset: &str) -> Option<HeaderFooter> {
             rule_items: SidedItems::default(),
             accent_bar_items: SidedItems::default(),
             footer_rule_items: SidedItems::default(),
+            folio_items: SidedItems::default(),
         }),
         "editorial" => Some(HeaderFooter {
             preset: "editorial".into(),
@@ -157,6 +159,41 @@ pub fn preset_spec(preset: &str) -> Option<HeaderFooter> {
             rule_items: SidedItems::default(),
             accent_bar_items: SidedItems::default(),
             footer_rule_items: SidedItems::default(),
+            folio_items: SidedItems::default(),
+        }),
+        "hf-brs" | "brs" => Some(HeaderFooter {
+            preset: "hf-brs".into(),
+            sided: Sided::Double,
+            scope: HfScope::All,
+            parent: None,
+            header_offset: 24.0,
+            footer_offset: 24.0,
+            header: SidedText::default(),
+            footer: SidedText { single: "{title}\n{nopub}".into(), left: "{title}\n{nopub}".into(), right: "{title}\n{nopub}".into() },
+            style: story::BASIC_PARAGRAPH.into(),
+            rule: false,
+            objects: HeaderFooterObjects {
+                header_rule: false,
+                header_rule_weight: 0.5,
+                footer_rule: false,
+                footer_rule_weight: 0.5,
+                top_accent_bar: false,
+                top_accent_bar_height: 4.0,
+                top_accent_bar_bleed: true,
+            },
+            colors: HeaderFooterColors {
+                primary: "#f68839".into(),
+                accent: "#fbbf91".into(),
+                dark: "#122647".into(),
+                rule_color: "#f68839".into(),
+                text_color: "#f68839".into(),
+            },
+            header_items: SidedItems::default(),
+            footer_items: SidedItems::default(),
+            rule_items: SidedItems::default(),
+            accent_bar_items: SidedItems::default(),
+            footer_rule_items: SidedItems::default(),
+            folio_items: SidedItems::default(),
         }),
         _ => None,
     }
@@ -253,6 +290,7 @@ fn find_template(s: &Session, name: &str) -> Option<HeaderFooterTemplate> {
         "corporate report" | "corporate" | "report" => {
             HeaderFooterTemplate::built_in_templates().into_iter().find(|t| t.name.to_lowercase().contains("corporate"))
         }
+        "hf-brs" | "brs" => HeaderFooterTemplate::built_in_templates().into_iter().find(|t| t.name.eq_ignore_ascii_case("hf-brs")),
         _ => None,
     }
 }
@@ -314,6 +352,20 @@ pub fn expand_tokens(template: &str, doc: &Document) -> String {
                         out.push_str("Running Header");
                     }
                 }
+                "title" => {
+                    if let Some(c) = doc.variable("Title").and_then(var_char) {
+                        out.push(c);
+                    } else {
+                        out.push_str("Title");
+                    }
+                }
+                "nopub" | "releaseNo" => {
+                    if let Some(c) = doc.variable("Release No").and_then(var_char) {
+                        out.push(c);
+                    } else {
+                        out.push_str("Release No");
+                    }
+                }
                 "tab" | "rightIndentTab" => out.push(story::RIGHT_INDENT_TAB),
                 _ => {
                     out.push('{');
@@ -355,6 +407,7 @@ fn get(s: &mut Session, _: &Value) -> Result<Value> {
         "minimal": preset_spec("minimal"),
         "book": preset_spec("book"),
         "editorial": preset_spec("editorial"),
+        "hf-brs": preset_spec("hf-brs"),
     });
 
     let templates = all_templates(s);
@@ -408,6 +461,7 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
             h.rule_items = existing.rule_items;
             h.accent_bar_items = existing.accent_bar_items;
             h.footer_rule_items = existing.footer_rule_items;
+            h.folio_items = existing.folio_items;
         }
         h
     } else if let Some(name) = preset_name {
@@ -426,6 +480,7 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
             h.rule_items = existing.rule_items;
             h.accent_bar_items = existing.accent_bar_items;
             h.footer_rule_items = existing.footer_rule_items;
+            h.folio_items = existing.folio_items;
         }
         h
     } else if let Some(existing) = s.doc()?.doc.header_footer.clone() {
@@ -620,6 +675,7 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
         let layer = d.default_layer();
 
         // Single vs Double sided processing
+        let is_hf_brs = hf.preset.eq_ignore_ascii_case("hf-brs") || hf.preset.eq_ignore_ascii_case("brs");
         match hf.sided {
             Sided::Single => {
                 // If previously double-sided items existed, remove them
@@ -633,6 +689,8 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
                 remove_optional_item(d, hf.accent_bar_items.right.take());
                 remove_optional_item(d, hf.footer_rule_items.left.take());
                 remove_optional_item(d, hf.footer_rule_items.right.take());
+                remove_optional_item(d, hf.folio_items.left.take());
+                remove_optional_item(d, hf.folio_items.right.take());
 
                 let pg = parent_pages.first().cloned().ok_or_else(|| bad(CMD, "parent has no pages"))?;
                 let (h_rect, f_rect, r_line, fr_line, bar_rect) = page_hf_geometry(
@@ -651,19 +709,23 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
                     remove_optional_item(d, hf.accent_bar_items.single.take());
                 }
 
-                // Header text frame
+                // Header text frame & folio
                 let h_text = expand_tokens(&hf.header.single, d);
-                hf.header_items.single = sync_text_frame(
-                    d,
-                    hf.header_items.single,
-                    parent_idx,
-                    h_rect,
-                    layer,
-                    &h_text,
-                    &style_to_use,
-                    text_swatch.as_deref(),
-                    0, // Top
-                )?;
+                if is_hf_brs || h_text.trim().is_empty() {
+                    remove_optional_item(d, hf.header_items.single.take());
+                } else {
+                    hf.header_items.single = sync_text_frame(
+                        d,
+                        hf.header_items.single,
+                        parent_idx,
+                        h_rect,
+                        layer,
+                        &h_text,
+                        &style_to_use,
+                        text_swatch.as_deref(),
+                        0, // Top
+                    )?;
+                }
 
                 // Header hairline rule
                 if hf.objects.header_rule {
@@ -688,19 +750,62 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
                     remove_optional_item(d, hf.footer_rule_items.single.take());
                 }
 
-                // Footer text frame
+                // Footer text frame & folio
                 let f_text = expand_tokens(&hf.footer.single, d);
-                hf.footer_items.single = sync_text_frame(
-                    d,
-                    hf.footer_items.single,
-                    parent_idx,
-                    f_rect,
-                    layer,
-                    &f_text,
-                    &style_to_use,
-                    text_swatch.as_deref(),
-                    6, // Bottom
-                )?;
+                if is_hf_brs {
+                    let folio_w = 34.0;
+                    let gap = 8.0;
+                    let f_top = f_rect.y0;
+                    let f_h = 28.0;
+                    let folio_rect = Rect::new(f_rect.x0, f_top, f_rect.x0 + folio_w, f_top + f_h);
+                    let text_rect = Rect::new(f_rect.x0 + folio_w + gap, f_top, f_rect.x1, f_top + f_h);
+
+                    let folio_text = format!("{}", story::PAGE_NUMBER);
+                    hf.folio_items.single = sync_styled_text_frame(
+                        d,
+                        hf.folio_items.single,
+                        parent_idx,
+                        folio_rect,
+                        layer,
+                        &folio_text,
+                        &style_to_use,
+                        text_swatch.as_deref(),
+                        Some(designcraft_doc::Align::Left),
+                        Some("Raleway"),
+                        Some(20.0),
+                        Some("Bold"),
+                        6, // Bottom
+                    )?;
+
+                    hf.footer_items.single = sync_styled_text_frame(
+                        d,
+                        hf.footer_items.single,
+                        parent_idx,
+                        text_rect,
+                        layer,
+                        &f_text,
+                        &style_to_use,
+                        text_swatch.as_deref(),
+                        Some(designcraft_doc::Align::Left),
+                        Some("Raleway"),
+                        Some(8.0),
+                        Some("Regular"),
+                        6, // Bottom
+                    )?;
+                } else {
+                    remove_optional_item(d, hf.folio_items.single.take());
+                    hf.footer_items.single = sync_text_frame(
+                        d,
+                        hf.footer_items.single,
+                        parent_idx,
+                        f_rect,
+                        layer,
+                        &f_text,
+                        &style_to_use,
+                        text_swatch.as_deref(),
+                        6, // Bottom
+                    )?;
+                }
             }
             Sided::Double => {
                 // If previously single-sided items existed, remove them
@@ -709,6 +814,7 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
                 remove_optional_item(d, hf.rule_items.single.take());
                 remove_optional_item(d, hf.accent_bar_items.single.take());
                 remove_optional_item(d, hf.footer_rule_items.single.take());
+                remove_optional_item(d, hf.folio_items.single.take());
 
                 // Find left and right pages on the parent spread by PageSide
                 let left_pg = parent_pages
@@ -739,8 +845,12 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
                 }
 
                 let lh_text = expand_tokens(&hf.header.left, d);
-                hf.header_items.left =
-                    sync_text_frame(d, hf.header_items.left, parent_idx, lh_rect, layer, &lh_text, &style_to_use, text_swatch.as_deref(), 0)?;
+                if is_hf_brs || lh_text.trim().is_empty() {
+                    remove_optional_item(d, hf.header_items.left.take());
+                } else {
+                    hf.header_items.left =
+                        sync_text_frame(d, hf.header_items.left, parent_idx, lh_rect, layer, &lh_text, &style_to_use, text_swatch.as_deref(), 0)?;
+                }
 
                 if hf.objects.header_rule {
                     hf.rule_items.left =
@@ -757,8 +867,51 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
                 }
 
                 let lf_text = expand_tokens(&hf.footer.left, d);
-                hf.footer_items.left =
-                    sync_text_frame(d, hf.footer_items.left, parent_idx, lf_rect, layer, &lf_text, &style_to_use, text_swatch.as_deref(), 6)?;
+                if is_hf_brs {
+                    let folio_w = 34.0;
+                    let gap = 8.0;
+                    let f_top = lf_rect.y0;
+                    let f_h = 28.0;
+                    let text_rect = Rect::new(lf_rect.x0, f_top, lf_rect.x1 - folio_w - gap, f_top + f_h);
+                    let folio_rect = Rect::new(lf_rect.x1 - folio_w, f_top, lf_rect.x1, f_top + f_h);
+
+                    hf.footer_items.left = sync_styled_text_frame(
+                        d,
+                        hf.footer_items.left,
+                        parent_idx,
+                        text_rect,
+                        layer,
+                        &lf_text,
+                        &style_to_use,
+                        text_swatch.as_deref(),
+                        Some(designcraft_doc::Align::Right),
+                        Some("Raleway"),
+                        Some(8.0),
+                        Some("Regular"),
+                        6, // Bottom
+                    )?;
+
+                    let folio_text = format!("{}", story::PAGE_NUMBER);
+                    hf.folio_items.left = sync_styled_text_frame(
+                        d,
+                        hf.folio_items.left,
+                        parent_idx,
+                        folio_rect,
+                        layer,
+                        &folio_text,
+                        &style_to_use,
+                        text_swatch.as_deref(),
+                        Some(designcraft_doc::Align::Right),
+                        Some("Raleway"),
+                        Some(20.0),
+                        Some("Bold"),
+                        6, // Bottom
+                    )?;
+                } else {
+                    remove_optional_item(d, hf.folio_items.left.take());
+                    hf.footer_items.left =
+                        sync_text_frame(d, hf.footer_items.left, parent_idx, lf_rect, layer, &lf_text, &style_to_use, text_swatch.as_deref(), 6)?;
+                }
 
                 // Right (Recto)
                 let (rh_rect, rf_rect, rr_line, rfr_line, rbar_rect) = page_hf_geometry(
@@ -777,8 +930,12 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
                 }
 
                 let rh_text = expand_tokens(&hf.header.right, d);
-                hf.header_items.right =
-                    sync_text_frame(d, hf.header_items.right, parent_idx, rh_rect, layer, &rh_text, &style_to_use, text_swatch.as_deref(), 0)?;
+                if is_hf_brs || rh_text.trim().is_empty() {
+                    remove_optional_item(d, hf.header_items.right.take());
+                } else {
+                    hf.header_items.right =
+                        sync_text_frame(d, hf.header_items.right, parent_idx, rh_rect, layer, &rh_text, &style_to_use, text_swatch.as_deref(), 0)?;
+                }
 
                 if hf.objects.header_rule {
                     hf.rule_items.right =
@@ -802,8 +959,51 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
                 }
 
                 let rf_text = expand_tokens(&hf.footer.right, d);
-                hf.footer_items.right =
-                    sync_text_frame(d, hf.footer_items.right, parent_idx, rf_rect, layer, &rf_text, &style_to_use, text_swatch.as_deref(), 6)?;
+                if is_hf_brs {
+                    let folio_w = 34.0;
+                    let gap = 8.0;
+                    let f_top = rf_rect.y0;
+                    let f_h = 28.0;
+                    let folio_rect = Rect::new(rf_rect.x0, f_top, rf_rect.x0 + folio_w, f_top + f_h);
+                    let text_rect = Rect::new(rf_rect.x0 + folio_w + gap, f_top, rf_rect.x1, f_top + f_h);
+
+                    let folio_text = format!("{}", story::PAGE_NUMBER);
+                    hf.folio_items.right = sync_styled_text_frame(
+                        d,
+                        hf.folio_items.right,
+                        parent_idx,
+                        folio_rect,
+                        layer,
+                        &folio_text,
+                        &style_to_use,
+                        text_swatch.as_deref(),
+                        Some(designcraft_doc::Align::Left),
+                        Some("Raleway"),
+                        Some(20.0),
+                        Some("Bold"),
+                        6, // Bottom
+                    )?;
+
+                    hf.footer_items.right = sync_styled_text_frame(
+                        d,
+                        hf.footer_items.right,
+                        parent_idx,
+                        text_rect,
+                        layer,
+                        &rf_text,
+                        &style_to_use,
+                        text_swatch.as_deref(),
+                        Some(designcraft_doc::Align::Left),
+                        Some("Raleway"),
+                        Some(8.0),
+                        Some("Regular"),
+                        6, // Bottom
+                    )?;
+                } else {
+                    remove_optional_item(d, hf.folio_items.right.take());
+                    hf.footer_items.right =
+                        sync_text_frame(d, hf.footer_items.right, parent_idx, rf_rect, layer, &rf_text, &style_to_use, text_swatch.as_deref(), 6)?;
+                }
             }
         }
 
@@ -850,6 +1050,9 @@ fn remove(s: &mut Session, _: &Value) -> Result<Value> {
             hf.footer_rule_items.single,
             hf.footer_rule_items.left,
             hf.footer_rule_items.right,
+            hf.folio_items.single,
+            hf.folio_items.left,
+            hf.folio_items.right,
         ]
         .into_iter()
         .flatten()
@@ -1047,9 +1250,9 @@ fn remove_optional_item(d: &mut Document, item_id: Option<ItemId>) {
     }
 }
 
-/// Synchronizes a text frame item on the parent spread: updates existing or creates new.
+/// Synchronizes a text frame item on the parent spread with styling: updates existing or creates new.
 #[allow(clippy::too_many_arguments)]
-fn sync_text_frame(
+fn sync_styled_text_frame(
     d: &mut Document,
     existing_id: Option<ItemId>,
     parent_idx: usize,
@@ -1058,6 +1261,10 @@ fn sync_text_frame(
     expanded_text: &str,
     style_name: &str,
     text_swatch: Option<&str>,
+    align: Option<designcraft_doc::Align>,
+    font_family: Option<&str>,
+    font_size: Option<f64>,
+    font_weight: Option<&str>,
     auto_size_ref: u8,
 ) -> Result<Option<ItemId>> {
     if expanded_text.is_empty() {
@@ -1076,13 +1283,36 @@ fn sync_text_frame(
             st.replace(0..old_len, expanded_text);
             for p in &mut st.paras {
                 p.style = style_name.to_string();
+                if let Some(a) = align {
+                    p.para.align = Some(a);
+                }
                 if let Some(ts) = text_swatch {
                     p.chars.fill = Some(ts.to_string());
                 }
+                if let Some(ff) = font_family {
+                    p.chars.font_family = Some(ff.to_string());
+                }
+                if let Some(fs) = font_size {
+                    p.chars.size = Some(fs);
+                    p.chars.leading = Some(designcraft_doc::attrs::Leading::Points(fs * 1.25));
+                }
+                if let Some(fw) = font_weight {
+                    p.chars.font_style = Some(fw.to_string());
+                }
             }
-            if let Some(ts) = text_swatch {
-                for r in &mut st.chars {
+            for r in &mut st.chars {
+                if let Some(ts) = text_swatch {
                     r.format.over.fill = Some(ts.to_string());
+                }
+                if let Some(ff) = font_family {
+                    r.format.over.font_family = Some(ff.to_string());
+                }
+                if let Some(fs) = font_size {
+                    r.format.over.size = Some(fs);
+                    r.format.over.leading = Some(designcraft_doc::attrs::Leading::Points(fs * 1.25));
+                }
+                if let Some(fw) = font_weight {
+                    r.format.over.font_style = Some(fw.to_string());
                 }
             }
         }
@@ -1108,18 +1338,57 @@ fn sync_text_frame(
     if let Some(st) = d.story_mut(sid) {
         for p in &mut st.paras {
             p.style = style_name.to_string();
+            if let Some(a) = align {
+                p.para.align = Some(a);
+            }
             if let Some(ts) = text_swatch {
                 p.chars.fill = Some(ts.to_string());
             }
+            if let Some(ff) = font_family {
+                p.chars.font_family = Some(ff.to_string());
+            }
+            if let Some(fs) = font_size {
+                p.chars.size = Some(fs);
+                p.chars.leading = Some(designcraft_doc::attrs::Leading::Points(fs * 1.25));
+            }
+            if let Some(fw) = font_weight {
+                p.chars.font_style = Some(fw.to_string());
+            }
         }
-        if let Some(ts) = text_swatch {
-            for r in &mut st.chars {
+        for r in &mut st.chars {
+            if let Some(ts) = text_swatch {
                 r.format.over.fill = Some(ts.to_string());
+            }
+            if let Some(ff) = font_family {
+                r.format.over.font_family = Some(ff.to_string());
+            }
+            if let Some(fs) = font_size {
+                r.format.over.size = Some(fs);
+                r.format.over.leading = Some(designcraft_doc::attrs::Leading::Points(fs * 1.25));
+            }
+            if let Some(fw) = font_weight {
+                r.format.over.font_style = Some(fw.to_string());
             }
         }
     }
 
     Ok(Some(fid))
+}
+
+/// Synchronizes a text frame item on the parent spread: updates existing or creates new.
+#[allow(clippy::too_many_arguments)]
+fn sync_text_frame(
+    d: &mut Document,
+    existing_id: Option<ItemId>,
+    parent_idx: usize,
+    rect: Rect,
+    layer: designcraft_doc::LayerId,
+    expanded_text: &str,
+    style_name: &str,
+    text_swatch: Option<&str>,
+    auto_size_ref: u8,
+) -> Result<Option<ItemId>> {
+    sync_styled_text_frame(d, existing_id, parent_idx, rect, layer, expanded_text, style_name, text_swatch, None, None, None, None, auto_size_ref)
 }
 
 /// Synchronizes a hairline rule item on the parent spread: updates existing or creates new.
@@ -1545,5 +1814,81 @@ mod tests {
         let expected_rh_x1_new = right_pg_x + right_pg_width - 30.0;
         assert!((rh_bounds2.x0 - expected_rh_x0_new).abs() < 1e-4, "updated rh x0: {}", rh_bounds2.x0);
         assert!((rh_bounds2.x1 - expected_rh_x1_new).abs() < 1e-4, "updated rh x1: {}", rh_bounds2.x1);
+    }
+
+    #[test]
+    fn test_apply_hf_brs_double_sided() {
+        let mut s = session_with_doc(true, 4);
+        let res = s.execute(
+            "layout.headerFooter.apply",
+            &json!({
+                "preset": "hf-brs",
+                "footer": {
+                    "left": "Perkembangan Nilai Tukar Petani Jawa Barat, September 2026\nBRS No. 61/10/32/Th. XXVIII, 1 Oktober 2026",
+                    "right": "Perkembangan Nilai Tukar Petani Jawa Barat, September 2026\nBRS No. 61/10/32/Th. XXVIII, 1 Oktober 2026",
+                }
+            }),
+        );
+        assert!(res.is_ok(), "apply hf-brs: {res:?}");
+
+        let doc = &s.doc().unwrap().doc;
+        let hf = doc.header_footer.as_ref().unwrap();
+        assert_eq!(hf.preset, "hf-brs");
+        assert_eq!(hf.sided, Sided::Double);
+
+        // Header frames are blank
+        assert!(hf.header_items.left.is_none());
+        assert!(hf.header_items.right.is_none());
+
+        // Verify folio items and text items are generated on both left and right sides in the footer
+        let left_text_id = hf.footer_items.left.expect("left text frame exists in footer");
+        let left_folio_id = hf.folio_items.left.expect("left folio frame exists");
+        let right_text_id = hf.footer_items.right.expect("right text frame exists in footer");
+        let right_folio_id = hf.folio_items.right.expect("right folio frame exists");
+
+        let left_text_b = doc.item(left_text_id).unwrap().bounds();
+        let left_folio_b = doc.item(left_folio_id).unwrap().bounds();
+        let right_text_b = doc.item(right_text_id).unwrap().bounds();
+        let right_folio_b = doc.item(right_folio_id).unwrap().bounds();
+
+        // Left page (verso): text is on the left, folio is on the right
+        assert!(left_text_b.x1 < left_folio_b.x0, "left page: text ({}) must be left of folio ({})", left_text_b.x1, left_folio_b.x0);
+
+        // Right page (recto): folio is on the left, text is on the right
+        assert!(right_folio_b.x1 < right_text_b.x0, "right page: folio ({}) must be left of text ({})", right_folio_b.x1, right_text_b.x0);
+
+        // Verify folio content is the page marker
+        let left_folio_story = doc.story(doc.item(left_folio_id).unwrap().text_frame().unwrap().story).unwrap();
+        assert_eq!(left_folio_story.text, format!("{}", story::PAGE_NUMBER));
+
+        let parent_idx = doc.parent_index(hf.parent.unwrap()).unwrap();
+        let parent_spread = &doc.parents[parent_idx];
+        assert_eq!(parent_spread.pages.len(), 2);
+        assert_eq!(parent_spread.page_at_x(left_text_b.center().x), Some(0));
+        assert_eq!(parent_spread.page_at_x(left_folio_b.center().x), Some(0));
+        assert_eq!(parent_spread.page_at_x(right_text_b.center().x), Some(1));
+        assert_eq!(parent_spread.page_at_x(right_folio_b.center().x), Some(1));
+
+        // Check shown_parent_pages on spreads (shows both base parent 0 and H-Header/Footer parent 1)
+        // Spread 0, Page 0 (which is Page 1, Recto / Right side)
+        let shown_p1 = doc.shown_parent_pages(SpreadRef::Doc(0), 0);
+        assert!(shown_p1.contains(&(parent_idx, 1)), "Page 1 is right side, should show parent page 1");
+
+        // Spread 1, Page 0 (Page 2, Verso / Left side)
+        let shown_p2 = doc.shown_parent_pages(SpreadRef::Doc(1), 0);
+        assert!(shown_p2.contains(&(parent_idx, 0)), "Page 2 is left side, should show parent page 0");
+
+        // Spread 1, Page 1 (Page 3, Recto / Right side)
+        let shown_p3 = doc.shown_parent_pages(SpreadRef::Doc(1), 1);
+        assert!(shown_p3.contains(&(parent_idx, 1)), "Page 3 is right side, should show parent page 1");
+
+        // Removing cleans up both text frames and folio frames
+        s.execute("layout.headerFooter.remove", &json!({})).unwrap();
+        let doc_after = &s.doc().unwrap().doc;
+        assert!(doc_after.header_footer.is_none());
+        assert!(doc_after.item(left_text_id).is_none());
+        assert!(doc_after.item(left_folio_id).is_none());
+        assert!(doc_after.item(right_text_id).is_none());
+        assert!(doc_after.item(right_folio_id).is_none());
     }
 }

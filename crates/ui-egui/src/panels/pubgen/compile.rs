@@ -2215,7 +2215,7 @@ mod tests {
         let plan = CompilePlan::from_manifest(&manifest_path, m).unwrap();
         assert_eq!(plan.manifest.document.margins_mm.top, 18.0);
         assert_eq!(plan.manifest.document.margins_mm.inside, 18.0);
-        assert!(!plan.manifest.document.facing_pages);
+        assert!(plan.manifest.document.facing_pages);
     }
 
     #[test]

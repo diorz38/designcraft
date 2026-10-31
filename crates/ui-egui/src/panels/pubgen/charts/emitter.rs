@@ -1082,7 +1082,7 @@ mod tests {
         let values = vec![vec![98.71, 0.56, 0.72, 0.01], vec![98.55, 0.63, 0.81, 0.01]];
 
         let layout = compute_layout(&spec, &categories, &values, sample_margin(), false).unwrap();
-        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false).unwrap();
+        let count = emit_chart(&mut app, 0, &spec, &layout, &[], false, "Lato").unwrap();
 
         assert!(count > layout.donut_slices.len(), "leaders, labels and period bands add frames");
     }

@@ -10,7 +10,8 @@ use crate::dialogs::Dialog;
 use crate::theme::Tokens;
 
 /// Preset identifiers and UI labels.
-pub const PRESETS: [(&str, &str); 4] = [("minimal", "Minimal"), ("book", "Book"), ("editorial", "Editorial"), ("custom", "Custom")];
+pub const PRESETS: [(&str, &str); 5] =
+    [("minimal", "Minimal"), ("book", "Book"), ("editorial", "Editorial"), ("hf-brs", "hf-brs"), ("custom", "Custom")];
 
 /// The options height for the modal window.
 #[allow(dead_code)]
@@ -57,8 +58,8 @@ pub fn open(app: &mut DesignApp) -> Result<Value, String> {
             }
             _ => ("all", 0, 1, page_count),
         };
-        let ho = hf.get("header_offset").and_then(Value::as_f64).unwrap_or(24.0);
-        let fo = hf.get("footer_offset").and_then(Value::as_f64).unwrap_or(24.0);
+        let ho = hf.get("headerOffset").or_else(|| hf.get("header_offset")).and_then(Value::as_f64).unwrap_or(24.0);
+        let fo = hf.get("footerOffset").or_else(|| hf.get("footer_offset")).and_then(Value::as_f64).unwrap_or(24.0);
         let h = hf.get("header");
         let f = hf.get("footer");
         let hs = h.and_then(|x| x.get("single")).and_then(Value::as_str).unwrap_or("");
@@ -198,6 +199,18 @@ fn apply_preset(d: &mut Dialog, preset: &str, facing: bool) {
             d.fields.insert("footerRight".into(), json!("{filename}"));
             d.fields.insert("rule".into(), json!(true));
         }
+        "hf-brs" | "brs" => {
+            d.fields.insert("sided".into(), json!("double"));
+            d.fields.insert("headerOffset".into(), json!("24.0"));
+            d.fields.insert("footerOffset".into(), json!("24.0"));
+            d.fields.insert("headerSingle".into(), json!(""));
+            d.fields.insert("headerLeft".into(), json!(""));
+            d.fields.insert("headerRight".into(), json!(""));
+            d.fields.insert("footerSingle".into(), json!("{title}\n{nopub}"));
+            d.fields.insert("footerLeft".into(), json!("{title}\n{nopub}"));
+            d.fields.insert("footerRight".into(), json!("{title}\n{nopub}"));
+            d.fields.insert("rule".into(), json!(false));
+        }
         _ => {}
     }
 }
@@ -208,6 +221,11 @@ pub fn confirm(app: &mut DesignApp, d: &Dialog) -> Result<Value, String> {
     let sided = d.s("sided");
     let style = d.s("style");
     let rule = d.b("rule");
+
+    // If double-sided is requested and facingPages is currently false, ensure facingPages is true
+    if sided == "double" && app.session.active().is_some_and(|s| !s.doc.settings.facing_pages) {
+        let _ = app.run("layout.documentSetup", json!({ "facingPages": true }));
+    }
 
     // Geometry validation
     let header_offset = d.pt("headerOffset").unwrap_or(0.0);
@@ -523,7 +541,7 @@ pub fn body(app: &mut DesignApp, ui: &mut Ui, d: &mut Dialog) {
         row(ui, rtl, |ui| {
             crate::rtl::label(
                 ui,
-                egui::RichText::new(tr("Available Tokens:  {page}  {section}  {chapter}  {filename}  {runningHeader}  {tab}"))
+                egui::RichText::new(tr("Available Tokens:  {page}  {section}  {chapter}  {filename}  {title}  {nopub}  {runningHeader}  {tab}"))
                     .color(t.text_dim)
                     .size(11.0),
             );

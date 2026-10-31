@@ -107,6 +107,8 @@ pub struct ProfileStructure {
     pub include_back_cover: bool,
     #[serde(default = "default_true")]
     pub bilingual: bool,
+    #[serde(default)]
+    pub header_footer_preset: Option<String>,
 }
 
 impl Default for ProfileStructure {
@@ -119,6 +121,7 @@ impl Default for ProfileStructure {
             include_inside_cover: true,
             include_back_cover: true,
             bilingual: true,
+            header_footer_preset: None,
         }
     }
 }

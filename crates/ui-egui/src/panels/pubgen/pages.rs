@@ -773,6 +773,61 @@ fn measure_frame_content_height(app: &DesignApp, fid: u64) -> Option<f64> {
     Some(cf.content_height)
 }
 
+fn thread_overset_narrative(
+    app: &mut DesignApp,
+    cur_page_idx: &mut usize,
+    first_fid: u64,
+    doc_margins: designcraft_doc::Margins,
+) -> Result<u64, String> {
+    let mut last_fid = first_fid;
+    let sid = {
+        let active = app.session.active().ok_or("No active document")?;
+        let it = active.doc.item(designcraft_doc::ItemId(first_fid)).ok_or("Frame not found")?;
+        let tf = it.text_frame().ok_or("Not a text frame")?;
+        tf.story
+    };
+
+    for _ in 0..50 {
+        if !story_is_overset(app, sid) {
+            break;
+        }
+
+        // 1. Insert 1 page immediately after cur_page_idx
+        app.run("layout.pages.insert", json!({"after": *cur_page_idx, "count": 1}))?;
+        *cur_page_idx += 1;
+
+        // 2. Set margins of the newly inserted page to doc_margins
+        set_brs_page_margins(app, *cur_page_idx, doc_margins);
+
+        // 3. Get margin rectangle and spread index of the new page
+        let (new_margin, _, new_spread_idx) = get_brs_page_metrics(app, *cur_page_idx)?;
+
+        // 4. Thread from last_fid to a new frame spanning the margin area on the new page
+        let thread_res = app.run(
+            "text.thread",
+            json!({
+                "from": last_fid,
+                "spread": new_spread_idx,
+                "rect": [new_margin.x0, new_margin.y0, new_margin.x1, new_margin.y1],
+                "autoflow": false,
+            }),
+        );
+
+        match thread_res {
+            Ok(val) => {
+                if let Some(to_fid) = val.get("to").and_then(Value::as_u64) {
+                    last_fid = to_fid;
+                } else {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+
+    Ok(last_fid)
+}
+
 fn execute_generate_pages_brs(
     app: &mut DesignApp,
     st: &PubgenState,
@@ -825,6 +880,18 @@ fn execute_generate_pages_brs(
         let title_val = row.get(st.card1_title_col.min(2)).map(String::as_str).unwrap_or("").trim();
         let file_val = row.get(file_col).map(String::as_str).unwrap_or("").trim();
         let theme_val = row.get(theme_col).map(String::as_str).unwrap_or("").trim();
+
+        let is_g_sheet = (file_val.to_uppercase().starts_with('G') && file_val.chars().nth(1).is_some_and(|c| c.is_ascii_digit()))
+            || (num_val.to_uppercase().starts_with('G') && num_val.chars().nth(1).is_some_and(|c| c.is_ascii_digit()));
+        if is_g_sheet && cur_y > margin.y0 + 1.0 {
+            app.run("layout.pages.insert", json!({"after": cur_page_idx, "count": 1}))?;
+            cur_page_idx += 1;
+            set_brs_page_margins(app, cur_page_idx, doc_margins);
+            let metrics = get_brs_page_metrics(app, cur_page_idx)?;
+            margin = metrics.0;
+            spread_idx = metrics.2;
+            cur_y = margin.y0;
+        }
 
         let is_chart = is_chart_type(type_val) || type_val.eq_ignore_ascii_case("line") || title_val.to_lowercase().starts_with("gambar");
         let is_table = type_val.eq_ignore_ascii_case("tabel") || type_val.eq_ignore_ascii_case("table") || excel::is_table_sheet_name(file_val);
@@ -968,7 +1035,7 @@ fn execute_generate_pages_brs(
             generated_count = generated_count.saturating_add(1);
         } else if is_narrative {
             let rtf_file = resolve_catalog_related_file(&st.card1_path, file_val, "rtf");
-            if margin.y1 - cur_y < 120.0 {
+            if margin.y1 - cur_y < 80.0 {
                 // Jump to next page
                 app.run("layout.pages.insert", json!({"after": cur_page_idx, "count": 1}))?;
                 cur_page_idx += 1;
@@ -1004,11 +1071,32 @@ fn execute_generate_pages_brs(
 
                 format_brs_narrative_story(app, fid, &brs_font);
 
-                let fit_h = measure_frame_content_height(app, fid).unwrap_or(180.0);
-                let clamped_h = (fit_h + 4.0).min(margin.y1 - cur_y);
-                shrink_frame_height(app, fid, margin.x0, cur_y, margin.x1, cur_y + clamped_h);
+                // Thread overset text to subsequent pages if the content overflows!
+                let last_fid = if let Ok(end_fid) = thread_overset_narrative(app, &mut cur_page_idx, fid, doc_margins) { end_fid } else { fid };
 
-                cur_y += clamped_h + gap;
+                // Refresh metrics for the page cur_page_idx ended up on
+                let metrics = get_brs_page_metrics(app, cur_page_idx)?;
+                margin = metrics.0;
+                spread_idx = metrics.2;
+
+                let top_y = if last_fid == fid { cur_y } else { margin.y0 };
+
+                // Fit the last frame to its content height
+                let _ = app.run("object.fit", json!({"mode": "fitFrameToContent", "axis": "height", "ids": [last_fid]}));
+                if let Some(fit_h) = measure_frame_content_height(app, last_fid) {
+                    let clamped_h = fit_h.min(margin.y1 - top_y);
+                    shrink_frame_height(app, last_fid, margin.x0, top_y, margin.x1, top_y + clamped_h);
+                }
+
+                let frame_bottom = app
+                    .session
+                    .active()
+                    .and_then(|a| a.doc.item(designcraft_doc::ItemId(last_fid)))
+                    .and_then(|it| it.path.bounds())
+                    .map(|b| b.y1)
+                    .unwrap_or(top_y + 100.0);
+
+                cur_y = frame_bottom.clamp(top_y, margin.y1) + gap;
                 generated_count = generated_count.saturating_add(1);
             }
         } else if is_image {

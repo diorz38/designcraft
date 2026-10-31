@@ -1332,6 +1332,20 @@ pub fn execute_generate_brs_cover(app: &mut DesignApp, st: &PubgenState) -> Resu
     Ok("Cover pages generated successfully: Front Cover, Point Page, Back Cover (BPS Berita Resmi Statistik)".to_string())
 }
 
+pub fn format_agency_office(s: &str) -> String {
+    let s = s.trim();
+    if s.contains('\n') {
+        return s.to_string();
+    }
+    for prefix in &["BADAN PUSAT STATISTIK ", "Badan Pusat Statistik ", "BPS "] {
+        if let Some(rest) = s.strip_prefix(prefix) {
+            let p = prefix.trim();
+            return format!("{p}\n{}", rest.trim());
+        }
+    }
+    s.to_string()
+}
+
 pub fn execute_generate_brs_front_and_point(app: &mut DesignApp, st: &PubgenState) -> Result<String, String> {
     replace_existing_covers(app, st)?;
     let tpl_path = resolve_template_path("assets/templates/covers/brs/brs.designcraft")
@@ -1379,7 +1393,11 @@ pub fn execute_generate_brs_front_and_point(app: &mut DesignApp, st: &PubgenStat
         .filter(|s| !s.trim().is_empty())
         .unwrap_or("Nilai Tukar Petani Jawa Barat September 2026 sebesar 120,54 atau naik 0,99 persen dibandingkan Agustus 2026 (2018 = 100).");
 
-    let agency_text = if !st.cover_agency_text.trim().is_empty() {
+    let raw_agency = if let Some(cov) = cov_opt
+        && !cov.pub_office.trim().is_empty()
+    {
+        cov.pub_office.trim()
+    } else if !st.cover_agency_text.trim().is_empty() && st.cover_agency_text.trim() != "BADAN PUSAT STATISTIK\nKABUPATEN KARAWANG" {
         st.cover_agency_text.trim()
     } else if let Some(cov) = cov_opt
         && !cov.agency.trim().is_empty()
@@ -1392,6 +1410,7 @@ pub fn execute_generate_brs_front_and_point(app: &mut DesignApp, st: &PubgenStat
     } else {
         "BADAN PUSAT STATISTIK\nPROVINSI JAWA BARAT"
     };
+    let agency_text = format_agency_office(raw_agency);
 
     let base_dir = std::path::Path::new(&st.excel_source_path).parent();
     let resolve_img = |p: &str| -> String {
@@ -3153,6 +3172,7 @@ pub(crate) mod tests {
         let conv = super::super::excel::convert_excel_to_csv_data_with_profile(&sheets, "ntp202610", sample_xlsx.parent(), Some(&prof));
 
         let cov = conv.cover.as_ref().expect("Cover data must be parsed for BRS");
+        assert_eq!(cov.pub_office, "BADAN PUSAT STATISTIK PROVINSI JAWA BARAT");
         assert_eq!(cov.release_no, "61/10/32/Th. XXVIII");
         assert_eq!(cov.image_theme1, "theme1.png");
         assert_eq!(cov.image_theme2, "theme2.png");
@@ -3330,6 +3350,29 @@ pub(crate) mod tests {
         assert!(st2.card2_col_numbers, "BRS must include column numbers row");
         let doc2 = &app2.session.active().unwrap().doc;
         assert!(doc2.page_count() >= 8, "Doc2 must have at least 8 pages; got {}", doc2.page_count());
+        let hf = doc2.header_footer.as_ref().expect("Doc2 must have header_footer applied");
+        assert_eq!(hf.preset, "hf-brs");
+        assert_eq!(hf.colors.primary, "#f68839");
+        assert_eq!(hf.colors.text_color, "#f68839");
+        let hf_parent = hf.parent.expect("parent spread id");
+        let parent_idx = doc2.parent_index(hf_parent).expect("parent idx");
+        let parent_sp = &doc2.parents[parent_idx];
+        assert!(!parent_sp.items.is_empty(), "parent_sp must have items, got {}", parent_sp.items.len());
+        assert_eq!(doc2.page(2).unwrap().parent, Some(hf_parent), "Page 3 must have hf_parent");
+
+        println!("=== DIAGNOSTIC START ===");
+        println!("FACING PAGES: {}", doc2.settings.facing_pages);
+        println!("TOTAL PAGES: {}", doc2.page_count());
+        for p in 0..doc2.page_count() {
+            let (si, pi) = doc2.page_loc(p).unwrap();
+            let pg = &doc2.spreads[si].pages[pi];
+            let shown = doc2.shown_parent_pages(designcraft_doc::SpreadRef::Doc(si), pi);
+            println!("Page {}: spread {}, page_in_spread {}, side {:?}, parent {:?}, shown {:?}", p + 1, si, pi, pg.side, pg.parent, shown);
+        }
+        for (idx, it) in parent_sp.items.iter().enumerate() {
+            println!("Parent item {}: bounds {:?}, page_at_x {:?}", idx, it.bounds(), parent_sp.page_at_x(it.bounds().center().x));
+        }
+        println!("=== DIAGNOSTIC END ===");
 
         // Verify Lato font in body paragraphs
         let rtf_story = doc2.stories.values().find(|s| s.text.contains("Nilai Tukar Petani (NTP) diperoleh")).expect("RTF story must exist");
